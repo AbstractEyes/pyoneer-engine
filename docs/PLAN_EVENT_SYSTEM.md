@@ -2,6 +2,23 @@ Probes cleaned up. Here is the corrected plan.
 
 ---
 
+> ## CORRECTION (verified after this document was written)
+>
+> This plan's V5 table lists `Panel.core_lifecycle_build` and
+> `ScrollComponent.core_lifecycle_build` as running "0 times" and marks them for
+> deletion. **That is wrong, and acting on it destroys the window.**
+>
+> `GameComponent.bind_component` (`scripts/core/component.py:442-449`) calls
+> `core_lifecycle_prepare_pre/prepare/prepare_post/build` **directly**, not through
+> the event bus. Measured on the live scene: `Panel.core_lifecycle_build` runs
+> **2x**, `ScrollComponent.core_lifecycle_build` runs **4x**, and between them
+> they construct most of the UI.
+>
+> What the `event=None` hole actually swallows is only the **listener fan-out
+> inside** those methods -- `send_event_advanced` requires a non-None event. The
+> methods themselves run fine. Re-derive the V5 table by instrumenting real call
+> counts before migrating anything.
+
 # PYONEER — EVENT SYSTEM REPAIR PLAN (corrected)
 
 ## 0. Why the draft needed rewriting

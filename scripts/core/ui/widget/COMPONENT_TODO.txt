@@ -111,10 +111,13 @@ widgets;
         resize    -- not started; needs a bounds-changed hook that reallocates
                      child surfaces (see scroll, below, for the same gap)
     panel;
-        grid; in progress
+        grid; NOT STARTED (not "in progress")
             a functional grid lineup component for organization
-            GridComponent exists (15 methods) but has never executed: its only
-            referent is ListBoxComponent, which is itself never instantiated
+            GridComponent exists as 15 method stubs and has never executed. It
+            has no layout engine at all: add_item never calls bind_component, so
+            items never enter the component tree, and row_height / max_rows are
+            stored and never read. Its only referent is ListBoxComponent, which
+            is itself never instantiated.
         scroll; in progress
             X active space;
                 # contains an active space primarily for scrolling, visual, and interactive purposes
@@ -133,15 +136,24 @@ widgets;
                     X scroll up or down one page
                 X click up or down arrow;
                     X scroll up or down one line
-            KNOWN BUG: the thumb resizes logically but not visually. scroll.py
-            reassigns local_bounds while the Button's ShapeComponent keeps its
-            construction-time surface, so a 4000px document and a 210px one
-            show an identical thumb. Needs DrawComponent.resize().
-        blocking;
-            listbox
+            KNOWN BUG (latent): the thumb resizes logically but not visually,
+            AFTER CONSTRUCTION ONLY. Measured on a Panel(300x200,
+            working_area 300x210):
+                at build          local_bounds h=118, body surface h=118  OK
+                scrollable_bounds -> 4000 tall:
+                                  local_bounds h=6,   body surface h=118  WRONG
+            Construction-time sizing is correct, so this is invisible today --
+            nothing mutates scrollable_bounds at runtime. It fires the moment
+            anything does. scroll.py reassigns local_bounds while the Button's
+            ShapeComponent keeps its construction-time surface.
+            Needs DrawComponent.resize() plus a bounds-changed cascade.
+            Acceptance test: assert the thumb's SURFACE follows, not its bounds.
 
 
 
     listbox:
         a simple list or grid containing various simple components with text
         not started; ListBoxComponent is a stub that has never run
+        BLOCKED BY GRID, not by scroll. The "blocking; listbox" note under
+        scroll above had this backwards -- scroll already provides everything
+        listbox needs. Grid is the missing piece.
