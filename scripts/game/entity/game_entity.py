@@ -50,10 +50,27 @@ class GameEntity(GameEntitySimple, ABC):
                  image_path: str = "",
                  transform: Transform = Transform()):
         super().__init__(image_path=image_path, transform=transform)
-        self.move_speed = movement_config['move_speed'] if movement_config and 'move_speed' in movement_config.keys() else 16
-        self.sprint_mult = movement_config['sprint_mult'] if movement_config and 'sprint_mult' in movement_config.keys() else 2
+        movement = self.__movement_values(movement_config)
+        self.move_speed = movement.get('move_speed', 16)
+        self.sprint_mult = movement.get('sprint_mult', 2)
         self.__started = False
         self.__stopped = False
+
+    @staticmethod
+    def __movement_values(movement_config: dict[str, any] | None) -> dict[str, any]:
+        """Accept either the entity block or the movement block itself.
+
+        config/entity.json nests movement under a "movement" key, but callers
+        (main.py) pass the whole entity block. The old lookup tested for
+        'move_speed' at the TOP level, which is never there, so every entity
+        silently fell back to the default 16 and the configured 20 was dead
+        config. Both shapes now resolve.
+        """
+        if not movement_config:
+            return {}
+        if 'movement' in movement_config:
+            return movement_config['movement'] or {}
+        return movement_config
 
     @property
     def started(self) -> bool:

@@ -16,7 +16,7 @@ from scripts.core.component import GameComponent
 from scripts.game.entity.game_entity import GameEntity
 from scripts.game.game_camera import GameCamera
 from scripts.game.game_map import GameMap
-from scripts.core.depth import MAP_DEPTH, DEPTH
+from scripts.core.depth import MAP_DEPTH, DEPTH, resolve_layer_depth
 from scripts.core.blitpool import BlitPool
 
 
@@ -209,25 +209,41 @@ class LayerRenderer:
         return self.tiled_maps[name]
 
     def __prepare_map_layers(self, tmx_data: pytmx.TiledMap):
-        """Prepare the map layers"""
-        for layer_name, layer_depth in MAP_DEPTH.items():
-            # the map layers are taken from the map data and generated as a surface each layer
-            if layer_name in tmx_data.layernames:
-                layer_data = tmx_data.get_layer_by_name(layer_name)
-                if layer_data and isinstance(layer_data, pytmx.TiledTileLayer):  # make the tile layers
-                    self.layers[layer_depth] = [] if not self.layers.keys().__contains__(layer_depth) else self.layers[
-                        layer_depth]
-                    layer_surface = pygame.Surface((tmx_data.width * tmx_data.tilewidth,
-                                                    tmx_data.height * tmx_data.tileheight),
-                                                   pygame.SRCALPHA)
-                    prepared = self.__make_tile_layer(layer_name, layer_depth, layer_surface, tmx_data, layer_data).core_prepare()
-                    self.layers[layer_depth].append(prepared)
-                elif layer_data and isinstance(layer_data, pytmx.TiledObjectGroup): # object group
-                    pass
-                elif layer_data and isinstance(layer_data, pytmx.TiledImageLayer): # image layer
-                    pass
-            else:
-                print(f"Layer not found in map: {layer_name}")
+        """Rasterize every tile layer the MAP declares.
+
+        This loop used to iterate MAP_DEPTH -- the code's list of layer names
+        -- and look each one up in the map. That is inside out, and it failed
+        in both directions at once: it printed 7 "Layer not found" warnings
+        for names the map never had (ENTITY_1..3, FOREGROUND_1..2, UI_LAYER_1,
+        Parallax), while layers the map DID have but the code did not name
+        were dropped in complete silence. The shipped test.tmx spells its
+        parallax layer "Paralax", so its 39 tiles were silently discarded
+        every boot.
+
+        Driving from the map means authored content is never lost without a
+        warning naming the exact layer.
+        """
+        for layer_data in tmx_data.layers:
+            layer_name = getattr(layer_data, 'name', None)
+            if not isinstance(layer_data, pytmx.TiledTileLayer):
+                # Object groups and image layers are handled elsewhere; group
+                # wrappers carry no tiles of their own.
+                continue
+
+            layer_depth = resolve_layer_depth(layer_name)
+            if layer_depth is None:
+                print(f"[renderer] map layer {layer_name!r} has no depth mapping in "
+                      f"scripts/core/depth.py and will NOT be drawn. "
+                      f"Add it to MAP_DEPTH or rename the layer in Tiled.")
+                continue
+
+            self.layers.setdefault(layer_depth, [])
+            layer_surface = pygame.Surface((tmx_data.width * tmx_data.tilewidth,
+                                            tmx_data.height * tmx_data.tileheight),
+                                           pygame.SRCALPHA)
+            prepared = self.__make_tile_layer(layer_name, layer_depth, layer_surface,
+                                              tmx_data, layer_data).core_prepare()
+            self.layers[layer_depth].append(prepared)
 
     def image(self, image_in: Surface | None = None) -> Surface:
         if image_in:
