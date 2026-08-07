@@ -7,6 +7,7 @@ from scripts.core.event_manager import PyoneerEvent
 from scripts.core.game_object import PyoneerGameObject
 from scripts.core.event_types import GameEventType
 from scripts.core.component import GameComponent
+from scripts.core.log import trace_lifecycle
 
 
 class AsyncEventComponent(GameComponent):
@@ -17,6 +18,8 @@ class AsyncEventComponent(GameComponent):
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.active: bool = True
+        trace_lifecycle("buffered event component ready on %s",
+                        type(self.parent).__name__ if self.parent else "<unparented>")
         """On/Off switch for this component's input functionality."""
         self.accepts_inputs: bool = True
         """Accepts input events currently."""
