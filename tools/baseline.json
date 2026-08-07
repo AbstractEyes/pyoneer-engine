@@ -1,0 +1,54 @@
+{
+  "frames": 60,
+  "frame_hash": "bec3f3153713a6b2",
+  "frame_ms_median": 8,
+  "screen_size": [
+    1024,
+    768
+  ],
+  "ui_roots": [
+    "GameWindow@100"
+  ],
+  "ui_component_total": 113,
+  "ui_component_census": {
+    "Button": 17,
+    "Checkbox": 5,
+    "GameWindow": 1,
+    "KeyboardComponentAsync": 4,
+    "MouseComponentAsync": 26,
+    "Panel": 2,
+    "ScrollComponent": 4,
+    "ShapeComponent": 34,
+    "TextBox": 1,
+    "TextComponent": 19
+  },
+  "blit_tokens": 69,
+  "blit_depths": {
+    "10": 1,
+    "30": 1,
+    "40": 5,
+    "41": 1,
+    "50": 1,
+    "60": 1,
+    "100": 1,
+    "101": 6,
+    "102": 2,
+    "103": 13,
+    "104": 13,
+    "105": 16,
+    "106": 8
+  },
+  "renderer_layer_depths": [
+    10,
+    30,
+    40,
+    41,
+    50,
+    60,
+    100
+  ],
+  "entity_layer_counts": {
+    "40": 5,
+    "41": 1
+  }
+}

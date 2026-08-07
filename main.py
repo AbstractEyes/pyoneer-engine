@@ -41,10 +41,15 @@ from scripts.core.ui.widget.containers.window import GameWindow
 
 # houses the global game state
 class MainGame:
-    def __init__(self):
+    def __init__(self, autostart: bool = True):
         pygame.init()
         self.started = False
-        """Halts the current async threading processing for the main game loop."""
+        """Set while the main loop is running; clearing it stops the loop."""
+        self.frame: int = 0
+        """Frames completed since begin() was called."""
+        self._prev_time: int = 0
+        self._target_fps: float = 60.0
+        self._tick_rate: float = 60.0
         #self.factory: ComponentFactory = ComponentFactory()
         #self.factory.register("GameComponent", GameComponent)
         self.assets: CoreAssetManager | None = None
@@ -64,7 +69,8 @@ class MainGame:
         self.clock = pygame.time.Clock()
         self.prepare()
         self.build()
-        self.begin()
+        if autostart:
+            self.begin()
 
     def prepare(self):
         self.load_config()
@@ -200,72 +206,60 @@ class MainGame:
         pygame.quit()
         sys.exit()
 
-    def begin(self):
-        # Main loop
-        prev_time = pygame.time.get_ticks()
-        fps = float(self.assets.config.get('game', 'target_fps'))
-        tick_rate = float(self.assets.config.get('game', 'target_tick_rate'))
+    def begin(self, max_frames: int | None = None):
+        """Run the main loop.
+
+        max_frames bounds the run so the engine can be driven headlessly by
+        tools/smoke.py; None is the normal 'run until quit' game behaviour.
+        """
+        self._prev_time = pygame.time.get_ticks()
+        self._target_fps = float(self.assets.config.get('game', 'target_fps'))
+        self._tick_rate = float(self.assets.config.get('game', 'target_tick_rate'))
         self.scene.current_scene.begin()
-        while True:
-            current_time = pygame.time.get_ticks()
-            self.clock.tick(fps)
-            # print(clock.get_fps())
-            delta_time = (current_time - prev_time) / tick_rate  # Convert to seconds
-            prev_time = current_time
-            pygame.display.set_caption(f"Pyoneer - {int(self.clock.get_fps())}")
-            EventManager.update(delta_time)
-            self.input.update()
-            quit = EventManager.get(pygame.QUIT, False)
-            if quit is not None:
-                pass
-            if EventManager.get(pygame.QUIT, True):
-                self.quit()
+        self.started = True
+        while self.started:
+            self.tick()
+            self.frame += 1
+            if max_frames is not None and self.frame >= max_frames:
+                return
 
-            if ev := EventManager.get(pygame.KEYDOWN, False):
-                if isinstance(ev, pygame.event.Event):
-                    if ev.key == pygame.K_ESCAPE:
-                        self.quit()
-                    if ev.key == pygame.K_f:
-                        pass
-                        #self.test_ui_element.state.visible = not self.test_ui_element.state.visible
-                    if ev.key == pygame.K_LEFT:
-                        self.player.rotate(-10)
-                        #self.test_ui_element.move(-10, 0)
-                    if ev.key == pygame.K_RIGHT:
-                        self.player.rotate(10)
-                        #self.test_ui_element.move(10, 0)
-                    if ev.key == pygame.K_UP:
-                        pass
-                        #for element in self.test_elements:
-                        #    element.move(0, -10)
-                        #self.test_ui_element.move(0, -10)
-                    if ev.key == pygame.K_DOWN:
-                        pass
-                        #for element in self.test_elements:
-                        #    element.move(0, 10)
-                        #self.test_ui_element.move(0, 10)
+    def tick(self) -> float:
+        """Advance exactly one frame. Returns the delta time used."""
+        current_time = pygame.time.get_ticks()
+        self.clock.tick(self._target_fps)
+        delta_time = (current_time - self._prev_time) / self._tick_rate
+        self._prev_time = current_time
+        pygame.display.set_caption(f"Pyoneer - {int(self.clock.get_fps())}")
 
-            # Fixed time step update loop
-            # Game logic goes here
-            # Update game objects, physics, etc.
-            #self.player.update(delta_time)
-            #for player in self.test_players:
-            #    player.update(delta_time)
-            # check the players inputs for movement
-            #self.camera.update((0, 0))
-            #for element in self.test_elements:
-            #    element.update(delta_time)
-            #self.test_ui_element.update(delta_time)
-            # fill screen with black
-            self.scene.pre_update(delta_time)
-            self.scene.update(delta_time)
-            self.scene.post_update(delta_time)
-            self.screen.fill((0, 0, 0))
-            # renders the 2d game's layers
-            self.renderer.update(delta_time)
-            self.renderer.render()
-            pygame.display.flip()
-            # pygame.display.update()
+        EventManager.update(delta_time)
+        self.input.update()
+        self.handle_global_input()
+
+        self.scene.pre_update(delta_time)
+        self.scene.update(delta_time)
+        self.scene.post_update(delta_time)
+
+        self.screen.fill((0, 0, 0))
+        # renders the 2d game's layers. SceneManager.update already ran
+        # renderer.update for this frame; calling it again here only repeated
+        # the no-op Layer.core_update pass over every layer.
+        self.renderer.render()
+        pygame.display.flip()
+        return delta_time
+
+    def handle_global_input(self):
+        """Application-level keys, handled before the scene sees anything."""
+        if EventManager.get(pygame.QUIT, True):
+            self.quit()
+
+        if ev := EventManager.get(pygame.KEYDOWN, False):
+            if isinstance(ev, pygame.event.Event):
+                if ev.key == pygame.K_ESCAPE:
+                    self.quit()
+                if ev.key == pygame.K_LEFT:
+                    self.player.rotate(-10)
+                if ev.key == pygame.K_RIGHT:
+                    self.player.rotate(10)
 
 
 if __name__ == "__main__":
