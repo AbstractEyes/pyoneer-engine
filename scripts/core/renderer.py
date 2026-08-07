@@ -91,15 +91,29 @@ class EntityLayer(Layer):
         #            #self._image.blit(entity.image(), (x, y))
 
     def core_blits(self, event: Optional[PyoneerEvent] = None):
+        camera = event.data["camera"]
+        view = camera.view_area
         for entity in self.entities:
-            camera = event.data["camera"]
-            if camera.view_area.colliderect((entity.transform.position.x + (entity.core_image().get_width() / 2),
-                                            entity.transform.position.y + (entity.core_image().get_height() / 2),
-                                             entity.core_image().get_width(),
-                                             entity.core_image().get_height())):
-                x = entity.transform.position.x - camera.view_area.x
-                y = entity.transform.position.y - camera.view_area.y
-                BlitPool.blit_to_layer(depth=entity.depth + self.layer_depth, priority=entity.priority, image=entity.core_image(), destination=(x, y), sender=entity)
+            # One call. This used to invoke core_image() five times per entity
+            # per frame, and for an animated entity that is a dict lookup and
+            # a list index each time.
+            image = entity.core_image()
+            if image is None:
+                continue
+            # Cull against the sprite's true rect. The previous rect placed its
+            # ORIGIN at position + size/2 while the blit below draws at
+            # position, so the two disagreed by half a sprite: sprites popped
+            # out 22px early on the right edge and 32px early on the bottom,
+            # and off-screen sprites kept drawing for half a sprite past the
+            # left and top.
+            rect = image.get_rect(topleft=(entity.transform.position.x,
+                                           entity.transform.position.y))
+            if view.colliderect(rect):
+                BlitPool.blit_to_layer(depth=entity.depth + self.layer_depth,
+                                       priority=entity.priority,
+                                       image=image,
+                                       destination=(rect.x - view.x, rect.y - view.y),
+                                       sender=entity)
 
 
 class GameComponentLayer(Layer):

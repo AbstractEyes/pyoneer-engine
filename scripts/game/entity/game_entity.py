@@ -114,12 +114,18 @@ class GameAnimatedEntity(GameEntity):
         self.__started: bool = False
         self.__stopped: bool = False
 
-    def core_image(self, image_in: Surface = None) -> Surface:
-        # get the current animation frame
-        if self.animation:
-            return self.animation.image()
-        else:
-            return super().core_image()
+    def core_image(self, image_in: Surface = None) -> Surface | None:
+        """Current animation frame, falling back to the static image.
+
+        May return None when no animation is playing and no static image was
+        set; the render path skips entities with no image rather than
+        blitting a placeholder.
+        """
+        if self.animation is not None:
+            frame = self.animation.image()
+            if frame is not None:
+                return frame
+        return super().core_image()
 
     def core_update(self, event: Optional[PyoneerEvent] = None):
         super().core_update(event)

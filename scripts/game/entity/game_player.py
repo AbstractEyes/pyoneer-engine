@@ -47,10 +47,9 @@ class GamePlayer(GameAnimatedEntity):
     def core_build(self, event: Optional[PyoneerEvent] = None):
         pass
 
-    def core_image(self, image_in: pygame.Surface | None = None) -> pygame.Surface:
-        if self.animation is not None:
-            return self.animation.image()
-        return self._image
+    # core_image is inherited from GameAnimatedEntity; the override that used
+    # to live here was identical apart from returning self._image directly
+    # instead of going through super().
 
     def input_move(self, event: Optional[PyoneerEvent] = None):
         if event is None:
@@ -60,19 +59,22 @@ class GamePlayer(GameAnimatedEntity):
         last_moving = self.state.moving
         moving = False
         direction = "none"
-        if self.action_manager.pressed("up"):
+        # held(), not pressed(): movement is continuous while the key is down.
+        # This used to read pressed(), which only worked because pressed()
+        # latched True for the whole hold. pressed() is now a true rising edge.
+        if self.action_manager.held("up"):
             moving = True
             direction = "up"
             self.move_direction(delta_time, "up")
-        if self.action_manager.pressed("down"):
+        if self.action_manager.held("down"):
             moving = True
             direction = "down"
             self.move_direction(delta_time, "down")
-        if self.action_manager.pressed("left"):
+        if self.action_manager.held("left"):
             moving = True
             direction = "left"
             self.move_direction(delta_time, "left")
-        if self.action_manager.pressed("right"):
+        if self.action_manager.held("right"):
             moving = True
             direction = "right"
             self.move_direction(delta_time, "right")

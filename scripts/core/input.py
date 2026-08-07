@@ -38,8 +38,26 @@ CONTROLLER = {
     "back": 12, "start": 13
 }
 
+# Raw index aliases. config/inputs.json binds "gamepad:button_0", "button_1"
+# and "button_9", none of which existed in CONTROLLER -- those bindings were
+# silently dead. pygame's Joystick.get_button() takes a raw index anyway, so
+# button_N maps straight through.
+CONTROLLER.update({f"button_{i}": i for i in range(16)})
+
+
+class UnknownBindingError(KeyError):
+    """A config binding names a key or button this engine does not know."""
+
 
 class BaseAction:
+    """One named action ("left", "attack") and the inputs bound to it.
+
+    The three state flags are read once per frame by InputActionManager.update:
+        held     - the action is down right now (continuous)
+        pressed  - it went down on THIS frame only (rising edge)
+        released - it came up on THIS frame only (falling edge)
+    """
+
     def __init__(self, action_type: str, raw_input: list[str]):
         self.action_type = action_type
         # split and assign the input type and key
@@ -58,22 +76,67 @@ class InputActionManager(CoreAsset):
         self.keyboard = None
 
     def update(self):
+        """Sample every action once and derive this frame's edges.
+
+        Edges are derived by comparing the raw state against last frame's
+        `held`, which is the only way `released` can be a real falling edge.
+        The previous implementation guarded each flag behind its own value
+        (`if action and not action.released`), so `released` latched True on
+        the first frame and never cleared -- `released('pause')` fired every
+        frame from startup forever.
+        """
         if not self.config:
             return
         self.keyboard = pygame.key.get_pressed()
         for action in self.actions.values():
-            self._pressed(action.action_type)
-            self._released(action.action_type)
-            self._held(action.action_type)
+            down = self._is_down(action)
+            action.pressed = down and not action.held
+            action.released = action.held and not down
+            action.held = down
 
     def pressed(self, action_name: str) -> bool:
+        """True only on the frame the action went down. Use for menus, jumps."""
         return self.actions[action_name].pressed
 
     def released(self, action_name: str) -> bool:
+        """True only on the frame the action came up."""
         return self.actions[action_name].released
 
     def held(self, action_name: str) -> bool:
+        """True for every frame the action is down. Use for movement."""
         return self.actions[action_name].held
+
+    def _is_down(self, action: BaseAction) -> bool:
+        """True if ANY input bound to this action is currently down.
+
+        One scan per action per frame. The old _pressed/_released/_held trio
+        each re-called pygame.key.get_pressed() per binding, and _released
+        used `not pressed` per binding -- so with two bindings on one action,
+        holding either one reported the action as simultaneously held and
+        released, because the other binding was up.
+        """
+        for input_type, key in action.inputs:
+            if input_type in ("keyboard", "key"):
+                code = KEYBOARD.get(key)
+                if code is None:
+                    raise UnknownBindingError(
+                        f"action {action.action_type!r} binds unknown keyboard key {key!r}; "
+                        f"valid keys: {sorted(KEYBOARD)}"
+                    )
+                if self.keyboard[code]:
+                    return True
+            elif input_type in ("gamepad", "controller"):
+                if self.gamepad is None:
+                    continue
+                button = CONTROLLER.get(key)
+                if button is None:
+                    raise UnknownBindingError(
+                        f"action {action.action_type!r} binds unknown gamepad button {key!r}; "
+                        f"valid buttons: {sorted(CONTROLLER)}"
+                    )
+                if self.gamepad.get_button(button):
+                    return True
+        return False
 
     def prepare_inputs(self, rebind: dict | None = None) -> InputActionManager:
         if len(self.actions) > 0:
@@ -82,73 +145,41 @@ class InputActionManager(CoreAsset):
             self.config = rebind
         for action_name, action_input in self.config.items():
             self.actions[action_name] = BaseAction(action_name, action_input)
+        self.validate_bindings()
+        # Deliberately NOT sampling the keyboard here: prepare_inputs runs from
+        # CoreAssetManager.__init__, which main.py calls before
+        # pygame.display.set_mode(), and pygame.key.get_pressed() requires an
+        # initialized video mode. Every action starts held=False, so the first
+        # update() already computes correct edges without priming.
         return self
+
+    def validate_bindings(self):
+        """Fail loudly at load time on an unknown key or malformed binding.
+
+        Without this a typo in inputs.json surfaces as a TypeError deep in the
+        per-frame scan (`get_pressed()[None]`), or silently never fires.
+        """
+        for action in self.actions.values():
+            for input_type, key in action.inputs:
+                if input_type in ("keyboard", "key"):
+                    if key not in KEYBOARD:
+                        raise UnknownBindingError(
+                            f"action {action.action_type!r} binds unknown keyboard key {key!r}"
+                        )
+                elif input_type in ("gamepad", "controller"):
+                    if key not in CONTROLLER:
+                        raise UnknownBindingError(
+                            f"action {action.action_type!r} binds unknown gamepad button {key!r}"
+                        )
+                else:
+                    raise UnknownBindingError(
+                        f"action {action.action_type!r} uses unknown input type {input_type!r}; "
+                        f"expected one of: keyboard, key, gamepad, controller"
+                    )
 
     def set_gamepad(self):
         self.gamepad = pygame.joystick.Joystick(0)
         self.gamepad.init()
-
-    def _pressed(self, action_name: str) -> bool:
-        # get action dictionary
-        action = self.actions.get(action_name)
-        # check if the action is valid
-        if action and not action.pressed:
-            # check if the action is pressed
-            pressed = False
-            for input_type, key in action.inputs:
-                if input_type == "keyboard" or input_type == "key":
-                    if pygame.key.get_pressed()[KEYBOARD.get(key)]:
-                        pressed = True
-                elif input_type == "gamepad" or input_type == "controller":
-                    if self.gamepad and self.gamepad.get_button(CONTROLLER.get(key)):
-                        pressed = True
-            if pressed:
-                action.held = True
-                action.pressed = True
-                action.released = False
-            return pressed
-        return False
-
-    def _released(self, action_name : str) -> bool:
-        # get action dictionary
-        action = self.actions.get(action_name)
-        # check if the action is valid
-        if action and not action.released:
-            # check if the action is released
-            released = False
-            for input_type, key in action.inputs:
-                if input_type == "keyboard" or input_type == "key":
-                    if not pygame.key.get_pressed()[KEYBOARD.get(key)]:
-                        released = True
-                elif input_type == "gamepad" or input_type == "controller":
-                    if self.gamepad and not self.gamepad.get_button(CONTROLLER.get(key)):
-                        released = True
-            if released:
-                action.held = False
-                action.pressed = False
-                action.released = True
-            return released
-        return False
-
-    def _held(self, action_name : str) -> bool:
-        # get action dictionary
-        action = self.actions.get(action_name)
-        # check if the action is valid
-        if action and action.held:
-            # check if the action is held
-            held = False
-            for input_type, key in action.inputs:
-                if input_type == "keyboard" or input_type == "key":
-                    if pygame.key.get_pressed()[KEYBOARD.get(key)]:
-                        held = True
-                elif input_type == "gamepad" or input_type == "controller":
-                    if self.gamepad and self.gamepad.get_button(CONTROLLER.get(key)):
-                        held = True
-            if not held:
-                action.held = False
-                action.pressed = False
-            return held
-        return False
 
     def load_assets(self, name: str):
         pass
