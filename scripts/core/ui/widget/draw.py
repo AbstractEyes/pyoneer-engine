@@ -5,6 +5,7 @@ from pygame import Surface, surface, Vector2, Rect
 
 from scripts.game.game_camera import GameCamera
 from scripts.core.blitpool import BlitPool
+from scripts.core.viewclip import clip_to_view, Containment
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.event_types import GameEventType
 from scripts.core.component import GameComponent
@@ -28,6 +29,12 @@ class DrawComponent(GameComponent):
             self._image = Surface((clamped.width, clamped.height)).convert_alpha()
         self.draws = True
         """Whether the current object is drawn."""
+        self.last_containment: Containment = Containment.CONTAINED
+        """How much of this component was visible on the last frame drawn.
+
+        One of the three questions the blit revamp exists to answer:
+        OUTSIDE, PARTIAL or CONTAINED against the screen.
+        """
         self.is_view = False
         """Whether the current object's bounds are used as a viewport."""
         self.viewport_offset: Vector2 = view_offset if view_offset is not None else Vector2(0, 0)
@@ -79,38 +86,64 @@ class DrawComponent(GameComponent):
         if not self.visible:
             return
 
+        image = self.image
+        if image is None:
+            # A token carrying image=None fails much later inside pygame's
+            # blits() with nothing identifying which object queued it.
+            return
+
         viewport_component = self.get_viewport_component
 
         if viewport_component is not None:
             """After the rewrite of working bounds, we are to treat everything as though it's viewport working bounds are law."""
-            viewport_screen_bounds = viewport_component.working_area.copy()
-            #viewport_screen_bounds.topleft += viewport_component.offset
+            viewport_screen_bounds = viewport_component.working_area
             """x/y is an offset, width/height is a hard fixed width/height for the area"""
-            viewport_world_bounds = viewport_component.world_bounds.copy()
-            #viewport_world_bounds.topleft += viewport_component.offset
+            viewport_world_bounds = viewport_component.world_bounds
             """This is the viewport's representative bounds. Meant to be additively offset from the viewport's working area."""
-            world_bounds = self.world_bounds.copy()
-            #world_bounds.topleft += self.offset
+            world_bounds = self.world_bounds
             """This is the representative bounds from the world."""
             drawn_screen_section = world_bounds.clip(viewport_world_bounds)
-            # now we need to get the local drawn offset and width/height for blitting the image to the larger image
-            drawn_section = Rect(drawn_screen_section.x - world_bounds.x + viewport_screen_bounds.x,
-                                    drawn_screen_section.y - world_bounds.y + viewport_screen_bounds.y,
-                                    drawn_screen_section.width,
-                                    drawn_screen_section.height)
-
-            destination = Rect(drawn_screen_section.x,
-                                drawn_screen_section.y,
-                                drawn_screen_section.width,
-                                drawn_screen_section.height)
-
-
-            BlitPool.blit_to_layer(depth, priority, self.image, destination=(destination.x, destination.y), sender=self,
-                                   draw_area=drawn_section)
+            if drawn_screen_section.width <= 0 or drawn_screen_section.height <= 0:
+                # Entirely outside its own panel.
+                BlitPool.count_culled()
+                return
+            # Where in the SOURCE surface those visible pixels come from.
+            source_origin = (drawn_screen_section.x - world_bounds.x + viewport_screen_bounds.x,
+                             drawn_screen_section.y - world_bounds.y + viewport_screen_bounds.y)
         else:
-            # No viewport, draw to the whatever
-            BlitPool.blit_to_layer(depth, priority, self.image, destination=self.world_bounds, sender=self,
-                                   draw_area=self.image.get_rect())
+            drawn_screen_section = self.world_bounds
+            source_origin = (0, 0)
+
+        # Second clip, against the screen. The viewport clip above only asks
+        # "is this inside my panel" -- a panel can itself be off-screen, and
+        # a component with no viewport was never clipped at all. Measured:
+        # dragging the test window off the left edge left 51 of 63 tokens
+        # fully outside the screen, still built and still handed to SDL.
+        clip_region = None
+        if event is not None and event.data is not None:
+            clip_region = event.data.get("screen")
+
+        if clip_region is None:
+            # No clip supplied (a bare unit-test dispatch); draw unclipped
+            # rather than silently drawing nothing.
+            BlitPool.blit_to_layer(depth, priority, image,
+                                   destination=(drawn_screen_section.x, drawn_screen_section.y),
+                                   sender=self,
+                                   draw_area=Rect(source_origin[0], source_origin[1],
+                                                  drawn_screen_section.width,
+                                                  drawn_screen_section.height))
+            return
+
+        clipped = clip_to_view(drawn_screen_section, clip_region, source_origin)
+        if clipped is None:
+            BlitPool.count_culled()
+            return
+
+        self.last_containment = clipped.containment
+        BlitPool.blit_to_layer(depth, priority, image,
+                               destination=clipped.destination,
+                               sender=self,
+                               draw_area=clipped.source_area)
 
     #def __blits(self, event: Optional[PyoneerEvent] = None):
         #if not self.draws:

@@ -18,6 +18,7 @@ from scripts.game.game_camera import GameCamera
 from scripts.game.game_map import GameMap
 from scripts.core.depth import MAP_DEPTH, DEPTH, resolve_layer_depth
 from scripts.core.blitpool import BlitPool
+from scripts.core.viewclip import clip_to_view, containment, Containment
 from scripts.core.errors import (PyoneerBindTargetError, PyoneerCameraMissingError,
                                  PyoneerLayerError, warn_content)
 
@@ -107,12 +108,20 @@ class EntityLayer(Layer):
             # left and top.
             rect = image.get_rect(topleft=(entity.transform.position.x,
                                            entity.transform.position.y))
-            if view.colliderect(rect):
-                BlitPool.blit_to_layer(depth=entity.depth + self.layer_depth,
-                                       priority=entity.priority,
-                                       image=image,
-                                       destination=(rect.x - view.x, rect.y - view.y),
-                                       sender=entity)
+            # clip_to_view culls and clips in one step, so a sprite straddling
+            # the camera edge queues only the pixels that are actually inside
+            # rather than relying on pygame's blits() to trim it afterwards.
+            clipped = clip_to_view(rect, view)
+            if clipped is None:
+                BlitPool.count_culled()
+                continue
+            BlitPool.blit_to_layer(depth=entity.depth + self.layer_depth,
+                                   priority=entity.priority,
+                                   image=image,
+                                   destination=(clipped.destination[0] - view.x,
+                                                clipped.destination[1] - view.y),
+                                   draw_area=clipped.source_area,
+                                   sender=entity)
 
 
 class GameComponentLayer(Layer):
@@ -265,7 +274,17 @@ class LayerRenderer:
     def __deploy_blits(self):
         """Get the render layers."""
         # Camera offset
-        prepared_event = PyoneerEvent(GameEventType.BLITS, sender=self, data={"camera": self.camera})
+        prepared_event = PyoneerEvent(
+            GameEventType.BLITS,
+            sender=self,
+            data={
+                "camera": self.camera,
+                # UI lives in screen space and has no camera, but has the
+                # same "is any of this visible" problem. The screen rect is
+                # its clip region.
+                "screen": self._image.get_rect(),
+            },
+        )
         for layer_depth in sorted(self.layers.keys()):
             layer_list = self.layers[layer_depth]
             for layer in layer_list:

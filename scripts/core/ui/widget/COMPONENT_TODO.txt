@@ -1,0 +1,147 @@
+blit camera revamp;   DONE
+    currently;
+        each blit happens to draw whether or not the entity or ui component is within the camera's view space
+        strengths;
+            it's fast
+            easy to implement
+            efficient
+        weaknesses;
+            hard to manage visibility
+            has no logical way to determine if the object is fully contained or not due to the blits hierarchy
+            cannot determine the exact space of objects to draw
+
+    revamp;
+        the camera revamp will guarantee the exact pixel space of the images sent to the blits callbacks
+        by using the camera's position and size to determine the exact pixel bounds of the pyoneer objects
+        and then only drawing the object's exact pixel bounds that are within the camera's view space
+        strengths;
+            easy to manage visibility
+            can determine if the object is fully contained or not
+            can determine the exact space of objects to draw
+
+    X built as scripts/core/viewclip.py
+        X containment(target, clip) -> OUTSIDE | PARTIAL | CONTAINED
+        X clip_to_view(target, clip, source_origin) -> ClippedBlit | None
+            returns the destination AND the source sub-rect already reduced to
+            the pixels that land inside, or None when nothing does, so a caller
+            culls and clips from one call and cannot do one without the other
+        X wired into EntityLayer.core_render_blits   (clip = camera.view_area)
+        X wired into DrawComponent.__blits            (clip = screen rect)
+            the screen rect rides in the BLITS event beside "camera"; UI has no
+            camera but has the same problem, which is why the primitive is a
+            free function rather than a method on GameCamera
+        X DrawComponent.last_containment answers "fully visible?" per component
+        X BlitPool.count_culled() / .culled() so culling is observable rather
+          than silent; tools/smoke.py reports blit_culled per frame
+
+        measured on the shipped scene, window dragged off the left edge:
+            before   63 tokens queued, 51 of them fully off-screen
+            after    12 tokens queued,  0 off-screen, 51 culled
+        on-screen the count fell 63 -> 59 with an IDENTICAL frame_hash: those
+        4 were degenerate zero-area clips that drew nothing.
+
+        NOTE the Z-axis half of this section was already solved by the blit
+        pool's depth -> priority ordering; only the culling/containment half
+        was still open. Verified by tools/check_viewclip.py.
+
+    currently the hierarchy is too complicated to simply add a camera to the blits;
+        revamps necessary;
+            draw component;   DONE
+                draw component is the base class for all drawable objects
+                    currently it does not perform it's task correctly
+                    it should be the only class that can draw to the screen and should have managed draw calls only
+                    currently the concept is used here;
+                        entity
+                    X implemented in shape, text, image
+                        ShapeComponent, TextComponent, ImageComponent, Panel and
+                        TextBox all derive from DrawComponent, and DrawComponent
+                        is the only component-side blit caller.
+                    remaining; the Layer family (Layer / EntityLayer / MapLayer)
+                        still calls BlitPool directly. That is deliberate -- they
+                        are not components and do not belong in the component
+                        tree -- but it means there are two sanctioned draw
+                        callers, not one. Both now go through viewclip, so they
+                        share the clipping rule even though they do not share a
+                        base class.
+
+
+revamps;
+    static library concept;   DONE
+        currently the library is semi-dynamic and must be instantiated at runtime
+        future refactor for currently dynamic library is to have a single object that is the entire encompassing global library
+        each library will access this module for all necessary code and importations
+        X CoreAssetManager is a real singleton now: __init__ is guarded and
+          sealed, so `Config = CoreAssetManager()` at module scope is safe and
+          returns the same object with its tmx cache intact. reload() is the
+          only rebuild path. See docs/PLAN_SINGLETONS.md for the accessor
+          naming scheme that is still open.
+
+widgets;
+    X keyboard;
+        needs rewrite; currently only keydown/keyup/repeat events
+        still true -- see docs/PLAN_EVENT_SYSTEM.md, the four parallel listener
+        registries (callbacks / async_callbacks / mouse_listeners /
+        key_callbacks) collapse into one there
+    X mouse;
+        # rewritten; supports many more events and directly attaches to components
+        MOUSE_DRAG_BEGIN / MOUSE_DRAG_END are emitted but missing from
+        EVENT_TYPES, so bind_mouse_listener silently refuses them -- still open
+    X async expansion;
+        needs rewrite
+        it is not async: no `async def` or `await` anywhere in the widget tree.
+        It is a synchronous buffer filled on INPUTS and drained on UPDATE in the
+        same frame. Planned rename to BufferedEventComponent.
+    X label;
+    X textbox;
+        X keyboard capture: focusing a text box now suppresses gameplay input
+          (it used to walk the player around while you typed)
+    X button;
+    # icon;
+        # drawing a simple icon
+        not started; no IconComponent exists
+    popup menu;
+        not started
+        mouse;
+            right click opens attached menu
+
+    window; blocked until panel is complete
+        needs resize and move
+        X move    -- drag by the header, offset captured so it does not jump
+        X close   -- clears visible AND active; F1 reopens
+        resize    -- not started; needs a bounds-changed hook that reallocates
+                     child surfaces (see scroll, below, for the same gap)
+    panel;
+        grid; in progress
+            a functional grid lineup component for organization
+            GridComponent exists (15 methods) but has never executed: its only
+            referent is ListBoxComponent, which is itself never instantiated
+        scroll; in progress
+            X active space;
+                # contains an active space primarily for scrolling, visual, and interactive purposes
+            keyboard control;
+                blocked; active selection needs implementing
+                    directions; up, down, left, right
+            X mouse control; in progress
+                X clicks; left, right, middle
+                drag direction;
+                    drag from point A to B to scroll
+                    not started -- the thumb drags, the panel body does not
+            X scroll bar control
+                X click down on the thumb;
+                    X drag up or down to scroll
+                X click empty space in the bar;
+                    X scroll up or down one page
+                X click up or down arrow;
+                    X scroll up or down one line
+            KNOWN BUG: the thumb resizes logically but not visually. scroll.py
+            reassigns local_bounds while the Button's ShapeComponent keeps its
+            construction-time surface, so a 4000px document and a 210px one
+            show an identical thumb. Needs DrawComponent.resize().
+        blocking;
+            listbox
+
+
+
+    listbox:
+        a simple list or grid containing various simple components with text
+        not started; ListBoxComponent is a stub that has never run

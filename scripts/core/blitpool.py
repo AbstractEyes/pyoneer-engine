@@ -60,6 +60,14 @@ class BlitToken:
 ORGANIZED_BLITS: dict[int,dict[int,list[BlitToken]]] = {}
 """The more ordered blit pool, dedicated to ordered blitting based on specific prioritization."""
 
+CULLED_THIS_FRAME: int = 0
+"""Draws rejected before a token was built, because nothing was visible.
+
+Observability for the culling pass: without a count, "the frame looks right"
+cannot distinguish culling that works from culling that never ran.
+tools/smoke.py reports it per frame.
+"""
+
 
 class BlitPool:
     """global static access class for managing blits in a global manner."""
@@ -73,14 +81,26 @@ class BlitPool:
         return cop
 
     @staticmethod
+    def count_culled(n: int = 1):
+        """Record that a draw was rejected as fully outside its clip region."""
+        global CULLED_THIS_FRAME
+        CULLED_THIS_FRAME += n
+
+    @staticmethod
+    def culled() -> int:
+        return CULLED_THIS_FRAME
+
+    @staticmethod
     def get_blit_pool_pygame(clear: bool = True) -> list[tuple[Surface, tuple[int, int], Rect]]:
         global ORGANIZED_BLITS
+        global CULLED_THIS_FRAME
         blits = []
         for depth in sorted(ORGANIZED_BLITS.keys()):
             for priority in sorted(ORGANIZED_BLITS[depth].keys()):
                 for token in ORGANIZED_BLITS[depth][priority]:
                     blits.append(token.pygame_blit())
         if clear:
+            CULLED_THIS_FRAME = 0
             ORGANIZED_BLITS.clear()
         return blits
 

@@ -54,6 +54,7 @@ def run(frames: int) -> dict:
             int(d): sum(len(t) for t in pool[d].values()) for d in sorted(pool)
         }
         captured["tokens"] = sum(captured["depths"].values())
+        captured["culled"] = blitpool.BlitPool.culled()
         return original_flush(clear)
 
     blitpool.BlitPool.get_blit_pool_pygame = _spy
@@ -93,6 +94,7 @@ def run(frames: int) -> dict:
         "ui_component_total": sum(ui_census.values()),
         "ui_component_census": dict(sorted(ui_census.items())),
         "blit_tokens": captured.get("tokens"),
+        "blit_culled": captured.get("culled"),
         "blit_depths": captured.get("depths"),
         "renderer_layer_depths": sorted(
             int(d) for d in getattr(game.renderer, "layers", {})

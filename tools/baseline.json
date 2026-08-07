@@ -1,7 +1,7 @@
 {
   "frames": 60,
   "frame_hash": "bec3f3153713a6b2",
-  "frame_ms_median": 9,
+  "frame_ms_median": 8,
   "screen_size": [
     1024,
     768
@@ -22,7 +22,8 @@
     "TextBox": 1,
     "TextComponent": 19
   },
-  "blit_tokens": 63,
+  "blit_tokens": 59,
+  "blit_culled": 4,
   "blit_depths": {
     "1": 1,
     "10": 1,
@@ -33,9 +34,9 @@
     "55": 1,
     "60": 1,
     "100": 1,
-    "101": 6,
-    "102": 2,
-    "103": 13,
+    "101": 5,
+    "102": 1,
+    "103": 11,
     "104": 9,
     "105": 12,
     "106": 8

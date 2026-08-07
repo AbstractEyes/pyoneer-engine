@@ -17,6 +17,7 @@ CHECKS = [
     ("imports", "one dotted name per module; LayerRenderer.bind accepts subclasses"),
     ("errors", "exception hierarchy, naming schema, single image slot"),
     ("log", "trace channels off by default, opt-in, lazy formatting"),
+    ("viewclip", "exact-pixel clipping, containment, off-screen culling"),
     ("events", "consumption, active-gating, depth setter"),
     ("input", "edge detection, multi-binding, load-time validation"),
     ("animation", "sequence switching, pause/resume, pre-sliced frames"),
