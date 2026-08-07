@@ -1,0 +1,273 @@
+from __future__ import annotations
+
+import pygame
+import sys
+import scripts.core.event_manager as EventManager
+
+from pygame import Rect, Surface
+
+from scripts.core.game_object import PyoneerGameObject
+from scripts.core.renderer import LayerRenderer
+from scripts.core.scene.game_scene import GameScene
+from scripts.game.entity.game_entity import GameEntity
+from scripts.game.game_map import GameMap
+from scripts.game.game_camera import GameCamera
+from scripts.game.entity.game_player import GamePlayer
+
+from config.managers.core_asset_manager import CoreAssetManager
+from scripts.core.input import InputActionManager
+from scripts.core.scene.scene_manager import SceneManager
+from scripts.core.ui.deprecated.widget_drawable_group import WidgetDrawableGroup
+from component import GameComponent
+from scripts.core.ui.widget.containers.window import GameWindow
+
+#from widget.factory.component_factory import ComponentFactory
+
+"""
+    Conceptually; the game requires a map, a camera, and a player.
+    The camera must move based on the player's movement on the map.
+    The player must move based on the player's input.
+    The map must be rendered based on the camera's position.
+    The player must be rendered based on the camera's position.
+
+    Conceptually; this can be accomplished by:
+    1. Creating a map object.
+    2. Creating a camera object.
+    3. Creating a player object.
+    4. Binding the player to the map renderer
+
+
+"""
+
+
+# houses the global game state
+class MainGame:
+    def __init__(self):
+        pygame.init()
+        self.started = False
+        """Halts the current async threading processing for the main game loop."""
+        #self.factory: ComponentFactory = ComponentFactory()
+        #self.factory.register("GameComponent", GameComponent)
+        self.assets: CoreAssetManager | None = None
+        self.scene: SceneManager | None = None
+        self.screen: Surface | None = None
+        self.camera: GameCamera | None = None
+        self.renderer: LayerRenderer | None = None
+        self.player: GamePlayer | None = None
+        #self.test_entity = None
+        self.input: InputActionManager | None = None
+        #self.test_ui_element: WidgetDrawableGroup | None = None
+        #self.test_ui_element2: WidgetDrawableGroup | None = None
+        #self.test_elements: list[WidgetDrawableGroup] = []
+        #self.test_players: list[GamePlayer] = []
+        # Initialization
+        pygame.display.set_caption("Pyoneer")
+        self.clock = pygame.time.Clock()
+        self.prepare()
+        self.build()
+        self.begin()
+
+    def prepare(self):
+        self.load_config()
+        self.load_renderer()
+        self.prepare_test_scene()
+
+    def build(self):
+        self.scene.current_scene.core_build()
+
+    def prepare_test_scene(self):
+        self.scene = SceneManager(self)
+        game_camera, game_map = self.load_map()
+        self.scene.add_scene("test", GameScene("test"))
+        self.scene.set_scene("test")
+        self.scene.bind("renderer", self.renderer)
+        self.scene.bind("camera", game_camera)
+        self.scene.bind("MAP", game_map)
+        test_objects = self.load_test_objects()
+        for obj in test_objects:
+            self.scene.bind(obj[0], obj[1])
+        self.scene.current_scene.core_pre_prepare()
+        self.scene.current_scene.core_prepare()
+        self.scene.current_scene.core_post_prepare()
+
+    def load_map(self) -> tuple[GameCamera, GameMap]:
+        map_data = self.assets.maps.load_assets("test")
+        camera = GameCamera(pygame.Vector2(self.screen.get_width(), self.screen.get_height()),
+                            pygame.Rect(0, 0, map_data.tilewidth * map_data.width, map_data.tileheight * map_data.height),
+                            scale=1)
+        return camera, GameMap(map_data)
+
+    def load_test_objects(self):
+        bindable_objects: list[tuple[str | int,
+                                     PyoneerGameObject | GameEntity | GamePlayer | WidgetDrawableGroup | GameComponent]] = []
+        for i in range(0, 5):
+            bindable_objects.append( (40, GamePlayer(input_=None,
+                                                movement_config=self.assets.config.get('entity').get('default'),
+                                                animation_config=self.assets.animations.get('entity'))) )
+            bindable_objects[i][1].moveto((200 + i * 5, 200 + i * 5))
+            bindable_objects[i][1].state.can_move = False
+            #self.renderer.__bind_entity(self.test_players[i], f"ENTITY_2")
+        player = GamePlayer(input_=self.input,
+                            movement_config=self.assets.config.get('entity').get('default'),
+                            animation_config=self.assets.animations.get('entity'))
+        player.moveto((200, 200))
+        player.state.can_move = True
+        bindable_objects.append((41, player))
+        self.player = player
+        self.scene.camera.attach_target(player)
+        #self.renderer.__bind_entity(self.player, "ENTITY_1")
+        #self.camera.attach_target(bindable_objects[-1])
+        #for i in range(0, 5):
+            #bindable_objects.append( (100,
+            #    WidgetDrawableGroup(state=WidgetStateInteractive(
+            #    bounds=Rect(100 + i, 100 + i, 50, 50),
+            #    background=WidgetColor(0, 255, 0, 255),
+            #    visible=True,
+            #    active=True,
+            #    alpha=0.5
+            #))) )
+            #self.renderer.__bind_ui(self.test_elements[i], f"UI_LAYER_1")
+
+        #component_container = WidgetContainer()
+        #background_component = BackgroundComponent(
+        #    bounds=Rect(500, 500, 200, 200),
+        #    background_color=WidgetColor(0, 0, 0, 255, 1),
+        #)
+        #text_component = TextComponent(
+        #    bounds=Rect(55, 0, 200, 200),
+        #    text_shadow_visible=True,
+        #    text_shadow_color=WidgetColor(55, 55, 0, 125, 1),
+        #    text_color=WidgetColor(255, 255, 255, 255, 1),
+        #    text_shadow_offset=pygame.Vector2(12, 5),
+        #    text="Hello World!",
+        #)
+        #text_box = TextBox("", True, bounds=Rect(444, 444, 400, 50))
+        #component_container.bind_component("background1", background_component)
+        #component_container.bind_component("text1", text_component)
+        #component_container.bind_component("textbox1", text_box)
+        #bindable_objects.append((101, text_box))
+        window = GameWindow(header_text="Test Window", bounds=Rect(100, 100, 400, 400))
+        self.scene.bind("UI_LAYER_1", window)
+        return bindable_objects
+
+    def load_config(self):
+        self.assets = CoreAssetManager()
+        self.input = self.assets.inputs
+        # more config loading happens here in the future
+
+    def load_renderer(self):
+        bounds = self.assets.config.get('theme').get("window")["bounds"]
+        self.screen = pygame.display.set_mode((bounds[2], bounds[3]))
+        self.renderer: LayerRenderer = LayerRenderer(self.screen)
+        #for i in range(0, 1000):
+        #    self.test_players.append(GamePlayer(input_=None,
+        #                                        movement_config=self.assets.config.get('entity').get('default'),
+        #                                        animation_config=self.assets.animations.get('entity')))
+        #    self.test_players[i].moveto((200 + i * 5, 200 + i * 5))
+        #    self.test_players[i].state.can_move = False
+        #    self.renderer.bind_entity(self.test_players[i], f"ENTITY_2")
+        #self.player = GamePlayer(input_=self.input,
+        #                         movement_config=self.assets.config.get('entity').get('default'),
+        #                         animation_config=self.assets.animations.get('entity'))
+        #self.player.moveto((200, 200))
+        #self.renderer.bind_entity(self.player, "ENTITY_1")
+        #self.camera.attach_target(self.player)
+        #for i in range(0, 200):
+        #    self.test_elements.append(WidgetDrawableGroup(state=WidgetStateInteractive(
+        #        bounds=Rect(100 + i, 100 + i, 50, 50),
+        #        background=WidgetColor(0, 255, 0, 255),
+        #        visible=True,
+        #        active=True,
+        #        alpha=0.5
+        #    )))
+        #    self.renderer.bind_ui(self.test_elements[i], f"UI_LAYER_1")
+        #state = WidgetStateInteractive(
+        #    bounds=Rect(100, 100, 400, 400),
+        #    visible=True,
+        #    active=True,
+        #    alpha=0.5
+        #)
+        #self.test_ui_element: WidgetDrawableGroup = WidgetDrawableGroup(state=state)
+        #self.test_ui_element.add_child(WidgetDrawableGroup(state=WidgetStateInteractive(
+        #    bounds=Rect(150, 150, 100, 100),
+        #    background=WidgetColor(0, 255, 0, 255),
+        #    visible=True,
+        #    active=True,
+        #    alpha=0.5
+        #)))
+        #self.layer_renderer.bind_ui(self.test_ui_element, "UI_LAYER_1")
+
+    def quit(self):
+        pygame.quit()
+        sys.exit()
+
+    def begin(self):
+        # Main loop
+        prev_time = pygame.time.get_ticks()
+        fps = float(self.assets.config.get('game', 'target_fps'))
+        tick_rate = float(self.assets.config.get('game', 'target_tick_rate'))
+        self.scene.current_scene.begin()
+        while True:
+            current_time = pygame.time.get_ticks()
+            self.clock.tick(fps)
+            # print(clock.get_fps())
+            delta_time = (current_time - prev_time) / tick_rate  # Convert to seconds
+            prev_time = current_time
+            pygame.display.set_caption(f"Pyoneer - {int(self.clock.get_fps())}")
+            EventManager.update(delta_time)
+            self.input.update()
+            quit = EventManager.get(pygame.QUIT, False)
+            if quit is not None:
+                pass
+            if EventManager.get(pygame.QUIT, True):
+                self.quit()
+
+            if ev := EventManager.get(pygame.KEYDOWN, False):
+                if isinstance(ev, pygame.event.Event):
+                    if ev.key == pygame.K_ESCAPE:
+                        self.quit()
+                    if ev.key == pygame.K_f:
+                        pass
+                        #self.test_ui_element.state.visible = not self.test_ui_element.state.visible
+                    if ev.key == pygame.K_LEFT:
+                        self.player.rotate(-10)
+                        #self.test_ui_element.move(-10, 0)
+                    if ev.key == pygame.K_RIGHT:
+                        self.player.rotate(10)
+                        #self.test_ui_element.move(10, 0)
+                    if ev.key == pygame.K_UP:
+                        pass
+                        #for element in self.test_elements:
+                        #    element.move(0, -10)
+                        #self.test_ui_element.move(0, -10)
+                    if ev.key == pygame.K_DOWN:
+                        pass
+                        #for element in self.test_elements:
+                        #    element.move(0, 10)
+                        #self.test_ui_element.move(0, 10)
+
+            # Fixed time step update loop
+            # Game logic goes here
+            # Update game objects, physics, etc.
+            #self.player.update(delta_time)
+            #for player in self.test_players:
+            #    player.update(delta_time)
+            # check the players inputs for movement
+            #self.camera.update((0, 0))
+            #for element in self.test_elements:
+            #    element.update(delta_time)
+            #self.test_ui_element.update(delta_time)
+            # fill screen with black
+            self.scene.pre_update(delta_time)
+            self.scene.update(delta_time)
+            self.scene.post_update(delta_time)
+            self.screen.fill((0, 0, 0))
+            # renders the 2d game's layers
+            self.renderer.update(delta_time)
+            self.renderer.render()
+            pygame.display.flip()
+            # pygame.display.update()
+
+
+if __name__ == "__main__":
+    main = MainGame()

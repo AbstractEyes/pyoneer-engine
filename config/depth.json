@@ -1,0 +1,18 @@
+{
+  "ui": [
+    {
+      "name": "UI_LAYER_1",
+      "depth": 1000
+    }
+  ],
+  "entity": [
+    {
+      "name": "enemy",
+      "depth": 40
+    },
+    {
+      "name": "player",
+      "depth": 40
+    }
+  ]
+}

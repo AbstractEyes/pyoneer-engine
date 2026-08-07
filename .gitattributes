@@ -1,0 +1,42 @@
+# Normalize line endings so the repo stays clean across Windows and macOS.
+# Without this, every file touched on the other machine shows up as a
+# whole-file diff. Text is stored LF in git and checked out native.
+* text=auto
+
+# Explicit text types
+*.py      text diff=python
+*.md      text
+*.json    text
+*.txt     text
+*.cfg     text
+*.toml    text
+*.yml     text
+*.yaml    text
+*.xml     text
+*.tmx     text
+*.tsx     text
+*.iml     text
+
+# Windows-only launchers must keep CRLF or cmd.exe can misparse them
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# Shell scripts must keep LF even when checked out on Windows
+*.sh      text eol=lf
+
+# Binary assets - never touch, never diff
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.bmp     binary
+*.psd     binary
+*.pdn     binary
+*.xcf     binary
+*.sai     binary
+*.xnb     binary
+*.ogg     binary
+*.wav     binary
+*.mp3     binary
+*.ttf     binary
+*.otf     binary

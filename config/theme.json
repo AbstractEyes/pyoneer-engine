@@ -1,0 +1,100 @@
+{
+  "window": {
+    "bounds": [100, 100, 1024, 768],
+    "background": [255, 255, 255, 255]
+  },
+  "input": {
+    "keyboard": {
+      "settings": [3, 4, 6, 7],
+      "timings": {
+        "key_repeat_delay": 4
+      }
+    }
+  },
+  "header": {
+    "1": {
+      "text": "Header 1",
+      "font": {
+        "font_type": "comic",
+        "size": 24,
+        "color": [0, 0, 0, 255, 1],
+        "shadow_color": [128, 128, 128, 255, 1],
+        "shadow_visible": true,
+        "shadow_offset": [1, 1],
+        "bold": false,
+        "italic": false,
+        "underline": false
+      }
+    }
+  },
+  "widget": {
+    "font": {
+      "font_type": "comic",
+      "size": 16,
+      "color": [0, 0, 0, 255, 1],
+      "shadow_color": [128, 128, 128, 255, 1],
+      "shadow_visible": true,
+      "shadow_offset": [1, 1],
+      "offset": [0, 0],
+      "bold": false,
+      "italic": false,
+      "underline": false,
+      "center": false
+    },
+    "background": {
+      "color": [0, 128, 255, 255, 1],
+      "border_color": [0, 0, 0, 255, 1],
+      "border_thickness": [1, 1, 1, 1],
+      "visible": true,
+      "border_visible": true,
+      "background_visible": true
+    },
+    "button": {
+      "background_color": [0, 128, 255, 255, 1],
+      "border_color": [0, 0, 0, 255, 1],
+      "border_thickness": [1, 1, 1, 1],
+      "text_color": [0, 0, 0, 255, 1],
+      "text_shadow_color": [128, 128, 128, 255, 1],
+      "font_shadow_visible": true,
+      "font_shadow_offset": [1, 1],
+      "font_size": 16,
+      "center_text": true
+    },
+    "textbox": {
+      "carat": {
+        "text":"█",
+        "delay": 10,
+        "active_visible": true,
+        "inactive_visible": false
+      },
+      "color": [0, 128, 255, 255, 1],
+      "border_color": [0, 0, 0, 255, 1],
+      "border_thickness": [1, 1, 1, 1]
+    },
+    "window": {
+      "body": {
+        "color": [30, 31, 34, 255, 1],
+        "border_color": [50, 51, 54, 255, 1],
+        "border_thickness": [2, 2, 2, 2]
+      },
+      "title": {
+        "height": 24,
+        "font_size": 16,
+        "text_color": [220, 223, 225, 255, 1],
+        "text_shadow_color": [44, 48, 53, 255, 1],
+        "text_shadow_visible": true,
+        "text_shadow_offset": [2, 2],
+        "color": [60, 63, 65, 255, 1],
+        "border_color": [100, 103, 105, 255, 1],
+        "border_thickness": [1, 1, 1, 1]
+      },
+      "close_button": {
+        "font_size": 30,
+        "center_text": true,
+        "color": [255, 0, 0, 255, 1],
+        "border_color": [0, 0, 0, 255, 1],
+        "border_thickness": [1, 1, 1, 1]
+      }
+    }
+  }
+}

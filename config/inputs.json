@@ -1,0 +1,9 @@
+{
+    "left": ["keyboard:a", "gamepad:left"],
+    "right": ["keyboard:d", "gamepad:right"],
+    "up": ["keyboard:w", "gamepad:up"],
+    "down": ["keyboard:s", "gamepad:down"],
+    "action": ["keyboard:space", "gamepad:button_0"],
+    "attack": ["keyboard:left_shift", "gamepad:button_1"],
+    "pause": ["keyboard:escape", "gamepad:button_9"]
+}

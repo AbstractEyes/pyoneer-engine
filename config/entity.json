@@ -1,0 +1,20 @@
+{
+    "default": {
+        "animations": {
+            "body": "entity"
+        },
+        "movement":{
+            "move_speed" : 20,
+            "sprint_mult": 2
+        }
+    },
+    "player": {
+        "animations": {
+            "body": "entity"
+        },
+        "movement":{
+            "move_speed" : 20,
+            "sprint_mult": 2
+        }
+    }
+}

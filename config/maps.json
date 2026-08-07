@@ -1,0 +1,23 @@
+{
+  "layers": {
+    "Parallax": 0,
+    "Floor": 10,
+    "ENTITY_1": 20,
+    "GroundClutter": 30,
+    "ENTITY_2": 40,
+    "PlayerDepth": 50,
+    "Foreground": 60,
+    "ENTITY_3": 70,
+    "FOREGROUND_1": 80,
+    "FOREGROUND_2": 90,
+    "UI_LAYER_1": 100
+  },
+  "data": [
+    {
+      "name": "test",
+      "identifier": "test",
+      "file": "data/maps/test.tmx"
+    }
+
+  ]
+}

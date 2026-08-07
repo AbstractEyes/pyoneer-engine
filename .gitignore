@@ -1,0 +1,114 @@
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+# The historical venv names are taken from the excludeFolder list in
+# .idea/Pyoneer.iml, so old checkouts stay clean too.
+.venv/
+venv/
+venv12/
+12venv/
+venvMac/
+env/
+ENV/
+pyvenv.cfg
+
+# Packaging / distribution
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# ---------------------------------------------------------------------------
+# Pyoneer generated output
+# ---------------------------------------------------------------------------
+# scripts/tests/*.py write rendered surfaces here; regenerated on every run.
+scripts/tests/output/
+
+# Runtime artifacts
+*.log
+*.prof
+*.lprof
+saves/
+screenshots/
+
+# ---------------------------------------------------------------------------
+# PyCharm
+# ---------------------------------------------------------------------------
+# .idea/ is deliberately NOT ignored wholesale. Pyoneer relies on the
+# sourceFolder entries in .idea/Pyoneer.iml to put scripts/core, scripts/game,
+# config/, etc. on sys.path -- that is what makes the bare imports
+# ("from component import GameComponent", "from event_types import ...")
+# resolve. The .iml is build configuration, not editor preference, so it is
+# tracked. Only the per-developer machine state is ignored below.
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries/
+.idea/shelf/
+.idea/httpRequests/
+.idea/dataSources/
+.idea/dataSources.local.xml
+.idea/**/sonarlint/
+.idea/copilot/
+.idea/copilot.data.migration.*.xml
+*.iws
+
+# Other editors
+.vscode/
+*.sublime-workspace
+*.swp
+*~
+
+# ---------------------------------------------------------------------------
+# Dropbox
+# ---------------------------------------------------------------------------
+# The working tree lives inside Dropbox, which drops sync metadata into every
+# folder and forks files it cannot merge. Neither belongs in history.
+desktop.ini
+.dropbox
+.dropbox.attr
+.dropbox.cache
+*conflicted copy*
+*Conflicted Copy*
+
+# ---------------------------------------------------------------------------
+# OS
+# ---------------------------------------------------------------------------
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+Icon?
+
+# ---------------------------------------------------------------------------
+# Optional: art source & foreign engine files
+# ---------------------------------------------------------------------------
+# ~17 MB of files under data/graphics/ that the pygame runtime never loads:
+# layered art sources (.psd/.pdn/.xcf) and leftover XNA/MonoGame content-
+# pipeline artifacts (.xnb/.mgcontent). The exported .png sprites are what the
+# engine actually reads. Uncomment to keep them out of the repo -- but move
+# them somewhere safe first, since they are the editable originals.
+#*.psd
+#*.pdn
+#*.xcf
+#*.sai
+#*.xnb
+#*.mgcontent
