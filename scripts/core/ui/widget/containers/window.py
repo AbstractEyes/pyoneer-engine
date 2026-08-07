@@ -208,22 +208,21 @@ class GameWindow(GameComponent):
             self.flags["prepared_window"] = True
 
     def __event_mouse_down_within_header(self, event: PyoneerEvent):
-        # when the mouse is clicked within the header
-        if (self.header_visible and self.clickable and self.movable
-                and not self.dragging_component and event.event.button == pygame.BUTTON_LEFT):
-            if self.header_bar.world_bounds.collidepoint(event.event.pos):
-                if self.close_button.world_bounds.collidepoint(event.event.pos):
-                    print("close button collided wih click")
-                    return
-                print("header collided without any issues, no close button clicked")
-                # header is clicked, lets see if we're dragging.
-                self.dragging_component = True
-                # capture the relative position of the mouse from the world bounds position of the full window.
-                self.dragging_offset = Vector2(event.event.pos) - self.world_bounds.topleft
-                pass
-            else:
-                self.dragging_component = False  # potential fail state check for early debugging
-                self.dragging_offset = None
+        """Begin a drag if the press landed on the header, but not on a button."""
+        if not (self.header_visible and self.clickable and self.movable):
+            return
+        if self.dragging_component or event.event.button != pygame.BUTTON_LEFT:
+            return
+        if not self.header_bar.world_bounds.collidepoint(event.event.pos):
+            self.__end_drag()
+            return
+        if self.close_button.world_bounds.collidepoint(event.event.pos):
+            # The close button owns this press; do not start dragging.
+            return
+        self.dragging_component = True
+        # Grab offset from the press to the window's top-left, so the window
+        # does not jump to the cursor on the first drag frame.
+        self.dragging_offset = Vector2(event.event.pos) - Vector2(self.world_bounds.topleft)
 
     def top_widget_at_position(self, pos: Vector2,
                                exceptions: list[GameComponent] = []) -> Optional[PyoneerGameObject]:
@@ -238,36 +237,26 @@ class GameWindow(GameComponent):
                 top_widget = self.header_bar
         return top_widget
 
+    def __end_drag(self):
+        """Clear drag state. The offset resets to zero, not None.
+
+        It used to be set to None on drag end and on a failed press, while
+        __event_mouse_dragging_window subtracted it unguarded - so any
+        MOUSE_DRAGGING that arrived while not dragging raised
+        `TypeError: unsupported operand type(s) for -: 'Vector2' and 'NoneType'`.
+        """
+        self.dragging_component = False
+        self.dragging_offset = Vector2(0, 0)
+
     def __event_mouse_up_dropping_window(self, event: PyoneerEvent):
-        if self.movable and self.dragging_component:
-            self.dragging_component = False
-            self.dragging_offset = None
+        if self.dragging_component:
+            self.__end_drag()
 
     def __event_mouse_dragging_window(self, event: PyoneerEvent):
-        if self.dragging_component:
-            val = Vector2(event.event.pos) - self.dragging_offset
-            self.move(val.x, val.y)
-
-    # -------------------------------------------------
-    # use test functionality
-    # -------------------------------------------------
-
-    def __move_left(self, event_: PyoneerEvent):
-        self.move(self.world_bounds.x - 10, self.world_bounds.y)
-
-    def __move_right(self, event_: PyoneerEvent):
-        self.move(self.world_bounds.x + 10, self.world_bounds.y)
-
-    def __move_up(self, event_: PyoneerEvent):
-        self.move(self.world_bounds.x, self.world_bounds.y - 10)
-
-    def __move_down(self, event_: PyoneerEvent):
-        self.move(self.world_bounds.x, self.world_bounds.y + 10)
-
-    def __mouse_entered(self, data: PyoneerEvent):
-        if self.clickable:
-            self.body.background_color = WidgetColor(40, 41, 44, 255, 1)
-            self.header_bar.background_color = WidgetColor(70, 73, 75, 255, 1)
+        if not self.dragging_component or not self.movable:
+            return
+        target = Vector2(event.event.pos) - self.dragging_offset
+        self.move(target.x, target.y)
 
     def __event__mouse_clicked_inside(self, event_: PyoneerEvent):
         """Resolve which descendant was clicked and move focus to it.
@@ -331,9 +320,6 @@ class GameWindow(GameComponent):
         self.visible = False
         self.active = False
         self.set_focus(None)
-
-    def __mouse_up(self, event_: pygame.event.Event):
-        pass
 
 
 
