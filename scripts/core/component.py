@@ -15,6 +15,25 @@ from config.managers.core_asset_manager import CoreAssetManager
 
 Config = CoreAssetManager()
 
+INPUT_EVENT_TYPES: frozenset[GameEventType] = frozenset({
+    GameEventType.INPUTS,
+    GameEventType.MOUSE_MOTION, GameEventType.MOUSE_DOWN, GameEventType.MOUSE_UP,
+    GameEventType.MOUSE_SCROLL, GameEventType.MOUSE_CLICK, GameEventType.MOUSE_DOUBLE_CLICK,
+    GameEventType.MOUSE_DOWN_INSIDE, GameEventType.MOUSE_UP_INSIDE,
+    GameEventType.MOUSE_DOWN_OUTSIDE, GameEventType.MOUSE_UP_OUTSIDE,
+    GameEventType.MOUSE_DRAGGING, GameEventType.MOUSE_DRAG_BEGIN, GameEventType.MOUSE_DRAG_END,
+    GameEventType.MOUSE_CLICK_INSIDE, GameEventType.MOUSE_DOUBLE_CLICK_INSIDE,
+    GameEventType.MOUSE_ENTER, GameEventType.MOUSE_LEAVE,
+    GameEventType.KEY_DOWN, GameEventType.KEY_UP, GameEventType.KEY_REPEAT,
+    GameEventType.GAMEPAD_BUTTON_PRESSED, GameEventType.GAMEPAD_BUTTON_RELEASED,
+    GameEventType.GAMEPAD_BUTTON_HELD, GameEventType.GAMEPAD_AXIS, GameEventType.GAMEPAD_HAT,
+})
+"""Event types gated by `GameComponent.active`.
+
+Lifecycle events (PREPARE, UPDATE, BLITS, DISPOSE...) are deliberately NOT
+in here: a disabled component must still lay out, draw and tear down.
+"""
+
 
 # The component components are the building blocks of the deprecated.
 class GameComponent(PyoneerGameObject, ABC):
@@ -51,7 +70,7 @@ class GameComponent(PyoneerGameObject, ABC):
                  working_area: Rect | None = None,
                  visible: bool = True,
                  focused: bool = False,
-                 active: bool = False,
+                 active: bool = True,
                  clickable: bool = False,
                  draggable: bool = True,
                  *args, **kwargs):
@@ -75,13 +94,33 @@ class GameComponent(PyoneerGameObject, ABC):
         self.is_view: bool = False
         """The view state of the component, used for rendering positioning."""
         self.visible: bool = visible
-        """The visibility state of the component, used for rendering."""
+        """Whether the component is DRAWN. Rendering only.
+
+        Deliberately not consulted by the event path: a window can be hidden
+        and still live, and hiding it must not silently disable it. Use
+        `active` to disable a subtree.
+        """
         self.focused: bool = focused
-        """The focus state of the component, used for event handling."""
+        """Whether this component holds keyboard focus.
+
+        This is the flag a click-to-focus widget sets. `active` used to be
+        overloaded for it by GameWindow and TextBox, which conflicted with
+        `active` meaning "enabled" here.
+        """
         self.active: bool = active
-        """The active state of the component, used for event handling."""
+        """Whether the component participates in input dispatch.
+
+        Defaults True. Setting it False skips this component AND its subtree
+        for input-class events, while leaving rendering untouched.
+        """
         self.clickable: bool = clickable
         """A manually allocated clickable flag for the component."""
+        self.focusable: bool = False
+        """Whether this component can take keyboard focus when clicked.
+
+        Text entry sets this; decorative components leave it False so a click
+        on a label does not steal focus from the field next to it.
+        """
         self.draggable: bool = draggable
         """A manually allocated draggable flag for the component."""
         # ---------------------------------------------------------------------------------------- #
@@ -146,10 +185,25 @@ class GameComponent(PyoneerGameObject, ABC):
 
     @property
     def depth(self) -> int:
+        """This component's depth, accumulated through the parent chain."""
         depth_ = super().depth
         if self.__parent is not None:
             depth_ += self.__parent.depth
         return depth_
+
+    @depth.setter
+    def depth(self, value: int) -> None:
+        """Set this component's OWN depth contribution.
+
+        Redefining `depth` as a property here replaced the whole property
+        object inherited from PyoneerGameObject, taking its setter with it --
+        so `component.depth = 5` raised
+        `AttributeError: property 'depth' of 'X' object has no setter`.
+        Every component was depth-immutable after construction, which made
+        raising a window to the front impossible, while the identical
+        assignment kept working on entities (they do not override it).
+        """
+        PyoneerGameObject.depth.fset(self, value)
 
     @property
     def parent(self) -> GameComponent | None:
@@ -508,16 +562,46 @@ class GameComponent(PyoneerGameObject, ABC):
         return False
 
     def __send_event(self, typ: GameEventType, event: Optional[PyoneerEvent], *args, **kwargs):
+        # An already-consumed event stops here. Previously `handled` only
+        # broke out of the local callback loop and the fan-out below ran
+        # unconditionally, so mark_event_handled() could not actually consume
+        # anything: a click on a window's close button was still delivered to
+        # every sibling and every descendant.
+        if event is not None and event.handled and not event.trickle:
+            return
+
+        # Input is gated on `active`, never on `visible`. A hidden but active
+        # window still receives and can consume input; that is deliberate.
+        # `active` is False only when a subtree has been explicitly disabled.
+        if typ in INPUT_EVENT_TYPES and not self.accepts_input:
+            return
+
         if self.__has_callback(typ):
             for callback in self.__get_callback(typ):
                 callback(event, *args, **kwargs)
-                if event.handled:
-                    break
+                if event is not None and event.handled and not event.trickle:
+                    return
         self.send_event_to_children_advanced(event_type=typ, event=event, *args, **kwargs)
 
+    @property
+    def accepts_input(self) -> bool:
+        """Whether input-class events reach this component and its children.
+
+        Override to add conditions; do not fold `visible` in here.
+        """
+        return self.active
+
+    @property
+    def accepts_focus(self) -> bool:
+        """Whether clicking this component should move keyboard focus to it."""
+        return self.focusable and self.active
+
     def __get_callback(self, typ: GameEventType):
+        # Snapshot: a handler that unbinds itself (or a sibling listener)
+        # mutates self.callbacks[typ] mid-iteration, which silently skipped
+        # the NEXT listener in the list.
         if self.__has_callback(typ):
-            for callback in self.callbacks[typ]:
+            for callback in tuple(self.callbacks[typ]):
                 yield callback
 
     def __create_event(self, event_type: GameEventType, data: PyoneerEvent | dict, sender: GameComponent | None = None) -> PyoneerEvent:
@@ -576,9 +660,18 @@ class GameComponent(PyoneerGameObject, ABC):
             return self.__send_event(e_type, event__, *args, **kwargs)
 
     def send_event_to_children_advanced(self, event_type: GameEventType = None, event: Optional[PyoneerEvent] = None, *args, **kwargs):
-        """Send an event to all children of the component."""
+        """Send an event to all children of the component.
+
+        Iterates a snapshot: a handler that binds or unbinds a component --
+        closing a window, spawning a dialog, removing a list row -- mutates
+        self.components mid-dispatch, which raised
+        `RuntimeError: dictionary changed size during iteration`.
+        """
         output = {}
-        for name, component in self.components.items():
+        for name, component in tuple(self.components.items()):
+            # Stop as soon as a child consumes the event.
+            if event is not None and event.handled and not event.trickle:
+                break
             call_return = component.send_event_advanced(event_type=event_type, event=event, *args, **kwargs)
             if call_return is not None:
                 output[component.uuid] = call_return

@@ -21,12 +21,21 @@ class ConfigManager(CoreAsset):
         self.__load_configurations()
         return self
 
+    # Resolved from this file's location, not the working directory. The old
+    # bare 'config' path meant the engine could only start from the repo root,
+    # so any tool or test run from elsewhere failed to find its own config.
+    CONFIG_DIR = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+
     def __load_configurations(self):
         # get each config option from the config folder
-        for filename in os.listdir('config'):
+        for filename in sorted(os.listdir(self.CONFIG_DIR)):
             if filename.endswith('.json'):  # load the json configuration
                 ready_filename = filename.replace('.json', '')
-                self.data[ready_filename] = json.load(open('config/' + filename, "r"))
+                path = os.path.join(self.CONFIG_DIR, filename)
+                with open(path, "r", encoding="utf-8") as handle:
+                    self.data[ready_filename] = json.load(handle)
         return self
 
     def load_assets(self, name: str):

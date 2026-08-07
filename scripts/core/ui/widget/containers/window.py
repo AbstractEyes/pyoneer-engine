@@ -35,12 +35,16 @@ class GameWindow(GameComponent):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         config = Config.config.get("theme")["widget"]
-        self.active: bool = False
-        """Whether the window is active or not."""
+        # `active` is inherited and defaults True: the window participates in
+        # input from the moment it is constructed. It used to be forced False
+        # here and flipped True on click, because `active` was doing duty as
+        # the focus flag -- now that focus lives on `focused`, forcing it
+        # False here would disable the entire window subtree, since input
+        # dispatch is gated on `active`.
         # -------------------------------------------------
         # core components
         self.active_component: GameComponent | None = None
-        """The active component within the window if any."""
+        """The descendant currently holding focus, if any."""
         self.is_view: bool = True
         """Whether the component is considered a viewport or not."""
         self.header_bar: ShapeComponent | None = None
@@ -266,32 +270,67 @@ class GameWindow(GameComponent):
             self.header_bar.background_color = WidgetColor(70, 73, 75, 255, 1)
 
     def __event__mouse_clicked_inside(self, event_: PyoneerEvent):
-        consume = False
-        if self.clickable and event_.event.button == pygame.BUTTON_LEFT:
-            self.active = True
-            widget = self.top_widget_at_position(Vector2(event_.event.pos), [self, self.mouse, self.keyboard])
-            pass
-            if isinstance(widget, GameComponent) and widget.is_clickable():
-                if widget is self.close_button:
-                    print("Close button clicked.")
-                    consume = True
-                elif widget is self.text_box:
-                    self.text_box.active = True
-                    consume = True
-                #elif widget is self.checkbox:
-                #    self.checkbox.toggle()
-                #    consume = True
-                elif widget is None:
-                    self.active = False
-                    self.text_box.active = False
-            else:
-                self.active = False
-                self.text_box.active = False
-        else:
-            self.active = False
-            self.text_box.active = False
-        if consume:
+        """Resolve which descendant was clicked and move focus to it.
+
+        Focus is tracked with `focused`, not `active`. `active` means "this
+        window participates in input at all"; a window that is hidden but
+        still active must keep eating clicks, so overloading it for
+        click-focus made the two states impossible to express together.
+
+        This no longer names a concrete child type. It previously branched on
+        `self.text_box` in four places with no None guard, so removing the
+        demo widgets from this class turned every left-click into an
+        AttributeError.
+        """
+        if not self.clickable or event_.event.button != pygame.BUTTON_LEFT:
+            self.set_focus(None)
+            return
+
+        widget = self.top_widget_at_position(Vector2(event_.event.pos),
+                                             [self, self.mouse, self.keyboard])
+        if not isinstance(widget, GameComponent) or not widget.is_clickable():
+            self.set_focus(None)
+            return
+
+        self.focused = True
+        self.set_focus(widget)
+
+        if widget is self.close_button:
+            self.close()
             self.mouse.mark_event_handled(event_)
+        elif widget.accepts_focus:
+            # The focused widget consumed the click; stop it reaching
+            # anything underneath.
+            self.mouse.mark_event_handled(event_)
+
+    def set_focus(self, widget: GameComponent | None):
+        """Give focus to `widget`, clearing it from whatever held it before."""
+        if self.active_component is widget:
+            return
+        if self.active_component is not None:
+            self.active_component.focused = False
+        self.active_component = widget
+        if widget is not None:
+            widget.focused = True
+        else:
+            self.focused = False
+
+    def close(self):
+        """Hide the window, disable it, and drop focus.
+
+        Clears `active` as well as `visible`. Hiding alone is not enough:
+        input is gated on `active`, so a merely-invisible window would keep
+        swallowing clicks in the rectangle it used to occupy -- which is the
+        exact behaviour that is correct for a hidden-but-live window and
+        wrong for a closed one.
+
+        Deliberately hides rather than unbinding: LayerRenderer has no unbind
+        path yet, so removing the component here would leave its layer
+        blitting it every frame.
+        """
+        self.visible = False
+        self.active = False
+        self.set_focus(None)
 
     def __mouse_up(self, event_: pygame.event.Event):
         pass

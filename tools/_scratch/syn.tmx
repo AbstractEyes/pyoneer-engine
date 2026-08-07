@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" infinite="0" nextlayerid="3" nextobjectid="4">
+ <objectgroup id="2" name="spawns" tintcolor="#ff8800" opacity="0.75" offsetx="8" offsety="-4">
+  <properties>
+   <property name="group_note" value="unused-by-code"/>
+  </properties>
+  <object id="1" name="hero_start" type="GamePlayer" x="32" y="48" width="16" height="24">
+   <properties>
+    <property name="entity" value="player"/>
+    <property name="depth" type="int" value="50"/>
+    <property name="facing" value="down"/>
+    <property name="patrol" type="bool" value="true"/>
+   </properties>
+  </object>
+  <object id="2" name="poly" x="0" y="0">
+   <polygon points="0,0 16,0 16,16"/>
+  </object>
+  <object id="3" name="classy" class="GameEntity" x="8" y="8" width="16" height="16"/>
+ </objectgroup>
+</map>

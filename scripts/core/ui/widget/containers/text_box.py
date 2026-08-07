@@ -16,14 +16,19 @@ from scripts.core.ui.widget_color import WidgetColor
 class TextBox(DrawComponent):
     def __init__(self,
                  default_text: str = "",
-                 active: bool = False,
+                 focused: bool = False,
                  max_length: int = 80,
                  enter_enabled: bool = False,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.is_view = False
         self.__default_text: str = default_text
-        self.active: bool = active
+        # Typing target = focused, not active. `active` means the widget
+        # participates in input at all; a text box that is not focused
+        # must still receive clicks so it can BECOME focused.
+        self.focused: bool = focused
+        self.focusable: bool = True
+        self.clickable: bool = True
         self.__enter_enabled: bool = enter_enabled
         self.text: str = self.__default_text
         self.__carat_flash_delay: float = 10
@@ -65,7 +70,7 @@ class TextBox(DrawComponent):
         return "".join([arg.unicode for arg in event_args])
 
     def update_carat(self, event: Optional[PyoneerEvent]):
-        if not self.active:
+        if not self.focused:
             component = self.get_component("text")
             if component.text.endswith("█"):
                 component.text = component.text[:-1]
@@ -85,12 +90,12 @@ class TextBox(DrawComponent):
 
     def key_down_repeat(self, event: Optional[PyoneerEvent] = None):
         """Our test keyboard listener, meant to test the input buffer"""
-        if not self.active:
+        if not self.focused:
             return False
         return self.key_pressed(event)
 
     def key_down(self, event: Optional[PyoneerEvent] = None) -> bool:
-        if not self.active:
+        if not self.focused:
             return False
         """Our test keyboard listener, meant to test the input buffer"""
         return self.key_pressed(event)
@@ -99,7 +104,7 @@ class TextBox(DrawComponent):
         """Our test keyboard listener, meant to test the input buffer"""
         if event.event is None:
             pass
-        if not self.active:
+        if not self.focused:
             return False
         key_code = event.event.key
         keyboard = self.get_component("keyboard")
