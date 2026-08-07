@@ -74,6 +74,34 @@ class InputActionManager(CoreAsset):
         self.config = None
         self.gamepad = None
         self.keyboard = None
+        self._text_capture_owner = None
+        """The widget currently consuming the keyboard for text entry."""
+
+    # ------------------------------------------------------------------ #
+    # Text capture
+    #
+    # Gameplay actions are polled from pygame.key.get_pressed(), NOT from the
+    # event queue, so a UI widget consuming a KEYDOWN event can never stop the
+    # player from moving. Typing "was" in a text box walked the player left.
+    # A widget that owns the keyboard must say so explicitly.
+    # ------------------------------------------------------------------ #
+
+    def begin_text_capture(self, owner):
+        """Claim the keyboard for text entry; gameplay actions read as inert."""
+        self._text_capture_owner = owner
+
+    def end_text_capture(self, owner=None):
+        """Release the keyboard. Only the current owner may release it."""
+        if owner is None or self._text_capture_owner is owner:
+            self._text_capture_owner = None
+
+    @property
+    def text_capture_active(self) -> bool:
+        return self._text_capture_owner is not None
+
+    @property
+    def text_capture_owner(self):
+        return self._text_capture_owner
 
     def update(self):
         """Sample every action once and derive this frame's edges.
@@ -96,14 +124,20 @@ class InputActionManager(CoreAsset):
 
     def pressed(self, action_name: str) -> bool:
         """True only on the frame the action went down. Use for menus, jumps."""
+        if self.text_capture_active:
+            return False
         return self.actions[action_name].pressed
 
     def released(self, action_name: str) -> bool:
         """True only on the frame the action came up."""
+        if self.text_capture_active:
+            return False
         return self.actions[action_name].released
 
     def held(self, action_name: str) -> bool:
         """True for every frame the action is down. Use for movement."""
+        if self.text_capture_active:
+            return False
         return self.actions[action_name].held
 
     def _is_down(self, action: BaseAction) -> bool:

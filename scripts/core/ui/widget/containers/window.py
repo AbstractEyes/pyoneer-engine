@@ -320,6 +320,12 @@ class GameWindow(GameComponent):
         self.visible = False
         self.active = False
         self.set_focus(None)
+        self.focused = False
+
+    def open(self):
+        """Show the window and re-enable it. Inverse of close()."""
+        self.visible = True
+        self.active = True
 
 
 

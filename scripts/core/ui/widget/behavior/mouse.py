@@ -115,7 +115,6 @@ class MouseComponentAsync(AsyncEventComponent):
         if self.mouse_inside:
             self.vertical_mouse_scroll = event.event.y
             self.horizontal_mouse_scroll = event.event.x
-            print ("Mouse scroll: ", self.vertical_mouse_scroll, "", self.horizontal_mouse_scroll)
             if self.vertical_mouse_scroll != 0 or self.horizontal_mouse_scroll != 0:
                 self.__execute_event_callbacks(GameEventType.MOUSE_SCROLL,
                                                PyoneerEvent(event_type=GameEventType.MOUSE_SCROLL,
@@ -132,7 +131,6 @@ class MouseComponentAsync(AsyncEventComponent):
         if event is None or event.handled:
             return
         if not self.mouse_inside and event is not None and not event.handled:
-            print ("Mouse entered: ", type(self.parent), self.parent.world_bounds)
             self.mouse_inside = True
             self.__execute_event_callbacks(GameEventType.MOUSE_ENTER, event, False)
 
@@ -170,7 +168,6 @@ class MouseComponentAsync(AsyncEventComponent):
         if event is None or event.handled:
             return
         if self.mouse_inside and event is not None and not event.handled:
-            print ("Mouse exited: ", self.parent, self.world_bounds)
             self.mouse_inside = False
             self.__execute_event_callbacks(GameEventType.MOUSE_LEAVE, event, False)
 
@@ -183,7 +180,6 @@ class MouseComponentAsync(AsyncEventComponent):
         if self.mouse_inside:
             self.mouse_down_outside = False
             self.mouse_down_inside = True
-            print ("Mouse down inside: ", self.parent, self.mouse_down_pos)
             self.__execute_event_callbacks(GameEventType.MOUSE_DOWN_INSIDE, event, False)
         elif not self.mouse_inside:
             self.mouse_down_inside = False
@@ -198,7 +194,6 @@ class MouseComponentAsync(AsyncEventComponent):
         self.mouse_up_pos = Vector2(position.x, position.y)
         if self.mouse_inside:
             # Mouse is inside and the mouse click was released.
-            print ("Mouse up inside: ", self, self.parent, self.mouse_up_pos)
             self.__execute_event_callbacks(GameEventType.MOUSE_UP_INSIDE, event, False)
             if self.mouse_down_inside:
                 if pygame.time.get_ticks() - self.mouse_down_time < self.click_trigger_time * 1000:

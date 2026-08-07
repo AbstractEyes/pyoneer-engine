@@ -100,13 +100,8 @@ class GameComponent(PyoneerGameObject, ABC):
         and still live, and hiding it must not silently disable it. Use
         `active` to disable a subtree.
         """
-        self.focused: bool = focused
-        """Whether this component holds keyboard focus.
-
-        This is the flag a click-to-focus widget sets. `active` used to be
-        overloaded for it by GameWindow and TextBox, which conflicted with
-        `active` meaning "enabled" here.
-        """
+        self._focused: bool = focused
+        """Backing field for `focused`; see the property below."""
         self.active: bool = active
         """Whether the component participates in input dispatch.
 
@@ -591,6 +586,15 @@ class GameComponent(PyoneerGameObject, ABC):
         if typ in INPUT_EVENT_TYPES and not self.accepts_input:
             return
 
+        # Rendering is gated on `visible`, and it must gate the whole SUBTREE.
+        # Each DrawComponent checks its own `visible`, but a container like
+        # GameWindow is a plain GameComponent with no core_blits of its own --
+        # it only fans BLITS out to children. So setting `window.visible =
+        # False` hid nothing: every child still had visible=True and kept
+        # drawing itself. Cutting the fan-out here makes visibility inherit.
+        if typ is GameEventType.BLITS and not self.visible:
+            return
+
         if self.__has_callback(typ):
             for callback in self.__get_callback(typ):
                 callback(event, *args, **kwargs)
@@ -610,6 +614,31 @@ class GameComponent(PyoneerGameObject, ABC):
     def accepts_focus(self) -> bool:
         """Whether clicking this component should move keyboard focus to it."""
         return self.focusable and self.active
+
+    @property
+    def focused(self) -> bool:
+        """Whether this component holds keyboard focus.
+
+        This is the flag a click-to-focus widget sets. `active` used to be
+        overloaded for it by GameWindow and TextBox, which conflicted with
+        `active` meaning "enabled".
+        """
+        return self._focused
+
+    @focused.setter
+    def focused(self, value: bool):
+        value = bool(value)
+        if value == self._focused:
+            return
+        self._focused = value
+        self._on_focus_changed(value)
+
+    def _on_focus_changed(self, focused: bool):
+        """Called when focus is gained or lost. Override in subclasses.
+
+        Text-entry widgets use this to claim and release keyboard capture, so
+        that gameplay input is suppressed while the user is typing.
+        """
 
     def __get_callback(self, typ: GameEventType):
         # Snapshot: a handler that unbinds itself (or a sibling listener)

@@ -28,7 +28,6 @@ class AsyncEventComponent(GameComponent):
         self.bind_sync_listener(GameEventType.INPUTS, self.buffer_custom_events)
         self.bind_sync_listener(GameEventType.UPDATE, self.__update_custom_events)
         self.bind_sync_listener(GameEventType.POST_UPDATE, self.__post_update_custom_events)
-        print ("Input component initialized.")
 
     def bind_async_listener(self, event_type: GameEventType, callback: Callable):
         """Bind a custom event to a callback."""

@@ -12,6 +12,8 @@ from scripts.core.ui.widget.shape import ShapeComponent
 from scripts.core.ui.widget.text import TextComponent
 from scripts.core.ui.widget_color import WidgetColor
 
+from config.managers.core_asset_manager import CoreAssetManager
+
 
 class TextBox(DrawComponent):
     def __init__(self,
@@ -23,12 +25,13 @@ class TextBox(DrawComponent):
         super().__init__(*args, **kwargs)
         self.is_view = False
         self.__default_text: str = default_text
+        self.focusable: bool = True
+        self.clickable: bool = True
         # Typing target = focused, not active. `active` means the widget
         # participates in input at all; a text box that is not focused
         # must still receive clicks so it can BECOME focused.
+        # Assigned last: the setter claims keyboard capture as a side effect.
         self.focused: bool = focused
-        self.focusable: bool = True
-        self.clickable: bool = True
         self.__enter_enabled: bool = enter_enabled
         self.text: str = self.__default_text
         self.__carat_flash_delay: float = 10
@@ -64,6 +67,20 @@ class TextBox(DrawComponent):
         self.keyboard.bind_key_event(KeyBindingType.KeyRepeat, self.key_down_repeat)
         self.keyboard.bind_key_event(KeyBindingType.KeyUp, self.key_up)
         text.bind_sync_listener(GameEventType.UPDATE, self.update_carat)
+
+    def _on_focus_changed(self, focused: bool):
+        """Claim or release the keyboard while this box is the typing target.
+
+        Gameplay actions are POLLED from pygame.key.get_pressed(), not read
+        from the event queue, so consuming a KEYDOWN here could never stop the
+        player: typing "was" walked the player around the map. The input
+        manager has to be told explicitly that the keyboard is spoken for.
+        """
+        inputs = CoreAssetManager().inputs
+        if focused:
+            inputs.begin_text_capture(self)
+        else:
+            inputs.end_text_capture(self)
 
     @staticmethod
     def __unpack_keys(event_args: list[pygame.event.Event]) -> str:

@@ -58,6 +58,8 @@ class MainGame:
         self.camera: GameCamera | None = None
         self.renderer: LayerRenderer | None = None
         self.player: GamePlayer | None = None
+        self.window: GameWindow | None = None
+        """The test window. F1 toggles it; the close button hides it."""
         #self.test_entity = None
         self.input: InputActionManager | None = None
         #self.test_ui_element: WidgetDrawableGroup | None = None
@@ -152,6 +154,7 @@ class MainGame:
         #component_container.bind_component("textbox1", text_box)
         #bindable_objects.append((101, text_box))
         window = GameWindow(header_text="Test Window", bounds=Rect(100, 100, 400, 400))
+        self.window = window
         self.scene.bind("UI_LAYER_1", window)
         return bindable_objects
 
@@ -256,10 +259,25 @@ class MainGame:
             if isinstance(ev, pygame.event.Event):
                 if ev.key == pygame.K_ESCAPE:
                     self.quit()
+                if ev.key == pygame.K_F1:
+                    self.toggle_window()
                 if ev.key == pygame.K_LEFT:
                     self.player.rotate(-10)
                 if ev.key == pygame.K_RIGHT:
                     self.player.rotate(10)
+
+    def toggle_window(self):
+        """F1: show or hide the test window.
+
+        close() clears both visible and active, so a closed window neither
+        draws nor eats input and there is otherwise no way back to it.
+        """
+        if self.window is None:
+            return
+        if self.window.visible:
+            self.window.close()
+        else:
+            self.window.open()
 
 
 if __name__ == "__main__":
