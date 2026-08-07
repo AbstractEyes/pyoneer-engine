@@ -424,8 +424,23 @@ class GameComponent(PyoneerGameObject, ABC):
             self.__update_world_bounds()
 
     def bind_component(self, name: str, component_in: GameComponent,
-                       commands: list | None = ["pre_prepare", "prepare", "post_prepare", "build"]):
-        """Bind a component to the component container."""
+                       commands: list | None = ("pre_prepare", "prepare", "post_prepare", "build")):
+        """Bind a component to the component container.
+
+        Refuses to register the same instance under two names. Doing so makes
+        the "tree" a DAG: the shared node and its whole subtree are visited
+        twice per traversal, so every listener on them fires twice per
+        dispatch and they queue duplicate blit tokens. ScrollComponent shipped
+        with exactly that bug for its thumb.
+        """
+        for existing_name, existing in self.components.items():
+            if existing is component_in and existing_name != name:
+                raise ValueError(
+                    f"{type(component_in).__name__} is already bound to "
+                    f"{type(self).__name__} as {existing_name!r}; "
+                    f"refusing to also bind it as {name!r}"
+                )
+        commands = commands if commands is not None else ()
         if "pre_prepare" in commands:
             component_in.core_pre_prepare(None)
         if "prepare" in commands:

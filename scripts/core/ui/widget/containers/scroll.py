@@ -171,7 +171,11 @@ class ScrollComponent(GameComponent):
         self.bind_component("arrow_1", self.arrow_1)
         self.bind_component("arrow_2", self.arrow_2)
         self.bind_component("thumb", self.scroll_thumb)
-        self.bind_component("scroll_bar", self.scroll_thumb)
+        # NOTE: there was a second bind of scroll_thumb here under the key
+        # "scroll_bar". The real bar is already bound as "bar", so that line
+        # registered the thumb twice: it and its three children received every
+        # event twice (a listener on the thumb fired twice per dispatch) and
+        # queued duplicate blit tokens, compositing the thumb on top of itself.
         #self.bind_sync_listener(GameEventType.UPDATE, self.__update_scroll)
         self.arrow_1.mouse.bind_mouse_listener(GameEventType.MOUSE_CLICK_INSIDE, self.__event__arrow_click_scroll_up)
         self.arrow_2.mouse.bind_mouse_listener(GameEventType.MOUSE_CLICK_INSIDE, self.__event__arrow_click_scroll_down)
