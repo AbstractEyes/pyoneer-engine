@@ -5,8 +5,8 @@ import pygame
 from pygame import Rect
 
 from scripts.core.game_object import PyoneerGameObject
-from event_types import GameEventType
-from component import Config
+from scripts.core.event_types import GameEventType
+from scripts.core.component import Config
 from scripts.core.ui.widget.draw import DrawComponent
 from scripts.core.ui.widget_color import WidgetColor
 

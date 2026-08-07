@@ -2,7 +2,7 @@ import uuid
 
 from pygame import Vector2, Rect
 
-from component import GameComponent
+from scripts.core.component import GameComponent
 
 
 class GridNode:

@@ -4,11 +4,11 @@ from typing import Optional
 import pygame
 from pygame import Rect, Vector2
 
-from image import ImageComponent
+from scripts.core.ui.widget.image import ImageComponent
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.game_object import PyoneerGameObject
-from component import GameComponent
-from event_types import GameEventType
+from scripts.core.component import GameComponent
+from scripts.core.event_types import GameEventType
 from scripts.core.ui.widget.containers.button import Button
 from scripts.core.ui.widget.containers.checkbox import Checkbox
 from scripts.core.ui.widget.containers.listbox import ListBoxComponent

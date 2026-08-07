@@ -11,8 +11,8 @@ from scripts.core.event_manager import PyoneerEvent
 from scripts.core.game_object import PyoneerGameObject
 from typing import Optional
 
-from event_types import GameEventType
-from component import GameComponent
+from scripts.core.event_types import GameEventType
+from scripts.core.component import GameComponent
 from scripts.game.entity.game_entity import GameEntity
 from scripts.game.game_camera import GameCamera
 from scripts.game.game_map import GameMap

@@ -4,9 +4,9 @@ from typing import Optional
 
 from pygame import Rect
 
-import component as widget_component
-from event_manager import PyoneerEvent
-from event_types import GameEventType
+import scripts.core.component as widget_component
+from scripts.core.event_manager import PyoneerEvent
+from scripts.core.event_types import GameEventType
 from scripts.core.ui.widget.behavior.mouse import MouseComponentAsync
 from scripts.core.ui.widget.shape import ShapeComponent, ShapeType
 from scripts.core.ui.widget_color import WidgetColor

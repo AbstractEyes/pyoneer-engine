@@ -1,8 +1,8 @@
 from pygame import Rect
 
-from component import Config, GameComponent
-from event_manager import PyoneerEvent
-from event_types import GameEventType
+from scripts.core.component import Config, GameComponent
+from scripts.core.event_manager import PyoneerEvent
+from scripts.core.event_types import GameEventType
 from scripts.core.ui.widget.behavior.mouse import MouseComponentAsync
 from scripts.core.ui.widget.shape import ShapeComponent
 from scripts.core.ui.widget.text import TextComponent

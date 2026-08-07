@@ -2,9 +2,9 @@ from typing import Optional
 
 from pygame import Rect, Vector2
 
-from component import GameComponent
-from event_manager import PyoneerEvent
-from event_types import GameEventType
+from scripts.core.component import GameComponent
+from scripts.core.event_manager import PyoneerEvent
+from scripts.core.event_types import GameEventType
 
 
 class GameTransform(GameComponent):

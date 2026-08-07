@@ -1,4 +1,4 @@
-from component import GameComponent
+from scripts.core.component import GameComponent
 
 
 class Viewport(GameComponent):

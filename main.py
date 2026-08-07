@@ -17,8 +17,7 @@ from scripts.game.entity.game_player import GamePlayer
 from config.managers.core_asset_manager import CoreAssetManager
 from scripts.core.input import InputActionManager
 from scripts.core.scene.scene_manager import SceneManager
-from scripts.core.ui.deprecated.widget_drawable_group import WidgetDrawableGroup
-from component import GameComponent
+from scripts.core.component import GameComponent
 from scripts.core.ui.widget.containers.window import GameWindow
 
 #from widget.factory.component_factory import ComponentFactory
@@ -99,7 +98,7 @@ class MainGame:
 
     def load_test_objects(self):
         bindable_objects: list[tuple[str | int,
-                                     PyoneerGameObject | GameEntity | GamePlayer | WidgetDrawableGroup | GameComponent]] = []
+                                     PyoneerGameObject | GameEntity | GamePlayer | GameComponent]] = []
         for i in range(0, 5):
             bindable_objects.append( (40, GamePlayer(input_=None,
                                                 movement_config=self.assets.config.get('entity').get('default'),

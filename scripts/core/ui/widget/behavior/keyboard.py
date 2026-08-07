@@ -6,9 +6,9 @@ from typing import Optional, Callable
 import pygame
 
 from scripts.core.event_manager import PyoneerEvent
-from event_types import GameEventType
+from scripts.core.event_types import GameEventType
 from scripts.core.ui.widget.behavior.async_ import AsyncEventComponent
-from component import Config
+from scripts.core.component import Config
 
 
 class KeyBindingSetting(int, Enum):

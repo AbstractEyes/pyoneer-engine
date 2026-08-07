@@ -5,8 +5,8 @@ from pygame import Rect, Vector2
 
 from scripts.core.game_object import PyoneerGameObject
 from scripts.core.event_manager import PyoneerEvent
-from event_types import GameEventType
-from component import GameComponent
+from scripts.core.event_types import GameEventType
+from scripts.core.component import GameComponent
 from scripts.core.ui.widget.containers.button import Button
 from scripts.core.ui.widget_color import WidgetColor
 

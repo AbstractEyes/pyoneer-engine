@@ -3,11 +3,11 @@ from typing import Optional
 import pygame
 from pygame import Rect, Vector2
 
-from keyboard import KeyboardComponentAsync, KeyBindingType
+from scripts.core.ui.widget.behavior.keyboard import KeyboardComponentAsync, KeyBindingType
 from scripts.core.event_manager import PyoneerEvent
-from event_types import GameEventType
+from scripts.core.event_types import GameEventType
 from scripts.core.ui.widget.behavior.mouse import MouseComponentAsync
-from component import GameComponent
+from scripts.core.component import GameComponent
 from scripts.core.ui.widget.containers.scroll import ScrollComponent, ScrollDirection
 from scripts.core.ui.widget.draw import DrawComponent
 from scripts.core.ui.widget.shape import ShapeComponent

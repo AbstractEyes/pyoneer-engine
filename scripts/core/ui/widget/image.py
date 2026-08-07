@@ -3,7 +3,7 @@ from typing import Optional
 import pygame
 from pygame import Surface, Rect, Vector2
 
-from draw import DrawComponent
+from scripts.core.ui.widget.draw import DrawComponent
 
 
 class ImageComponent(DrawComponent):

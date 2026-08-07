@@ -1,6 +1,6 @@
 from typing import Optional
 
-from event_manager import PyoneerEvent
+from scripts.core.event_manager import PyoneerEvent
 from scripts.core.scene.game_scene import GameScene
 
 

@@ -8,7 +8,7 @@ from pygame import Rect, Vector2, surface
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.game_object import PyoneerGameObject
 
-from event_types import GameEventType
+from scripts.core.event_types import GameEventType
 #from scripts.game.game_camera import GameCamera
 
 from config.managers.core_asset_manager import CoreAssetManager

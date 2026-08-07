@@ -1,7 +1,7 @@
 from pygame import Rect, Vector2
 
-from component import GameComponent
-from game_camera import GameCamera
+from scripts.core.component import GameComponent
+from scripts.game.game_camera import GameCamera
 
 
 class Viewport(GameComponent):

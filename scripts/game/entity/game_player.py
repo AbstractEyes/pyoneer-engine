@@ -3,7 +3,7 @@ from typing import Optional
 import pygame
 
 from config.managers.animation_data import DataAnimationCategory
-from event_types import GameEventType
+from scripts.core.event_types import GameEventType
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.input import InputActionManager
 from scripts.game.entity.game_animation import GameAnimation, GameAnimationHandler

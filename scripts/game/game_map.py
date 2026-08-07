@@ -3,7 +3,7 @@ from typing import Optional
 import pytmx
 from pygame import surface
 
-from event_manager import PyoneerEvent
+from scripts.core.event_manager import PyoneerEvent
 from scripts.core.game_object import PyoneerGameObject
 
 

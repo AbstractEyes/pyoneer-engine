@@ -4,7 +4,7 @@ from typing import Optional
 
 import pygame
 
-from event_types import GameEventType
+from scripts.core.event_types import GameEventType
 
 # takes the concept of the pygame event queue and simplifies it to a single game-wide queue for reusable access
 # the entire subset here is static, and is not meant to be instantiated

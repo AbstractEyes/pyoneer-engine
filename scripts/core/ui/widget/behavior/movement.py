@@ -1,7 +1,7 @@
 from logging import debug
 
-from async_ import AsyncEventComponent
-from event_types import GameEventType
+from scripts.core.ui.widget.behavior.async_ import AsyncEventComponent
+from scripts.core.event_types import GameEventType
 
 
 class Movement(AsyncEventComponent):

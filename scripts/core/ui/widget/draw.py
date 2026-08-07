@@ -3,11 +3,11 @@ from typing import Optional
 import pygame
 from pygame import Surface, surface, Vector2, Rect
 
-from game_camera import GameCamera
+from scripts.game.game_camera import GameCamera
 from scripts.core.blitpool import BlitPool
 from scripts.core.event_manager import PyoneerEvent
-from event_types import GameEventType
-from component import GameComponent
+from scripts.core.event_types import GameEventType
+from scripts.core.component import GameComponent
 
 
 class DrawComponent(GameComponent):

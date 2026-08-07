@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from event_types import GameEventType
+from scripts.core.event_types import GameEventType
 from scripts.core.event_manager import PyoneerEvent
 
 if TYPE_CHECKING:

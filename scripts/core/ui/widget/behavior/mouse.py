@@ -7,7 +7,7 @@ import pygame
 from pygame import Vector2
 
 from scripts.core.event_manager import PyoneerEvent
-from event_types import GameEventType
+from scripts.core.event_types import GameEventType
 from scripts.core.ui.widget.behavior.async_ import AsyncEventComponent
 import scripts.core.event_manager as EventManager
 

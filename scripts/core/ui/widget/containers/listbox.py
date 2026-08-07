@@ -1,5 +1,5 @@
 from scripts.core.ui.widget.behavior.grid import GridComponent
-from component import GameComponent
+from scripts.core.component import GameComponent
 from scripts.core.ui.widget.containers.panel import Panel
 
 

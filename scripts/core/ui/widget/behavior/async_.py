@@ -5,8 +5,8 @@ import pygame
 
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.game_object import PyoneerGameObject
-from event_types import GameEventType
-from component import GameComponent
+from scripts.core.event_types import GameEventType
+from scripts.core.component import GameComponent
 
 
 class AsyncEventComponent(GameComponent):

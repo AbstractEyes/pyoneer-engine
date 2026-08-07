@@ -4,7 +4,7 @@ import pygame
 from pygame import Rect
 
 from scripts.core.event_manager import PyoneerEvent
-from event_types import GameEventType
+from scripts.core.event_types import GameEventType
 from scripts.core.ui.widget.behavior.keyboard import KeyBindingType, KeyboardComponentAsync
 from scripts.core.ui.widget.behavior.mouse import MouseComponentAsync
 from scripts.core.ui.widget.draw import DrawComponent

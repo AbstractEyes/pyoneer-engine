@@ -1,7 +1,7 @@
 import pygame
 from pygame import Rect
 
-from component import GameComponent
+from scripts.core.component import GameComponent
 from scripts.game.entity.game_entity import PyoneerGameObject, GameEntity
 
 

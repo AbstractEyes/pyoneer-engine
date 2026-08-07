@@ -6,8 +6,8 @@ from typing import Optional
 import pygame
 from pygame import Rect, Vector2
 
-from component import GameComponent
-from event_manager import PyoneerEvent
+from scripts.core.component import GameComponent
+from scripts.core.event_manager import PyoneerEvent
 
 class ViewportAnchor(str, Enum):
     TOP = "top"

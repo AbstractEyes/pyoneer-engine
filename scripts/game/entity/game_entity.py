@@ -8,7 +8,7 @@ from pygame import rect, Surface
 
 from config.managers.animation_data import DataAnimationCategory
 from config.managers.entity_data import DataEntityMovement
-from event_manager import PyoneerEvent
+from scripts.core.event_manager import PyoneerEvent
 
 from scripts.core.blitpool import BlitPool
 from scripts.game.entity.game_animation import GameAnimationHandler
