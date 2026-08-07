@@ -43,14 +43,14 @@ class Probe(GameComponent):
         self.tag = tag
         self.log = log
 
-    def core_build(self, event=None):
+    def core_lifecycle_build(self, event=None):
         pass
 
-    def core_dispose(self, event=None):
+    def core_lifecycle_dispose(self, event=None):
         return True
 
-    def core_inputs(self, event=None):
-        return super().core_inputs(event)
+    def core_input_receive(self, event=None):
+        return super().core_input_receive(event)
 
     def listen(self, typ, consume=False):
         def handler(event, *a, **k):

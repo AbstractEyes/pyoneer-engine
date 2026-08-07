@@ -55,19 +55,19 @@ class TextComponent(DrawComponent):
         self.prepare_text()
 
     def prepare_text(self, sender: Optional[PyoneerGameObject] = None):
-        self.core_image().fill((0, 0, 0, 0))
+        self.image.fill((0, 0, 0, 0))
         if len(self.text) > 0 and self.text_color.a > 0:
             font = pygame.font.SysFont(self.font, self.font_size)
             if self.text_shadow_visible:
                 # draw the shadow first
                 text = font.render(self.text, True, self.text_shadow_color)
-                self.core_image().blit(text, (self.text_shadow_offset.x, self.text_shadow_offset.y))
+                self.image.blit(text, (self.text_shadow_offset.x, self.text_shadow_offset.y))
             text = font.render(self.text, True, self.text_color)
             text_rect = text.get_bounding_rect()
             if self.center:
-                self.core_image().blit(text, (text_rect.centerx, 0))
+                self.image.blit(text, (text_rect.centerx, 0))
             else:
-                self.core_image().blit(text, (0, 0))
+                self.image.blit(text, (0, 0))
 
     #def __blits(self, event: Optional[PyoneerEvent] = None):
     #    depth = self.depth

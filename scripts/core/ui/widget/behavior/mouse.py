@@ -68,8 +68,8 @@ class MouseComponentAsync(AsyncEventComponent):
         """The last successful click's stored timer."""
         # ---------------------------------------------------------------- #
         self.mouse_listeners: dict[GameEventType, list[Callable]] = {}
-        self.core_prepare()
-        self.core_build()
+        self.core_lifecycle_prepare()
+        self.core_lifecycle_build()
 
     def has_mouse_listener(self, event_type: GameEventType) -> bool:
         return event_type in self.mouse_listeners
@@ -97,8 +97,8 @@ class MouseComponentAsync(AsyncEventComponent):
             if callback in self.mouse_listeners[event_type]:
                 self.mouse_listeners[event_type].remove(callback)
 
-    def core_prepare(self, event: PyoneerEvent | None = None):
-        super().core_prepare(event)
+    def core_lifecycle_prepare(self, event: PyoneerEvent | None = None):
+        super().core_lifecycle_prepare(event)
         if not self.flags.get("prepared_mouse", False):
             self.bind_async_listener(GameEventType.MOUSE_MOTION, self.__event__mouse_move)
             self.bind_async_listener(GameEventType.MOUSE_DOWN, self.__event__mouse_down)

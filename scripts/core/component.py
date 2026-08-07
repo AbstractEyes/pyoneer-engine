@@ -12,6 +12,9 @@ from scripts.core.event_types import GameEventType
 #from scripts.game.game_camera import GameCamera
 
 from config.managers.core_asset_manager import CoreAssetManager
+from scripts.core.errors import (PyoneerAlreadyBoundError, PyoneerAssetMissingError,
+                                 PyoneerError, PyoneerEventDispatchError,
+                                 PyoneerListenerContractError)
 
 Config = CoreAssetManager()
 
@@ -145,16 +148,16 @@ class GameComponent(PyoneerGameObject, ABC):
         self.component_type = "component"
         """The type of the component used for logical separation, not always needed."""
 
-    def core_prepare(self, event: PyoneerEvent | None = None):
+    def core_lifecycle_prepare(self, event: PyoneerEvent | None = None):
         """Populate the events for the component."""
-        super().core_prepare(event)
+        super().core_lifecycle_prepare(event)
         if not self.flags.get("prepared_base", False):
             self.bind_sync_listener(GameEventType.PARENT_CHANGED, self.__on_parent_changed)
             self.bind_sync_listener(GameEventType.TRANSFORM, self.__transform_component)
             self.flags["prepared_base"] = True
         return self.send_event_advanced(event_type=GameEventType.PREPARE, event=event)
 
-    def core_build(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):
         """Build the component."""
         if self.flags.get("built", False):
             return
@@ -430,20 +433,20 @@ class GameComponent(PyoneerGameObject, ABC):
         """
         for existing_name, existing in self.components.items():
             if existing is component_in and existing_name != name:
-                raise ValueError(
+                raise PyoneerAlreadyBoundError(
                     f"{type(component_in).__name__} is already bound to "
                     f"{type(self).__name__} as {existing_name!r}; "
                     f"refusing to also bind it as {name!r}"
                 )
         commands = commands if commands is not None else ()
         if "pre_prepare" in commands:
-            component_in.core_pre_prepare(None)
+            component_in.core_lifecycle_prepare_pre(None)
         if "prepare" in commands:
-            component_in.core_prepare(None)
+            component_in.core_lifecycle_prepare(None)
         if "post_prepare" in commands:
-            component_in.core_post_prepare(None)
+            component_in.core_lifecycle_prepare_post(None)
         if "build" in commands:
-            component_in.core_build(None)
+            component_in.core_lifecycle_build(None)
         self.components[name] = component_in
 
     def unbind_component(self, identifier: str):
@@ -451,7 +454,10 @@ class GameComponent(PyoneerGameObject, ABC):
         if identifier in self.components:
             del self.components[identifier]
         else:
-            raise Exception("Component not found: ", identifier)
+            raise PyoneerAssetMissingError(
+                "component", identifier, available=self.components.keys(),
+                owner=type(self).__name__,
+            )
 
     def adjusted_position(self, point: Vector2 | Rect | tuple[int | float, int | float]) -> Vector2:
         """Adjust the point based on the scroll position, default there is no scroll position so it simply type shifts."""
@@ -588,7 +594,7 @@ class GameComponent(PyoneerGameObject, ABC):
 
         # Rendering is gated on `visible`, and it must gate the whole SUBTREE.
         # Each DrawComponent checks its own `visible`, but a container like
-        # GameWindow is a plain GameComponent with no core_blits of its own --
+        # GameWindow is a plain GameComponent with no core_render_blits of its own --
         # it only fans BLITS out to children. So setting `window.visible =
         # False` hid nothing: every child still had visible=True and kept
         # drawing itself. Cutting the fan-out here makes visibility inherit.
@@ -597,10 +603,45 @@ class GameComponent(PyoneerGameObject, ABC):
 
         if self.__has_callback(typ):
             for callback in self.__get_callback(typ):
-                callback(event, *args, **kwargs)
+                self.__invoke_listener(typ, callback, event, *args, **kwargs)
                 if event is not None and event.handled and not event.trickle:
                     return
         self.send_event_to_children_advanced(event_type=typ, event=event, *args, **kwargs)
+
+    def __invoke_listener(self, typ: GameEventType, callback: Callable,
+                          event: Optional[PyoneerEvent], *args, **kwargs):
+        """Call one listener, attaching dispatch context to anything it raises.
+
+        A failure several components deep in a fan-out is close to unreadable
+        without the path that reached it. PyoneerErrors accumulate a frame per
+        component they pass through; anything else is wrapped once, naming the
+        component, the event type and the listener.
+        """
+        try:
+            callback(event, *args, **kwargs)
+        except PyoneerError as exc:
+            exc.push_frame(component=type(self).__name__,
+                           uuid=self.uuid[:8],
+                           event=getattr(typ, "name", typ))
+            raise
+        except TypeError as exc:
+            # A TypeError raised AT the call boundary (empty traceback beyond
+            # this frame) means the signature does not match what the
+            # dispatcher passes -- a contract error, not a bug inside the
+            # listener. DrawComponent.dispose_drawable shipped exactly this:
+            # bound to DISPOSE while taking no `event` parameter.
+            if exc.__traceback__ is not None and exc.__traceback__.tb_next is None:
+                raise PyoneerListenerContractError(
+                    f"{type(self).__name__} listener "
+                    f"{getattr(callback, '__qualname__', callback)} cannot accept the "
+                    f"{getattr(typ, 'name', typ)} event; listeners must take "
+                    f"(event, *args, **kwargs). Original: {exc}",
+                    component=type(self).__name__,
+                    uuid=self.uuid[:8],
+                ) from exc
+            raise PyoneerEventDispatchError(self, typ, callback, exc) from exc
+        except Exception as exc:
+            raise PyoneerEventDispatchError(self, typ, callback, exc) from exc
 
     @property
     def accepts_input(self) -> bool:
@@ -716,7 +757,13 @@ class GameComponent(PyoneerGameObject, ABC):
             # Stop as soon as a child consumes the event.
             if event is not None and event.handled and not event.trickle:
                 break
-            call_return = component.send_event_advanced(event_type=event_type, event=event, *args, **kwargs)
+            try:
+                call_return = component.send_event_advanced(event_type=event_type, event=event, *args, **kwargs)
+            except PyoneerError as exc:
+                # Record the child slot we descended through, so the final
+                # message reads as a path from the root rather than a leaf.
+                exc.push_frame(parent=type(self).__name__, child_slot=name)
+                raise
             if call_return is not None:
                 output[component.uuid] = call_return
         return output
@@ -742,7 +789,7 @@ class GameComponent(PyoneerGameObject, ABC):
     # ---------------------------------------------------------------------------------------------
     # These are directly overridden from the pyoneer object for scene API convenience.
     # Each of these automatically trickles as necessary from the core scene to the internal components.
-    def core_inputs(self, event: Optional[PyoneerEvent] = None):
+    def core_input_receive(self, event: Optional[PyoneerEvent] = None):
         """Buffer the component."""
         return self.send_event_advanced(event_type=GameEventType.INPUTS, event=event)
 
@@ -759,32 +806,34 @@ class GameComponent(PyoneerGameObject, ABC):
 
 
 
-    def core_pre_update(self, event: Optional[PyoneerEvent] = None):
+    def core_frame_update_pre(self, event: Optional[PyoneerEvent] = None):
         """Pre-update the component."""
         return self.send_event_advanced(event_type=GameEventType.PRE_UPDATE, event=event)
 
-    def core_post_update(self, event: Optional[PyoneerEvent] = None):
+    def core_frame_update_post(self, event: Optional[PyoneerEvent] = None):
         """Post-update the component."""
         return self.send_event_advanced(event_type=GameEventType.POST_UPDATE, event=event)
 
-    def core_update(self, event: Optional[PyoneerEvent] = None):
+    def core_frame_update(self, event: Optional[PyoneerEvent] = None):
         """Update the component."""
         return self.send_event_advanced(event_type=GameEventType.UPDATE, event=event)
 
-    def core_dispose(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_dispose(self, event: Optional[PyoneerEvent] = None):
         """Dispose of the component."""
         return self.send_event_advanced(event_type=GameEventType.DISPOSE, event=event)
 
     def __has_callback(self, typ: GameEventType) -> bool:
         return self.callbacks.keys().__contains__(typ)
 
-    def core_blits(self, event: Optional[PyoneerEvent] = None):
+    def core_render_blits(self, event: Optional[PyoneerEvent] = None):
         """Blit the component."""
         return self.send_event_advanced(event_type=GameEventType.BLITS, event=event)
 
-    def core_image(self, image_in: surface.Surface | None = None) -> surface.Surface:
-        """Return the current surface image of the component, default unimplemented."""
-        return self.__image
+    # `image` is inherited from PyoneerGameObject. The override that lived
+    # here returned self.__image, which mangled to _GameComponent__image and
+    # was never assigned anywhere -- so it raised AttributeError for any
+    # subclass that did not override it. Every live subclass happened to,
+    # which is the only reason it never fired.
 
     def is_clickable(self) -> bool:
         return self.get_component("mouse") is not None or self.clickable

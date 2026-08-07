@@ -32,11 +32,11 @@ class Panel(DrawComponent):
         self.dead_corner: ShapeComponent | None = None
         self.children: list[GameComponent] = []
 
-    def core_prepare(self, event: Optional[PyoneerEvent] = None):
-        super().core_prepare(event)
+    def core_lifecycle_prepare(self, event: Optional[PyoneerEvent] = None):
+        super().core_lifecycle_prepare(event)
 
-    def core_build(self, event: Optional[PyoneerEvent] = None):
-        super().core_build(event)
+    def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):
+        super().core_lifecycle_build(event)
         self.background = ShapeComponent(
             parent=self,
             depth=0,
@@ -191,9 +191,9 @@ class Panel(DrawComponent):
         self.vertical_scroll.visible = self.screen_area.height > self.world_bounds.height
         # todo; add active hook
 
-    def core_update(self, event: Optional[PyoneerEvent] = None):
+    def core_frame_update(self, event: Optional[PyoneerEvent] = None):
         """Update the scroll position based on the event."""
-        super().core_update(event)
+        super().core_frame_update(event)
         self.__clamp_scroll()
         self.__hide_unhide_scroll()
         self.force_update_transforms()

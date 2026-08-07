@@ -20,12 +20,12 @@ class DrawComponent(GameComponent):
                  **kwargs):
         super().__init__(*args, **kwargs)
         if image_in is not None:
-            self.__image: Surface = image_in
+            self._image = image_in
         else:
             clamped = self.world_bounds.copy()
             clamped.width = max(1, clamped.width)
             clamped.height = max(1, clamped.height)
-            self.__image: Surface = Surface((clamped.width, clamped.height)).convert_alpha()
+            self._image = Surface((clamped.width, clamped.height)).convert_alpha()
         self.draws = True
         """Whether the current object is drawn."""
         self.is_view = False
@@ -56,20 +56,17 @@ class DrawComponent(GameComponent):
         #self.bind_sync_listener(GameEventType.PARENT_MOVED, self.__parent_moved)
 
     def scale(self, width: int, height: int, destination: Surface | None = None):
-        self.__image = pygame.transform.scale(self.__image, (width, height), destination)
+        self._image = pygame.transform.scale(self._image, (width, height), destination)
 
     def dispose_drawable(self):
-        if self.__image is not None:
-            self.__image = None
-
-    def core_image(self, image_in: surface.Surface | None = None) -> surface.Surface:
-        return self.__image
+        if self._image is not None:
+            self._image = None
 
     def image_snip(self, area: Rect) -> surface.Surface:
         try:
-            return self.__image.subsurface(area.clip(self.__image.get_rect()))
+            return self._image.subsurface(area.clip(self._image.get_rect()))
         except ValueError:
-            return self.__image
+            return self._image
 
     def __blits(self, event: Optional[PyoneerEvent] = None):
         if not self.draws:
@@ -108,12 +105,12 @@ class DrawComponent(GameComponent):
                                 drawn_screen_section.height)
 
 
-            BlitPool.blit_to_layer(depth, priority, self.core_image(), destination=(destination.x, destination.y), sender=self,
+            BlitPool.blit_to_layer(depth, priority, self.image, destination=(destination.x, destination.y), sender=self,
                                    draw_area=drawn_section)
         else:
             # No viewport, draw to the whatever
-            BlitPool.blit_to_layer(depth, priority, self.core_image(), destination=self.world_bounds, sender=self,
-                                   draw_area=self.core_image().get_rect())
+            BlitPool.blit_to_layer(depth, priority, self.image, destination=self.world_bounds, sender=self,
+                                   draw_area=self.image.get_rect())
 
     #def __blits(self, event: Optional[PyoneerEvent] = None):
         #if not self.draws:

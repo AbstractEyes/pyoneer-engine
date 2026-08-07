@@ -22,27 +22,24 @@ class GameMap(PyoneerGameObject):
                 for x, y, gid in layer:
                     self.depth_map[y][x] = gid
 
-    def core_build(self, event: Optional[PyoneerEvent] = None):
-        super().core_build(event)
+    def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):
+        super().core_lifecycle_build(event)
 
-    def core_inputs(self, event: Optional[PyoneerEvent] = None):
-        super().core_inputs(event)
+    def core_input_receive(self, event: Optional[PyoneerEvent] = None):
+        super().core_input_receive(event)
 
-    def core_update(self, event: Optional[PyoneerEvent] = None):
-        super().core_update(event)
+    def core_frame_update(self, event: Optional[PyoneerEvent] = None):
+        super().core_frame_update(event)
 
-    def core_dispose(self, event: Optional[PyoneerEvent] = None) -> bool:
-        super().core_dispose(event)
+    def core_lifecycle_dispose(self, event: Optional[PyoneerEvent] = None) -> bool:
+        super().core_lifecycle_dispose(event)
 
-    def core_image(self, image_in: surface.Surface | None = None) -> surface.Surface:
-        return super().core_image(image_in)
-
-    def core_prepare(self, event: Optional[PyoneerEvent] = None):
-        super().core_prepare(event)
+    def core_lifecycle_prepare(self, event: Optional[PyoneerEvent] = None):
+        super().core_lifecycle_prepare(event)
         self.create_depth_map()
 
-    def core_pre_prepare(self, event: Optional[PyoneerEvent] = None) -> None:
-        super().core_pre_prepare(event)
+    def core_lifecycle_prepare_pre(self, event: Optional[PyoneerEvent] = None) -> None:
+        super().core_lifecycle_prepare_pre(event)
 
-    def core_post_prepare(self, event: Optional[PyoneerEvent] = None) -> None:
-        super().core_post_prepare(event)
+    def core_lifecycle_prepare_post(self, event: Optional[PyoneerEvent] = None) -> None:
+        super().core_lifecycle_prepare_post(event)

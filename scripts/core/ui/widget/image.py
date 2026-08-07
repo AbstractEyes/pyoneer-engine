@@ -56,7 +56,9 @@ class ImageComponent(DrawComponent):
         if self.rotation != 0:
             self.display_image, _ = self.__rotate_image(self.display_image, self.world_bounds.center, self.world_bounds.center, self.rotation)
 
-    def core_image(self, image_in: Surface | None = None) -> Surface:
+    @property
+    def image(self) -> Surface | None:
+        """The scaled/rotated result, not the source surface."""
         return self.display_image
 
     def __scale_image(self, width: int = 0, height: int = 0):

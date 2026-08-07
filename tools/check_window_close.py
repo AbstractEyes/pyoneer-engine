@@ -2,7 +2,7 @@
 
 Guards three reported defects:
   1. The close button disabled the window but left it on screen: GameWindow
-     is a plain GameComponent with no core_blits, so `visible=False` on it
+     is a plain GameComponent with no core_render_blits, so `visible=False` on it
      hid nothing -- each child checked only its own `visible`.
   2. No way to bring a closed window back (F1 now toggles it).
   3. The player walked around while the user was typing in a text box.

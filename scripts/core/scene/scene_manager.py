@@ -11,6 +11,7 @@ from scripts.core.depth import OBJECT_CONVERTER, OBJECT_DEPTH, MAP_DEPTH
 
 import scripts.core.event_manager as EventManager
 from scripts.core.event_manager import PyoneerEvent
+from scripts.core.errors import PyoneerSceneError
 
 
 class SceneManager:
@@ -39,7 +40,10 @@ class SceneManager:
             self.current_scene.bind(depth_or_definition, game_object)
             self.renderer.bind(depth_or_definition, game_object)
         else:
-            raise Exception("No scene to bind to; ", depth_or_definition, game_object)
+            raise PyoneerSceneError(
+                f"no current scene to bind {type(game_object).__name__} into "
+                f"at {depth_or_definition!r}; call set_scene() first"
+            )
 
     def add_scene(self, name: str, scene: GameScene):
         self.scenes[name] = scene
@@ -49,19 +53,19 @@ class SceneManager:
 
     def pre_update(self, delta: float):
         self.inputs()
-        self.current_scene.core_pre_update(delta)
+        self.current_scene.core_frame_update_pre(delta)
 
     def update(self, delta: float):
         if self.camera:
             self.camera.update()
-        self.current_scene.core_update(delta)
+        self.current_scene.core_frame_update(delta)
         if self.renderer:
             self.renderer.update(delta)
 
     def post_update(self, delta: float):
-        self.current_scene.core_post_update(delta)
+        self.current_scene.core_frame_update_post(delta)
 
     def inputs(self):
         events = EventManager.get_pyo()
         for event in events:
-            self.current_scene.core_inputs(event)
+            self.current_scene.core_input_receive(event)

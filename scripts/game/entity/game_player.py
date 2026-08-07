@@ -26,7 +26,7 @@ class PlayerState:
 
 class GamePlayer(GameAnimatedEntity):
 
-    def core_inputs(self, events: list[pygame.event.Event] | pygame.event.Event):
+    def core_input_receive(self, events: list[pygame.event.Event] | pygame.event.Event):
         # todo; process input events for the player
         pass
 
@@ -44,7 +44,7 @@ class GamePlayer(GameAnimatedEntity):
         if not self.action_manager:
             self.state.enabled_inputs = False
 
-    def core_build(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):
         pass
 
     # core_image is inherited from GameAnimatedEntity; the override that used
@@ -88,11 +88,11 @@ class GamePlayer(GameAnimatedEntity):
             else:
                 self.animation.start(f"idle_{self.state.last_direction}")
 
-    def core_update(self, event: Optional[PyoneerEvent] = None):
+    def core_frame_update(self, event: Optional[PyoneerEvent] = None):
         # update movement lerp
         if not self.state.active:
             return
-        super().core_update(event)
+        super().core_frame_update(event)
         if self.state.enabled_inputs and self.state.can_move:
             self.input_move(event)
         #self.move(delta_time, self.world_transform)

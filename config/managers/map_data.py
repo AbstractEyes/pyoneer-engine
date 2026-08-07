@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytmx
 
 from config.managers.core_data import CoreAsset
+from scripts.core.errors import PyoneerAssetMissingError
 
 
 class MapData:
@@ -35,10 +36,8 @@ class AssetMapManager(CoreAsset):
         """
         map_data = self.__find_map(name)
         if map_data is None:
-            raise KeyError(
-                f"map {name!r} is not declared in config/maps.json; "
-                f"available: {sorted(self.maps)}"
-            )
+            raise PyoneerAssetMissingError("map", name, available=self.maps.keys(),
+                                          source="config/maps.json")
         if map_data.data is None or reload:
             map_data.data = pytmx.load_pygame(map_data.file)
         return map_data.data

@@ -7,6 +7,7 @@ from pygame.draw import rect
 
 from config.managers.animation_data import DataAnimationCategory, DataAnimation, DataAnimationFrame
 from scripts.core.event_manager import PyoneerEvent
+from scripts.core.errors import PyoneerAssetMissingError
 
 
 # takes in an individual animation sequence data, all sub animations within
@@ -154,10 +155,9 @@ class GameAnimationHandler:
             return
         animation = self._animations.get(name)
         if animation is None:
-            raise KeyError(
-                f"animation {name!r} not found in {self._name!r}; "
-                f"available: {sorted(self._animations)}"
-            )
+            raise PyoneerAssetMissingError("animation", name,
+                                          available=self._animations.keys(),
+                                          category=self._name)
         animation.start(from_beginning=from_beginning)
         self._active = animation
         self._paused = None

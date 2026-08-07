@@ -19,8 +19,8 @@ class GameTransform(GameComponent):
         self.__scale: Vector2 = Vector2(1, 1)
         self.__depth: int = 0
 
-    def core_prepare(self, event: Optional[PyoneerEvent] = None):
-        super().core_prepare(event)
+    def core_lifecycle_prepare(self, event: Optional[PyoneerEvent] = None):
+        super().core_lifecycle_prepare(event)
 
         if not self.flags.get("prepared_transform", False):
             self.bind_sync_listener(GameEventType.TRANSFORM, self.__transform_event)

@@ -30,9 +30,6 @@ class GameEntitySimple(PyoneerGameObject, ABC):
         self.transform: Transform = Transform(position=position, rotation=rotation, scale=scale)
         self._image = pygame.image.load(image_path) if len(image_path) > 0 else None
 
-    def core_image(self, image_in: Surface = None) -> Surface:
-        return self._image
-
     def moveto(self, transform: Transform | tuple[float, float]):
         if isinstance(transform, tuple):
             self.transform.position = Vector2(transform)
@@ -86,16 +83,16 @@ class GameEntity(GameEntitySimple, ABC):
     def stop(self):
         self.__stopped = True
 
-    def core_pre_prepare(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_prepare_pre(self, event: Optional[PyoneerEvent] = None):
         pass
 
-    def core_prepare(self, event: Optional[PyoneerEvent] = None) -> Surface:
+    def core_lifecycle_prepare(self, event: Optional[PyoneerEvent] = None) -> Surface:
         pass
 
-    def core_update(self, event: Optional[PyoneerEvent] = None):
+    def core_frame_update(self, event: Optional[PyoneerEvent] = None):
         pass
 
-    def core_dispose(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_dispose(self, event: Optional[PyoneerEvent] = None):
         pass
 
     def rotate(self, angle: float):
@@ -131,7 +128,8 @@ class GameAnimatedEntity(GameEntity):
         self.__started: bool = False
         self.__stopped: bool = False
 
-    def core_image(self, image_in: Surface = None) -> Surface | None:
+    @property
+    def image(self) -> Surface | None:
         """Current animation frame, falling back to the static image.
 
         May return None when no animation is playing and no static image was
@@ -142,9 +140,9 @@ class GameAnimatedEntity(GameEntity):
             frame = self.animation.image()
             if frame is not None:
                 return frame
-        return super().core_image()
+        return self._image
 
-    def core_update(self, event: Optional[PyoneerEvent] = None):
-        super().core_update(event)
+    def core_frame_update(self, event: Optional[PyoneerEvent] = None):
+        super().core_frame_update(event)
         if self.animation:
             self.animation.update(event)

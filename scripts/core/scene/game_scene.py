@@ -20,34 +20,34 @@ class GameScene(PyoneerGameObject):
         self.name: str = name
         self.__game_objects: dict[str, list[PyoneerGameObject]] = {}
 
-    def core_build(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
                 if event is not None:
-                    game_object.core_build(event)
+                    game_object.core_lifecycle_build(event)
                 else:
-                    game_object.core_build(self.__make_event(GameEventType.BUILD))
+                    game_object.core_lifecycle_build(self.__make_event(GameEventType.BUILD))
 
-    def core_pre_prepare(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_prepare_pre(self, event: Optional[PyoneerEvent] = None):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
                 if event is not None:
-                    game_object.core_pre_prepare(event)
+                    game_object.core_lifecycle_prepare_pre(event)
                 else:
-                    game_object.core_pre_prepare(self.__make_event(GameEventType.PRE_PREPARE))
+                    game_object.core_lifecycle_prepare_pre(self.__make_event(GameEventType.PRE_PREPARE))
 
-    def core_prepare(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_prepare(self, event: Optional[PyoneerEvent] = None):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
                 if event is not None:
-                    game_object.core_prepare(event)
+                    game_object.core_lifecycle_prepare(event)
                 else:
-                    game_object.core_prepare(self.__make_event(GameEventType.PREPARE))
+                    game_object.core_lifecycle_prepare(self.__make_event(GameEventType.PREPARE))
 
-    def core_post_prepare(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_prepare_post(self, event: Optional[PyoneerEvent] = None):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
-                game_object.core_post_prepare(self.__make_event(GameEventType.POST_PREPARE))
+                game_object.core_lifecycle_prepare_post(self.__make_event(GameEventType.POST_PREPARE))
 
     def __make_event(self, event_type: GameEventType, data: dict = {}):
         return PyoneerEvent(event_type, sender=self, data=data)
@@ -69,47 +69,43 @@ class GameScene(PyoneerGameObject):
         if not self.flags.get("active"):
             for game_object_type, game_object_list in self.__game_objects.items():
                 for game_object in game_object_list:
-                    game_object.core_prepare(self.__make_event(GameEventType.PREPARE))
+                    game_object.core_lifecycle_prepare(self.__make_event(GameEventType.PREPARE))
             self.flags["active"] = True
 
-    def core_pre_dispose(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_dispose_pre(self, event: Optional[PyoneerEvent] = None):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
-                game_object.core_pre_dispose(self.__make_event(GameEventType.PRE_DISPOSE))
+                game_object.core_lifecycle_dispose_pre(self.__make_event(GameEventType.PRE_DISPOSE))
 
-    def core_dispose(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_dispose(self, event: Optional[PyoneerEvent] = None):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
-                game_object.core_dispose()
+                game_object.core_lifecycle_dispose()
 
-    def core_post_dispose(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_dispose_post(self, event: Optional[PyoneerEvent] = None):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
-                game_object.core_post_dispose()
+                game_object.core_lifecycle_dispose_post()
 
-    def core_pre_update(self, delta: float):
+    def core_frame_update_pre(self, delta: float):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
-                game_object.core_pre_update(self.__make_event(GameEventType.PRE_UPDATE, data={"delta": delta}))
+                game_object.core_frame_update_pre(self.__make_event(GameEventType.PRE_UPDATE, data={"delta": delta}))
 
-    def core_update(self, delta: float):
+    def core_frame_update(self, delta: float):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
-                game_object.core_update(self.__make_event(GameEventType.UPDATE, data={"delta": delta}))
+                game_object.core_frame_update(self.__make_event(GameEventType.UPDATE, data={"delta": delta}))
 
-    def core_post_update(self, delta: float):
+    def core_frame_update_post(self, delta: float):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
-                game_object.core_post_update(self.__make_event(GameEventType.POST_UPDATE, data={"delta": delta}))
+                game_object.core_frame_update_post(self.__make_event(GameEventType.POST_UPDATE, data={"delta": delta}))
 
-    def core_blits(self, *args, **kwargs) -> list[tuple[Surface, tuple[float | int, float | int]]]:
+    def core_render_blits(self, *args, **kwargs) -> list[tuple[Surface, tuple[float | int, float | int]]]:
         return []
 
-    def core_image(self, image_in: surface.Surface | None = None) -> surface.Surface:
-        # todo: to remove
-        pass
-
-    def core_inputs(self, event: Optional[PyoneerEvent] = None):
+    def core_input_receive(self, event: Optional[PyoneerEvent] = None):
         for game_object_type, game_object_list in self.__game_objects.items():
             for game_object in game_object_list:
-                game_object.core_inputs(event)
+                game_object.core_input_receive(event)

@@ -80,7 +80,7 @@ class MainGame:
         self.prepare_test_scene()
 
     def build(self):
-        self.scene.current_scene.core_build()
+        self.scene.current_scene.core_lifecycle_build()
 
     def prepare_test_scene(self):
         self.scene = SceneManager(self)
@@ -93,9 +93,9 @@ class MainGame:
         test_objects = self.load_test_objects()
         for obj in test_objects:
             self.scene.bind(obj[0], obj[1])
-        self.scene.current_scene.core_pre_prepare()
-        self.scene.current_scene.core_prepare()
-        self.scene.current_scene.core_post_prepare()
+        self.scene.current_scene.core_lifecycle_prepare_pre()
+        self.scene.current_scene.core_lifecycle_prepare()
+        self.scene.current_scene.core_lifecycle_prepare_post()
 
     def load_map(self) -> tuple[GameCamera, GameMap]:
         map_data = self.assets.maps.load_assets("test")
@@ -245,7 +245,7 @@ class MainGame:
         self.screen.fill((0, 0, 0))
         # renders the 2d game's layers. SceneManager.update already ran
         # renderer.update for this frame; calling it again here only repeated
-        # the no-op Layer.core_update pass over every layer.
+        # the no-op Layer.core_frame_update pass over every layer.
         self.renderer.render()
         pygame.display.flip()
         return delta_time

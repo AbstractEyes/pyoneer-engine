@@ -4,6 +4,7 @@ import pygame.key
 import pygame.joystick
 
 from config.managers.core_data import CoreAsset
+from scripts.core.errors import PyoneerBindingInvalidError
 
 KEYBOARD = {
     "a": pygame.K_a, "b": pygame.K_b, "c": pygame.K_c, "d": pygame.K_d,
@@ -45,8 +46,9 @@ CONTROLLER = {
 CONTROLLER.update({f"button_{i}": i for i in range(16)})
 
 
-class UnknownBindingError(KeyError):
-    """A config binding names a key or button this engine does not know."""
+# Kept as an alias so existing `except UnknownBindingError` sites keep working;
+# the canonical name is PyoneerBindingInvalidError.
+UnknownBindingError = PyoneerBindingInvalidError
 
 
 class BaseAction:

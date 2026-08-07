@@ -85,8 +85,8 @@ class GameWindow(GameComponent):
     # -------------------------------------------------
     # utility functionality
     # -------------------------------------------------
-    def core_prepare(self, event: PyoneerEvent | None = None):
-        super().core_prepare(event)
+    def core_lifecycle_prepare(self, event: PyoneerEvent | None = None):
+        super().core_lifecycle_prepare(event)
         if not self.flags.get("prepared_window", False):
             config = Config.config.get("theme")["widget"]
             self.body = ShapeComponent(

@@ -19,6 +19,7 @@ pygame.init()
 pygame.display.set_mode((64, 64))
 
 from config.managers.core_asset_manager import CoreAssetManager
+from scripts.core.errors import PyoneerAssetMissingError
 
 failures = []
 
@@ -66,8 +67,8 @@ print()
 print("unknown map fails loudly instead of KeyError-ing on a dict")
 try:
     a.maps.load_assets("no_such_map")
-    expect("raises KeyError", False, True)
-except KeyError as exc:
+    expect("raises PyoneerAssetMissingError", False, True)
+except PyoneerAssetMissingError as exc:
     print(f"  ok   raised: {exc}")
 
 print()

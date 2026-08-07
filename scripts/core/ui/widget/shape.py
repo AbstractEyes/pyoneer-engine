@@ -44,35 +44,35 @@ class ShapeComponent(DrawComponent):
         #self.bind_sync_listener(GameEventType.BLITS, self.blits_background)
 
     def prepare_background(self, sender: Optional[PyoneerGameObject]):
-        self.core_image().fill((0, 0, 0, 0))
+        self.image.fill((0, 0, 0, 0))
         if self.visible:
             #self._image.fill(self.border_color)
             if self.shape == ShapeType.Rectangle:
                 if self.background_color.a > 0:
                     if self.border_visible:
-                        pygame.draw.rect(self.core_image(), self.border_color.color(), (0, 0, self.world_bounds.width, self.world_bounds.height))
+                        pygame.draw.rect(self.image, self.border_color.color(), (0, 0, self.world_bounds.width, self.world_bounds.height))
                     if self.background_visible:
-                        pygame.draw.rect(self.core_image(), self.background_color.color(), (self.border_thickness.x, self.border_thickness.y,
+                        pygame.draw.rect(self.image, self.background_color.color(), (self.border_thickness.x, self.border_thickness.y,
                                                                                             self.world_bounds.width - self.border_thickness.w - self.border_thickness.x,
                                                                                             self.world_bounds.height - self.border_thickness.h - self.border_thickness.y))
-                    self.core_image().convert_alpha()
+                    self.image.convert_alpha()
             elif self.shape == ShapeType.Circle:
                 if self.background_color.a > 0:
                     if self.border_visible:
-                        pygame.draw.circle(self.core_image(), self.border_color.color(), (self.world_bounds.width // 2, self.world_bounds.height // 2), self.world_bounds.width // 2)
+                        pygame.draw.circle(self.image, self.border_color.color(), (self.world_bounds.width // 2, self.world_bounds.height // 2), self.world_bounds.width // 2)
                     if self.background_visible:
-                        pygame.draw.circle(self.core_image(),
+                        pygame.draw.circle(self.image,
                                            self.background_color.color(),
                                            (self.world_bounds.width / 2, self.world_bounds.height / 2),
                                            self.world_bounds.width / 2 - self.border_thickness.x)
-                    self.core_image().convert_alpha()
+                    self.image.convert_alpha()
             elif self.shape == ShapeType.Triangle:
                 if self.background_color.a > 0:
                     if self.border_visible:
-                        pygame.draw.polygon(self.core_image(), self.border_color.color(), [(self.world_bounds.width // 2, 0), (0, self.world_bounds.height), (self.world_bounds.width, self.world_bounds.height)])
+                        pygame.draw.polygon(self.image, self.border_color.color(), [(self.world_bounds.width // 2, 0), (0, self.world_bounds.height), (self.world_bounds.width, self.world_bounds.height)])
                     if self.background_visible:
-                        pygame.draw.polygon(self.core_image(), self.background_color.color(), [(self.world_bounds.width // 2, 0), (0, self.world_bounds.height), (self.world_bounds.width, self.world_bounds.height)])
-                    self.core_image().convert_alpha()
+                        pygame.draw.polygon(self.image, self.background_color.color(), [(self.world_bounds.width // 2, 0), (0, self.world_bounds.height), (self.world_bounds.width, self.world_bounds.height)])
+                    self.image.convert_alpha()
 
     #def blits_background(self, event: Optional[PyoneerEvent]) -> list[tuple[Surface, Vector2]]:
     #    return [(self.image(), Vector2(self.bounds.x, self.bounds.y))] if self.visible else []

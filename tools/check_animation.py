@@ -20,6 +20,7 @@ from config.managers.core_asset_manager import CoreAssetManager
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.event_types import GameEventType
 from scripts.game.entity.game_animation import GameAnimationHandler
+from scripts.core.errors import PyoneerAssetMissingError
 
 assets = CoreAssetManager()
 handler = GameAnimationHandler(assets.animations.get('entity'))
@@ -95,8 +96,8 @@ print()
 print("unknown sequence fails loudly")
 try:
     handler.start('does_not_exist')
-    expect("raises KeyError", False, True)
-except KeyError as exc:
+    expect("raises PyoneerAssetMissingError", False, True)
+except PyoneerAssetMissingError as exc:
     print(f"  ok   raised: {exc}")
 
 print()

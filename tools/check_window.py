@@ -28,7 +28,7 @@ def expect(label, got, want):
 
 def make_window():
     w = GameWindow(header_text="Test", bounds=Rect(100, 100, 400, 400))
-    w.core_prepare(PyoneerEvent(GameEventType.PREPARE, sender=None, data={}))
+    w.core_lifecycle_prepare(PyoneerEvent(GameEventType.PREPARE, sender=None, data={}))
     return w
 
 

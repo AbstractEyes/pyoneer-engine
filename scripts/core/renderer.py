@@ -18,6 +18,8 @@ from scripts.game.game_camera import GameCamera
 from scripts.game.game_map import GameMap
 from scripts.core.depth import MAP_DEPTH, DEPTH, resolve_layer_depth
 from scripts.core.blitpool import BlitPool
+from scripts.core.errors import (PyoneerBindTargetError, PyoneerCameraMissingError,
+                                 PyoneerLayerError, warn_content)
 
 
 class LayerType(str, enum.Enum):
@@ -37,26 +39,23 @@ class Layer(PyoneerGameObject):
         self._image = layer_surface
         self.container: list[PyoneerGameObject] = []
 
-    def core_prepare(self) -> Surface:
+    def core_lifecycle_prepare(self) -> Surface:
         return self._image
 
-    def core_update(self, event: Optional[PyoneerEvent] = None):
+    def core_frame_update(self, event: Optional[PyoneerEvent] = None):
         pass
 
-    def core_build(self, event: Optional[PyoneerEvent] = None):
+    def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):
         pass
 
-    def core_dispose(self, event: Optional[PyoneerEvent] = None) -> bool:
+    def core_lifecycle_dispose(self, event: Optional[PyoneerEvent] = None) -> bool:
         return True
 
-    def core_image(self, image_in: Surface | None = None) -> Surface:
-        return self._image
-
-    def core_blits(self, event: Optional[PyoneerEvent] = None):
+    def core_render_blits(self, event: Optional[PyoneerEvent] = None):
         BlitPool.blit_to_layer(depth=self.layer_depth, image=self._image, destination=(0, 0), sender=self)
 
 
-    def core_inputs(self, events: list[pygame.event.Event] | pygame.event.Event):
+    def core_input_receive(self, events: list[pygame.event.Event] | pygame.event.Event):
         pass
 
 
@@ -72,11 +71,11 @@ class EntityLayer(Layer):
     def unbind(self, entity: GameEntity):
         self.entities.remove(entity)
 
-    def core_prepare(self) -> Surface:
+    def core_lifecycle_prepare(self) -> Surface:
         return self._image
 
 
-    def core_update(self, event: Optional[PyoneerEvent] = None):
+    def core_frame_update(self, event: Optional[PyoneerEvent] = None):
         pass
         # update all entity positions if they are within the camera's view
         #if self._camera:
@@ -90,14 +89,14 @@ class EntityLayer(Layer):
         #                self._image.blit(entity.image(), (x, y))
         #            #self._image.blit(entity.image(), (x, y))
 
-    def core_blits(self, event: Optional[PyoneerEvent] = None):
+    def core_render_blits(self, event: Optional[PyoneerEvent] = None):
         camera = event.data["camera"]
         view = camera.view_area
         for entity in self.entities:
             # One call. This used to invoke core_image() five times per entity
             # per frame, and for an animated entity that is a dict lookup and
             # a list index each time.
-            image = entity.core_image()
+            image = entity.image
             if image is None:
                 continue
             # Cull against the sprite's true rect. The previous rect placed its
@@ -121,22 +120,22 @@ class GameComponentLayer(Layer):
         super().__init__(layer_type, layer_name, layer_depth, layer_surface)
         self.components: list[GameComponent] = []
 
-    def core_prepare(self) -> Surface:
+    def core_lifecycle_prepare(self) -> Surface:
         return self._image
 
-    def core_update(self, delta: float):
+    def core_frame_update(self, delta: float):
         pass
         #for component in self.components:
         #    component.update(delta)
 
-    def core_blits(self, event: Optional[PyoneerEvent]):
+    def core_render_blits(self, event: Optional[PyoneerEvent]):
         for component in self.components:
             event.data["layer_depth"] = self.layer_depth
-            component.core_blits(event)
+            component.core_render_blits(event)
 
     def bind(self, component: GameComponent):
         self.components.append(component)
-        component.core_prepare(PyoneerEvent(GameEventType.PREPARE, sender=self))
+        component.core_lifecycle_prepare(PyoneerEvent(GameEventType.PREPARE, sender=self))
 
     def unbind(self, component: GameComponent):
         self.components.remove(component)
@@ -156,7 +155,7 @@ class MapLayer(Layer):
         self.tile_width = tile_map.tilewidth
         self.tile_height = tile_map.tileheight
 
-    def core_prepare(self) -> MapLayer:
+    def core_lifecycle_prepare(self) -> MapLayer:
         if self.tile_map is not None and self.layer is not None:
             # layer = self.tile_map.get_layer_by_name(self.layer_name)
             # if isinstance(layer, pytmx.TiledTileLayer):
@@ -167,10 +166,10 @@ class MapLayer(Layer):
             self._image = self._image.convert_alpha()
         return self
 
-    def core_update(self, delta: float):
+    def core_frame_update(self, delta: float):
         pass
 
-    def core_blits(self, event: Optional[PyoneerEvent]):
+    def core_render_blits(self, event: Optional[PyoneerEvent]):
         """blit the map layer viewport based on the offset of the camera"""
         camera = event.data["camera"]
         BlitPool.blit_to_layer(depth=self.layer_depth, image=self._image, destination=(0, 0), draw_area=camera.view_area, sender=self)
@@ -232,9 +231,11 @@ class LayerRenderer:
 
             layer_depth = resolve_layer_depth(layer_name)
             if layer_depth is None:
-                print(f"[renderer] map layer {layer_name!r} has no depth mapping in "
-                      f"scripts/core/depth.py and will NOT be drawn. "
-                      f"Add it to MAP_DEPTH or rename the layer in Tiled.")
+                warn_content(
+                    f"map layer {layer_name!r} has no depth mapping in "
+                    f"scripts/core/depth.py and will NOT be drawn. Add it to "
+                    f"MAP_DEPTH or rename the layer in Tiled."
+                )
                 continue
 
             self.layers.setdefault(layer_depth, [])
@@ -242,7 +243,7 @@ class LayerRenderer:
                                             tmx_data.height * tmx_data.tileheight),
                                            pygame.SRCALPHA)
             prepared = self.__make_tile_layer(layer_name, layer_depth, layer_surface,
-                                              tmx_data, layer_data).core_prepare()
+                                              tmx_data, layer_data).core_lifecycle_prepare()
             self.layers[layer_depth].append(prepared)
 
     def image(self, image_in: Surface | None = None) -> Surface:
@@ -268,7 +269,7 @@ class LayerRenderer:
         for layer_depth in sorted(self.layers.keys()):
             layer_list = self.layers[layer_depth]
             for layer in layer_list:
-                layer.core_blits(prepared_event)
+                layer.core_render_blits(prepared_event)
         return BlitPool.get_blit_pool_pygame(True)
 
     def bind(self, layer: str | int, game_object: PyoneerGameObject):
@@ -280,7 +281,10 @@ class LayerRenderer:
         elif isinstance(game_object, GameComponent):
             self.__bind_ui_component(game_object, layer)
         else:
-            raise Exception(f"Game object type {type(game_object)} not supported.")
+            raise PyoneerBindTargetError(
+                game_object,
+                supported=("GameEntity", "GameMap", "GameComponent"),
+            )
 
     def __bind_entity(self, entity: GameEntity, layer_name: int | str = "ENTITY_2"):
         """Bind an entity to a specific layer."""
@@ -303,7 +307,11 @@ class LayerRenderer:
             return depth
         if depth in DEPTH:
             return DEPTH[depth]
-        raise Exception(f"Layer name {depth} not found in core depth maps, did you mean to use an int?")
+        raise PyoneerLayerError(
+            f"layer name {depth!r} is not in the core depth maps; "
+            f"pass an int depth, or add it to scripts/core/depth.py. "
+            f"known: {sorted(DEPTH)}"
+        )
 
     def __bind_ui_component(self, widget: GameComponent, layer_name: str | int = "UI"):
         depth = self.__prepare_depth(layer_name)
@@ -318,9 +326,12 @@ class LayerRenderer:
         if self.camera:
             for layer_list in self.layers.values():
                 for layer in layer_list:
-                    layer.core_update(delta)
+                    layer.core_frame_update(delta)
         else:
-            raise Exception("No camera bound to renderer.")
+            raise PyoneerCameraMissingError(
+                "renderer was driven with no camera bound; "
+                "call LayerRenderer.bind_camera() before update/render"
+            )
 
     def render(self):
         """draw all available layers."""
@@ -330,7 +341,10 @@ class LayerRenderer:
             #except Exception as e:
             #    print(e)
         else:
-            raise Exception("No camera bound to renderer.")
+            raise PyoneerCameraMissingError(
+                "renderer was driven with no camera bound; "
+                "call LayerRenderer.bind_camera() before update/render"
+            )
 
     def rotate_image(self, image, position, origin, angle) -> tuple[Surface, Rect]:
         if angle == 0:

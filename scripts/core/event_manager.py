@@ -56,7 +56,7 @@ class PyoneerEvent:
         """Appends data to the event data."""
         for key, value in data.items():
             if isinstance(value, dict):
-                self.data[key].core_update(value)
+                self.data[key].core_frame_update(value)
             elif isinstance(value, list):
                 self.data[key].extend(value)
             else:
