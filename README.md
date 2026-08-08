@@ -7,7 +7,7 @@ stack**. Nothing draws to the screen directly. Every drawable object pushes a
 `BlitToken` into a global pool keyed by depth and priority, and the renderer
 flattens the whole frame into a single `surface.blits()` call. Layers are a
 sort key. That makes a frame *data* before it is pixels, which is why this repo
-can assert things like "55 blit tokens across 9 depths, 4 culled" instead of
+can assert things like "41 blit tokens across 11 depths" instead of
 comparing screenshots.
 
 ```
@@ -31,7 +31,7 @@ Working, and honest about where it is not. ~12,350 lines of tracked Python.
 | | |
 |---|---|
 | Runs | yes — headless or windowed, on pygame 2.6 / Python 3.11 |
-| Tested | 12 check tools plus a frame-level regression harness |
+| Tested | 16 check tools plus a frame-level regression harness |
 | Stable API | **no.** Names are still moving. See [Known rough edges](#known-rough-edges) |
 | Docs | design plans in [`docs/`](docs/), all reconciled against the code |
 
@@ -204,7 +204,7 @@ file makes every subsequent human diff unreadable.
 .venv/Scripts/python.exe tools/check_all.py
 ```
 
-12 checks plus a frame-level drift comparison, one exit code. They are not unit
+16 checks plus a frame-level drift comparison, one exit code. They are not unit
 tests; each one boots or drives real engine code and asserts measured
 behaviour — token counts, dispatch counts, frame hashes, pixel equality.
 
@@ -221,8 +221,8 @@ Deliberate visual changes are re-baselined explicitly:
 .venv/Scripts/python.exe tools/smoke.py --frames 60 --write-baseline
 ```
 
-Without art, 6 of the 12 checks pass; the other 6 boot the engine and need the
-three image files. `tools/make_placeholder_art.py` is enough for all 12.
+Without art, 7 of the 16 checks pass; the other 9 boot the engine and need the
+three image files. `tools/make_placeholder_art.py` is enough for all 16.
 
 ## Layout
 
@@ -258,11 +258,13 @@ Stated plainly, because most of them are recorded with measurements in
 - **Boot costs ~640 ms**, up from ~230 ms, because map compositing proves its
   merges are lossless with `pygame.mask` work at startup. One-time cost buying
   2.6 ms per frame; pays back in ~150 frames. Not yet optimized.
-- **Grid and listbox do not work.** `GridComponent` is stubs with no layout
-  engine; `ListBoxComponent` depends on it and has never run.
-- **Window resize is unimplemented.** Move and close work.
+- **Listbox does not work.** `ListBoxComponent` has never run. The grid it
+  needs now exists; what is missing is its own row selection, keyboard
+  navigation and row template.
 - **The scroll bar builds from the wrong formula** and shifts 14 px on its
   first scroll event.
+- **No drag-and-drop.** `GridComponent.snap()` places by pixel position and
+  `MOUSE_DRAG_BEGIN`/`END` are bindable, but nothing wires them together.
 - **The demo map has an invisible parallax layer** — its tiles sit beneath a
   fully opaque floor.
 - **`archive/gen3_behavior_rewrite/`** is an unfinished redesign that never

@@ -42,12 +42,11 @@ The engine reads exactly **three** image files at runtime. Without them,
    `GameAnimationHandler.__init__` loads it eagerly, raising
    `PyoneerAssetMissingError` naming the config key that declared it.
 
-`tools/check_all.py` runs 12 checks; **six** of them boot the engine and need
-the art (`animation`, `maplayers`, `singletons`, `tmx_roundtrip`, `viewclip`,
-`window_close`). The other six pass on a bare clone.
+`tools/check_all.py` runs 16 checks; **9** of them boot the engine and need
+the art (`anchor`, `animation`, `events`, `maplayers`, `singletons`, `tmx_roundtrip`, `viewclip`, `window`, `window_close`). The rest pass on a bare clone.
 
 The fastest fix is `tools/make_placeholder_art.py`, which writes all three at
-the required sizes; with it, all 12 checks pass.
+the required sizes; with it, all 16 checks pass.
 
 ## Where the paths live
 
