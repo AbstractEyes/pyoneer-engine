@@ -29,17 +29,13 @@
   },
   "dispatch_total_per_frame": 120,
   "dispatch_during_boot": 565,
-  "blit_tokens": 59,
+  "blit_tokens": 55,
   "blit_culled": 4,
   "blit_depths": {
     "1": 1,
-    "10": 1,
-    "30": 1,
     "40": 5,
     "41": 1,
     "50": 1,
-    "55": 1,
-    "60": 1,
     "100": 1,
     "101": 5,
     "102": 1,
@@ -50,13 +46,9 @@
   },
   "renderer_layer_depths": [
     1,
-    10,
-    30,
     40,
     41,
     50,
-    55,
-    60,
     100
   ],
   "entity_layer_counts": {

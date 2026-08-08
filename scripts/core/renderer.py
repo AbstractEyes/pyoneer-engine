@@ -19,6 +19,7 @@ from scripts.game.game_map import GameMap
 from scripts.core.depth import MAP_DEPTH, DEPTH, resolve_layer_depth
 from scripts.core.blitpool import BlitPool
 from scripts.core.viewclip import clip_to_view, containment, Containment
+from scripts.core.log import trace_render
 from scripts.core.errors import (PyoneerBindTargetError, PyoneerCameraMissingError,
                                  PyoneerLayerError, warn_content)
 
@@ -28,6 +29,35 @@ class LayerType(str, enum.Enum):
     ENTITY = 'entity'
     OBJECT = 'object'
     UI = 'ui'
+
+
+def drawable_tile_count(layer: pytmx.TiledTileLayer, tile_map: pytmx.TiledMap) -> int:
+    """How many cells of this tile layer actually resolve to a surface.
+
+    A Tiled file happily carries layers that are declared but empty, and the
+    renderer used to rasterize them anyway: the shipped test.tmx has an
+    "Above1" layer with 10000 cells and zero non-zero gids, and it still got a
+    1600x1600 SRCALPHA surface (10.24 MB) plus a blit token every single
+    frame. The gid test alone is not enough -- a gid can be non-zero and still
+    resolve to None -- so this counts what the bake would actually draw.
+    """
+    count = 0
+    for _x, _y, gid in layer:
+        if gid and isinstance(tile_map.get_tile_image_by_gid(gid), pygame.Surface):
+            count += 1
+    return count
+
+
+def opaque_mask(surface: Surface) -> pygame.mask.Mask:
+    """Pixels with alpha exactly 255."""
+    return pygame.mask.from_surface(surface, 254)
+
+
+def partial_alpha_mask(surface: Surface) -> pygame.mask.Mask:
+    """Pixels with alpha strictly between 0 and 255."""
+    mask = pygame.mask.from_surface(surface, 0)
+    mask.erase(opaque_mask(surface), (0, 0))
+    return mask
 
 
 class Layer(PyoneerGameObject):
@@ -164,16 +194,27 @@ class MapLayer(Layer):
         self.tile_width = tile_map.tilewidth
         self.tile_height = tile_map.tileheight
 
-    def core_lifecycle_prepare(self) -> MapLayer:
-        if self.tile_map is not None and self.layer is not None:
-            # layer = self.tile_map.get_layer_by_name(self.layer_name)
-            # if isinstance(layer, pytmx.TiledTileLayer):
-            for x, y, gid in self.layer:
-                tile = self.tile_map.get_tile_image_by_gid(gid)
-                if isinstance(tile, pygame.Surface):
-                    self._image.blit(tile,[x * self.tile_width + self.layer.offsetx, y * self.tile_height + self.layer.offsety])
-            self._image = self._image.convert_alpha()
+    def rebake(self) -> MapLayer:
+        """Re-rasterize this layer's tiles onto its own surface.
+
+        Split out of core_lifecycle_prepare so runtime map editing has an
+        entry point: change gids in the pytmx layer, call rebake(), then
+        LayerRenderer.invalidate() so any composite holding this layer picks
+        the new pixels up.
+        """
+        if self.tile_map is None or self.layer is None:
+            return self
+        self._image.fill((0, 0, 0, 0))
+        for x, y, gid in self.layer:
+            tile = self.tile_map.get_tile_image_by_gid(gid)
+            if isinstance(tile, pygame.Surface):
+                self._image.blit(tile, [x * self.tile_width + self.layer.offsetx,
+                                        y * self.tile_height + self.layer.offsety])
+        self._image = self._image.convert_alpha()
         return self
+
+    def core_lifecycle_prepare(self) -> MapLayer:
+        return self.rebake()
 
     def core_frame_update(self, delta: float):
         pass
@@ -182,6 +223,143 @@ class MapLayer(Layer):
         """blit the map layer viewport based on the offset of the camera"""
         camera = event.data["camera"]
         BlitPool.blit_to_layer(depth=self.layer_depth, image=self._image, destination=(0, 0), draw_area=camera.view_area, sender=self)
+
+
+class MapComposite(Layer):
+    """One baked surface standing in for a run of consecutive static tile layers.
+
+    Six full-map tile layers cost six viewport blits per frame -- measured at
+    3.663 ms of a 6.207 ms frame on the shipped map, i.e. 59% of the frame
+    spent redrawing pixels that never change. Baking them into one surface
+    turns that into one blit.
+
+    WHY THIS IS NOT UNCONDITIONAL
+    -----------------------------
+    Flattening is not free of visual consequence. pygame's RGBA->RGBA blit
+    writes the blended colour WITHOUT re-dividing by the resulting alpha, so
+    partial alpha landing on partial alpha has its alpha applied a second time
+    at the final blit. That is not a rounding wobble: 533 of 972 sampled
+    combinations differ, one of them 11 vs 1 out of 255. So a composite is
+    only built where it is PROVABLY pixel-identical -- see
+    composite_is_exact(). Groups that fail the test are left as separate
+    layers, which is slower but correct.
+
+    Baking happens in rebake(), never in __init__, because runtime map editing
+    is a goal of this engine and a composite with no rebake path walls it off.
+    """
+
+    def __init__(self, sources: list[MapLayer], layer_depth: int):
+        if not sources:
+            raise PyoneerLayerError("MapComposite needs at least one source MapLayer")
+        name = "+".join(str(source.layer_name) for source in sources)
+        super().__init__(LayerType.TILE, name, layer_depth, None)
+        self.sources: list[MapLayer] = list(sources)
+        self.depth_band: tuple[int, int] = (min(s.layer_depth for s in sources),
+                                            max(s.layer_depth for s in sources))
+        self.opaque: bool = False
+        """True when the bake covers its whole surface at alpha 255.
+
+        Then the surface can drop its alpha channel entirely (.convert()),
+        which is the cheaper blit. Measured, never assumed.
+        """
+
+    def covers(self, depth_band: tuple[int, int]) -> bool:
+        """Does this composite hold any layer inside the given depth band?"""
+        return not (depth_band[1] < self.depth_band[0] or depth_band[0] > self.depth_band[1])
+
+    def rebake(self) -> MapComposite:
+        """Flatten the source layers, in depth order, into a single surface."""
+        ordered = sorted(self.sources, key=lambda s: s.layer_depth)
+        size = ordered[0].require_image().get_size()
+        baked = pygame.Surface(size, pygame.SRCALPHA)
+        for source in ordered:
+            baked.blit(source.require_image(), (0, 0))
+        self.opaque = opaque_mask(baked).count() == size[0] * size[1]
+        # An opaque composite has nothing to blend, so drop the alpha channel:
+        # .convert() is a straight copy where .convert_alpha() is a per-pixel
+        # blend. The pixels are identical either way because every alpha is
+        # already 255.
+        self._image = baked.convert() if self.opaque else baked.convert_alpha()
+        trace_render("baked composite %s depth=%s band=%s opaque=%s",
+                     self.layer_name, self.layer_depth, self.depth_band, self.opaque)
+        return self
+
+    def core_lifecycle_prepare(self) -> MapComposite:
+        return self.rebake()
+
+    def core_frame_update(self, delta: float):
+        pass
+
+    def core_render_blits(self, event: Optional[PyoneerEvent]):
+        camera = event.data["camera"]
+        BlitPool.blit_to_layer(depth=self.layer_depth, image=self.require_image(),
+                               destination=(0, 0), draw_area=camera.view_area,
+                               sender=self)
+
+
+def composite_is_exact(surfaces: list[Surface]) -> bool:
+    """Can these surfaces be flattened without moving a single screen pixel?
+
+    Flattening replaces `screen <- L0 <- L1 <- ...` with
+    `empty <- L0 <- L1 <- ... ; screen <- composite`. Whether that is
+    lossless depends on one detail of pygame's RGBA->RGBA blitter, which was
+    measured on pygame 2.6.0 / SDL 2.28.4 rather than assumed:
+
+        destination alpha 0    the source pixel is COPIED verbatim, colour
+                               and alpha. It is not blended. So laying a
+                               half-transparent pixel into an untouched part
+                               of the buffer loses nothing.
+        destination alpha 255  a normal source-over blend onto a known
+                               colour -- the same arithmetic the screen would
+                               have done -- and the result is still opaque.
+        destination alpha in   the blended colour is written back WITHOUT
+        between                being re-divided by the resulting alpha, so
+                               the source's alpha gets applied a second time
+                               at the final blit to the screen.
+
+    Only that last row is lossy, and only when the incoming pixel is itself
+    partially transparent (alpha 255 overwrites, alpha 0 is a no-op). So the
+    single disqualifying event is PARTIAL ALPHA LANDING ON PARTIAL ALPHA.
+    Measured: 533 of 972 sampled two-partial-layer combinations differ, one
+    of them 11 vs 1 out of 255; 0 of 36 differ when the partials are
+    disjoint.
+
+    A pixel is forgiven even then if a later layer is fully opaque there,
+    because the bad value is overwritten before the composite is ever used.
+    """
+    if len(surfaces) < 2:
+        return True
+    opaque = [opaque_mask(s) for s in surfaces]
+    partial = [partial_alpha_mask(s) for s in surfaces]
+    size = surfaces[0].get_size()
+
+    # later[i] = union of the opaque masks of everything drawn after i.
+    later: list[pygame.mask.Mask] = [pygame.mask.Mask(size) for _ in surfaces]
+    for index in range(len(surfaces) - 2, -1, -1):
+        later[index] = later[index + 1].copy()
+        later[index].draw(opaque[index + 1], (0, 0))
+
+    # Per-pixel state of the buffer so far: FULL once some layer wrote alpha
+    # 255 there (it can never go back), PARTIAL once a partial pixel landed on
+    # an untouched spot, otherwise still untouched.
+    full = pygame.mask.Mask(size)
+    part = pygame.mask.Mask(size)
+    for index in range(len(surfaces)):
+        incoming = partial[index]
+        if incoming.count():
+            unsafe = incoming.overlap_mask(part, (0, 0))
+            unsafe.erase(later[index], (0, 0))
+            if unsafe.count():
+                trace_render("composite rejected at index %s: %s partial-alpha "
+                             "pixels land on partial alpha and survive", index,
+                             unsafe.count())
+                return False
+            fresh = incoming.copy()
+            fresh.erase(full, (0, 0))
+            part.draw(fresh, (0, 0))
+        part.erase(opaque[index], (0, 0))
+        full.draw(opaque[index], (0, 0))
+    return True
 
 
 
@@ -196,6 +374,21 @@ class LayerRenderer:
         """Define the layer indexes and accessors"""
 
         self.layers: dict[int, list[Layer | MapLayer | EntityLayer]] = dict()
+
+        self.map_sources: dict[int, list[MapLayer]] = dict()
+        """Every rasterized tile layer, by depth. The authority.
+
+        `self.layers` is DERIVED from this: a run of these may be replaced by
+        one MapComposite. Keeping the sources means a rebake can always
+        reconstruct the ungrouped state, so rebaking twice is not the same as
+        compositing a composite.
+        """
+
+        self._map_regroup: bool = False
+        """Grouping is stale: which layers can merge has to be recomputed."""
+
+        self._map_invalid: set[tuple[int, int]] = set()
+        """Depth bands whose pixels are stale but whose grouping still holds."""
 
     def __bind_map(self, tmx_data: pytmx.TiledMap):
         self.__prepare_map_layers(tmx_data)
@@ -247,6 +440,18 @@ class LayerRenderer:
                 )
                 continue
 
+            if drawable_tile_count(layer_data, tmx_data) == 0:
+                # The .tmx says this layer exists, so say out loud that it was
+                # dropped. Silently ignoring authored content is the failure
+                # mode the loop above was rewritten to remove; an empty layer
+                # is cheap to skip but must not be invisible to the author.
+                warn_content(
+                    f"map layer {layer_name!r} (depth {layer_depth}) has no "
+                    f"drawable tiles and was skipped: no surface allocated and "
+                    f"no blit queued. Delete it in Tiled, or put tiles in it."
+                )
+                continue
+
             self.layers.setdefault(layer_depth, [])
             layer_surface = pygame.Surface((tmx_data.width * tmx_data.tilewidth,
                                             tmx_data.height * tmx_data.tileheight),
@@ -254,6 +459,130 @@ class LayerRenderer:
             prepared = self.__make_tile_layer(layer_name, layer_depth, layer_surface,
                                               tmx_data, layer_data).core_lifecycle_prepare()
             self.layers[layer_depth].append(prepared)
+            self.map_sources.setdefault(layer_depth, []).append(prepared)
+
+        # Binding a map changes which depths hold tiles, so the grouping is
+        # stale by definition. Deliberately NOT baked here: the bake is the
+        # renderer's, and it runs from render() once the layer set has settled,
+        # so binding entities afterwards cannot leave a composite straddling
+        # them.
+        self.invalidate()
+
+    def invalidate(self, depth_band: int | tuple[int, int] | None = None) -> None:
+        """Mark baked map composites stale; the next render() rebakes them.
+
+        This is the runtime-map-editing entry point. Edit tiles, call
+        MapLayer.rebake() on the layer you touched (or let this do it), then:
+
+            renderer.invalidate(50)          # one depth
+            renderer.invalidate((10, 30))    # a band
+            renderer.invalidate()            # everything, and regroup
+
+        A band invalidation re-rasterizes the affected source layers and
+        re-flattens the composites that hold them, leaving the grouping alone.
+        Passing None also recomputes the grouping, which is what you need when
+        a layer is added or removed, because a new layer can split a run that
+        used to be contiguous.
+        """
+        if depth_band is None:
+            self._map_regroup = True
+            self._map_invalid.clear()
+            return
+        if isinstance(depth_band, int):
+            depth_band = (depth_band, depth_band)
+        low, high = int(depth_band[0]), int(depth_band[1])
+        self._map_invalid.add((min(low, high), max(low, high)))
+
+    def rebake_map(self) -> None:
+        """Do the work invalidate() asked for. Idempotent."""
+        if self._map_regroup:
+            self._map_invalid.clear()
+            self._map_regroup = False
+            for layers in self.map_sources.values():
+                for source in layers:
+                    source.rebake()
+            self.__regroup_map_layers()
+            return
+
+        bands = self._map_invalid
+        self._map_invalid = set()
+        for depth, layers in self.map_sources.items():
+            if any(band[0] <= depth <= band[1] for band in bands):
+                for source in layers:
+                    source.rebake()
+        for layer_list in self.layers.values():
+            for layer in layer_list:
+                if isinstance(layer, MapComposite) and any(layer.covers(b) for b in bands):
+                    layer.rebake()
+
+    def __regroup_map_layers(self) -> None:
+        """Replace runs of tile-only depths with one MapComposite each.
+
+        Draw order is preserved by construction: a run is a MAXIMAL span of
+        consecutive depths (in the renderer's own sort order) that hold nothing
+        but tile layers, so an entity or UI layer anywhere in the range ends
+        the run there. On the shipped map that yields exactly two runs, one
+        under the entity layers at 40/41 and one over them, and the entities
+        still interleave.
+        """
+        for depth in list(self.layers):
+            self.layers[depth] = [layer for layer in self.layers[depth]
+                                  if not isinstance(layer, (MapLayer, MapComposite))]
+            if not self.layers[depth]:
+                del self.layers[depth]
+
+        # Whatever survived the strip is a non-tile layer, so its depth breaks
+        # a run. A depth holding BOTH tiles and entities is such a break: the
+        # tile layer is reinserted there on its own, at the front of the list,
+        # which is the order __prepare_map_layers established (map first, then
+        # whatever binds later).
+        blocking = set(self.layers)
+        runs: list[list[int]] = []
+        current: list[int] = []
+        for depth in sorted(set(self.map_sources) | blocking):
+            if depth in self.map_sources and depth not in blocking:
+                current.append(depth)
+            else:
+                if current:
+                    runs.append(current)
+                current = []
+                if depth in self.map_sources:
+                    for source in reversed(self.map_sources[depth]):
+                        self.layers[depth].insert(0, source)
+        if current:
+            runs.append(current)
+
+        for run in runs:
+            sources = [source for depth in run for source in self.map_sources[depth]]
+            for group in self.__split_exact_groups(sources):
+                depth = group[0].layer_depth
+                self.layers.setdefault(depth, [])
+                if len(group) == 1:
+                    self.layers[depth].append(group[0])
+                else:
+                    self.layers[depth].append(MapComposite(group, depth).rebake())
+
+    @staticmethod
+    def __split_exact_groups(sources: list[MapLayer]) -> list[list[MapLayer]]:
+        """Greedily cut a run into the longest provably-exact merge groups.
+
+        All-or-nothing would throw away a legal merge because of one bad layer
+        further down the run, so extend a group while composite_is_exact()
+        still holds and start a new one at the layer that breaks it.
+        """
+        groups: list[list[MapLayer]] = []
+        current: list[MapLayer] = []
+        for source in sources:
+            candidate = current + [source]
+            if len(candidate) > 1 and not composite_is_exact(
+                    [layer.require_image() for layer in candidate]):
+                groups.append(current)
+                current = [source]
+            else:
+                current = candidate
+        if current:
+            groups.append(current)
+        return groups
 
     def image(self, image_in: Surface | None = None) -> Surface:
         if image_in:
@@ -320,6 +649,10 @@ class LayerRenderer:
             layer = EntityLayer(LayerType.ENTITY, layer_name, depth, self.image())
             layer.bind(entity)
             self.layers[depth].append(layer)
+            # A new entity layer can land in the middle of a run of tile
+            # layers, and a composite spanning it would draw the tiles above
+            # the entities. Regroup rather than guess.
+            self.invalidate()
 
     def __prepare_depth(self, depth: int | str):
         if isinstance(depth, int):
@@ -339,6 +672,7 @@ class LayerRenderer:
         layer = GameComponentLayer(LayerType.UI, layer_name, depth + len(self.layers[depth]), Surface(widget.world_bounds.size))
         layer.bind(widget)
         self.layers[depth].append(layer)
+        self.invalidate()
 
     def update(self, delta: float):
         """update all available layers."""
@@ -355,10 +689,13 @@ class LayerRenderer:
     def render(self):
         """draw all available layers."""
         if self.camera:
-            #try:
-                self.image().blits(self.__deploy_blits())
-            #except Exception as e:
-            #    print(e)
+            # Lazy, not eager: the bake runs once after the layer set settles
+            # and again only when something calls invalidate(). Doing it here
+            # rather than in a constructor is what keeps runtime map editing
+            # possible.
+            if self._map_regroup or self._map_invalid:
+                self.rebake_map()
+            self.image().blits(self.__deploy_blits())
         else:
             raise PyoneerCameraMissingError(
                 "renderer was driven with no camera bound; "
