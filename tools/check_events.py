@@ -23,6 +23,7 @@ from pygame import Rect
 from scripts.core.component import GameComponent
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.event_types import GameEventType
+from scripts.core.errors import PyoneerEventTypeError
 from scripts.core.ui.widget.shape import ShapeComponent
 
 failures = []
@@ -43,11 +44,15 @@ class Probe(GameComponent):
         self.tag = tag
         self.log = log
 
+    # Delegate rather than stub these out. An earlier version of this probe
+    # overrode core_lifecycle_build with `pass`, which meant BUILD never
+    # dispatched for it -- and made a real bind_component test fail against
+    # working code.
     def core_lifecycle_build(self, event=None):
-        pass
+        return super().core_lifecycle_build(event)
 
     def core_lifecycle_dispose(self, event=None):
-        return True
+        return super().core_lifecycle_dispose(event)
 
     def core_input_receive(self, event=None):
         return super().core_input_receive(event)
@@ -171,6 +176,70 @@ kid = Probe("k", [], parent=parent, bounds=Rect(0, 0, 5, 5))
 parent.depth = 100
 kid.depth = 5
 expect("child depth accumulates through parent", kid.depth, 105)
+
+print()
+print("a dispatch with event=None is delivered, not dropped")
+log = []
+solo = Probe("solo", log, bounds=Rect(0, 0, 10, 10))
+solo.listen(GameEventType.UPDATE)
+solo.send_event_advanced(GameEventType.UPDATE, None)
+expect("event=None still reaches listeners", log, ["solo"])
+
+log.clear()
+root, child, grand = tree(log)
+root.listen(GameEventType.UPDATE)
+child.listen(GameEventType.UPDATE)
+root.core_frame_update(None)
+expect("lifecycle wrapper with None fans out", log, ["root", "child"])
+
+print()
+print("the synthesized event is usable by the listener")
+seen = {}
+
+
+def inspect_event(event, *a, **k):
+    seen["type"] = event.type
+    seen["sender"] = event.sender
+    seen["data"] = event.data
+
+
+probe = Probe("e", [], bounds=Rect(0, 0, 10, 10))
+probe.bind_sync_listener(GameEventType.PREPARE, inspect_event)
+probe.send_event_advanced(GameEventType.PREPARE, None)
+expect("carries the right type", seen.get("type"), GameEventType.PREPARE)
+expect("sender is the dispatching component", seen.get("sender") is probe, True)
+expect("data is a dict, not None", isinstance(seen.get("data"), dict), True)
+
+print()
+print("bind_component now delivers PREPARE and BUILD to the child")
+log = []
+host = Probe("host", log, bounds=Rect(0, 0, 40, 40))
+late = Probe("late", log, parent=host, bounds=Rect(0, 0, 10, 10))
+late.listen(GameEventType.PREPARE)
+late.listen(GameEventType.BUILD)
+host.bind_component("late", late)
+expect("child received both lifecycle events", sorted(log), ["late", "late"])
+
+print()
+print("an unroutable dispatch raises instead of returning silently")
+try:
+    Probe("x", [], bounds=Rect(0, 0, 4, 4)).send_event_advanced(None, None)
+    expect("raises PyoneerEventTypeError", False, True)
+except PyoneerEventTypeError as exc:
+    print(f"  ok   raised: {str(exc).splitlines()[0]}")
+
+print()
+print("the manager gate does not deref a dict or None")
+gated = Probe("g", [], bounds=Rect(0, 0, 10, 10))
+gated.listen(GameEventType.UPDATE)
+gated.manager = object()          # some other object manages it
+try:
+    gated.send_event_advanced(GameEventType.UPDATE, None)
+    gated.send_event_advanced(GameEventType.UPDATE, {"k": 1})
+    print("  ok   no AttributeError from the manager check")
+except AttributeError as exc:
+    print(f"  FAIL {exc}")
+    failures.append("manager gate")
 
 print()
 if failures:

@@ -39,6 +39,22 @@ def _census(root, seen=None) -> collections.Counter:
 def run(frames: int) -> dict:
     import main as main_module
     from scripts.core import blitpool
+    from scripts.core.component import GameComponent
+
+    # Count listener invocations by event type. This is the number that moves
+    # when dispatch behaviour changes -- a structural edit to the event path
+    # that leaves frame_hash identical is not automatically harmless, because
+    # the same pixels can be produced by a different amount of work. Counted
+    # over the LAST frame only, so it reports steady state rather than boot.
+    dispatch: collections.Counter = collections.Counter()
+    boot_dispatch: collections.Counter = collections.Counter()
+    original_invoke = GameComponent._GameComponent__invoke_listener
+
+    def _counting_invoke(self, typ, callback, event, *args, **kwargs):
+        dispatch[getattr(typ, "name", str(typ))] += 1
+        return original_invoke(self, typ, callback, event, *args, **kwargs)
+
+    GameComponent._GameComponent__invoke_listener = _counting_invoke
 
     game = main_module.MainGame(autostart=False)
 
@@ -61,13 +77,17 @@ def run(frames: int) -> dict:
 
     timings: list[float] = []
     game.begin(max_frames=1)  # first frame separately: it pays one-time costs
-    for _ in range(max(0, frames - 1)):
+    boot_dispatch.update(dispatch)   # everything up to and including frame 1
+    for index in range(max(0, frames - 1)):
+        if index == frames - 2:
+            dispatch.clear()         # last frame only: steady state
         t0 = pygame.time.get_ticks()
         game.tick()
         timings.append(pygame.time.get_ticks() - t0)
         game.frame += 1
 
     blitpool.BlitPool.get_blit_pool_pygame = original_flush
+    GameComponent._GameComponent__invoke_listener = original_invoke
 
     surface = pygame.display.get_surface()
     frame_hash = hashlib.sha256(
@@ -93,6 +113,9 @@ def run(frames: int) -> dict:
         "ui_roots": [f"{type(c).__name__}@{d}" for d, c in ui_roots],
         "ui_component_total": sum(ui_census.values()),
         "ui_component_census": dict(sorted(ui_census.items())),
+        "dispatch_per_frame": dict(sorted(dispatch.items())),
+        "dispatch_total_per_frame": sum(dispatch.values()),
+        "dispatch_during_boot": sum(boot_dispatch.values()),
         "blit_tokens": captured.get("tokens"),
         "blit_culled": captured.get("culled"),
         "blit_depths": captured.get("depths"),

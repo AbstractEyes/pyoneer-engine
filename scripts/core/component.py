@@ -14,6 +14,7 @@ from scripts.core.event_types import GameEventType
 from config.managers.core_asset_manager import CoreAssetManager
 from scripts.core.errors import (PyoneerAlreadyBoundError, PyoneerAssetMissingError,
                                  PyoneerError, PyoneerEventDispatchError,
+                                 PyoneerEventTypeError,
                                  PyoneerListenerContractError)
 
 Config = CoreAssetManager()
@@ -741,8 +742,36 @@ class GameComponent(PyoneerGameObject, ABC):
         elif isinstance(event_type, PyoneerEvent):
             e_type = event_type.type
             event__ = event_type
-        if e_type is not None and event__ is not None and ((self.manager is None) or self.manager is not None and event.sender is self.manager):
-            return self.__send_event(e_type, event__, *args, **kwargs)
+
+        if e_type is None:
+            # Nothing routable was supplied. Previously this returned silently.
+            raise PyoneerEventTypeError(
+                f"{type(self).__name__}.send_event_advanced needs a GameEventType or a "
+                f"PyoneerEvent; got event_type={event_type!r}",
+                uuid=self.uuid[:8],
+            )
+
+        if event__ is None:
+            # Synthesize the missing event instead of dropping the dispatch.
+            #
+            # This guard used to read `event__ is not None`, so ANY call with
+            # event=None returned having invoked nothing. Every lifecycle
+            # wrapper funnels through here, and bind_component calls
+            # core_lifecycle_prepare(None) / core_lifecycle_build(None)
+            # directly -- so those methods ran, but the listener fan-out INSIDE
+            # them was silently discarded. Widgets that register behaviour with
+            # bind_sync_listener(PREPARE, ...) never received it unless the
+            # scene happened to re-dispatch with a real event later.
+            event__ = self.__create_event(e_type, {}, sender=self)
+
+        # The `manager` gate: when a manager is set, only it may drive this
+        # component. Reads event__ rather than the raw `event` argument, which
+        # was an AttributeError waiting to happen -- `event` can be a dict or
+        # None here, and neither has `.sender`.
+        if self.manager is not None and event__.sender is not self.manager:
+            return None
+
+        return self.__send_event(e_type, event__, *args, **kwargs)
 
     def send_event_to_children_advanced(self, event_type: GameEventType = None, event: Optional[PyoneerEvent] = None, *args, **kwargs):
         """Send an event to all children of the component.
