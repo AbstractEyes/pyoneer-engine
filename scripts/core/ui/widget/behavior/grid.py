@@ -81,6 +81,7 @@ class GridComponent(GameComponent):
                  max_rows: int = -1,
                  row_height: int = 0,
                  column_width: int = 0,
+                 cell_size=None,
                  spacing=(0, 0),
                  padding=(0, 0),
                  grow: bool = True,
@@ -94,10 +95,25 @@ class GridComponent(GameComponent):
         row_height    fixed row height in pixels; 0 = size each row to its
                       tallest item
         column_width  fixed column width; 0 = size each column to its widest
+        cell_size     shorthand for column_width and row_height together. Sets
+                      UNIFORM cells, which is what makes the grid snappable:
+                      cell geometry stops depending on what is in it, so
+                      cell_at() answers the same question before and after an
+                      item is placed
         spacing       (x, y) gap between cells
         padding       (x, y) inset from the grid's own edges
         grow          resize the grid's own bounds to fit content on relayout
+
+        TWO MODES, and the difference matters:
+          measured  (default) cells size to their contents. Right for a list of
+                    mixed widgets. NOT reliably snappable -- placing an item
+                    can move every cell after it.
+          uniform   cell_size / column_width+row_height given. Cell geometry is
+                    fixed, so pixel<->cell conversion is stable. This is the
+                    mode for tile placement and drag-and-drop.
         """
+        if cell_size is not None:
+            column_width, row_height = _as_pair(cell_size)
         super().__init__(*args, **kwargs)
         self._nodes: list[GridNode] = []
         self._manual: dict[str, Vector2] = {}
@@ -214,11 +230,215 @@ class GridComponent(GameComponent):
             )
 
     # ---------------------------------------------------------------- #
+    # snapping: pixels <-> cells
+    # ---------------------------------------------------------------- #
+
+    @property
+    def uniform(self) -> bool:
+        """True when cells have a fixed size and pixel<->cell is stable.
+
+        In measured mode the geometry depends on the contents, so a cell's
+        rect can move when a neighbour is added. cell_at() still answers, but
+        the answer has a shelf life -- prefer uniform cells for placement.
+        """
+        return self.column_width > 0 and self.row_height > 0
+
+    def cell_step(self) -> tuple[int, int]:
+        """Pixel distance from one cell's origin to the next, including spacing.
+
+        Only meaningful in uniform mode; raises otherwise rather than returning
+        an average that would silently misplace things.
+        """
+        if not self.uniform:
+            raise PyoneerLayoutError(
+                "cell_step() needs uniform cells: construct with cell_size=... "
+                "(or column_width and row_height). In measured mode each cell "
+                "is sized by its contents, so there is no single step.",
+                column_width=self.column_width,
+                row_height=self.row_height,
+            )
+        return self.column_width + self.spacing[0], self.row_height + self.spacing[1]
+
+    def cell_origin(self, column: int, row: int) -> Vector2:
+        """Top-left of a cell, in grid-local pixels.
+
+        Works in both modes. In measured mode it reports where the cell is
+        *now*, derived from the same offsets relayout() uses.
+        """
+        widths, heights = self.measure()
+        pad_x, pad_y = self.padding
+        gap_x, gap_y = self.spacing
+        x = pad_x
+        for index in range(int(column)):
+            width = widths[index] if index < len(widths) else self.column_width
+            x += width + gap_x
+        y = pad_y
+        for index in range(int(row)):
+            height = heights[index] if index < len(heights) else self.row_height
+            y += height + gap_y
+        return Vector2(x, y)
+
+    def cell_rect(self, column: int, row: int) -> Rect:
+        """Pixel rect of a cell, in grid-local space."""
+        origin = self.cell_origin(column, row)
+        widths, heights = self.measure()
+        column, row = int(column), int(row)
+        width = widths[column] if column < len(widths) else self.column_width
+        height = heights[row] if row < len(heights) else self.row_height
+        return Rect(int(origin.x), int(origin.y), int(width), int(height))
+
+    def cell_at(self, point, *, clamp: bool = False) -> Vector2 | None:
+        """Which cell contains a grid-LOCAL point. None if outside the grid.
+
+        This is the primitive snapping is built on: give it a position, get a
+        cell. Set clamp=True to pull an out-of-range point to the nearest valid
+        cell instead of getting None, which is what a drag that overshoots the
+        edge usually wants.
+        """
+        px, py = _as_pair(point)
+        pad_x, pad_y = self.padding
+        gap_x, gap_y = self.spacing
+
+        if self.uniform:
+            step_x, step_y = self.cell_step()
+            column = (px - pad_x) // step_x
+            row = (py - pad_y) // step_y
+        else:
+            widths, heights = self.measure()
+            column = self.__index_from_runs(px - pad_x, widths, gap_x)
+            row = self.__index_from_runs(py - pad_y, heights, gap_y)
+            if column is None or row is None:
+                return None if not clamp else Vector2(
+                    max(0, min(int(column if column is not None else 0), max(0, len(widths) - 1))),
+                    max(0, min(int(row if row is not None else 0), max(0, len(heights) - 1))),
+                )
+
+        column, row = int(column), int(row)
+        if clamp:
+            column = max(0, column)
+            row = max(0, row)
+            if self.max_columns > 0:
+                column = min(column, self.max_columns - 1)
+            if self.max_rows > 0:
+                row = min(row, self.max_rows - 1)
+            return Vector2(column, row)
+
+        if column < 0 or row < 0:
+            return None
+        if self.max_columns > 0 and column >= self.max_columns:
+            return None
+        if self.max_rows > 0 and row >= self.max_rows:
+            return None
+        return Vector2(column, row)
+
+    @staticmethod
+    def __index_from_runs(offset: float, runs: list[int], gap: int) -> int | None:
+        """Which run contains `offset`, walking measured column/row sizes."""
+        if offset < 0:
+            return None
+        cursor = 0.0
+        for index, size in enumerate(runs):
+            if offset < cursor + size:
+                return index
+            cursor += size + gap
+        return None
+
+    def world_cell_at(self, world_point, *, clamp: bool = False) -> Vector2 | None:
+        """Which cell contains a SCREEN/world point.
+
+        The conversion a mouse handler needs. Subtracts the grid's world origin,
+        which already includes any scroll offset the parent panel applied, so a
+        click in a scrolled panel resolves to the cell the user actually sees.
+        """
+        px, py = _as_pair(world_point)
+        origin = self.world_bounds
+        return self.cell_at((px - origin.x, py - origin.y), clamp=clamp)
+
+    # ---------------------------------------------------------------- #
+    # occupancy
+    # ---------------------------------------------------------------- #
+
+    def occupant(self, column: int, row: int) -> GameComponent | None:
+        """The component in a cell, or None."""
+        for node in self._nodes:
+            if node.column == int(column) and node.row == int(row):
+                return node.component
+        return None
+
+    def is_free(self, column: int, row: int) -> bool:
+        return self.occupant(column, row) is None
+
+    def snap(self, component: GameComponent, point,
+             *, world: bool = False, clamp: bool = True,
+             on_occupied: str = "raise",
+             name: str | None = None) -> GridNode:
+        """Place a component into the cell containing `point`.
+
+        point         pixel position; grid-local unless world=True
+        world         treat point as a screen/world coordinate
+        clamp         pull an out-of-range point to the nearest cell (default),
+                      rather than refusing the placement
+        on_occupied   what to do when the target cell already holds something:
+                        "raise"   PyoneerLayoutError naming the occupant
+                        "replace" remove the occupant, then place
+                        "skip"    leave the grid alone and return the existing
+                                  node, so a repeated drag is idempotent
+        """
+        cell = self.world_cell_at(point, clamp=clamp) if world else self.cell_at(point, clamp=clamp)
+        if cell is None:
+            raise PyoneerLayoutError(
+                f"point {tuple(_as_pair(point))} is outside the grid and clamp is off",
+                grid=self.local_bounds,
+                world=world,
+            )
+
+        existing = self.occupant(int(cell.x), int(cell.y))
+        if existing is not None and existing is not component:
+            if on_occupied == "raise":
+                raise PyoneerLayoutError(
+                    f"cell c{int(cell.x)} r{int(cell.y)} already holds a "
+                    f"{type(existing).__name__}; pass on_occupied='replace' or "
+                    f"'skip', or find a free cell with is_free()",
+                    cell=(int(cell.x), int(cell.y)),
+                )
+            if on_occupied == "replace":
+                self.remove_item(existing)
+            elif on_occupied == "skip":
+                return self.find(existing.uuid)
+            else:
+                raise PyoneerLayoutError(
+                    f"on_occupied must be 'raise', 'replace' or 'skip'; got {on_occupied!r}"
+                )
+
+        node = self.find(component.uuid)
+        if node is not None:
+            # Already in the grid -- this is a MOVE, not an insert.
+            node.cell = cell
+            self._manual[component.uuid] = cell
+            self.relayout()
+            trace_lifecycle("grid move %s to c%s r%s",
+                            type(component).__name__, node.column, node.row)
+            return node
+        return self.add_item(component, cell=cell, name=name)
+
+    # ---------------------------------------------------------------- #
     # layout
     # ---------------------------------------------------------------- #
 
     def measure(self) -> tuple[list[int], list[int]]:
-        """Column widths and row heights, measured from the items."""
+        """Column widths and row heights.
+
+        In UNIFORM mode every slot in the occupied span is a full cell wide and
+        tall, even if nothing is in it. That is not a detail -- an empty cell
+        still occupies its slot, and without this the layout collapsed the gaps
+        while cell_at() went on computing from a fixed step. Snapping an item to
+        a cell with an empty column before it then placed it somewhere else
+        entirely: dropping at x=60 on a 24px/2gap/3pad grid resolved to column 2
+        and landed at x=7 instead of x=55, not under the cursor at all.
+
+        In MEASURED mode an empty column genuinely has no width, because the
+        columns only exist to hold their contents.
+        """
         columns: dict[int, int] = {}
         rows: dict[int, int] = {}
         for node in self._nodes:
@@ -227,8 +447,14 @@ class GridComponent(GameComponent):
             height = self.row_height or bounds.height
             columns[node.column] = max(columns.get(node.column, 0), int(width))
             rows[node.row] = max(rows.get(node.row, 0), int(height))
-        widths = [columns.get(i, 0) for i in range(max(columns, default=-1) + 1)]
-        heights = [rows.get(i, 0) for i in range(max(rows, default=-1) + 1)]
+
+        column_count = max(columns, default=-1) + 1
+        row_count = max(rows, default=-1) + 1
+        if self.uniform:
+            return ([self.column_width] * column_count,
+                    [self.row_height] * row_count)
+        widths = [columns.get(i, 0) for i in range(column_count)]
+        heights = [rows.get(i, 0) for i in range(row_count)]
         return widths, heights
 
     def content_size(self) -> tuple[int, int]:
