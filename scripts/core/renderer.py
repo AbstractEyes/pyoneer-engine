@@ -419,6 +419,8 @@ class LayerRenderer:
         """
 
         self._map_regroup: bool = False
+        self._map_regroup_rebakes: bool = True
+        """Whether the pending regroup should also re-rasterize sources."""
         """Grouping is stale: which layers can merge has to be recomputed."""
 
         self._map_invalid: set[tuple[int, int]] = set()
@@ -500,26 +502,38 @@ class LayerRenderer:
         # renderer's, and it runs from render() once the layer set has settled,
         # so binding entities afterwards cannot leave a composite straddling
         # them.
-        self.invalidate()
+        self.invalidate(sources_dirty=False)
 
-    def invalidate(self, depth_band: int | tuple[int, int] | None = None) -> None:
+    def invalidate(self, depth_band: int | tuple[int, int] | None = None,
+                   *, sources_dirty: bool = True) -> None:
         """Mark baked map composites stale; the next render() rebakes them.
 
-        This is the runtime-map-editing entry point. Edit tiles, call
-        MapLayer.rebake() on the layer you touched (or let this do it), then:
+        This is the runtime-map-editing entry point. Edit tiles, then:
 
             renderer.invalidate(50)          # one depth
             renderer.invalidate((10, 30))    # a band
-            renderer.invalidate()            # everything, and regroup
+            renderer.invalidate()            # everything, including regrouping
 
-        A band invalidation re-rasterizes the affected source layers and
-        re-flattens the composites that hold them, leaving the grouping alone.
-        Passing None also recomputes the grouping, which is what you need when
-        a layer is added or removed, because a new layer can split a run that
-        used to be contiguous.
+        Every one of those re-rasterizes the affected source layers before
+        re-flattening, so a content change actually reaches the screen. Passing
+        None additionally recomputes the GROUPING, which is what a layer being
+        added or removed needs, since a new layer can split a run that used to
+        be contiguous.
+
+        sources_dirty=False says "the layer SET changed but no layer's CONTENT
+        did" -- regroup without re-rasterizing. Only __bind_map uses it, because
+        __prepare_map_layers has just baked every source itself.
+
+        The keyword exists because getting this wrong is silent: an earlier
+        version skipped the rebake on the None path to avoid exactly that
+        boot-time double-rasterization, which left the broadest-sounding call
+        doing LESS than a band call. A tile edit followed by invalidate() then
+        rendered the old pixels with no error. Measured: frame hash unchanged
+        after a 40x40 fill, while invalidate((1,60)) changed it.
         """
         if depth_band is None:
             self._map_regroup = True
+            self._map_regroup_rebakes = sources_dirty
             self._map_invalid.clear()
             return
         if isinstance(depth_band, int):
@@ -532,13 +546,17 @@ class LayerRenderer:
         if self._map_regroup:
             self._map_invalid.clear()
             self._map_regroup = False
-            # Deliberately NOT re-rasterizing the sources here. A regroup only
-            # changes which layers are flattened TOGETHER, not what any layer
-            # contains -- and __prepare_map_layers already baked each one via
-            # core_lifecycle_prepare(). Re-running source.rebake() rasterized
-            # every layer a second time at boot for nothing (~45ms of a 90ms
-            # bill). Re-rasterizing a source is what a BAND invalidation is
-            # for, below.
+            # Re-rasterize unless the caller said the content is unchanged.
+            # __bind_map passes sources_dirty=False because __prepare_map_layers
+            # has just baked every source via core_lifecycle_prepare(), and
+            # baking twice at boot cost ~45ms for nothing. Everyone ELSE calling
+            # invalidate() means "something changed", and skipping the rebake
+            # for them made a tile edit silently render stale pixels.
+            if self._map_regroup_rebakes:
+                for layers in self.map_sources.values():
+                    for source in layers:
+                        source.rebake()
+            self._map_regroup_rebakes = True
             self.__regroup_map_layers()
             return
 
