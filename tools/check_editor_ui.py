@@ -452,6 +452,50 @@ try:
 
     # ----------------------------------------------------------------
     print()
+    print("a field never outlives its own signal (heap-corruption guard)")
+    # ----------------------------------------------------------------
+    # Reported from a real run as exit code 0xC0000374,
+    # STATUS_HEAP_CORRUPTION, after toggling a layer capability. The fix for
+    # the orphan-window bug above replaced the inspector body with
+    # setWidget(), which DELETES the old one synchronously -- so toggling a
+    # checkbox emitted a command, which refreshed, which freed that very
+    # checkbox while its `toggled` signal was still on the stack. Qt then
+    # returned into freed memory.
+    #
+    # Deferring the free with deleteLater() is the fix; this asserts it, and
+    # asserts the two are compatible, since the naive cure for either one is
+    # the cause of the other.
+    from PySide6.QtWidgets import QCheckBox                       # noqa: E402
+
+    window.selection.select(Scope.of(("map", "test"), ("layer", "Floor")))
+    application.processEvents()
+    boxes = window.inspector.view.findChildren(QCheckBox)
+    expect("the layer inspector offers boolean capabilities",
+           len(boxes) > 0, True)
+
+    box = boxes[-1]
+    destroyed_synchronously = []
+    box.destroyed.connect(lambda *_a: destroyed_synchronously.append(1))
+    box.setChecked(not box.isChecked())
+    still_alive = True
+    try:
+        box.isChecked()
+    except RuntimeError:
+        still_alive = False
+    expect("the widget survives emitting its own command", still_alive, True)
+    expect("its destruction was deferred, not synchronous",
+           destroyed_synchronously, [])
+    application.processEvents()
+    expect("the command still landed",
+           "pyoneer_" in "".join(session.project.map("test")
+                                 .tile_layer("Floor").properties.keys()), True)
+    window.undo()
+    application.processEvents()
+    expect("and undoing it leaves the map byte-identical",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    # ----------------------------------------------------------------
+    print()
     print("one broken panel does not take the window down")
     # ----------------------------------------------------------------
     def explode():

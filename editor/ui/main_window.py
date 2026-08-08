@@ -15,7 +15,7 @@ import os
 import subprocess
 import sys
 
-from PySide6.QtCore import QFileSystemWatcher, Qt, QTimer
+from PySide6.QtCore import QFileSystemWatcher, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
@@ -38,6 +38,7 @@ from editor.ui.canvas import MapCanvas, TilePalette
 from editor.ui.database import DatabaseWindow
 from editor.ui.docks import HistoryDock, ManifestDock, ProblemsDock
 from editor.ui.hierarchy import HierarchyDock
+from editor.ui.icons import tool_icon
 from editor.ui.inspector import InspectorDock
 from editor.ui.selection import Selection
 
@@ -195,17 +196,22 @@ class EditorWindow(QMainWindow):
         bar.setMovable(False)
         self.addToolBar(bar)
 
+        bar.setIconSize(QSize(22, 22))
+        bar.setToolButtonStyle(Qt.ToolButtonIconOnly)
         group = QActionGroup(self)
         group.setExclusive(True)
         self.tool_actions: dict[Tool, QAction] = {}
         for tool in Tool:
-            action = QAction(tool.label, self)
+            action = QAction(tool_icon(tool.value), tool.label, self)
             action.setCheckable(True)
             action.setChecked(tool is Tool.BRUSH)
             shortcut = _TOOL_SHORTCUTS.get(tool)
+            tip = tool.label
             if shortcut:
                 action.setShortcut(shortcut)
-                action.setToolTip(f"{tool.label}  ({shortcut})")
+                tip = f"{tool.label}  ({shortcut})"
+            action.setToolTip(tip)
+            action.setStatusTip(tip)
             action.triggered.connect(lambda _c=False, t=tool: self.__set_tool(t))
             group.addAction(action)
             bar.addAction(action)

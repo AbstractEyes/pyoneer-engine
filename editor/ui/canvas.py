@@ -273,12 +273,31 @@ class MapCanvas(QGraphicsView):
         super().keyReleaseEvent(event)
 
     def wheelEvent(self, event) -> None:
-        if event.modifiers() & Qt.ControlModifier:
-            factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
-            self.scale(factor, factor)
+        """Plain wheel zooms.
+
+        Tiled scrolls on a plain wheel and zooms on ctrl+wheel. In a tile
+        editor you zoom constantly and scroll almost never -- panning is
+        middle-drag -- so the modifier is on the wrong action. Shift+wheel
+        still scrolls for anyone who wants it.
+        """
+        if event.modifiers() & Qt.ShiftModifier:
+            super().wheelEvent(event)
+            return
+        steps = event.angleDelta().y()
+        if not steps:
+            super().wheelEvent(event)
+            return
+        factor = 1.15 if steps > 0 else 1 / 1.15
+        # Keep zoom inside a range where the scene is still addressable; at
+        # 0.02x a 1600px map is 32px and every click lands on the same tile.
+        current = self.transform().m11()
+        target = current * factor
+        if not (0.05 <= target <= 20.0):
             event.accept()
             return
-        super().wheelEvent(event)
+        self.scale(factor, factor)
+        self.status.emit(f"zoom {target * 100:.0f}%")
+        event.accept()
 
     def mousePressEvent(self, event) -> None:
         point = self.mapToScene(event.position().toPoint())

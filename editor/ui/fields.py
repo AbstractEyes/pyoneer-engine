@@ -103,7 +103,24 @@ class InspectionView(QScrollArea):
             self.__sources(inspection)
         layout.addStretch(1)
 
-        # Replaces and deletes the previous body in one step.
+        # Retire the old body WITHOUT deleting it synchronously.
+        #
+        # `setWidget()` alone would delete it immediately, and this method is
+        # reached from a field's own signal -- toggling the `renders`
+        # checkbox emits a command, which refreshes, which would free the
+        # checkbox while its `toggled` signal is still on the stack. Qt then
+        # returns into freed memory: measured as a hard
+        # STATUS_HEAP_CORRUPTION (0xC0000374) crash of the whole editor.
+        #
+        # deleteLater() defers the free until the event loop unwinds, which
+        # is exactly when it is safe. Re-parenting to `self` first keeps it
+        # from becoming a top-level window in the meantime -- the defect the
+        # previous version of this code was written to fix.
+        old = self.takeWidget()
+        if old is not None:
+            old.setParent(self)
+            old.hide()
+            old.deleteLater()
         self.setWidget(body)
 
     def __header(self, inspection: Inspection) -> None:

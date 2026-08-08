@@ -321,8 +321,11 @@ def _describe_layer(session, scope: Scope) -> Inspection:
             blocked_reason="editing arbitrary layer properties is not yet a "
                            "command; use the capabilities above"))
 
-    return Inspection(scope, name, subheading, [facts, stats,
-                                                capabilities, custom])
+    # Capabilities before statistics: they are the only editable thing here,
+    # and burying the actionable section under two read-only ones is how a
+    # feature ends up reported as missing.
+    return Inspection(scope, name, subheading, [capabilities, facts, stats,
+                                                custom])
 
 
 # --------------------------------------------------------------------------
