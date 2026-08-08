@@ -134,8 +134,20 @@ expect("every non-empty declared layer survived",
 print()
 print("the composite preserves entity interleaving")
 composites = [l for _d, l in tile_layers() if isinstance(l, MapComposite)]
-expect("both bands composited", len(composites), 2)
-expect("six declared tile layers now cost two blits", len(tile_layers()), 2)
+# Deliberately NOT "exactly two composites". How many runs the renderer can
+# merge is a property of the MAP CONTENT, not of the code: painting tiles
+# that put partial alpha over partial alpha makes a merge provably lossy,
+# and composite_is_exact then correctly refuses it. That happened for real
+# the first time the author painted into PlayerDepth and Foreground, and it
+# failed this check even though the engine had behaved perfectly.
+#
+# The invariants are that compositing HAPPENS, that it SAVES work, and that
+# it never spans the entity layers. All three hold for any content.
+sources = sum(len(c.sources) if isinstance(c, MapComposite) else 1
+              for _d, c in tile_layers())
+expect("compositing is happening at all", len(composites) >= 1, True)
+expect("and it costs fewer blits than there are source layers",
+       len(tile_layers()) < sources, True)
 
 for composite in composites:
     low, high = composite.depth_band
@@ -207,13 +219,15 @@ print()
 print("a rebake reproduces the same frame")
 before = frame_hash()
 expect("two untouched frames agree", frame_hash(), before)
+grouped_before = len(tile_layers())
 
 renderer.invalidate()                     # full regroup + re-rasterize
 expect("invalidate() marks the grouping stale", renderer._map_regroup, True)
 after_regroup = frame_hash()
 expect("regroup rebake is byte-identical", after_regroup, before)
 expect("the flag is cleared once serviced", renderer._map_regroup, False)
-expect("regroup did not composite a composite", len(tile_layers()), 2)
+expect("regroup did not composite a composite",
+       len(tile_layers()), grouped_before)
 
 renderer.invalidate((1, 30))              # band path: pixels only
 expect("band invalidate leaves the grouping alone", renderer._map_regroup, False)

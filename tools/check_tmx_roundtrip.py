@@ -94,7 +94,14 @@ with open(MAP_PATH, "rb") as handle:
 # --------------------------------------------------------------------------
 print("the shipped file is the awkward case, on purpose")
 # --------------------------------------------------------------------------
-expect("size on disk", len(ORIGINAL), 133940)
+# NOT a pinned byte count. The map is a live fixture the author paints in,
+# so its size changes whenever they use the editor -- and a stale constant
+# here fails loudly while every assertion that actually matters (to_bytes()
+# reproduces the file, save() writes the same bytes, revert restores them)
+# still passes. Those compare against the REAL bytes, which is the property
+# under test; the size was only ever a description of it.
+print(f"  ..   {'size on disk':<54} {len(ORIGINAL)} bytes")
+expect("big enough to exercise the awkward paths", len(ORIGINAL) > 50_000, True)
 expect("CRLF throughout", ORIGINAL.count(b"\r\n"), ORIGINAL.count(b"\n"))
 expect("tab-indented early elements", b"\r\n\t<tileset " in ORIGINAL, True)
 expect("space-indented later elements", b"\r\n  <layer " in ORIGINAL, True)

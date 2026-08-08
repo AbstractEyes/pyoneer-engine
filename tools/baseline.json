@@ -1,6 +1,6 @@
 {
   "frames": 60,
-  "frame_hash": "92bdc29fe1a13822",
+  "frame_hash": "66986bf19afd0bca",
   "frame_ms_median": 8,
   "screen_size": [
     1024,
@@ -31,13 +31,14 @@
   },
   "dispatch_total_per_frame": 213,
   "dispatch_during_boot": 711,
-  "blit_tokens": 41,
+  "blit_tokens": 42,
   "blit_culled": 1,
   "blit_depths": {
     "1": 1,
     "40": 5,
     "41": 1,
     "50": 1,
+    "60": 1,
     "100": 1,
     "101": 14,
     "102": 2,
@@ -51,6 +52,7 @@
     40,
     41,
     50,
+    60,
     100
   ],
   "entity_layer_counts": {
