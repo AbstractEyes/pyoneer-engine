@@ -382,6 +382,56 @@ try:
 
     # ----------------------------------------------------------------
     print()
+    print("refreshing never orphans a widget into a top-level window")
+    # ----------------------------------------------------------------
+    # Reported from a real run: Ctrl+Z made "like 20 miniature windows"
+    # appear and disappear. Cause was `widget.setParent(None)` while
+    # clearing the inspector's layout -- in Qt that does not detach a widget,
+    # it PROMOTES it to a top-level window, and `deleteLater()` only runs
+    # once the event loop unwinds, so the orphans both flashed and
+    # accumulated. Measured before the fix: 59 top-level widgets at rest,
+    # 85 after one undo, and still 85 afterwards.
+    #
+    # Counting top-levels is the cheapest way to make that impossible to
+    # reintroduce, and it catches the same mistake in any panel.
+    def top_levels():
+        return len([w for w in QApplication.topLevelWidgets()
+                    if w is not window and w.parent() is None])
+
+    window.selection.select(Scope.of(("map", "test"), ("layer", "Floor")))
+    window.run(Command("map.tile.set", Scope.parse("map:test/layer:Floor"),
+                       {"x": 1, "y": 1, "gid": 70}))
+    application.processEvents()
+    settled = top_levels()
+
+    peak = settled
+    import editor.ui.fields as fields_module
+    original_show = fields_module.InspectionView.show_inspection
+
+    def watched(self, inspection):
+        # `global`, not `nonlocal`: this file is a script, so `peak` lives at
+        # module scope and there is no enclosing function to bind to.
+        global peak
+        original_show(self, inspection)
+        peak = max(peak, top_levels())
+
+    fields_module.InspectionView.show_inspection = watched
+    try:
+        for _ in range(12):
+            window.undo()
+            application.processEvents()
+            window.redo()
+            application.processEvents()
+    finally:
+        fields_module.InspectionView.show_inspection = original_show
+
+    expect("no orphan appears mid-rebuild", peak <= settled, True)
+    expect("and none accumulate over 12 undo/redo cycles",
+           top_levels() <= settled, True)
+    window.undo()
+
+    # ----------------------------------------------------------------
+    print()
     print("one broken panel does not take the window down")
     # ----------------------------------------------------------------
     def explode():

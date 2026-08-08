@@ -246,7 +246,15 @@ class DatabaseWindow(QMainWindow):
         """Tabs come from the GENRE, so switching genre reshapes the window."""
         remembered = self.tabs.tabText(self.tabs.currentIndex()) \
             if self.tabs.count() else ""
-        self.tabs.clear()
+        # QTabWidget.clear() removes the pages but does NOT delete them, so
+        # each one becomes a parentless top-level window -- the same defect
+        # that made Ctrl+Z flash twenty little windows. Delete them here.
+        while self.tabs.count():
+            page = self.tabs.widget(0)
+            self.tabs.removeTab(0)
+            page.setParent(self)      # keep it owned until it is destroyed
+            page.hide()
+            page.deleteLater()
         self.pages.clear()
 
         project = self.session.project

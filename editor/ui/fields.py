@@ -68,8 +68,31 @@ class InspectionView(QScrollArea):
     # -- rendering ---------------------------------------------------------
 
     def show_inspection(self, inspection: Inspection) -> None:
+        """Rebuild the form.
+
+        The whole body is REPLACED rather than emptied. The first version
+        cleared the layout with `widget.setParent(None); widget.deleteLater()`,
+        and `setParent(None)` does not merely detach a widget -- it promotes
+        it to a **top-level window**. So every refresh briefly created one
+        orphaned window per row, which on Windows flashed visibly: about
+        twenty little windows appearing and vanishing on every Ctrl+Z.
+
+        Worse, they did not go away. `deleteLater()` only runs when the event
+        loop unwinds to the level that queued it, so the orphans accumulated:
+        measured 59 top-level widgets at rest, 85 after a single undo, and
+        still 85 afterwards.
+
+        `QScrollArea.setWidget()` deletes the widget it replaces, and does it
+        without ever detaching the children -- so nothing is momentarily
+        parentless and nothing leaks.
+        """
         self.inspection = inspection
-        self.__clear()
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+        self.__body, self.__layout = body, layout
+
         if self.show_header:
             self.__header(inspection)
         if inspection.error:
@@ -78,15 +101,10 @@ class InspectionView(QScrollArea):
             self.__section(section, inspection)
         if self.show_sources:
             self.__sources(inspection)
-        self.__layout.addStretch(1)
+        layout.addStretch(1)
 
-    def __clear(self) -> None:
-        while self.__layout.count():
-            item = self.__layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.setParent(None)
-                widget.deleteLater()
+        # Replaces and deletes the previous body in one step.
+        self.setWidget(body)
 
     def __header(self, inspection: Inspection) -> None:
         heading = QLabel(inspection.heading)
