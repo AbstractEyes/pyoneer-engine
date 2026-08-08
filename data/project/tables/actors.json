@@ -1,0 +1,87 @@
+{
+  "columns": [
+    {
+      "doc": "Shown to the player.",
+      "name": "display_name",
+      "type": "str"
+    },
+    {
+      "default": "entity",
+      "doc": "Key into config/animations.json.",
+      "name": "animation",
+      "type": "str"
+    },
+    {
+      "default": 3,
+      "doc": "Hit points.",
+      "name": "hp",
+      "type": "int"
+    },
+    {
+      "default": 120.0,
+      "doc": "Horizontal pixels per second at full run.",
+      "name": "move_speed",
+      "type": "float"
+    },
+    {
+      "default": 320.0,
+      "doc": "Upward pixels per second at the instant of jump. Negative is up in screen space; store it positive and negate at use.",
+      "name": "jump_velocity",
+      "type": "float"
+    },
+    {
+      "default": 900.0,
+      "doc": "Downward pixels per second squared. Per-actor so a floaty boss is data, not a special case.",
+      "name": "gravity",
+      "type": "float"
+    },
+    {
+      "default": 600.0,
+      "doc": "Terminal velocity, so nothing tunnels through a floor.",
+      "name": "max_fall_speed",
+      "type": "float"
+    },
+    {
+      "default": 0.6,
+      "doc": "Fraction of ground acceleration usable mid-air, 0 to 1.",
+      "name": "air_control",
+      "type": "float"
+    },
+    {
+      "default": 90,
+      "doc": "Milliseconds after leaving a ledge during which a jump still counts. Set 0 for strict.",
+      "name": "coyote_ms",
+      "type": "int"
+    },
+    {
+      "default": 0,
+      "doc": "Damage dealt to whatever it touches. 0 for the player.",
+      "name": "contact_damage",
+      "type": "int"
+    },
+    {
+      "default": false,
+      "doc": "Can the human control this actor?",
+      "name": "playable",
+      "type": "bool"
+    }
+  ],
+  "doc": "The player and every enemy. Movement numbers live here, not in Python.",
+  "rows": {
+    "1": {
+      "air_control": 0.6,
+      "animation": "entity",
+      "contact_damage": 0,
+      "coyote_ms": 90,
+      "display_name": "Brent",
+      "gravity": 900.0,
+      "hp": 3,
+      "jump_velocity": 320.0,
+      "max_fall_speed": 600.0,
+      "move_speed": 120.0,
+      "playable": false
+    }
+  },
+  "table": "actors",
+  "title": "Actors"
+}

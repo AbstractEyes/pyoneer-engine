@@ -340,25 +340,35 @@ try:
     # in the dialog they already use.
     from editor.core import layers as layers_module  # noqa: E402
 
-    PARALAX = Scope.parse("map:test/layer:Paralax")
+    # Declare on a layer this test CREATES, never on one the shipped map
+    # happens to carry. The first version asserted that `Paralax` was
+    # undeclared, and broke the moment the author declared parallax on it in
+    # the real editor -- a check coupled to fixture content again.
+    session.run(Command("map.layer.add", MAP,
+                        {"name": "Above1Probe", "kind": "tile"}))
+    PROBE = Scope.parse("map:test/layer:Above1Probe")
     profile = layers_module.read_profile(
-        session.project.map("test").tile_layer("Paralax"))
-    expect("an undeclared layer is static by default", profile.is_static, True)
+        session.project.map("test").tile_layer("Above1Probe"))
+    expect("a fresh layer declares nothing", profile.declared, [])
+    expect("so it is static by default", profile.is_static, True)
     expect("and takes its depth from its name", profile.depth, -1)
 
-    session.run(Command("map.layer.set", PARALAX,
+    session.run(Command("map.layer.set", PROBE,
                         {"key": "parallax_x", "value": 0.5}))
     profile = layers_module.read_profile(
-        session.project.map("test").tile_layer("Paralax"))
+        session.project.map("test").tile_layer("Above1Probe"))
     expect("declaring parallax takes", profile.parallax_x, 0.5)
     expect("and it stops being static, because it cannot be baked",
            profile.is_static, False)
     expect("the property carries the pyoneer_ prefix, which pytmx requires",
            "pyoneer_parallax_x" in session.project.map("test")
-           .tile_layer("Paralax").properties.as_dict(), True)
+           .tile_layer("Above1Probe").properties.as_dict(), True)
     session.undo()
-    expect("undo removes it entirely",
+    session.undo()
+    expect("undo removes the declaration and the layer",
            session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    PARALAX = PROBE
 
     expect_raises("an unknown capability is refused", PyoneerCommandApplyError,
                   lambda: session.run(Command("map.layer.set", PARALAX,
@@ -385,6 +395,49 @@ try:
     expect("and the prefix is doing real work here",
            "opacity" in layers_module.RESERVED
            and any(c.key == "opacity" for c in layers_module.CAPABILITIES), True)
+
+    # The engine reads these properties and the editor writes them, so the
+    # two vocabularies must agree exactly. A capability added on one side
+    # and forgotten on the other does nothing at all, silently -- which is
+    # the failure the shared module exists to prevent.
+    from scripts.core import layer_profile  # noqa: E402
+
+    expect("the editor writes exactly what the engine reads",
+           sorted(c.property_name for c in layers_module.CAPABILITIES),
+           sorted(layer_profile.KNOWN))
+    expect("and both use the same prefix",
+           layers_module.PREFIX, layer_profile.PREFIX)
+
+    print()
+    print("the engine honours a declared parallax, and clamps it")
+    import pygame  # noqa: E402
+
+    view = pygame.Rect(200, 150, 1024, 768)
+    expect("factor 1.0 samples exactly where the camera looks",
+           layer_profile.parallax_view(view, (1.0, 1.0), 1600, 1600), view)
+    expect("a slower factor travels less",
+           tuple(layer_profile.parallax_view(view, (0.4, 0.4), 1600, 1600)),
+           (80, 60, 1024, 768))
+    expect("and it never samples past the surface",
+           tuple(layer_profile.parallax_view(
+               pygame.Rect(1500, 1500, 1024, 768), (2.0, 2.0), 1600, 1600)),
+           (576, 832, 1024, 768))
+
+    declared = layer_profile.LayerProfile(parallax=(0.4, 0.4))
+    expect("a parallaxed layer is not static, so it leaves the composite",
+           declared.static, False)
+    expect("a translucent one is not either",
+           layer_profile.LayerProfile(opacity=0.5).static, False)
+    expect("an undeclared layer still is",
+           layer_profile.DEFAULT.static, True)
+    expect("a nonsense motion value falls back rather than raising",
+           layer_profile.read(
+               type("L", (), {"properties": {"pyoneer_motion": "sideways"}})()
+           ).motion, "static")
+    expect("and a nonsense parallax does too",
+           layer_profile.read(
+               type("L", (), {"properties": {"pyoneer_parallax_x": "fast"}})()
+           ).parallax, (1.0, 1.0))
 
     print()
     print("passability masks follow RPG Maker's bit order, set means blocked")

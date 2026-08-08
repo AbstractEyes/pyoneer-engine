@@ -205,23 +205,29 @@ try:
     print()
     print("the terrain tool re-tiles cells the cursor never touched")
     # ----------------------------------------------------------------
-    # Paint on Above1, which is authored empty. Floor cannot be used for
-    # this: it is flood-filled with gid 65, which is a real quadrant of the
-    # grass autotile block, so the terrain recogniser correctly reads most
-    # of the layer as already-grass and a small stroke changes almost
-    # nothing. That is right behaviour and a useless fixture.
-    select_layer(window, "Above1")
+    # Paint on a layer this check CREATES, so the fixture is guaranteed
+    # empty. Using a shipped layer failed as soon as the author painted in
+    # it, and Floor cannot be used at all: it is filled with gid 65, a real
+    # quadrant of the grass autotile block, so the terrain recogniser
+    # correctly reads most of it as already-grass and a small stroke changes
+    # almost nothing. Right behaviour, useless fixture.
+    window.run(Command("map.layer.add", Scope.of(("map", "test")),
+                       {"name": "TerrainProbe", "kind": "tile"}))
+    select_layer(window, "TerrainProbe")
     window.canvas.tool = Tool.AUTOTILE
     window.canvas.stamp = Stamp.single(98)      # a TileA2 grass fill quadrant
     terrain = window.canvas._MapCanvas__terrain_for_brush()
     expect("the brush resolved to a terrain", isinstance(terrain, TerrainSet), True)
     expect("and to the right autotile block", terrain.origin, 1)
     expect("the layer starts empty",
-           set(session.project.map("test").tile_layer("Above1").gids()), {0})
+           set(session.project.map("test").tile_layer("TerrainProbe").gids()),
+           {0})
 
+    before_stroke = len(session.history())
     drag(window, [(40, 40), (42, 40)])
-    expect("it is one transaction", len(session.history()), 1)
-    touched = session.history()[0].commands[0].args["tiles"]
+    expect("the stroke is ONE transaction on top of the layer creation",
+           len(session.history()) - before_stroke, 1)
+    touched = session.history()[-1].commands[0].args["tiles"]
     xs = [x for x, _y, _g in touched]
     ys = [y for _x, y, _g in touched]
     # Corners of cells 40..42 span a 4x2 lattice, which tiles a 4x3 cell
@@ -230,8 +236,9 @@ try:
            True)
     expect("and used more than one gid",
            len({g for _x, _y, g in touched}) > 1, True)
-    window.undo()
-    expect("terrain undoes byte-identically",
+    window.undo()          # the stroke
+    window.undo()          # the probe layer
+    expect("terrain and the probe layer both undo byte-identically",
            session.project.map("test").to_bytes() == ORIGINAL, True)
     window.canvas.tool = Tool.BRUSH
 

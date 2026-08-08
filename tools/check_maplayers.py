@@ -110,9 +110,19 @@ declared = {layer.name: layer for layer in tmx.layers
             if isinstance(layer, pytmx.TiledTileLayer)}
 empty = [name for name, layer in declared.items()
          if drawable_tile_count(layer, tmx) == 0]
-expect("test.tmx still declares an empty tile layer", empty, ["Above1"])
-expect("Floor is not mistaken for empty",
-       drawable_tile_count(declared["Floor"], tmx), 10000)
+# Which layers are empty is CONTENT, and the author paints in this map, so
+# it is discovered rather than named. What is under test is that
+# drawable_tile_count separates empty from non-empty at all -- naming
+# "Above1" here failed the moment tiles were painted into it, while the code
+# it guards was working perfectly.
+occupancy = {name: drawable_tile_count(layer, tmx)
+             for name, layer in declared.items()}
+print(f"  ..   {'tiles per declared layer':<54} {occupancy}")
+expect("at least one layer has tiles",
+       any(count > 0 for count in occupancy.values()), True)
+expect("empty is exactly the set with a zero count",
+       sorted(empty), sorted(n for n, c in occupancy.items() if c == 0))
+expect("Floor is not mistaken for empty", occupancy["Floor"] > 0, True)
 
 for name in empty:
     expect(f"{name} rasterized nowhere", name in source_names(), False)

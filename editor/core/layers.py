@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-PREFIX = "pyoneer_"
+from scripts.core.layer_profile import KNOWN as ENGINE_KNOWN, PREFIX  # noqa: F401
 
 # pytmx attribute names a custom property may never shadow. Documented here
 # because the failure is total -- the map stops loading -- and silent until

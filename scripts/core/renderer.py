@@ -17,6 +17,7 @@ from scripts.game.entity.game_entity import GameEntity
 from scripts.game.game_camera import GameCamera
 from scripts.game.game_map import GameMap
 from scripts.core.depth import MAP_DEPTH, DEPTH, resolve_layer_depth
+from scripts.core import layer_profile
 from scripts.core.blitpool import BlitPool
 from scripts.core.viewclip import clip_to_view, containment, Containment
 from scripts.core.log import trace_render
@@ -187,12 +188,21 @@ class MapLayer(Layer):
         self.tile_map: pytmx.TiledMap | None = None
         self.tile_width = 32
         self.tile_height = 32
+        # What the tmx says this layer is. Read once at bind time; see
+        # scripts/core/layer_profile.py for the vocabulary.
+        self.profile = layer_profile.DEFAULT
 
     def set_layer(self, layer: pytmx.TiledTileLayer, tile_map: pytmx.TiledMap):
         self.layer: pytmx.TiledTileLayer = layer
         self.tile_map: pytmx.TiledMap = tile_map
         self.tile_width = tile_map.tilewidth
         self.tile_height = tile_map.tileheight
+        self.profile = layer_profile.read(layer)
+
+    @property
+    def static(self) -> bool:
+        """Whether this layer may be flattened into a composite."""
+        return self.profile.static
 
     def rebake(self) -> MapLayer:
         """Re-rasterize this layer's tiles onto its own surface.
@@ -220,9 +230,15 @@ class MapLayer(Layer):
         pass
 
     def core_render_blits(self, event: Optional[PyoneerEvent]):
-        """blit the map layer viewport based on the offset of the camera"""
+        """Blit this layer's viewport, offset by its parallax factor."""
         camera = event.data["camera"]
-        BlitPool.blit_to_layer(depth=self.layer_depth, image=self._image, destination=(0, 0), draw_area=camera.view_area, sender=self)
+        view = camera.view_area
+        if self.profile.parallaxed:
+            view = layer_profile.parallax_view(
+                view, self.profile.parallax,
+                self._image.get_width(), self._image.get_height())
+        BlitPool.blit_to_layer(depth=self.layer_depth, image=self._image,
+                               destination=(0, 0), draw_area=view, sender=self)
 
 
 class MapComposite(Layer):
@@ -592,7 +608,15 @@ class LayerRenderer:
         # tile layer is reinserted there on its own, at the front of the list,
         # which is the order __prepare_map_layers established (map first, then
         # whatever binds later).
-        blocking = set(self.layers)
+        # A DECLARED-dynamic layer breaks a run exactly the way a non-tile
+        # layer does. That is the whole implementation of "dynamic": it is
+        # not a new draw path, it is exclusion from the bake. A parallaxed
+        # or semi-transparent layer must be excluded too, because both are
+        # modulated at blit time and a composite cannot represent that.
+        blocking = set(self.layers) | {
+            depth for depth, sources in self.map_sources.items()
+            if any(not getattr(source, "static", True) for source in sources)
+        }
         runs: list[list[int]] = []
         current: list[int] = []
         for depth in sorted(set(self.map_sources) | blocking):
@@ -603,6 +627,13 @@ class LayerRenderer:
                     runs.append(current)
                 current = []
                 if depth in self.map_sources:
+                    # setdefault, not [depth]: a blocking depth used to be
+                    # BY DEFINITION already a key here, because `blocking`
+                    # was derived from self.layers. A declared-dynamic tile
+                    # layer breaks that -- it blocks without anything else
+                    # living at its depth -- and the bare lookup raised
+                    # KeyError the moment a real map declared parallax.
+                    self.layers.setdefault(depth, [])
                     for source in reversed(self.map_sources[depth]):
                         self.layers[depth].insert(0, source)
         if current:

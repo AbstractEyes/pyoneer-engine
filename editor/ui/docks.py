@@ -11,8 +11,10 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDockWidget,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
@@ -178,14 +180,66 @@ class ManifestDock(ScopedDock):
         self.list = QListWidget()
         self.list.setAlternatingRowColors(True)
         self.list.itemDoubleClicked.connect(self.__on_remove)
-        self.list.setToolTip("Double-click a note to remove it.")
+        self.list.currentItemChanged.connect(lambda *_a: self.__sync_buttons())
         layout.addWidget(self.list, 1)
+
+        # Unstaging used to be double-click only, which is not a feature
+        # anybody finds. A destructive action needs a visible control.
+        row = QHBoxLayout()
+        self.unstage = QPushButton("Unstage")
+        self.unstage.clicked.connect(self.__on_unstage)
+        self.unstage.setEnabled(False)
+        row.addWidget(self.unstage)
+
+        self.unstage_all = QPushButton("Unstage all")
+        self.unstage_all.clicked.connect(self.__on_unstage_all)
+        self.unstage_all.setEnabled(False)
+        row.addWidget(self.unstage_all)
+        row.addStretch(1)
+        layout.addLayout(row)
 
         self.ship = QPushButton("Ship as a request…")
         self.ship.clicked.connect(self.ship_requested.emit)
         self.ship.setEnabled(False)
         layout.addWidget(self.ship)
         return holder
+
+    def __selected_index(self) -> int | None:
+        item = self.list.currentItem()
+        if item is None:
+            return None
+        index = item.data(Qt.UserRole)
+        return None if index is None else int(index)
+
+    def __sync_buttons(self) -> None:
+        staged = len(self.session.manifest.notes)
+        self.unstage.setEnabled(self.__selected_index() is not None)
+        self.unstage.setToolTip(
+            "remove the selected note" if self.__selected_index() is not None
+            else "select a note to unstage it")
+        self.unstage_all.setEnabled(bool(staged))
+        self.ship.setEnabled(bool(staged))
+
+    def __on_unstage(self) -> None:
+        index = self.__selected_index()
+        if index is None:
+            return
+        self.session.manifest.remove(index)
+        self.window().refresh_manifest()
+
+    def __on_unstage_all(self) -> None:
+        count = len(self.session.manifest.notes)
+        if not count:
+            return
+        answer = QMessageBox.question(
+            self, "Unstage all",
+            f"Discard {count} staged note{'' if count == 1 else 's'}?\n\n"
+            f"Notes are not undoable -- they have not been applied to "
+            f"anything yet.")
+        if answer != QMessageBox.Yes:
+            return
+        self.session.manifest.clear()
+        self.window().refresh_manifest()
 
     def refresh(self) -> None:
         manifest = self.session.manifest
@@ -208,7 +262,7 @@ class ManifestDock(ScopedDock):
             if not count else
             f"{count} note{'' if count == 1 else 's'} across {scopes} "
             f"scope{'' if scopes == 1 else 's'}. Review, then ship.")
-        self.ship.setEnabled(bool(count))
+        self.__sync_buttons()
 
     def __on_remove(self, item) -> None:
         index = item.data(Qt.UserRole)

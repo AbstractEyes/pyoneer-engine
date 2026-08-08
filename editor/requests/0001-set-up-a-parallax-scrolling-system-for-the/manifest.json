@@ -1,0 +1,45 @@
+{
+  "id": "0001-set-up-a-parallax-scrolling-system-for-the",
+  "genre": "platformer",
+  "root": "S:\\Dropbox\\Pyoneer",
+  "created": "2026-08-08T16:09:35",
+  "title": "Set up a parallax scrolling system for the",
+  "notes": [
+    {
+      "scope": "project",
+      "text": "Set up a parallax scrolling system for the background with a speed, make it so it only scrolls a little and then returns.",
+      "kind": "change",
+      "created": "2026-08-08T16:06:22"
+    },
+    {
+      "scope": "project",
+      "text": "Add a button to unstage requests.",
+      "kind": "change",
+      "created": "2026-08-08T16:06:49"
+    },
+    {
+      "scope": "project",
+      "text": "Parallax x is different but does not change the parallax background, there is also no parallax background pathway or systems installed for pathway altering.",
+      "kind": "change",
+      "created": "2026-08-08T16:08:24"
+    },
+    {
+      "scope": "project",
+      "text": "Still cannot add or remove tilesets.",
+      "kind": "change",
+      "created": "2026-08-08T16:09:09"
+    },
+    {
+      "scope": "project",
+      "text": "Terrain tilesets not selectable.",
+      "kind": "change",
+      "created": "2026-08-08T16:09:18"
+    },
+    {
+      "scope": "project",
+      "text": "Tileset size and constraints still not set.",
+      "kind": "change",
+      "created": "2026-08-08T16:09:23"
+    }
+  ]
+}
