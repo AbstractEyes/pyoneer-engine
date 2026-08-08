@@ -1,0 +1,113 @@
+{
+  "id": "topdown_rpg",
+  "title": "Top-down RPG",
+  "summary": "Tile-based overhead world, characters with stats, inventory and equipment. Matches the layer layout already authored in data/maps/test.tmx.",
+  "docks": ["map", "layers", "objects", "tables", "problems", "manifest", "history"],
+  "layers": [
+    {
+      "name": "Paralax",
+      "kind": "tile",
+      "depth": 1,
+      "doc": "Background that scrolls slower than the world. Note the spelling: the authored map has one L, and scripts/core/depth.py aliases it.",
+      "required": false
+    },
+    {
+      "name": "Floor",
+      "kind": "tile",
+      "depth": 10,
+      "doc": "The ground. Opaque in the demo map, which is why the parallax layer beneath it is currently invisible.",
+      "required": true
+    },
+    {
+      "name": "GroundClutter",
+      "kind": "tile",
+      "depth": 30,
+      "doc": "Detail that sits on the floor and behind the player: rugs, cracks, grass.",
+      "required": false
+    },
+    {
+      "name": "PlayerDepth",
+      "kind": "tile",
+      "depth": 50,
+      "doc": "Tiles that interleave with the player -- the player sorts into this band, so a tile here can occlude or be occluded depending on y.",
+      "required": false
+    },
+    {
+      "name": "Above1",
+      "kind": "tile",
+      "depth": 55,
+      "doc": "Above the player, below the foreground. Empty in the demo map.",
+      "required": false
+    },
+    {
+      "name": "Foreground",
+      "kind": "tile",
+      "depth": 60,
+      "doc": "Draws over everything in the world: treetops, roof edges, awnings.",
+      "required": false
+    },
+    {
+      "name": "entity",
+      "kind": "object",
+      "depth": 50,
+      "doc": "Where placed things live. An object's class resolves to a depth through OBJECT_CONVERTER in scripts/core/depth.py.",
+      "required": true,
+      "object_types": [
+        "GamePlayer",
+        "GameEntity",
+        "GameFloorEntity",
+        "GameBackgroundEntity",
+        "GameForegroundEntity",
+        "GameUIEntity"
+      ],
+      "unique_types": ["GamePlayer"]
+    }
+  ],
+  "tables": [
+    {
+      "name": "actors",
+      "title": "Actors",
+      "doc": "Every character the game can instantiate: the player, NPCs, enemies.",
+      "required": true,
+      "fields": [
+        {"name": "display_name", "type": "str", "required": true, "doc": "Shown to the player."},
+        {"name": "animation", "type": "str", "doc": "Key into config/animations.json.", "default": "entity"},
+        {"name": "hp", "type": "int", "required": true, "doc": "Starting and maximum hit points.", "default": 10},
+        {"name": "attack", "type": "int", "doc": "Base damage before equipment.", "default": 1},
+        {"name": "defence", "type": "int", "doc": "Damage subtracted before hp is reduced.", "default": 0},
+        {"name": "speed", "type": "int", "doc": "Pixels per second. The engine default is 20 (config/entities.json).", "default": 20},
+        {"name": "level", "type": "int", "doc": "Starting level.", "default": 1},
+        {"name": "playable", "type": "bool", "doc": "Can the human control this actor?", "default": false}
+      ]
+    },
+    {
+      "name": "items",
+      "title": "Items",
+      "doc": "Consumables and quest objects. Equipment lives in its own table because it carries stat modifiers.",
+      "required": false,
+      "fields": [
+        {"name": "display_name", "type": "str", "required": true, "doc": "Shown to the player."},
+        {"name": "description", "type": "str", "doc": "Flavour and effect text."},
+        {"name": "stack_size", "type": "int", "doc": "How many fit in one inventory slot.", "default": 99},
+        {"name": "value", "type": "int", "doc": "Buy price; sell price is usually half.", "default": 1},
+        {"name": "consumable", "type": "bool", "doc": "Is it destroyed on use?", "default": true},
+        {"name": "heal", "type": "int", "doc": "Hit points restored on use.", "default": 0}
+      ]
+    },
+    {
+      "name": "equipment",
+      "title": "Equipment",
+      "doc": "Wearable and wieldable things. Each row is one piece; the stat columns are ADDITIVE modifiers applied while equipped.",
+      "required": false,
+      "fields": [
+        {"name": "display_name", "type": "str", "required": true, "doc": "Shown to the player."},
+        {"name": "slot", "type": "str", "required": true, "doc": "Which equipment slot: weapon, offhand, head, body, accessory.", "default": "weapon"},
+        {"name": "attack_mod", "type": "int", "doc": "Added to the wearer's attack.", "default": 0},
+        {"name": "defence_mod", "type": "int", "doc": "Added to the wearer's defence.", "default": 0},
+        {"name": "speed_mod", "type": "int", "doc": "Added to the wearer's speed. Negative for heavy armour.", "default": 0},
+        {"name": "hp_mod", "type": "int", "doc": "Added to maximum hit points.", "default": 0},
+        {"name": "value", "type": "int", "doc": "Buy price.", "default": 10}
+      ]
+    }
+  ]
+}

@@ -31,7 +31,7 @@ Working, and honest about where it is not. ~12,350 lines of tracked Python.
 | | |
 |---|---|
 | Runs | yes — headless or windowed, on pygame 2.6 / Python 3.11 |
-| Tested | 16 check tools plus a frame-level regression harness |
+| Tested | 18 check tools plus a frame-level regression harness |
 | Stable API | **no.** Names are still moving. See [Known rough edges](#known-rough-edges) |
 | Docs | design plans in [`docs/`](docs/), all reconciled against the code |
 
@@ -198,13 +198,68 @@ returns the original bytes. That matters because the intent is for a human to
 edit in Tiled while a script edits programmatically — a writer that reflows the
 file makes every subsequent human diff unreadable.
 
+## The editor
+
+```bash
+.venv/Scripts/python.exe -m pip install -r editor/requirements.txt
+.venv/Scripts/python.exe editor/app.py
+```
+
+A separate PySide6 application for authoring maps, entities and game data —
+and for handing work to an AI in a form it can act on. It is a different
+process from the game; `File > Play` launches `main.py` as a subprocess.
+
+Its one structural idea: **every change is a command.**
+
+```
+  a click on the canvas    ─┐
+  a cell edited in a table ─┼──►  Command  ──►  validate  ──►  apply  ──►  inverse
+  a line of response.jsonl ─┘                      │                         │
+                                                   └── raise, roll back ─────┘
+```
+
+Applying a command returns *the command that undoes it*, so the undo stack is
+a readable, serialisable list rather than a pile of snapshots. A human edit
+and an AI's edit are indistinguishable in the history, because they are the
+same kind of thing.
+
+Every panel carries a prompt strip and knows its own scope
+(`map:test/layer:Floor`, `table:actors/row:hero`). Typing there leaves a note
+addressed to that scope — a code review comment on the project rather than on
+a diff. Notes accumulate in the Manifest panel; shipping them writes a
+self-contained request bundle:
+
+| file | what it is |
+|---|---|
+| `BRIEF.md` | the response contract |
+| `RULES.md` | the genre's conventions — the conditioning |
+| `CONTEXT.md` | the live state of every scope the notes touch |
+| `REQUEST.md` | the notes, grouped, each with the files that own them |
+| `COMMANDS.md` | **generated from the registry that executes it** |
+
+That last row is the point. A hand-written interface document is the thing
+most likely to drift out from under a model that trusts it; here a verb the
+editor cannot run cannot appear in the docs, and `tools/check_editor.py`
+asserts it.
+
+A response is applied as one transaction. Unknown verb, unknown argument,
+missing argument or wrong type rejects the whole thing — nothing is ever
+half-applied, and types are never coerced (`"5"` is not `5`).
+
+Genre packs in `editor/genres/` declare what a genre's maps and data look
+like, so "make me a platformer with guns and aliens" costs a page of
+conditioning rather than a thousand-line prompt. Two ship: `topdown_rpg` and
+`platformer`.
+
+Design and reasoning: [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md).
+
 ## Testing
 
 ```bash
 .venv/Scripts/python.exe tools/check_all.py
 ```
 
-16 checks plus a frame-level drift comparison, one exit code. They are not unit
+18 checks plus a frame-level drift comparison, one exit code. They are not unit
 tests; each one boots or drives real engine code and asserts measured
 behaviour — token counts, dispatch counts, frame hashes, pixel equality.
 
@@ -221,8 +276,10 @@ Deliberate visual changes are re-baselined explicitly:
 .venv/Scripts/python.exe tools/smoke.py --frames 60 --write-baseline
 ```
 
-Without art, 7 of the 16 checks pass; the other 9 boot the engine and need the
-three image files. `tools/make_placeholder_art.py` is enough for all 16.
+Without art, 9 of the 18 checks pass; the other 9 boot the engine and need the
+three image files. `tools/make_placeholder_art.py` is enough for all 18.
+`check_editor_ui` reports SKIP rather than PASS when PySide6 is absent — a
+check that did not run has proved nothing.
 
 ## Layout
 
@@ -243,10 +300,18 @@ scripts/core/               engine
 scripts/game/               entities, animation, camera, map
 scripts/loaders/            MapDocument — TMX read/write
 config/                     JSON: animations, entities, inputs, maps, theme
+editor/                     the authoring application (PySide6; separate process)
+  core/                       headless: scopes, commands, genres, requests
+  genres/                     genre packs — layers, tables, rules, art briefs
+  ui/                         Qt panels; views only, no authority
 tools/                      checks, smoke harness, utilities
 docs/                       design plans and the code review
 archive/                    two superseded component generations, kept for reference
 ```
+
+`editor/` may import `scripts/`. `scripts/` may never import `editor/` —
+`tools/check_editor.py` asserts it, so `python main.py` works on a clone with
+the editor deleted.
 
 ## Known rough edges
 
@@ -265,6 +330,13 @@ Stated plainly, because most of them are recorded with measurements in
   first scroll event.
 - **No drag-and-drop.** `GridComponent.snap()` places by pixel position and
   `MOUSE_DRAG_BEGIN`/`END` are bindable, but nothing wires them together.
+- **Placing an object does not spawn an entity.** The editor can author the
+  object layer and `MapDocument` writes it byte-exactly, but
+  `renderer.__prepare_map_layers` skips `TiledObjectGroup` entirely, so
+  nothing reads it at runtime. `OBJECT_CONVERTER` and `ComponentFactory` both
+  exist and are wired to nothing. This is the next real step.
+- **`MapDocument` cannot add or remove layers.** It reads and writes existing
+  ones. That is why the editor has no `map.layer.add` command.
 - **The demo map has an invisible parallax layer** — its tiles sit beneath a
   fully opaque floor.
 - **`archive/gen3_behavior_rewrite/`** is an unfinished redesign that never

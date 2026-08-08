@@ -1,0 +1,9 @@
+# The editor's dependencies. Deliberately separate from the engine's
+# requirements.txt -- the engine stays pygame + pytmx, and a clone that only
+# wants to run the game does not pay for Qt.
+#
+#     .venv/Scripts/python.exe -m pip install -r editor/requirements.txt
+#
+# PySide6-Essentials rather than PySide6: the full package adds WebEngine,
+# Charts, 3D and Multimedia, none of which the editor uses.
+PySide6-Essentials~=6.11

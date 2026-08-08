@@ -1,0 +1,117 @@
+{
+  "id": "platformer",
+  "title": "2D side-scrolling platformer",
+  "summary": "Gravity, jumping, solid tiles you stand on, hazards you do not. Side-on camera that follows the player horizontally.",
+  "docks": ["map", "layers", "objects", "tables", "problems", "manifest", "history"],
+  "layers": [
+    {
+      "name": "Paralax",
+      "kind": "tile",
+      "depth": 1,
+      "doc": "Distant background, scrolls slower than the world. Spelled with one L to match the engine's alias table in scripts/core/depth.py.",
+      "required": false
+    },
+    {
+      "name": "Floor",
+      "kind": "tile",
+      "depth": 10,
+      "doc": "SOLID GEOMETRY. A non-zero tile here is something the player stands on and collides with. This is the only layer collision reads.",
+      "required": true,
+      "collision": true
+    },
+    {
+      "name": "GroundClutter",
+      "kind": "tile",
+      "depth": 30,
+      "doc": "Non-solid decoration behind the player: signs, pipes, background bricks.",
+      "required": false
+    },
+    {
+      "name": "PlayerDepth",
+      "kind": "tile",
+      "depth": 50,
+      "doc": "Tiles that interleave with the player.",
+      "required": false
+    },
+    {
+      "name": "Above1",
+      "kind": "tile",
+      "depth": 55,
+      "doc": "Above the player, below the foreground.",
+      "required": false
+    },
+    {
+      "name": "Foreground",
+      "kind": "tile",
+      "depth": 60,
+      "doc": "Draws over everything: foliage, girders, foreground scenery the player passes behind.",
+      "required": false
+    },
+    {
+      "name": "entity",
+      "kind": "object",
+      "depth": 50,
+      "doc": "Spawn points, enemies, pickups, hazards and triggers. Class resolves to a depth through OBJECT_CONVERTER.",
+      "required": true,
+      "object_types": [
+        "GamePlayer",
+        "GameEntity",
+        "GameFloorEntity",
+        "GameBackgroundEntity",
+        "GameForegroundEntity",
+        "GameUIEntity"
+      ],
+      "unique_types": ["GamePlayer"]
+    }
+  ],
+  "tables": [
+    {
+      "name": "actors",
+      "title": "Actors",
+      "doc": "The player and every enemy. Movement numbers live here, not in Python.",
+      "required": true,
+      "fields": [
+        {"name": "display_name", "type": "str", "required": true, "doc": "Shown to the player."},
+        {"name": "animation", "type": "str", "doc": "Key into config/animations.json.", "default": "entity"},
+        {"name": "hp", "type": "int", "required": true, "doc": "Hit points.", "default": 3},
+        {"name": "move_speed", "type": "float", "required": true, "doc": "Horizontal pixels per second at full run.", "default": 120.0},
+        {"name": "jump_velocity", "type": "float", "doc": "Upward pixels per second at the instant of jump. Negative is up in screen space; store it positive and negate at use.", "default": 320.0},
+        {"name": "gravity", "type": "float", "doc": "Downward pixels per second squared. Per-actor so a floaty boss is data, not a special case.", "default": 900.0},
+        {"name": "max_fall_speed", "type": "float", "doc": "Terminal velocity, so nothing tunnels through a floor.", "default": 600.0},
+        {"name": "air_control", "type": "float", "doc": "Fraction of ground acceleration usable mid-air, 0 to 1.", "default": 0.6},
+        {"name": "coyote_ms", "type": "int", "doc": "Milliseconds after leaving a ledge during which a jump still counts. Set 0 for strict.", "default": 90},
+        {"name": "contact_damage", "type": "int", "doc": "Damage dealt to whatever it touches. 0 for the player.", "default": 0},
+        {"name": "playable", "type": "bool", "doc": "Can the human control this actor?", "default": false}
+      ]
+    },
+    {
+      "name": "weapons",
+      "title": "Weapons",
+      "doc": "Guns and anything else that emits a projectile.",
+      "required": false,
+      "fields": [
+        {"name": "display_name", "type": "str", "required": true, "doc": "Shown to the player."},
+        {"name": "damage", "type": "int", "required": true, "doc": "Hit points removed per projectile.", "default": 1},
+        {"name": "fire_interval_ms", "type": "int", "required": true, "doc": "Milliseconds between shots. Lower is faster.", "default": 250},
+        {"name": "projectile_speed", "type": "float", "doc": "Pixels per second.", "default": 400.0},
+        {"name": "projectile_life_ms", "type": "int", "doc": "Milliseconds before the projectile despawns.", "default": 1200},
+        {"name": "spread_degrees", "type": "float", "doc": "Random cone half-angle. 0 is perfectly accurate.", "default": 0.0},
+        {"name": "ammo_capacity", "type": "int", "doc": "Shots per magazine. 0 means unlimited.", "default": 0},
+        {"name": "automatic", "type": "bool", "doc": "Does holding the button keep firing?", "default": false}
+      ]
+    },
+    {
+      "name": "levels",
+      "title": "Levels",
+      "doc": "Play order and per-level rules. One row per map.",
+      "required": false,
+      "fields": [
+        {"name": "display_name", "type": "str", "required": true, "doc": "Shown on the level select."},
+        {"name": "map", "type": "str", "required": true, "doc": "A map name from config/maps.json.", "default": "test"},
+        {"name": "order", "type": "int", "required": true, "doc": "Play order, ascending.", "default": 1},
+        {"name": "par_seconds", "type": "int", "doc": "Target completion time for scoring. 0 disables.", "default": 0},
+        {"name": "music", "type": "str", "doc": "Audio key.", "default": ""}
+      ]
+    }
+  ]
+}

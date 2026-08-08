@@ -30,6 +30,8 @@ CHECKS = [
     ("tmx_roundtrip", "byte-identical tmx save, minimal-diff tile and object edits"),
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
+    ("editor", "scopes, command stream, exact undo, genre rules, requests"),
+    ("editor_ui", "panels build, canvas edits are commands, responses apply"),
 ]
 
 ROOT = _bootstrap.REPO_ROOT
@@ -37,10 +39,19 @@ PYTHON = sys.executable
 verbose = "-v" in sys.argv
 
 results = []
+skipped = []
 for name, blurb in CHECKS:
     path = os.path.join(ROOT, "tools", f"check_{name}.py")
     proc = subprocess.run([PYTHON, path], capture_output=True, text=True, cwd=ROOT)
     ok = proc.returncode == 0
+    # A check may opt out when an OPTIONAL dependency is absent -- the editor
+    # needs PySide6 and the engine does not. Report that as SKIP, never as
+    # PASS: a check that did not run has proved nothing.
+    if ok and proc.stdout.lstrip().startswith("SKIP"):
+        skipped.append(name)
+        reason = proc.stdout.strip().splitlines()[0][4:].strip()
+        print(f"  SKIP  check_{name:<14} {reason}")
+        continue
     results.append((name, ok, blurb))
     print(f"  {'PASS' if ok else 'FAIL'}  check_{name:<14} {blurb}")
     if verbose or not ok:
@@ -81,4 +92,5 @@ print()
 if failed or not drift_ok or not smoke_ran:
     print(f"FAILED: {failed or []}{'  + smoke drift' if not drift_ok else ''}")
     sys.exit(1)
-print(f"ALL {len(results)} CHECKS PASS, NO DRIFT")
+tail = f", {len(skipped)} SKIPPED ({', '.join(skipped)})" if skipped else ""
+print(f"ALL {len(results)} CHECKS PASS, NO DRIFT{tail}")
