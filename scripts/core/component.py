@@ -403,10 +403,89 @@ class GameComponent(PyoneerGameObject, ABC):
 
     @local_bounds.setter
     def local_bounds(self, bounds: Rect | Vector2):
+        """Assign local bounds and cascade the consequences.
+
+        This used to be a bare assignment, which meant a post-construction
+        bounds change reached nothing: not the component's own world bounds,
+        not its children, not its surface. Measured on the scroll thumb --
+        set `vertical_scroll.scrollable_bounds` and re-run the scroll update
+        and `thumb.local_bounds` becomes h=6 while `thumb.world_bounds` and
+        the surface of its "background" child both stay at h=118.
+        """
         if isinstance(bounds, Vector2):
-            self.__local_bounds = Rect(bounds.x, bounds.y, self.__local_bounds.w, self.__local_bounds.h)
+            new_bounds = Rect(bounds.x, bounds.y, self.__local_bounds.w, self.__local_bounds.h)
         else:
-            self.__local_bounds = bounds
+            new_bounds = bounds
+        previous = self.__local_bounds
+        unchanged = (previous.x == new_bounds.x and previous.y == new_bounds.y
+                     and previous.w == new_bounds.w and previous.h == new_bounds.h)
+        previous = previous.copy()
+        self.__local_bounds = new_bounds
+        if unchanged:
+            return
+        self._on_bounds_changed(previous, new_bounds.copy())
+
+    # ---------------------------------------------------------------------------------------------
+    # Bounds-changed cascade
+    # ---------------------------------------------------------------------------------------------
+    def _on_bounds_changed(self, previous: Rect, current: Rect):
+        """React to a change of THIS component's local bounds.
+
+        The order is the contract: world bounds, then CHILDREN, then this
+        component's own SURFACE.
+
+        - world bounds first, because everything below reads them;
+        - children next, because a container's own appearance is a function
+          of where its children ended up, and a child repaints from its own
+          (now corrected) world bounds;
+        - the surface last, because DrawComponent.resize() repaints from
+          world_bounds and must see the settled values.
+        """
+        self.__resync_world_bounds(current)
+        moved = previous.topleft != current.topleft
+        resized = previous.size != current.size
+        if not (moved or resized):
+            return
+        for child in tuple(self.components.values()):
+            child.notify_parent_bounds_changed(self)
+        if resized:
+            self._on_size_changed(current.width, current.height)
+
+    def notify_parent_bounds_changed(self, parent: GameComponent):
+        """A parent moved or resized; rebase this subtree onto it.
+
+        Only positions are rebased here. A child's SIZE is not a function of
+        its parent's size in the general case -- containers that do want that
+        relationship (Button, ScrollComponent) express it by assigning their
+        children's `local_bounds`, which re-enters the cascade above.
+        """
+        self.__resync_world_bounds(self.__local_bounds)
+        for child in tuple(self.components.values()):
+            child.notify_parent_bounds_changed(self)
+
+    def _on_size_changed(self, width: int | float, height: int | float):
+        """This component's pixel size changed.
+
+        Base implementation is a no-op: a plain GameComponent owns no pixels.
+        DrawComponent overrides it to reallocate its surface.
+        """
+
+    def __resync_world_bounds(self, local: Rect):
+        """Recompute world bounds from local bounds and the parent chain.
+
+        `__update_world_bounds` returns early when there is no parent, which
+        leaves a root's world bounds frozen at whatever the constructor or
+        the last move() left there. For a root there is no parent transform,
+        so world IS local plus offset -- the same relation the constructor
+        and move() already assume.
+        """
+        if self.__parent is None:
+            world = local.copy()
+            world.x += self.__offset.x
+            world.y += self.__offset.y
+            self.__world_bounds = world
+            return
+        self.__update_world_bounds()
 
     def bind_parent(self, parent: GameComponent | None, preserve_world_bounds: bool = True, bind_manager: bool = False):
         """Bind a parent component component."""
@@ -772,6 +851,23 @@ class GameComponent(PyoneerGameObject, ABC):
             return None
 
         return self.__send_event(e_type, event__, *args, **kwargs)
+
+    def send_event_to_self(self, event_type: GameEventType, event: Optional[PyoneerEvent] = None,
+                           *args, **kwargs):
+        """Invoke THIS component's listeners for `event_type`; no fan-out.
+
+        `send_event_advanced` always continues into the children, and
+        `send_empty_event(to_children=False)` still funnels through it, so
+        there was no way to say "repaint yourself" without repainting the
+        whole subtree. DrawComponent.resize() needs exactly that.
+        """
+        if event is None:
+            event = self.__create_event(event_type, {}, sender=self)
+        for callback in self.__get_callback(event_type):
+            self.__invoke_listener(event_type, callback, event, *args, **kwargs)
+            if event.handled and not event.trickle:
+                break
+        return event
 
     def send_event_to_children_advanced(self, event_type: GameEventType = None, event: Optional[PyoneerEvent] = None, *args, **kwargs):
         """Send an event to all children of the component.

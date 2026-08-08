@@ -61,6 +61,20 @@ class ImageComponent(DrawComponent):
         """The scaled/rotated result, not the source surface."""
         return self.display_image
 
+    def _on_size_changed(self, width: int | float, height: int | float):
+        """Re-derive the display image at the new size.
+
+        NOT DrawComponent.resize(). This class overrides `image` to return
+        `display_image`, so reallocating `_image` -- which is what resize()
+        does -- would allocate a surface nothing ever reads and leave the
+        drawn pixels at the old size. The source artwork has to be rescaled
+        instead. world_bounds is already settled by the time this runs, and
+        __scale_image reads it, so set_image() picks up the new size.
+        """
+        if self.base_image is None:
+            return
+        self.set_image(self.base_image, scale_to_size=True)
+
     def __scale_image(self, width: int = 0, height: int = 0):
         if self.scale is not None:
             width = self.scale.width

@@ -1,6 +1,6 @@
 {
   "frames": 60,
-  "frame_hash": "bec3f3153713a6b2",
+  "frame_hash": "2b023259c668c3f9",
   "frame_ms_median": 8,
   "screen_size": [
     1024,
@@ -25,10 +25,11 @@
   "dispatch_per_frame": {
     "BLITS": 51,
     "POST_UPDATE": 34,
-    "UPDATE": 35
+    "TRANSFORM": 97,
+    "UPDATE": 37
   },
-  "dispatch_total_per_frame": 120,
-  "dispatch_during_boot": 565,
+  "dispatch_total_per_frame": 219,
+  "dispatch_during_boot": 664,
   "blit_tokens": 59,
   "blit_culled": 4,
   "blit_depths": {

@@ -1,11 +1,16 @@
-"""Verify event consumption, input gating and depth mutability.
+"""Verify event consumption, input gating, depth mutability and bounds cascade.
 
-Guards three repairs:
+Guards five repairs:
   1. mark_event_handled() actually consumes -- stops siblings, children and
      remaining listeners.
   2. Input is gated on `active`, NEVER on `visible`. A hidden but active
      component still receives input; that is the specified behaviour.
   3. GameComponent.depth is writable again.
+  4. A local_bounds change cascades: world bounds, then children, then
+     surfaces. DrawComponent.resize() REALLOCATES rather than stretching.
+  5. No component reached through a parent's `components` dict defines a
+     core_frame_update or core_render_blits override, because the event bus
+     never calls them there.
 """
 from __future__ import annotations
 
@@ -25,6 +30,7 @@ from scripts.core.event_manager import PyoneerEvent
 from scripts.core.event_types import GameEventType
 from scripts.core.errors import PyoneerEventTypeError
 from scripts.core.ui.widget.shape import ShapeComponent
+from scripts.core.ui.widget_color import WidgetColor
 
 failures = []
 
@@ -277,6 +283,163 @@ for typ in (GameEventType.MOUSE_DRAG_BEGIN, GameEventType.MOUSE_DRAG_END,
             GameEventType.MOUSE_DRAGGING):
     mouse.bind_mouse_listener(typ, lambda e, *a, **k: None)
     expect(f"{typ.name} accepted", mouse.has_mouse_listener(typ), True)
+
+print()
+print("a freshly allocated drawable surface is TRANSPARENT, not opaque black")
+blank = DrawComponent(bounds=Rect(0, 0, 8, 8))
+expect("SRCALPHA is set", bool(blank.image.get_flags() & pygame.SRCALPHA), True)
+expect("every pixel starts fully transparent", tuple(blank.image.get_at((0, 0))), (0, 0, 0, 0))
+
+print()
+print("resize() reallocates and repaints; it does not stretch")
+box = ShapeComponent(bounds=Rect(0, 0, 20, 10),
+                     background_color=WidgetColor(200, 0, 0, 255),
+                     border_color=WidgetColor(0, 0, 200, 255))
+box.send_event_advanced(GameEventType.PREPARE, None)
+before_surface = box.image
+expect("built at its bounds", box.image.get_size(), (20, 10))
+expect("resize reports a real change", box.resize(60, 30), True)
+expect("surface follows", box.image.get_size(), (60, 30))
+expect("the surface object was REPLACED, not scaled in place",
+       box.image is before_surface, False)
+# A stretch would smear the 20x10 artwork over 60x30 and leave the far corner
+# painted from the old pixels. A reallocate-and-repaint paints from
+# world_bounds -- which is still 20x10 here, because resize() alone does not
+# move bounds -- so everything past x=20 must be untouched transparent.
+expect("repainted from world_bounds, not stretched",
+       tuple(box.image.get_at((50, 25))), (0, 0, 0, 0))
+expect("and the original region really was repainted",
+       box.image.get_at((10, 5)) != pygame.Color(0, 0, 0, 0), True)
+expect("a resize to the same size is a no-op", box.resize(60, 30), False)
+
+print()
+print("resize() re-fires PREPARE on ITSELF only, never on children")
+seen_prepare = []
+host = ShapeComponent(bounds=Rect(0, 0, 10, 10))
+kid = ShapeComponent(parent=host, bounds=Rect(0, 0, 4, 4))
+host.bind_component("kid", kid)
+host.bind_sync_listener(GameEventType.PREPARE, lambda e, *a, **k: seen_prepare.append("host"))
+kid.bind_sync_listener(GameEventType.PREPARE, lambda e, *a, **k: seen_prepare.append("kid"))
+host.resize(12, 12)
+expect("only the resized component repainted", seen_prepare, ["host"])
+
+print()
+print("a local_bounds size change cascades to world bounds, children, surfaces")
+outer = ShapeComponent(bounds=Rect(10, 10, 40, 40))
+inner = ShapeComponent(parent=outer, bounds=Rect(2, 2, 8, 8))
+outer.bind_component("inner", inner)
+expect("child world bounds start rebased", tuple(inner.world_bounds), (12, 12, 8, 8))
+outer.local_bounds = Rect(30, 30, 100, 50)
+expect("own world bounds followed", tuple(outer.world_bounds), (30, 30, 100, 50))
+expect("own surface followed", outer.image.get_size(), (100, 50))
+expect("child world bounds rebased onto the moved parent",
+       tuple(inner.world_bounds), (32, 32, 8, 8))
+expect("child surface untouched -- size is not inherited",
+       inner.image.get_size(), (8, 8))
+
+print()
+print("a pure move does not reallocate the surface")
+mover = ShapeComponent(bounds=Rect(0, 0, 16, 16))
+kept = mover.image
+mover.local_bounds = Rect(5, 5, 16, 16)
+expect("same surface object", mover.image is kept, True)
+expect("world bounds still moved", tuple(mover.world_bounds), (5, 5, 16, 16))
+
+print()
+print("a Button passes its own size down to its body and label")
+from scripts.core.ui.widget.containers.button import Button
+
+btn = Button(bounds=Rect(0, 0, 50, 20), text="hi")
+expect("body built at the button size",
+       btn.get_component("background").image.get_size(), (50, 20))
+btn.local_bounds = Rect(0, 0, 90, 34)
+expect("body surface followed", btn.get_component("background").image.get_size(), (90, 34))
+expect("body world bounds followed",
+       tuple(btn.get_component("background").world_bounds)[2:], (90, 34))
+expect("label surface followed height",
+       btn.get_component("text").image.get_height() > 20, True)
+
+print()
+print("the scroll thumb's surface follows its bounds (the reported bug)")
+from pygame import Rect as _Rect
+
+from scripts.core.ui.widget.containers.panel import Panel
+
+panel = Panel(bounds=_Rect(0, 0, 300, 200), working_area=_Rect(0, 0, 300, 210))
+panel.core_lifecycle_build(None)
+thumb = panel.vertical_scroll.scroll_thumb
+thumb_shape = thumb.get_component("background")
+expect("bounds and surface agree at construction",
+       (thumb.local_bounds.height, thumb_shape.image.get_height()), (118, 118))
+
+panel.vertical_scroll.scrollable_bounds = _Rect(0, 0, 300, 4000)
+panel.vertical_scroll.send_event_advanced(
+    GameEventType.VIEWPORT_SCROLLED,
+    PyoneerEvent(GameEventType.VIEWPORT_SCROLLED, sender=None, data={}))
+expect("thumb shrank for the taller content", thumb.local_bounds.height, 6)
+expect("its world bounds shrank too", thumb.world_bounds.height, 6)
+expect("and so did the surface it actually draws",
+       thumb_shape.image.get_height(), 6)
+
+print()
+print("no component with a parent overrides core_frame_update / core_render_blits")
+# A GameComponent reached through a parent's `components` dict is driven by
+# send_event_advanced, not by its core_* methods. Panel.core_frame_update
+# measured 0 calls per frame for exactly this reason -- its whole body was
+# dead code. Walk a real widget tree and refuse to let that come back.
+#
+# core_lifecycle_prepare* and core_lifecycle_build are NOT in the ban list:
+# bind_component() invokes those four directly on the child, so overriding
+# them there is legitimate and load-bearing (Panel and ScrollComponent build
+# most of the UI from core_lifecycle_build).
+from scripts.core.game_object import PyoneerGameObject
+from scripts.core.ui.widget.containers.window import GameWindow
+
+BANNED = ("core_frame_update", "core_render_blits")
+
+
+def bus_driven_overrides(component) -> list[str]:
+    found = []
+    for klass in type(component).__mro__:
+        if klass in (GameComponent, PyoneerGameObject, object):
+            break
+        for name in BANNED:
+            if name in klass.__dict__:
+                found.append(f"{klass.__name__}.{name}")
+    return found
+
+
+def walk(component, seen=None):
+    if seen is None:
+        seen = set()
+    if id(component) in seen:
+        return
+    seen.add(id(component))
+    yield component
+    for child in getattr(component, "components", {}).values():
+        yield from walk(child, seen)
+
+
+live_window = GameWindow(header_text="Census", bounds=Rect(0, 0, 400, 400))
+live_window.core_lifecycle_prepare(PyoneerEvent(GameEventType.PREPARE, sender=None, data={}))
+
+walked = list(walk(live_window))
+classes = {type(c).__name__ for c in walked}
+# Guard the guard: an empty or truncated walk must not pass silently.
+expect("the walked tree is a real UI tree", len(walked) > 50, True)
+for required in ("Panel", "ScrollComponent", "Button", "TextBox",
+                 "ShapeComponent", "TextComponent", "MouseComponentAsync"):
+    expect(f"{required} is in the walked tree", required in classes, True)
+
+offenders = []
+for component in walked:
+    if component.parent is None:
+        continue  # a root IS driven through core_*; that is its job
+    for name in bus_driven_overrides(component):
+        if name not in offenders:
+            offenders.append(name)
+expect("no bus-driven component overrides an unreachable core_* method",
+       offenders, [])
 
 print()
 if failures:

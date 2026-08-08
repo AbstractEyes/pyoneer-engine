@@ -23,10 +23,8 @@ class DrawComponent(GameComponent):
         if image_in is not None:
             self._image = image_in
         else:
-            clamped = self.world_bounds.copy()
-            clamped.width = max(1, clamped.width)
-            clamped.height = max(1, clamped.height)
-            self._image = Surface((clamped.width, clamped.height)).convert_alpha()
+            self._image = self.allocate_surface(self.world_bounds.width,
+                                                self.world_bounds.height)
         self.draws = True
         """Whether the current object is drawn."""
         self.last_containment: Containment = Containment.CONTAINED
@@ -62,6 +60,52 @@ class DrawComponent(GameComponent):
         self.bind_sync_listener(GameEventType.BLITS, self.__blits)
         #self.bind_sync_listener(GameEventType.PARENT_MOVED, self.__parent_moved)
 
+    @staticmethod
+    def allocate_surface(width: int | float, height: int | float) -> Surface:
+        """Allocate a blank, FULLY TRANSPARENT surface of at least 1x1.
+
+        The SRCALPHA flag is the point. This used to read
+        `Surface((w, h)).convert_alpha()`, and a plain Surface has no alpha
+        channel -- convert_alpha() gives it one and fills it with 255, so
+        every freshly allocated surface was OPAQUE BLACK, measured as
+        (0, 0, 0, 255) at every pixel.
+
+        Subclasses that repaint on PREPARE hid it: ShapeComponent and
+        TextComponent both open with `self.image.fill((0, 0, 0, 0))`. The
+        drawables that own a surface and never paint it did not -- Panel and
+        TextBox -- so those punched solid black rectangles into the frame.
+        """
+        return Surface((max(1, int(width)), max(1, int(height))),
+                       pygame.SRCALPHA).convert_alpha()
+
+    def resize(self, width: int | float, height: int | float, repaint: bool = True) -> bool:
+        """REALLOCATE this component's surface at a new pixel size.
+
+        Deliberately not `pygame.transform.scale`. ShapeComponent and
+        TextComponent repaint themselves from `world_bounds` whenever PREPARE
+        fires, so stretching the old pixels and then repainting would apply
+        the size change twice -- once in the stretch, once in the repaint.
+        Reallocating blank and re-firing PREPARE applies it exactly once.
+
+        PREPARE is re-fired on THIS component only (`send_event_to_self`),
+        not fanned out: a child's surface size is not a function of its
+        parent's, and the bounds cascade in GameComponent already walks the
+        subtree.
+
+        Returns True if the surface was actually replaced.
+        """
+        width, height = max(1, int(width)), max(1, int(height))
+        if self._image is not None and self._image.get_size() == (width, height):
+            return False
+        self._image = self.allocate_surface(width, height)
+        if repaint:
+            self.send_event_to_self(GameEventType.PREPARE)
+        return True
+
+    def _on_size_changed(self, width: int | float, height: int | float):
+        """A drawable's surface follows its bounds. See GameComponent."""
+        self.resize(width, height)
+
     def scale_surface(self, width: int, height: int, destination: Surface | None = None):
         """Stretch this component's surface to a new pixel size.
 
@@ -74,7 +118,8 @@ class DrawComponent(GameComponent):
 
         Note this stretches existing pixels. ShapeComponent and TextComponent
         redraw themselves from world_bounds, so for those a reallocate-and-
-        repaint is correct instead -- see the planned DrawComponent.resize().
+        repaint is correct instead -- use resize() below. This remains only
+        for the case where stretching the EXISTING artwork is what is wanted.
         """
         self._image = pygame.transform.scale(self._image, (width, height), destination)
 
