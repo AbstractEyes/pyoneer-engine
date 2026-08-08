@@ -22,6 +22,7 @@ CHECKS = [
     ("grid", "grid layout, binding, sizing, scrolling inside a Panel"),
     ("anchor", "children reflow when their parent resizes"),
     ("scroll", "no-overflow scrollbars are hidden, inactive, and safe to drag"),
+    ("textbox", "placeholder semantics, text placement, font auto-fit"),
     ("events", "consumption, active-gating, depth setter"),
     ("input", "edge detection, multi-binding, load-time validation"),
     ("animation", "sequence switching, pause/resume, pre-sliced frames"),
