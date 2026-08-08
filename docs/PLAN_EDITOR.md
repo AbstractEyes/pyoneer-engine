@@ -214,29 +214,143 @@ have — no gravity, no tile collision, no spawn system reading the object
 layer. A pack that oversold the engine would produce answers that assume
 machinery that is not there.
 
+## Panels
+
+| panel | what it is | follows selection |
+|---|---|---|
+| Hierarchy | the whole map as one tree — groups, layers, objects | yes |
+| Inspector | every field of the selected thing, editable | yes |
+| Tiles | one tileset at a time; drag a rectangle for a multi-tile stamp | — |
+| Problems | soft rule violations; nothing here blocks | no |
+| Manifest | staged notes, grouped by scope | no |
+| History | every command that ran, human or AI | no |
+| Database | **a second window** — actors, items, equipment, RPG Maker shape | — |
+
+Selection is global (`editor/ui/selection.py`) and dock scope is per-panel.
+Inspectors follow the selection; Problems and Manifest do not, because a note
+typed into Problems is about the project and should not be dragged onto
+whatever tile was last clicked.
+
+## Painting
+
+`editor/core/paint.py` is pure — no Qt, no document, `(x, y, gid)` in and
+out — which is the only reason its edge cases are testable.
+
+- **One stroke is one transaction.** Press-drag-release accumulates and
+  commits a single `map.tile.set_many`. Before that, a forty-cell drag made
+  forty undo steps and re-rendered the csv payload forty times.
+- Bresenham between mouse samples, so a fast drag is a line and not a
+  dotted line.
+- A brush *anchors* its stamp under the cursor; an area tool *tiles* the
+  stamp across the area, aligned to map coordinates so two rectangles
+  painted with the same pattern line up.
+- Left paints, right erases, middle or space pans, ctrl+wheel zooms, alt
+  picks. Tiled's conventions, not invented ones.
+
+**Terrain (autotile)** is `editor/core/autotile.py`, and it is a Wang
+**corner** set rather than an orthogonal bitmask because the art demands it.
+`TileA2.png` is an RPG Maker VX Ace A2 sheet — 8×4 = 32 groups, each a 4×6
+grid of 16px quadrants — and since this map's cells are also 16px, one cell
+is one quadrant. Thirteen of the sixteen corner masks have art; the two
+diagonals have none in any RM sheet and hit a stated `Diagonal` policy
+instead of a `KeyError` mid-stroke. A whole terrain is **one integer**, the
+group's top-left gid, so choosing one is "click any tile of it".
+
+The half-cell trap is the thing to keep in mind: terrain lives on the
+`(W+1)×(H+1)` lattice of cell corners, so editing one corner re-tiles four
+cells and a stroke rewrites cells the cursor never touched. That is not a
+bug — it is how the seam against existing terrain updates.
+
+## Crash resistance
+
+The editor is a tool for changing a codebase that is being changed
+underneath it, so the interesting question is what happens while the engine
+is broken. Measured answer before `editor/preflight.py`: a syntax error in
+any of the three engine modules the editor imports killed it with a bare
+traceback *above* `QApplication`, so the existing error dialog never ran —
+launched from a shortcut, that is a window that never appears.
+
+Preflight `ast.parse`s those three files — parses, never imports, so nothing
+executes — confirms each still declares the names the editor binds, and
+reports file, line and message. It imports `os`, `ast` and `sys` and nothing
+else, so it cannot be broken by what it checks. `tools/check_editor.py`
+asserts the contract stays true, turning a startup crash into a failing
+check.
+
+It is honest about its limits: `ast` cannot see inheritance across files,
+decorator side effects, dynamic registration, or module-level import
+explosions. It catches the failure that actually stops startup.
+
+## Opening code
+
+`editor/core/ide.py`. Detection reads JetBrains Toolbox's own `state.json`
+and known install locations, and treats **PATH as a last resort** — measured
+on the author's machine, `shutil.which("pycharm")` resolves to PyCharm
+Community 2023.3.3 while the running IDE, with this project open, is
+Professional 2026.1.4 under a differently-numbered shim. The VS Code case is
+worse: a stale shim does not error, it silently cold-starts an older second
+instance.
+
+Command construction is pure and therefore testable; launching is detached
+and returns a result rather than raising. Revealing code is read-only by
+construction and cannot affect the project, the game, or the editor.
+
 ## Status
 
-Built and asserted by `tools/check_editor.py`:
+Asserted by `tools/check_editor.py`, `check_paint.py`, `check_autotile.py`
+and `check_editor_ui.py` — 20 checks in the suite:
 
-- scopes, with a closed kind set and loud parse errors
-- the command registry, transactions, exact undo/redo, atomic rollback
-- 17 verbs across tiles, objects, tables and project settings
+- scopes, command stream, transactions, exact undo/redo, atomic rollback
+- 22 verbs across tiles, objects, tables and project settings
 - genre packs, hard and soft rule validation
 - notes, manifests, bundle writing, strict response parsing
-- deterministic save that does not rewrite untouched files
+- painting: strokes, stamps, flood fill, clipping, drag semantics
+- autotile: the pixel-verified corner table, terrain recovery, diagonals
+- the Qt window driven offscreen: panels, selection sync, canvas edits as
+  commands, the database window, response application
 
 Not built yet:
 
 - **`map.layer.add` / `map.layer.remove`.** `MapDocument` can read and write
-  layers but cannot create or delete them. Adding a `<layer>` with a CSV
-  `<data>` block is additive and safe; removing one must restore surrounding
-  whitespace exactly. This is the next `MapDocument` feature and the reason
-  "include or remove layers" is not yet a command.
-- **The object layer → entity spawn path.** The editor can now *place*
-  objects; the renderer still skips `TiledObjectGroup` entirely. Placing a
-  thing does not yet make it exist in the game.
+  layers but cannot create or delete them. This is the next `MapDocument`
+  feature and the reason "include or remove layers" is not yet a command.
+- **The object layer → entity spawn path.** The editor can *place* objects;
+  the renderer still skips `TiledObjectGroup` entirely.
+- **The event action queue.** Deliberately deferred, not forgotten — see
+  below.
 - **Live reload**, so a command shows up in a running `main.py`.
-- **Art generation**, beyond `ART.md` as a paste-to-a-model template.
+- **Layer properties** (opacity, offset, tint). `TileLayer` reads only
+  name/id/width/height, and there is no `map.layer.*` verb.
+- **Shape geometry editing.** Polygons, ellipses and text objects are
+  displayed and **preserved byte-exactly**, but their points are not
+  editable.
+
+## Why the action queue is not built yet
+
+An "attach an ordered list of actions to an object, triggered by an engine
+event" panel is the right idea and it is authoring data, so it invalidates
+nothing. But investigation found the runtime cannot execute it yet:
+
+- `GameEntity` derives `PyoneerGameObject`, **not** `GameComponent`. It has
+  no `callbacks`, no `bind_sync_listener`, no `send_event_advanced` — it is
+  not on the event bus at all, and only receives direct `core_*` calls.
+- Of 54 `GameEventType` members, only about ten are ever dispatched through
+  the bus. Every `MOUSE_*` and `KEY_*` member reaches components through a
+  *separate* registry, so a raw event-type picker would be mostly dead
+  options.
+- There is no collision detection between entities (`BoundingBox` is defined
+  and used nowhere), and `GamePlayer.core_input_receive` is `pass  # todo`.
+- Above all: the object layer is skipped at runtime, so a queue attached to
+  a map object would have nothing to attach *to* when the game runs.
+
+Building the panel now would produce a feature that looks complete and does
+nothing — the exact failure this project is built to avoid. The order is:
+spawn path first (`docs/NEXT.md` item 1), then a small
+`EntityActionComponent` on the bus, then the panel. The design is settled:
+semantic triggers (`on_touch`, `on_interact`, `on_spawn`, `on_frame`) rather
+than raw event types, stored as a JSON string in a tmx custom property,
+authored through `map.object.action.*` verbs so it inherits undo, rollback
+and generated docs for free.
 
 ## Open design questions
 

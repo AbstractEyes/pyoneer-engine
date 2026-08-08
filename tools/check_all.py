@@ -31,6 +31,8 @@ CHECKS = [
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
     ("editor", "scopes, command stream, exact undo, genre rules, requests"),
+    ("paint", "strokes, stamps, flood fill, one drag is one transaction"),
+    ("autotile", "corner masks, terrain recovery, diagonal policy"),
     ("editor_ui", "panels build, canvas edits are commands, responses apply"),
 ]
 

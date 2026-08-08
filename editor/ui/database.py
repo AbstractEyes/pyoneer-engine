@@ -1,0 +1,276 @@
+"""The Database window -- actors, items, equipment, weapons, levels.
+
+A second, non-modal window rather than a dock, because this is the RPG
+Maker shape and the RPG Maker shape is right for it: a list of things on the
+left, every field of the selected thing on the right, and enough room to see
+all of them at once. Cramming that into a side panel is what made the first
+version substandard -- a table of actors squeezed into a column shows you
+six columns of twenty and none of the meaning.
+
+Non-modal on purpose. You edit a monster's hp while looking at where it
+stands on the map; a modal dialog would make that two trips.
+
+WHAT IT IS NOT
+--------------
+Not a spreadsheet. The grid view still exists for bulk work, but the
+default is the detail form, because the question "what is a Town Guard"
+is answered by one screen of labelled fields, not by scrolling a row.
+"""
+from __future__ import annotations
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSplitter,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from editor.core.commands import Command
+from editor.core.inspect import describe
+from editor.core.scope import Scope
+from editor.ui.fields import InspectionView
+from editor.ui.prompt import PromptStrip
+
+
+class TablePage(QWidget):
+    """One table: its rows on the left, the selected row's fields on the right."""
+
+    command_requested = Signal(object)
+    reveal_requested = Signal(str)
+    scope_changed = Signal(object)
+
+    def __init__(self, session, table_name: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.session = session
+        self.table_name = table_name
+        self.current_row: str | None = None
+
+        self.list = QListWidget()
+        self.list.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.list.currentItemChanged.connect(self.__on_select)
+
+        buttons = QHBoxLayout()
+        for label, slot, tip in (
+            ("+", self.__on_add, "add a row"),
+            ("Duplicate", self.__on_duplicate, "copy the selected row"),
+            ("−", self.__on_remove, "delete the selected row"),
+        ):
+            button = QPushButton(label)
+            button.setToolTip(tip)
+            button.clicked.connect(slot)
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(4, 4, 4, 4)
+        left_layout.addWidget(self.list, 1)
+        left_layout.addLayout(buttons)
+
+        self.view = InspectionView(show_sources=False)
+        self.view.command_requested.connect(self.command_requested.emit)
+        self.view.reveal_requested.connect(self.reveal_requested.emit)
+
+        self.empty = QLabel()
+        self.empty.setAlignment(Qt.AlignCenter)
+        self.empty.setWordWrap(True)
+        self.empty.setStyleSheet("color: palette(mid); padding: 24px;")
+
+        self.create = QPushButton("Create this table from the genre")
+        self.create.clicked.connect(self.__on_create)
+
+        right = QWidget()
+        self.right_layout = QVBoxLayout(right)
+        self.right_layout.setContentsMargins(0, 0, 0, 0)
+        self.right_layout.addWidget(self.empty)
+        self.right_layout.addWidget(self.create)
+        self.right_layout.addWidget(self.view, 1)
+
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(left)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([240, 620])
+
+        self.strip = PromptStrip(session, Scope.of(("table", table_name)))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(splitter, 1)
+        layout.addWidget(self.strip)
+
+    # -- state -------------------------------------------------------------
+
+    @property
+    def exists(self) -> bool:
+        return self.session.project.has_table(self.table_name)
+
+    def refresh(self) -> None:
+        if not self.exists:
+            declared = self.session.project.genre.table(self.table_name)
+            self.empty.setText(
+                f"The {self.session.project.genre.title} genre declares a "
+                f"{self.table_name!r} table"
+                + (f" — {declared.doc}" if declared and declared.doc else "")
+                + "\n\nThe project has not created it yet.")
+            self.empty.show()
+            self.create.show()
+            self.view.hide()
+            self.list.clear()
+            return
+
+        self.empty.hide()
+        self.create.hide()
+        self.view.show()
+
+        table = self.session.project.table(self.table_name)
+        label_column = next((c.name for c in table.columns
+                             if c.name in ("display_name", "name", "title")), None)
+
+        self.list.blockSignals(True)
+        self.list.clear()
+        for row_id, row in table:
+            label = row.get(label_column) if label_column else None
+            item = QListWidgetItem(f"{label}   ({row_id})" if label else row_id)
+            item.setData(Qt.UserRole, row_id)
+            self.list.addItem(item)
+            if row_id == self.current_row:
+                self.list.setCurrentItem(item)
+        if self.current_row not in table.rows:
+            self.current_row = None
+        if self.current_row is None and self.list.count():
+            self.list.setCurrentRow(0)
+            self.current_row = self.list.item(0).data(Qt.UserRole)
+        self.list.blockSignals(False)
+
+        self.__show_current()
+
+    def __show_current(self) -> None:
+        if self.current_row is None:
+            self.view.show_inspection(
+                describe(self.session, Scope.of(("table", self.table_name))))
+            return
+        scope = Scope.of(("table", self.table_name), ("row", self.current_row))
+        self.view.show_inspection(describe(self.session, scope))
+        self.strip.set_scope(scope)
+        self.scope_changed.emit(scope)
+
+    # -- actions -----------------------------------------------------------
+
+    def __on_select(self, current, _previous) -> None:
+        if current is None:
+            return
+        self.current_row = current.data(Qt.UserRole)
+        self.__show_current()
+
+    def __on_create(self) -> None:
+        self.command_requested.emit(
+            Command("table.create", Scope.of(("table", self.table_name)), {}))
+
+    def __on_add(self) -> None:
+        if not self.exists:
+            return
+        row_id, ok = QInputDialog.getText(
+            self, "New row",
+            "Row id — snake_case, stable, referenced by name:")
+        if not ok or not row_id.strip():
+            return
+        self.current_row = row_id.strip()
+        self.command_requested.emit(Command(
+            "table.row.add", Scope.of(("table", self.table_name)),
+            {"id": row_id.strip()}))
+
+    def __on_duplicate(self) -> None:
+        if not self.exists or self.current_row is None:
+            return
+        source = dict(self.session.project.table(self.table_name)
+                      .require_row(self.current_row))
+        row_id, ok = QInputDialog.getText(
+            self, "Duplicate row", "Id for the copy:",
+            text=f"{self.current_row}_copy")
+        if not ok or not row_id.strip():
+            return
+        self.current_row = row_id.strip()
+        self.command_requested.emit(Command(
+            "table.row.add", Scope.of(("table", self.table_name)),
+            {"id": row_id.strip(), "values": source}))
+
+    def __on_remove(self) -> None:
+        if not self.exists or self.current_row is None:
+            return
+        answer = QMessageBox.question(
+            self, "Delete row",
+            f"Delete {self.current_row!r} from {self.table_name}?\n\n"
+            f"This is undoable.")
+        if answer != QMessageBox.Yes:
+            return
+        doomed = self.current_row
+        self.current_row = None
+        self.command_requested.emit(Command(
+            "table.row.remove",
+            Scope.of(("table", self.table_name), ("row", doomed))))
+
+
+class DatabaseWindow(QMainWindow):
+    """Every data table the genre knows about, one tab each."""
+
+    command_requested = Signal(object)
+    reveal_requested = Signal(str)
+
+    def __init__(self, session, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.session = session
+        self.setWindowTitle(f"Database — {session.project.genre.title}")
+        self.setWindowFlag(Qt.Window, True)
+        self.resize(1000, 700)
+
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.pages: dict[str, TablePage] = {}
+        self.setCentralWidget(self.tabs)
+        self.rebuild()
+
+    def rebuild(self) -> None:
+        """Tabs come from the GENRE, so switching genre reshapes the window."""
+        remembered = self.tabs.tabText(self.tabs.currentIndex()) \
+            if self.tabs.count() else ""
+        self.tabs.clear()
+        self.pages.clear()
+
+        project = self.session.project
+        names = sorted({t.name for t in project.genre.tables}
+                       | set(project.table_names()))
+        for name in names:
+            declared = project.genre.table(name)
+            page = TablePage(self.session, name)
+            page.command_requested.connect(self.command_requested.emit)
+            page.reveal_requested.connect(self.reveal_requested.emit)
+            title = declared.title if declared else name.title()
+            self.tabs.addTab(page, title)
+            self.pages[name] = page
+            if title == remembered:
+                self.tabs.setCurrentWidget(page)
+        if not names:
+            placeholder = QLabel(
+                f"The {project.genre.title} genre declares no data tables.")
+            placeholder.setAlignment(Qt.AlignCenter)
+            placeholder.setStyleSheet("color: palette(mid); padding: 40px;")
+            self.tabs.addTab(placeholder, "—")
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.setWindowTitle(f"Database — {self.session.project.genre.title}")
+        for page in self.pages.values():
+            page.refresh()

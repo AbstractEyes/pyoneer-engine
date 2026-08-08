@@ -31,7 +31,7 @@ Working, and honest about where it is not. ~12,350 lines of tracked Python.
 | | |
 |---|---|
 | Runs | yes — headless or windowed, on pygame 2.6 / Python 3.11 |
-| Tested | 18 check tools plus a frame-level regression harness |
+| Tested | 20 check tools plus a frame-level regression harness |
 | Stable API | **no.** Names are still moving. See [Known rough edges](#known-rough-edges) |
 | Docs | design plans in [`docs/`](docs/), all reconciled against the code |
 
@@ -259,7 +259,7 @@ Design and reasoning: [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md).
 .venv/Scripts/python.exe tools/check_all.py
 ```
 
-18 checks plus a frame-level drift comparison, one exit code. They are not unit
+20 checks plus a frame-level drift comparison, one exit code. They are not unit
 tests; each one boots or drives real engine code and asserts measured
 behaviour — token counts, dispatch counts, frame hashes, pixel equality.
 
@@ -276,8 +276,8 @@ Deliberate visual changes are re-baselined explicitly:
 .venv/Scripts/python.exe tools/smoke.py --frames 60 --write-baseline
 ```
 
-Without art, 9 of the 18 checks pass; the other 9 boot the engine and need the
-three image files. `tools/make_placeholder_art.py` is enough for all 18.
+Without art, 11 of the 20 checks pass; the other 9 boot the engine and need the
+three image files. `tools/make_placeholder_art.py` is enough for all 20.
 `check_editor_ui` reports SKIP rather than PASS when PySide6 is absent — a
 check that did not run has proved nothing.
 
@@ -336,7 +336,10 @@ Stated plainly, because most of them are recorded with measurements in
   nothing reads it at runtime. `OBJECT_CONVERTER` and `ComponentFactory` both
   exist and are wired to nothing. This is the next real step.
 - **`MapDocument` cannot add or remove layers.** It reads and writes existing
-  ones. That is why the editor has no `map.layer.add` command.
+  ones. That is why the editor has no `map.layer.add` command, and no way to
+  edit layer opacity, offset or tint.
+- **The editor cannot edit shape geometry.** Polygon, ellipse and text
+  objects are shown and preserved byte-exactly; their points are read-only.
 - **The demo map has an invisible parallax layer** — its tiles sit beneath a
   fully opaque floor.
 - **`archive/gen3_behavior_rewrite/`** is an unfinished redesign that never

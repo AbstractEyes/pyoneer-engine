@@ -1,9 +1,13 @@
 """The editor window.
 
-Holds the session and is the only place that calls `session.run`. Panels
-reach it with `self.window().run(command)`, so there is exactly one place
-where a change enters the project, one place that catches a rejection, and
-one place that refreshes the views afterwards.
+Holds the session and the selection, and is the only place that calls
+`session.run`. Panels reach it with `self.window().run(command)`, so there
+is exactly one place where a change enters the project, one place that
+catches a rejection, and one place that refreshes the views.
+
+It is also the only place that launches anything -- the game, an IDE -- and
+both are detached subprocesses. Nothing the editor spawns can block its
+event loop or take it down with it.
 """
 from __future__ import annotations
 
@@ -12,36 +16,44 @@ import subprocess
 import sys
 
 from PySide6.QtCore import QFileSystemWatcher, Qt, QTimer
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
+    QDockWidget,
     QFileDialog,
-    QLabel,
     QInputDialog,
+    QLabel,
     QMainWindow,
     QMessageBox,
-    QSpinBox,
     QToolBar,
 )
 
+from editor.core import ide
 from editor.core.commands import Command
 from editor.core.errors import PyoneerEditorError
+from editor.core.paint import Tool
 from editor.core.request import REQUESTS_DIR, RESPONSE_FILE, read_response
 from editor.core.scope import Scope
 from editor.ui.canvas import MapCanvas, TilePalette
-from editor.ui.docks import (
-    HistoryDock,
-    LayersDock,
-    ManifestDock,
-    ObjectsDock,
-    ProblemsDock,
-)
-from editor.ui.tables import TablesDock
+from editor.ui.database import DatabaseWindow
+from editor.ui.docks import HistoryDock, ManifestDock, ProblemsDock
+from editor.ui.hierarchy import HierarchyDock
+from editor.ui.inspector import InspectorDock
+from editor.ui.selection import Selection
 
 _OBJECT_CLASSES = (
     "GamePlayer", "GameEntity", "GameFloorEntity",
     "GameBackgroundEntity", "GameForegroundEntity", "GameUIEntity",
 )
+
+_TOOL_SHORTCUTS = {
+    Tool.BRUSH: "B",
+    Tool.FILLED_RECT: "R",
+    Tool.RECTANGLE: "Shift+R",
+    Tool.FILL: "G",
+    Tool.ERASER: "E",
+    Tool.PICKER: "I",
+}
 
 
 class EditorWindow(QMainWindow):
@@ -49,53 +61,63 @@ class EditorWindow(QMainWindow):
         super().__init__()
         self.session = session
         self.map_name = (session.project.map_names() or ["<none>"])[0]
+        self.database: DatabaseWindow | None = None
         self.setWindowTitle(self.__title())
-        self.resize(1500, 950)
+        self.resize(1600, 1000)
+
+        map_scope = Scope.of(("map", self.map_name))
+        self.selection = Selection(map_scope, self)
 
         self.canvas = MapCanvas(session, self.map_name, self)
         self.canvas.status.connect(self.__on_status)
+        self.canvas.picked_gid.connect(self.__on_picked)
+        self.canvas.selected.connect(self.selection.select)
         self.setCentralWidget(self.canvas)
 
-        map_scope = Scope.of(("map", self.map_name))
-        self.layers = LayersDock("Layers", session, map_scope, self)
-        self.objects = ObjectsDock("Objects", session, map_scope, self)
-        self.tables = TablesDock("Tables", session, Scope.of(("table", "actors")), self)
+        self.hierarchy = HierarchyDock("Hierarchy", session, map_scope, self)
+        self.inspector = InspectorDock("Inspector", session, map_scope, self)
         self.problems = ProblemsDock("Problems", session, Scope.of("project"), self)
         self.manifest = ManifestDock("Manifest", session, Scope.of("project"), self)
         self.history = HistoryDock("History", session, Scope.of("project"), self)
 
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.layers)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.objects)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.tables)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.hierarchy)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.inspector)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.problems)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.manifest)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.history)
         self.tabifyDockWidget(self.problems, self.history)
         self.problems.raise_()
+        self.resizeDocks([self.inspector], [420], Qt.Horizontal)
 
         self.palette_dock = self.__build_palette()
-        self.layers.layer_selected.connect(self.__on_layer)
+        self.hierarchy.visibility_changed.connect(self.canvas.set_layer_visible)
         self.manifest.ship_requested.connect(self.ship)
+        self.selection.changed.connect(self.__on_selection)
+
+        self.docks = (self.hierarchy, self.inspector, self.problems,
+                      self.manifest, self.history)
 
         self.__build_actions()
         self.__build_toolbar()
-        self.statusBar().showMessage("Alt+click paints. Alt+right-click erases.")
+        self.statusBar().showMessage(
+            "left drag paints · right drag erases · middle or space pans · "
+            "ctrl+wheel zooms · alt+click picks")
 
         self.__watcher = QFileSystemWatcher(self)
         self.__watcher.directoryChanged.connect(self.__on_requests_changed)
+        self.__seen_responses: set[str] = set()
         self.__watch_requests()
 
         self.refresh_all()
+        self.__select_first_paintable_layer()
 
     # -- construction ------------------------------------------------------
 
-    def __build_palette(self):
-        from PySide6.QtWidgets import QDockWidget
-
+    def __build_palette(self) -> QDockWidget:
         dock = QDockWidget("Tiles", self)
         dock.setObjectName("Tiles")
         self.palette = TilePalette(dock)
-        self.palette.gid_picked.connect(self.__on_gid)
+        self.palette.stamp_picked.connect(self.__on_stamp)
         dock.setWidget(self.palette)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         return dock
@@ -105,12 +127,28 @@ class EditorWindow(QMainWindow):
         self.__act(file_menu, "&Save", QKeySequence.Save, self.save)
         file_menu.addSeparator()
         self.__act(file_menu, "&Play the game", "F5", self.play)
+        self.__act(file_menu, "Open the &project in my IDE", None,
+                   lambda: self.reveal("main.py"))
         file_menu.addSeparator()
         self.__act(file_menu, "&Quit", QKeySequence.Quit, self.close)
 
         edit_menu = self.menuBar().addMenu("&Edit")
         self.undo_action = self.__act(edit_menu, "&Undo", QKeySequence.Undo, self.undo)
         self.redo_action = self.__act(edit_menu, "&Redo", QKeySequence.Redo, self.redo)
+
+        view_menu = self.menuBar().addMenu("&View")
+        for dock in (self.hierarchy, self.inspector, self.problems,
+                     self.manifest, self.history, self.palette_dock):
+            view_menu.addAction(dock.toggleViewAction())
+        view_menu.addSeparator()
+        self.__act(view_menu, "Zoom &in", QKeySequence.ZoomIn,
+                   lambda: self.canvas.scale(1.25, 1.25))
+        self.__act(view_menu, "Zoom &out", QKeySequence.ZoomOut,
+                   lambda: self.canvas.scale(0.8, 0.8))
+        self.__act(view_menu, "&Reset zoom", "Ctrl+0", self.__reset_zoom)
+
+        data_menu = self.menuBar().addMenu("&Database")
+        self.__act(data_menu, "&Open the database…", "Ctrl+D", self.open_database)
 
         ai_menu = self.menuBar().addMenu("&AI")
         self.__act(ai_menu, "&Ship staged notes as a request…", "Ctrl+Return", self.ship)
@@ -121,6 +159,27 @@ class EditorWindow(QMainWindow):
 
         project_menu = self.menuBar().addMenu("&Project")
         self.__act(project_menu, "Switch &genre…", None, self.switch_genre)
+        self.ide_menu = project_menu.addMenu("Preferred &IDE")
+        self.__build_ide_menu()
+
+    def __build_ide_menu(self) -> None:
+        self.ide_menu.clear()
+        found = ide.detect()
+        if not found:
+            action = self.ide_menu.addAction("none detected")
+            action.setEnabled(False)
+            return
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        configured = self.session.project.meta.get("ide")
+        for entry in found:
+            action = self.ide_menu.addAction(f"{entry.name}  ({entry.how})")
+            action.setCheckable(True)
+            action.setChecked(entry.id == configured
+                              or (configured is None and entry is found[0]))
+            action.triggered.connect(
+                lambda _c=False, i=entry.id: self.__set_ide(i))
+            group.addAction(action)
 
     def __act(self, menu, text, shortcut, slot) -> QAction:
         action = QAction(text, self)
@@ -133,38 +192,64 @@ class EditorWindow(QMainWindow):
     def __build_toolbar(self) -> None:
         bar = QToolBar("Tools", self)
         bar.setObjectName("Tools")
+        bar.setMovable(False)
         self.addToolBar(bar)
 
-        bar.addWidget(QLabel("  gid "))
-        self.gid_spin = QSpinBox()
-        self.gid_spin.setRange(0, 999999)
-        self.gid_spin.setValue(1)
-        self.gid_spin.valueChanged.connect(self.__on_gid)
-        bar.addWidget(self.gid_spin)
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        self.tool_actions: dict[Tool, QAction] = {}
+        for tool in Tool:
+            action = QAction(tool.label, self)
+            action.setCheckable(True)
+            action.setChecked(tool is Tool.BRUSH)
+            shortcut = _TOOL_SHORTCUTS.get(tool)
+            if shortcut:
+                action.setShortcut(shortcut)
+                action.setToolTip(f"{tool.label}  ({shortcut})")
+            action.triggered.connect(lambda _c=False, t=tool: self.__set_tool(t))
+            group.addAction(action)
+            bar.addAction(action)
+            self.tool_actions[tool] = action
 
         bar.addSeparator()
-        bar.addWidget(QLabel("  object class "))
+        self.stamp_label = QLabel("  brush: gid 1  ")
+        bar.addWidget(self.stamp_label)
+
+        bar.addSeparator()
+        bar.addWidget(QLabel("  place "))
         self.class_combo = QComboBox()
         self.class_combo.addItems(_OBJECT_CLASSES)
         self.class_combo.setEditable(True)
+        self.class_combo.setToolTip(
+            "Class used when you click an empty spot on an object layer.")
         self.class_combo.currentTextChanged.connect(self.__on_class)
         bar.addWidget(self.class_combo)
 
         bar.addSeparator()
-        self.genre_label = QLabel(f"  genre: {self.session.project.genre.id}  ")
-        bar.addWidget(self.genre_label)
+        self.layer_label = QLabel("  no layer selected  ")
+        self.layer_label.setStyleSheet("color: palette(mid);")
+        bar.addWidget(self.layer_label)
 
     def __title(self) -> str:
         star = "*" if self.session.dirty else ""
         return (f"Pyoneer Editor{star} — {self.session.project.genre.title} — "
                 f"{self.session.project.root}")
 
+    def __select_first_paintable_layer(self) -> None:
+        try:
+            names = self.session.project.map(self.map_name).tile_layer_names()
+        except Exception:                                       # noqa: BLE001
+            return
+        if names:
+            self.selection.select(
+                Scope.of(("map", self.map_name), ("layer", names[0])))
+
     # -- the single mutation point -----------------------------------------
 
     def run(self, commands, *, label: str | None = None,
             source: str = "editor") -> bool:
-        """Apply commands. Returns True on success; reports and returns
-        False on a rejection. Never lets an editor error escape into Qt."""
+        """Apply commands. Returns True on success; reports and returns False
+        on a rejection. Never lets an editor error escape into Qt."""
         try:
             transaction = self.session.run(commands, label=label, source=source)
         except PyoneerEditorError as exc:
@@ -181,54 +266,86 @@ class EditorWindow(QMainWindow):
     # -- refreshing --------------------------------------------------------
 
     def refresh_all(self) -> None:
-        self.canvas.rebuild()
+        self.canvas.set_selection(self.selection.scope)
         if self.canvas.atlas is not None:
             self.palette.set_atlas(self.canvas.atlas)
-        for dock in (self.layers, self.objects, self.tables,
-                     self.problems, self.manifest, self.history):
-            dock.refresh()
+        for dock in self.docks:
+            self.__safely(dock.refresh, dock.base_title)
+        if self.database is not None:
+            self.__safely(self.database.refresh, "Database")
         self.undo_action.setEnabled(self.session.stream.can_undo)
         self.redo_action.setEnabled(self.session.stream.can_redo)
-        self.genre_label.setText(f"  genre: {self.session.project.genre.id}  ")
         self.setWindowTitle(self.__title())
+
+    def __safely(self, call, what: str) -> None:
+        """One panel failing must not take the window down.
+
+        A panel reads a document that a command just changed, and a stale
+        assumption in one of them is a bug in that panel -- not a reason for
+        the editor to die holding unsaved work.
+        """
+        try:
+            call()
+        except Exception as exc:                                # noqa: BLE001
+            self.statusBar().showMessage(
+                f"{what} panel failed to refresh: {type(exc).__name__}: {exc}",
+                12000)
 
     def refresh_manifest(self) -> None:
         self.manifest.refresh()
-        for dock in (self.layers, self.objects, self.tables,
-                     self.problems, self.manifest, self.history):
+        for dock in self.docks:
             dock.strip.refresh()
 
-    def set_layer_visible(self, name: str, visible: bool) -> None:
-        self.canvas.set_layer_visible(name, visible)
+    # -- selection ---------------------------------------------------------
 
-    # -- slots -------------------------------------------------------------
+    def __on_selection(self, scope: Scope) -> None:
+        for dock in self.docks:
+            if dock.follows_selection:
+                self.__safely(lambda d=dock: d.on_selection_changed(scope),
+                              dock.base_title)
+        layer = scope.get("layer")
+        if layer != self.canvas.active_layer:
+            self.canvas.set_active_layer(layer)
+        else:
+            self.canvas.set_selection(scope)
+        self.layer_label.setText(f"  layer: {layer}  " if layer
+                                 else "  no layer selected  ")
+
+    # -- tools -------------------------------------------------------------
+
+    def __set_tool(self, tool: Tool) -> None:
+        self.canvas.tool = tool
+        self.statusBar().showMessage(tool.label, 2000)
+
+    def __on_stamp(self, stamp) -> None:
+        self.canvas.stamp = stamp
+        self.stamp_label.setText(
+            f"  brush: gid {stamp.primary}  " if stamp.is_single
+            else f"  brush: {stamp.width}×{stamp.height} stamp  ")
+
+    def __on_picked(self, gid: int) -> None:
+        self.palette.select_gid(gid)
+        self.stamp_label.setText(f"  brush: gid {gid}  ")
+
+    def __on_class(self, name: str) -> None:
+        self.canvas.object_class = name
 
     def __on_status(self, message: str) -> None:
         self.statusBar().showMessage(message, 3000)
 
-    def __on_layer(self, name: str) -> None:
-        self.canvas.active_layer = name
-        self.objects.set_scope(Scope.of(("map", self.map_name), ("layer", name)))
-        self.objects.refresh()
-
-    def __on_gid(self, gid: int) -> None:
-        self.canvas.brush_gid = int(gid)
-        if self.gid_spin.value() != gid:
-            self.gid_spin.blockSignals(True)
-            self.gid_spin.setValue(int(gid))
-            self.gid_spin.blockSignals(False)
-
-    def __on_class(self, name: str) -> None:
-        self.canvas.object_class = name
+    def __reset_zoom(self) -> None:
+        self.canvas.resetTransform()
 
     # -- commands ----------------------------------------------------------
 
     def undo(self) -> None:
         if self.session.undo() is not None:
+            self.selection.reselect()
             self.refresh_all()
 
     def redo(self) -> None:
         if self.session.redo() is not None:
+            self.selection.reselect()
             self.refresh_all()
 
     def save(self) -> None:
@@ -253,8 +370,23 @@ class EditorWindow(QMainWindow):
         if not os.path.isfile(main):
             QMessageBox.warning(self, "No entry point", f"{main} does not exist.")
             return
-        subprocess.Popen([sys.executable, main], cwd=self.session.project.root)
+        try:
+            subprocess.Popen([sys.executable, main],
+                             cwd=self.session.project.root)
+        except OSError as exc:
+            QMessageBox.warning(self, "Could not launch", str(exc))
+            return
         self.statusBar().showMessage("launched main.py", 4000)
+
+    def open_database(self) -> None:
+        if self.database is None:
+            self.database = DatabaseWindow(self.session, self)
+            self.database.command_requested.connect(self.run)
+            self.database.reveal_requested.connect(self.reveal)
+        self.database.refresh()
+        self.database.show()
+        self.database.raise_()
+        self.database.activateWindow()
 
     def switch_genre(self) -> None:
         from editor.core import genre as genre_module
@@ -266,8 +398,9 @@ class EditorWindow(QMainWindow):
                                           "Genre pack for this project:",
                                           options, index, False)
         if ok and chosen != current:
-            self.run(Command("project.genre.set", Scope.of("project"),
-                             {"genre": chosen}))
+            if self.run(Command("project.genre.set", Scope.of("project"),
+                                {"genre": chosen})) and self.database is not None:
+                self.database.rebuild()
 
     def copy_art_brief(self) -> None:
         from PySide6.QtWidgets import QApplication
@@ -281,6 +414,33 @@ class EditorWindow(QMainWindow):
         QApplication.clipboard().setText(brief)
         self.statusBar().showMessage(
             "art brief copied — paste it into an image model", 6000)
+
+    # -- code ---------------------------------------------------------------
+
+    def __set_ide(self, ide_id: str) -> None:
+        self.session.project.meta["ide"] = ide_id
+        self.statusBar().showMessage(f"IDE set to {ide_id}", 4000)
+
+    def reveal(self, path: str, line: int | None = None,
+               symbol: str | None = None) -> None:
+        """Open a source file in the developer's IDE.
+
+        Read-only by construction: it launches a detached process and
+        reports failure in the status bar. Nothing here can affect the
+        project, the running game, or the editor.
+        """
+        absolute = path if os.path.isabs(path) \
+            else os.path.join(self.session.project.root, path)
+        if symbol and line is None:
+            line = ide.find_symbol_line(absolute, symbol)
+        result = ide.open_at(absolute, line,
+                             configured=self.session.project.meta.get("ide"))
+        self.statusBar().showMessage(result.message, 8000)
+        if not result.ok and not ide.detect():
+            QMessageBox.information(
+                self, "No IDE found",
+                "Could not find PyCharm, VS Code, IntelliJ, Sublime or "
+                "Notepad++ on this machine.\n\n" + result.message)
 
     # -- the AI loop -------------------------------------------------------
 
@@ -306,11 +466,9 @@ class EditorWindow(QMainWindow):
         relative = os.path.relpath(bundle.directory, self.session.project.root)
         QMessageBox.information(
             self, "Request written",
-            f"Wrote {relative}\n\n"
-            f"Hand it to Claude Code:\n\n"
+            f"Wrote {relative}\n\nHand it to Claude Code:\n\n"
             f"    Read {relative}/BRIEF.md and do the work\n\n"
-            f"The editor is watching for {RESPONSE_FILE} and will offer to "
-            f"apply it.")
+            f"The editor is watching for {RESPONSE_FILE}.")
 
     def apply_response_dialog(self) -> None:
         start = os.path.join(self.session.project.root, REQUESTS_DIR)
@@ -344,22 +502,20 @@ class EditorWindow(QMainWindow):
         if not os.path.isdir(base):
             return
         existing = set(self.__watcher.directories())
-        for path in [base] + [os.path.join(base, d) for d in os.listdir(base)
-                              if os.path.isdir(os.path.join(base, d))]:
+        wanted = [base] + [os.path.join(base, d) for d in os.listdir(base)
+                           if os.path.isdir(os.path.join(base, d))]
+        for path in wanted:
             if path not in existing:
                 self.__watcher.addPath(path)
 
     def __on_requests_changed(self, directory: str) -> None:
         self.__watch_requests()
         candidate = os.path.join(directory, RESPONSE_FILE)
-        if not os.path.isfile(candidate):
+        if not os.path.isfile(candidate) or candidate in self.__seen_responses:
             return
-        if candidate in getattr(self, "_seen_responses", set()):
-            return
-        self._seen_responses = getattr(self, "_seen_responses", set())
-        self._seen_responses.add(candidate)
-        # Give the writer a moment to finish; a half-written jsonl is the
-        # obvious race here and a 400ms wait is cheaper than a parse error.
+        self.__seen_responses.add(candidate)
+        # Give the writer a moment; a half-written jsonl is the obvious race
+        # and 400 ms is cheaper than a parse error.
         QTimer.singleShot(400, lambda: self.__offer(candidate))
 
     def __offer(self, path: str) -> None:

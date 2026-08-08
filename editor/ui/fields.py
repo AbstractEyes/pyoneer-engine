@@ -1,0 +1,269 @@
+"""Render an `Inspection` as an editable form.
+
+Shared by the Inspector dock and the Database window, which need the same
+thing in different frames: a list of typed fields where editing one emits a
+Command. Two renderers would drift, and the drift would be silent -- a
+field editable in one place and not the other looks like a bug in the
+document rather than in the UI.
+
+The view emits `command_requested`; it never applies anything itself. That
+keeps the "one mutation point" rule intact all the way down to the widget
+that a spin box lives in.
+
+Forms rebuild wholesale rather than diffing. A dozen fields is
+microseconds, and it removes the whole class of bug where a stale widget
+keeps editing an object that an undo has already deleted.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from editor.core.commands import Command
+from editor.core.inspect import Field, Inspection
+
+PROPERTY_TYPES = ("str", "int", "float", "bool")
+BLANK: dict[str, Any] = {"str": "", "int": 0, "float": 0.0, "bool": False}
+
+
+class InspectionView(QScrollArea):
+    """A scrollable, editable rendering of one Inspection."""
+
+    command_requested = Signal(object)      # Command
+    reveal_requested = Signal(str)          # a repo-relative path
+
+    def __init__(self, parent: QWidget | None = None, *,
+                 show_header: bool = True, show_sources: bool = True):
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.show_header = show_header
+        self.show_sources = show_sources
+        self.inspection: Inspection | None = None
+
+        self.__body = QWidget()
+        self.__layout = QVBoxLayout(self.__body)
+        self.__layout.setContentsMargins(8, 8, 8, 8)
+        self.__layout.setSpacing(6)
+        self.setWidget(self.__body)
+
+    # -- rendering ---------------------------------------------------------
+
+    def show_inspection(self, inspection: Inspection) -> None:
+        self.inspection = inspection
+        self.__clear()
+        if self.show_header:
+            self.__header(inspection)
+        if inspection.error:
+            self.__note(inspection.error, size=12)
+        for section in inspection.sections:
+            self.__section(section, inspection)
+        if self.show_sources:
+            self.__sources(inspection)
+        self.__layout.addStretch(1)
+
+    def __clear(self) -> None:
+        while self.__layout.count():
+            item = self.__layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+
+    def __header(self, inspection: Inspection) -> None:
+        heading = QLabel(inspection.heading)
+        heading.setStyleSheet("font-size: 15px; font-weight: 600;")
+        heading.setWordWrap(True)
+        self.__layout.addWidget(heading)
+        if inspection.subheading:
+            self.__note(inspection.subheading, size=12)
+        scope = QLabel(str(inspection.scope))
+        scope.setStyleSheet("color: palette(mid); font-size: 11px;")
+        scope.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.__layout.addWidget(scope)
+
+    def __note(self, text: str, *, size: int = 11) -> None:
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setStyleSheet(f"color: palette(mid); font-size: {size}px;")
+        self.__layout.addWidget(label)
+
+    def __section(self, section, inspection: Inspection) -> None:
+        title = QLabel(section.title.upper())
+        title.setStyleSheet("color: palette(mid); font-size: 10px; "
+                            "font-weight: 700; padding-top: 8px;")
+        self.__layout.addWidget(title)
+
+        if section.note:
+            self.__note(section.note)
+
+        if not section.fields:
+            self.__note("none")
+        else:
+            holder = QWidget()
+            form = QFormLayout(holder)
+            form.setContentsMargins(0, 2, 0, 2)
+            form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+            for entry in section.fields:
+                form.addRow(self.__label_for(entry), self.__editor_for(entry))
+            self.__layout.addWidget(holder)
+
+        if section.title == "Properties" and inspection.scope.kind == "object":
+            add = QPushButton("+ property")
+            add.clicked.connect(self.__on_add_property)
+            self.__layout.addWidget(add, alignment=Qt.AlignLeft)
+
+    def __label_for(self, entry: Field) -> QLabel:
+        label = QLabel(entry.label)
+        tip = entry.doc
+        if entry.blocked_reason:
+            tip = (f"{tip}\n\nRead-only: {entry.blocked_reason}" if tip
+                   else f"Read-only: {entry.blocked_reason}")
+            label.setStyleSheet("color: palette(mid);")
+        if tip:
+            label.setToolTip(tip)
+        return label
+
+    # -- editors -----------------------------------------------------------
+
+    def __editor_for(self, entry: Field) -> QWidget:
+        if not entry.editable:
+            value = QLabel(str(entry.value))
+            value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            value.setWordWrap(True)
+            if entry.blocked_reason:
+                value.setStyleSheet("color: palette(mid); font-style: italic;")
+                value.setToolTip(entry.blocked_reason)
+            return value
+
+        widget = self.__build_editor(entry)
+        if entry.doc:
+            widget.setToolTip(entry.doc)
+        return self.__with_remove(entry, widget) if entry.removable else widget
+
+    def __build_editor(self, entry: Field) -> QWidget:
+        if entry.kind == "bool":
+            box = QCheckBox()
+            box.setChecked(bool(entry.value))
+            box.toggled.connect(lambda v, f=entry: self.__commit(f, bool(v)))
+            return box
+
+        if entry.kind == "choice":
+            combo = QComboBox()
+            combo.setEditable(True)
+            options = [str(o) for o in entry.choices]
+            if str(entry.value) not in options:
+                options.insert(0, str(entry.value))
+            combo.addItems(options)
+            combo.setCurrentText(str(entry.value))
+            combo.activated.connect(
+                lambda _i, f=entry, c=combo: self.__commit(f, c.currentText()))
+            combo.lineEdit().editingFinished.connect(
+                lambda f=entry, c=combo: self.__commit(f, c.currentText()))
+            return combo
+
+        if entry.kind == "int":
+            spin = QSpinBox()
+            spin.setRange(-2_147_483_647, 2_147_483_647)
+            spin.setValue(int(entry.value or 0))
+            # Without this every keystroke fires a command, so typing "120"
+            # emits 1, then 12, then 120 -- three transactions and two wrong.
+            spin.setKeyboardTracking(False)
+            spin.valueChanged.connect(lambda v, f=entry: self.__commit(f, int(v)))
+            return spin
+
+        if entry.kind == "float":
+            spin = QDoubleSpinBox()
+            spin.setRange(-1e9, 1e9)
+            spin.setDecimals(3)
+            spin.setValue(float(entry.value or 0.0))
+            spin.setKeyboardTracking(False)
+            spin.valueChanged.connect(lambda v, f=entry: self.__commit(f, float(v)))
+            return spin
+
+        line = QLineEdit(str(entry.value if entry.value is not None else ""))
+        line.editingFinished.connect(
+            lambda f=entry, w=line: self.__commit(f, w.text()))
+        return line
+
+    def __with_remove(self, entry: Field, widget: QWidget) -> QWidget:
+        holder = QWidget()
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(2)
+        row.addWidget(widget, 1)
+        button = QToolButton()
+        button.setText("×")
+        button.setToolTip(f"remove the {entry.key!r} property")
+        button.clicked.connect(lambda _c=False, f=entry: self.__remove(f))
+        row.addWidget(button)
+        return holder
+
+    # -- emitting ----------------------------------------------------------
+
+    def __commit(self, entry: Field, value: Any) -> None:
+        if value == entry.value or entry.emit is None:
+            return
+        command = entry.emit(value)
+        if command is not None:
+            self.command_requested.emit(command)
+
+    def __remove(self, entry: Field) -> None:
+        if entry.remove is None:
+            return
+        command = entry.remove(None)
+        if command is not None:
+            self.command_requested.emit(command)
+
+    def __on_add_property(self) -> None:
+        if self.inspection is None:
+            return
+        name, ok = QInputDialog.getText(self, "New property", "Property name:")
+        if not ok or not name.strip():
+            return
+        kind, ok = QInputDialog.getItem(
+            self, "New property", f"Type of {name.strip()!r}:",
+            list(PROPERTY_TYPES), 0, False)
+        if not ok:
+            return
+        self.command_requested.emit(Command(
+            "map.object.property.set", self.inspection.scope,
+            {"key": name.strip(), "value": BLANK[kind]}))
+
+    # -- code links --------------------------------------------------------
+
+    def __sources(self, inspection: Inspection) -> None:
+        if not inspection.sources:
+            return
+        title = QLabel("CODE")
+        title.setStyleSheet("color: palette(mid); font-size: 10px; "
+                            "font-weight: 700; padding-top: 10px;")
+        self.__layout.addWidget(title)
+        self.__note("Files that own this. Opening one is read-only and cannot "
+                    "affect the editor or the running game.")
+        for path in inspection.sources:
+            button = QPushButton(path)
+            button.setStyleSheet("text-align: left; padding: 2px 6px;")
+            button.setFlat(True)
+            button.clicked.connect(
+                lambda _c=False, p=path: self.reveal_requested.emit(p))
+            self.__layout.addWidget(button)

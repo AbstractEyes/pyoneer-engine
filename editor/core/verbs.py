@@ -228,8 +228,8 @@ def _object_add(project: Project, cmd: Command) -> Command:
 
 @command(
     "map.object.remove",
-    summary="Remove an object. The inverse re-adds it with the same id, so "
-            "undo restores the file byte-for-byte.",
+    summary="Remove an object. Its inverse restores the whole XML element, "
+            "so undo brings back shape, rotation and everything else.",
     scopes=["map:*/layer:*/object:*"],
     destructive=True,
     example='{"verb": "map.object.remove",'
@@ -238,19 +238,44 @@ def _object_add(project: Project, cmd: Command) -> Command:
 def _object_remove(project: Project, cmd: Command) -> Command:
     found = _object(project, cmd.scope)
     layer = _object_layer(project, cmd.scope)
-    restore = {
-        "type": found.type,
-        "name": found.name,
-        "x": found.x,
-        "y": found.y,
-        "width": found.width,
-        "height": found.height,
-        "gid": found.gid,
-        "properties": found.properties.as_dict(),
-        "object_id": found.id,
+    document = project.map(cmd.scope.require("map"))
+
+    # The inverse used to be `map.object.add` rebuilt from eight attributes,
+    # which SILENTLY DESTROYED rotation, visible, template and every shape
+    # child (<polygon>, <polyline>, <point>, <ellipse>, <text>) on undo. The
+    # byte-identity check missed it because the only objects it ever removed
+    # were plain rectangles it had created itself two lines earlier.
+    payload = {
+        "xml": layer.serialize_object(found.id),
+        "index": layer.object_index(found.id),
+        "next_object_id": document.root.get("nextobjectid", "1"),
     }
     layer.remove_object(found.id)
-    return Command("map.object.add", _layer_scope(cmd.scope), restore)
+    return Command("map.object.restore", _layer_scope(cmd.scope), payload)
+
+
+@command(
+    "map.object.restore",
+    summary="Put back an object from its serialised XML, at its original "
+            "position among its siblings. The exact inverse of "
+            "map.object.remove; rarely written by hand.",
+    scopes=["map:*/layer:*"],
+    params=[
+        Param("xml", str, "the object's whole <object> element as XML text"),
+        Param("index", int, "position among sibling objects; omit to append",
+              required=False, default=None),
+        Param("next_object_id", str, "the map's nextobjectid before removal",
+              required=False, default=""),
+    ],
+)
+def _object_restore(project: Project, cmd: Command) -> Command:
+    layer = _object_layer(project, cmd.scope)
+    document = project.map(cmd.scope.require("map"))
+    restored = layer.restore_object(cmd.args["xml"], cmd.args["index"])
+    if cmd.args["next_object_id"]:
+        document.root.set("nextobjectid", cmd.args["next_object_id"])
+    return Command("map.object.remove",
+                   cmd.scope.child("object", str(restored.id)))
 
 
 @command(
@@ -272,7 +297,25 @@ def _object_move(project: Project, cmd: Command) -> Command | None:
     return Command("map.object.move", cmd.scope, before)
 
 
-_OBJECT_ATTRIBUTES = ("name", "type", "width", "height", "gid")
+# Every built-in <object> attribute the editor may write. `class` is here
+# because Tiled 1.9+ spells `type` that way, and an inverse command has to
+# be able to name whichever one the file actually carries.
+_OBJECT_ATTRIBUTES = ("name", "type", "class", "width", "height", "gid",
+                      "rotation", "visible", "template")
+
+
+def _object_attribute_name(found, key: str) -> str:
+    """Which attribute this element actually spells `key` as.
+
+    Tiled 1.9 renamed `type` to `class`. Writing `type` onto an element that
+    already carries `class` leaves BOTH on the element -- the editor reads
+    the new value and Tiled reads the old one, and the two views diverge
+    permanently. So follow whatever the file already uses.
+    """
+    if key == "type" and "type" not in found.element.attrib \
+            and "class" in found.element.attrib:
+        return "class"
+    return key
 
 
 @command(
@@ -288,11 +331,41 @@ _OBJECT_ATTRIBUTES = ("name", "type", "width", "height", "gid")
 def _object_set(project: Project, cmd: Command) -> Command | None:
     found = _object(project, cmd.scope)
     key, value = cmd.args["key"], cmd.args["value"]
-    previous = str(getattr(found, key))
+    attribute = _object_attribute_name(found, key)
+
+    # Read the RAW attribute, not the property. `str(getattr(found, key))`
+    # raises AttributeError for any key MapObject does not model, and for an
+    # ABSENT width it returns "0.0" -- so undo materialised a spurious
+    # width="0.0" on an object that never had one.
+    previous = found.element.attrib.get(attribute)
     if previous == value:
         return None
-    found.set(key, value)
-    return Command("map.object.set", cmd.scope, {"key": key, "value": previous})
+
+    found.element.set(attribute, value)
+    found._document._touch()
+    if previous is None:
+        return Command("map.object.unset", cmd.scope, {"key": attribute})
+    return Command("map.object.set", cmd.scope,
+                   {"key": attribute, "value": previous})
+
+
+@command(
+    "map.object.unset",
+    summary="Remove a built-in attribute entirely, rather than blanking it. "
+            "The inverse of setting an attribute that was previously absent.",
+    scopes=["map:*/layer:*/object:*"],
+    params=[Param("key", str, "which attribute to remove")],
+    destructive=True,
+)
+def _object_unset(project: Project, cmd: Command) -> Command | None:
+    found = _object(project, cmd.scope)
+    key = cmd.args["key"]
+    previous = found.element.attrib.pop(key, None)
+    if previous is None:
+        return None
+    found._document._touch()
+    return Command("map.object.set", cmd.scope,
+                   {"key": key, "value": previous})
 
 
 @command(

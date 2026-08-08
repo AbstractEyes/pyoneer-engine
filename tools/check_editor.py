@@ -150,6 +150,54 @@ expect_raises("an unknown genre fails loudly", PyoneerGenreMissingError,
 
 # --------------------------------------------------------------------------
 print()
+print("the preflight contract still matches what scripts/ exports")
+# --------------------------------------------------------------------------
+# editor/preflight.py hardcodes the engine symbols the editor binds, and
+# refuses to start when one is missing. That list going stale would turn a
+# helpful gate into a false alarm, so it is asserted here: a rename in
+# scripts/ fails this check instead of blocking the editor at startup.
+from editor import preflight  # noqa: E402
+
+expect("a healthy engine reports no problems",
+       [str(p) for p in preflight.check(REPO)], [])
+expect("the contract covers exactly the modules the editor imports",
+       sorted(preflight.ENGINE_CONTRACT),
+       ["scripts/core/errors.py", "scripts/core/log.py",
+        "scripts/loaders/map_document.py"])
+
+print()
+print("and it detects both ways the engine can become unloadable")
+sandbox = tempfile.mkdtemp(prefix="pyoneer_preflight_")
+try:
+    os.makedirs(os.path.join(sandbox, "scripts", "core"))
+    broken_path = os.path.join(sandbox, "scripts", "core", "errors.py")
+    with open(broken_path, "w", encoding="utf-8") as handle:
+        handle.write("def oops(:\n")
+    problems = preflight.check(sandbox, {"scripts/core/errors.py": ("PyoneerError",)})
+    expect("a syntax error is caught", len(problems), 1)
+    expect("and it names the line", problems[0].line, 1)
+
+    with open(broken_path, "w", encoding="utf-8") as handle:
+        handle.write("class SomethingElse:\n    pass\n")
+    problems = preflight.check(sandbox, {"scripts/core/errors.py": ("PyoneerError",)})
+    expect("a deleted symbol is caught", len(problems), 1)
+    expect("and it says which one",
+           "PyoneerError" in problems[0].message, True)
+
+    # A name that moved inside a class body or an `if` is no longer
+    # importable the way the editor imports it, so it must NOT count.
+    with open(broken_path, "w", encoding="utf-8") as handle:
+        handle.write("class Holder:\n    PyoneerError = 1\n")
+    problems = preflight.check(sandbox, {"scripts/core/errors.py": ("PyoneerError",)})
+    expect("a name nested inside a class does not count as present",
+           len(problems), 1)
+
+    problems = preflight.check(sandbox, {"scripts/core/gone.py": ("Anything",)})
+    expect("a missing file is caught", len(problems), 1)
+finally:
+    shutil.rmtree(sandbox, ignore_errors=True)
+
+print()
 print("scripts/ does not import editor/")
 # --------------------------------------------------------------------------
 offenders = []
@@ -294,6 +342,117 @@ try:
     session.undo()
     expect("byte-identical again",
            session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    # ---------------------------------------------------------------
+    print()
+    print("removing a NON-RECTANGULAR object still undoes byte-exactly")
+    # ---------------------------------------------------------------
+    # This is a regression guard for a data-destroying bug. `map.object.remove`
+    # used to invert to `map.object.add`, which rebuilds an object from eight
+    # attributes -- so undo silently dropped rotation, visible, template and
+    # every shape child (<polygon>, <polyline>, <point>, <ellipse>, <text>).
+    #
+    # The earlier byte-identity assertions did not catch it because the only
+    # objects they ever removed were plain rectangles they had created
+    # themselves two lines earlier: the test compared the code against itself.
+    # Nothing in the shipped map has a shape, so this needs its own fixture.
+    RICH = b"""<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" \
+renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="3" nextobjectid="6">
+ <layer id="1" name="Floor" width="4" height="4">
+  <data encoding="csv">
+0,0,0,0,
+0,0,0,0,
+0,0,0,0,
+0,0,0,0
+</data>
+ </layer>
+ <objectgroup id="2" name="entity">
+  <object id="1" name="rot" class="Chest" x="16" y="32" width="16" \
+height="16" rotation="37.5" visible="0"/>
+  <object id="2" name="poly" class="Zone" x="48" y="16">
+   <properties>
+    <property name="danger" type="int" value="3"/>
+   </properties>
+   <polygon points="0,0 32,0 32,24 0,24"/>
+  </object>
+  <object id="3" name="dot" x="8" y="8">
+   <point/>
+  </object>
+  <object id="4" name="round" x="0" y="48" width="24" height="12">
+   <ellipse/>
+  </object>
+  <object id="5" name="sign" x="32" y="48" width="40" height="20">
+   <text wrap="1" color="#ff0000">Beware</text>
+  </object>
+ </objectgroup>
+</map>
+"""
+    rich_path = os.path.join(workspace, "data", "maps", "rich.tmx")
+    with open(rich_path, "wb") as handle:
+        handle.write(RICH)
+    with open(os.path.join(workspace, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": [
+            {"name": "test", "identifier": "test", "file": "data/maps/test.tmx"},
+            {"name": "rich", "identifier": "rich", "file": "data/maps/rich.tmx"},
+        ]}, handle)
+
+    rich_session = Session.open(workspace, genre_id="topdown_rpg")
+    expect("the fixture round-trips before any edit",
+           rich_session.project.map("rich").to_bytes() == RICH, True)
+
+    shapes = {1: "rotated + hidden rectangle", 2: "polygon with properties",
+              3: "point", 4: "ellipse", 5: "text"}
+    for object_id, description in shapes.items():
+        scope = Scope.parse(f"map:rich/layer:entity/object:{object_id}")
+        rich_session.run(Command("map.object.remove", scope))
+        rich_session.undo()
+        expect(f"remove+undo a {description}",
+               rich_session.project.map("rich").to_bytes() == RICH, True)
+
+    print()
+    print("and removing every object then undoing them all still matches")
+    for object_id in shapes:
+        rich_session.run(Command(
+            "map.object.remove",
+            Scope.parse(f"map:rich/layer:entity/object:{object_id}")))
+    expect("all five gone",
+           len(rich_session.project.map("rich")
+               .object_layer("entity").objects()), 0)
+    for _ in shapes:
+        rich_session.undo()
+    expect("undoing all five is byte-identical",
+           rich_session.project.map("rich").to_bytes() == RICH, True)
+
+    print()
+    print("attributes that were ABSENT come back absent, not as '0.0'")
+    dot = Scope.parse("map:rich/layer:entity/object:3")
+    rich_session.run(Command("map.object.set", dot,
+                             {"key": "width", "value": "24"}))
+    expect("the attribute was written",
+           "width" in rich_session.project.map("rich")
+           .object_layer("entity").find(3).element.attrib, True)
+    rich_session.undo()
+    expect("undo removed it rather than writing 0.0",
+           "width" in rich_session.project.map("rich")
+           .object_layer("entity").find(3).element.attrib, False)
+    expect("so the file is byte-identical",
+           rich_session.project.map("rich").to_bytes() == RICH, True)
+
+    print()
+    print("a Tiled 1.9+ file keeps using 'class' rather than growing a 'type'")
+    chest = Scope.parse("map:rich/layer:entity/object:1")
+    rich_session.run(Command("map.object.set", chest,
+                             {"key": "type", "value": "Barrel"}))
+    attributes = rich_session.project.map("rich") \
+        .object_layer("entity").find(1).element.attrib
+    expect("class was updated in place", attributes.get("class"), "Barrel")
+    expect("and no rival 'type' attribute appeared", "type" in attributes, False)
+    rich_session.undo()
+    expect("undo restores the original class", rich_session.project.map("rich")
+           .object_layer("entity").find(1).element.attrib.get("class"), "Chest")
 
     # ---------------------------------------------------------------
     print()

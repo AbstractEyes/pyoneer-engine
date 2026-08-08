@@ -28,9 +28,16 @@ from editor.ui.prompt import PromptStrip
 
 
 class ScopedDock(QDockWidget):
-    """A panel that knows what part of the project it is showing."""
+    """A panel that knows what part of the project it is showing.
+
+    `follows_selection` decides whether this panel re-aims when something is
+    selected elsewhere. Inspectors do; Tables, Problems and Manifest do not,
+    because a note typed into Problems is about the project and should not
+    be dragged onto whatever tile was last clicked.
+    """
 
     scope_changed = Signal(object)
+    follows_selection = False
 
     def __init__(self, title: str, session, scope: Scope, parent=None):
         super().__init__(title, parent)
@@ -60,6 +67,12 @@ class ScopedDock(QDockWidget):
     def refresh(self) -> None:
         """Re-read the session. Called after every transaction."""
 
+    def on_selection_changed(self, scope: Scope) -> None:
+        """React to a selection made elsewhere. Only called when
+        `follows_selection` is True. The default is to follow and re-read."""
+        self.set_scope(scope)
+        self.refresh()
+
     # -- scope -------------------------------------------------------------
 
     @property
@@ -76,145 +89,6 @@ class ScopedDock(QDockWidget):
 
     def __retitle(self) -> None:
         self.setWindowTitle(f"{self.base_title}  —  {self._scope}")
-
-
-# --------------------------------------------------------------------------
-# Layers
-# --------------------------------------------------------------------------
-
-class LayersDock(ScopedDock):
-    """The map's layers. Selecting one aims the canvas and the prompt."""
-
-    layer_selected = Signal(str)
-
-    def build_content(self) -> QWidget:
-        self.list = QListWidget()
-        self.list.currentItemChanged.connect(self.__on_selection)
-        self.list.itemChanged.connect(self.__on_visibility)
-        return self.list
-
-    def refresh(self) -> None:
-        map_name = self._scope.get("map")
-        if map_name is None:
-            return
-        wanted = self._scope.get("layer")
-        self.list.blockSignals(True)
-        self.list.clear()
-        try:
-            document = self.session.project.map(map_name)
-        except Exception as exc:                                # noqa: BLE001
-            self.list.addItem(f"(map unreadable: {exc})")
-            self.list.blockSignals(False)
-            return
-        tile_layers = set(document.tile_layer_names())
-        object_layers = set(document.object_layer_names())
-        pack = self.session.project.genre
-        for name in document.layer_names():
-            # layer_names() also returns <group> elements, which are neither
-            # tile nor object layers. Listing one as selectable produced a
-            # scope (map:test/layer:Graphic) that no verb can act on, so
-            # groups are shown as structure and nothing more.
-            if name not in tile_layers and name not in object_layers:
-                group = QListWidgetItem(f"▾ {name}")
-                group.setFlags(Qt.NoItemFlags)
-                group.setForeground(Qt.gray)
-                group.setToolTip("a Tiled group; it holds layers but is not "
-                                 "one itself")
-                self.list.addItem(group)
-                continue
-            kind = "tile" if name in tile_layers else "object"
-            declared = pack.layer(name)
-            depth = f"  d{declared.depth}" if declared else "  d?"
-            item = QListWidgetItem(f"    {name}   [{kind}]{depth}")
-            item.setData(Qt.UserRole, name)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked)
-            if declared is None:
-                item.setToolTip(
-                    f"{name!r} is not declared by genre "
-                    f"{pack.id!r}, and scripts/core/depth.py may not map it "
-                    f"to a depth — in which case it will not render.")
-                item.setForeground(Qt.darkYellow)
-            else:
-                item.setToolTip(declared.doc)
-            self.list.addItem(item)
-            if name == wanted:
-                self.list.setCurrentItem(item)
-        self.list.blockSignals(False)
-
-    def __on_selection(self, current, _previous) -> None:
-        if current is None:
-            return
-        name = current.data(Qt.UserRole)
-        if not name:
-            return
-        map_name = self._scope.require("map")
-        self.set_scope(Scope.of(("map", map_name), ("layer", name)))
-        self.layer_selected.emit(name)
-
-    def __on_visibility(self, item) -> None:
-        name = item.data(Qt.UserRole)
-        if name:
-            self.window().set_layer_visible(name, item.checkState() == Qt.Checked)
-
-
-# --------------------------------------------------------------------------
-# Objects
-# --------------------------------------------------------------------------
-
-class ObjectsDock(ScopedDock):
-    """Everything placed on the selected object layer."""
-
-    object_selected = Signal(int)
-
-    def build_content(self) -> QWidget:
-        self.tree = QTreeWidget()
-        self.tree.setColumnCount(5)
-        self.tree.setHeaderLabels(["id", "class", "name", "x", "y"])
-        self.tree.setRootIsDecorated(False)
-        self.tree.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.tree.currentItemChanged.connect(self.__on_selection)
-        header = self.tree.header()
-        header.setSectionResizeMode(QHeaderView.ResizeToContents)
-        return self.tree
-
-    def refresh(self) -> None:
-        self.tree.clear()
-        map_name = self._scope.get("map")
-        layer_name = self._scope.get("layer")
-        if not map_name or not layer_name:
-            return
-        try:
-            document = self.session.project.map(map_name)
-            if layer_name not in document.object_layer_names():
-                placeholder = QTreeWidgetItem(
-                    ["", f"({layer_name} is a tile layer)", "", "", ""])
-                self.tree.addTopLevelItem(placeholder)
-                return
-            layer = document.object_layer(layer_name)
-        except Exception as exc:                                # noqa: BLE001
-            self.tree.addTopLevelItem(QTreeWidgetItem(["", str(exc), "", "", ""]))
-            return
-        for obj in layer.objects():
-            item = QTreeWidgetItem([str(obj.id), obj.type or "-", obj.name or "-",
-                                    f"{obj.x:g}", f"{obj.y:g}"])
-            item.setData(0, Qt.UserRole, obj.id)
-            properties = obj.properties.as_dict()
-            if properties:
-                item.setToolTip(1, "\n".join(
-                    f"{k} = {v!r}" for k, v in sorted(properties.items())))
-            self.tree.addTopLevelItem(item)
-
-    def __on_selection(self, current, _previous) -> None:
-        if current is None:
-            return
-        object_id = current.data(0, Qt.UserRole)
-        if object_id is None:
-            return
-        self.set_scope(Scope.of(("map", self._scope.require("map")),
-                                ("layer", self._scope.require("layer")),
-                                ("object", str(object_id))))
-        self.object_selected.emit(int(object_id))
 
 
 # --------------------------------------------------------------------------

@@ -85,6 +85,7 @@ reads the body text instead.
 """
 from __future__ import annotations
 
+import copy
 import os
 import re
 import xml.etree.ElementTree as ElementTree
@@ -620,6 +621,62 @@ class ObjectLayer:
         self._document._touch()
         trace_assets("add_object layer=%s id=%s name=%s", self.name, assigned, name)
         return wrapper
+
+    def object_index(self, object_id: int) -> int | None:
+        """Where an object sits among its siblings, for exact restoration."""
+        for index, child in enumerate(self.element.findall("object")):
+            if int(child.get("id", "0")) == object_id:
+                return index
+        return None
+
+    def serialize_object(self, object_id: int) -> str | None:
+        """The object's whole `<object>` element as XML text.
+
+        Exists because reconstructing an object from its ATTRIBUTES loses
+        everything else it carries: `<polygon>`, `<polyline>`, `<point>`,
+        `<ellipse>`, `<text>`, and any attribute this module does not model
+        (rotation, visible, template). Anything that removes an object must
+        keep this string if it intends to be able to put it back.
+        """
+        for child in self.element.findall("object"):
+            if int(child.get("id", "0")) != object_id:
+                continue
+            # Copy so the live element keeps its tail; tostring() would
+            # otherwise bake the sibling whitespace into the payload.
+            clone = copy.deepcopy(child)
+            clone.tail = None
+            return ElementTree.tostring(clone, encoding="unicode")
+        return None
+
+    def restore_object(self, xml: str, index: int | None = None) -> MapObject:
+        """Put back an object serialized by `serialize_object`.
+
+        The element is reinstated verbatim -- every attribute and every
+        child -- at `index` among its siblings, with only its indentation
+        recomputed. That is what makes remove-then-restore byte-identical
+        rather than approximately right.
+        """
+        try:
+            parsed = ElementTree.fromstring(xml)
+        except ElementTree.ParseError as exc:
+            raise PyoneerConfigError(
+                "restore_object was handed text that is not an <object> "
+                "element: %s" % exc, source=self._document.path) from exc
+        if parsed.tag != "object":
+            raise PyoneerConfigError(
+                "restore_object expects an <object>, got <%s>" % parsed.tag,
+                source=self._document.path)
+
+        placeholder = self._document._append_child(self.element, "object", index)
+        placeholder.attrib = dict(parsed.attrib)
+        placeholder.text = parsed.text
+        for child in list(parsed):
+            placeholder.append(child)
+            self._document._parents[child] = placeholder
+        self._document._touch()
+        trace_assets("restore_object layer=%s id=%s",
+                     self.name, placeholder.get("id"))
+        return MapObject(self._document, placeholder)
 
     def remove_object(self, object_id: int) -> bool:
         """Remove an `<object>` by id. Returns False if it was not there."""

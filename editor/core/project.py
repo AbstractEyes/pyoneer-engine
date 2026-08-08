@@ -47,6 +47,53 @@ TABLES_DIR = "tables"
 
 _TYPES: dict[str, type] = {"int": int, "float": float, "str": str, "bool": bool}
 
+# tmx elements that are layers, in Tiled's own vocabulary. `group` nests.
+_LAYER_TAGS = ("layer", "objectgroup", "imagelayer", "group")
+_TAG_KINDS = {"layer": "tile", "objectgroup": "object",
+              "imagelayer": "image", "group": "group"}
+
+
+@dataclass
+class LayerNode:
+    """One node of a map's authored layer tree.
+
+    `MapDocument.layer_names()` returns a FLAT list that includes `<group>`
+    elements alongside real layers, which is fine for lookup and useless for
+    display -- it loses the nesting a designer authored in Tiled, and it
+    invites treating a group as a layer. This preserves both.
+    """
+
+    name: str
+    kind: str                       # tile | object | image | group
+    children: list["LayerNode"] = field(default_factory=list)
+
+    @property
+    def selectable(self) -> bool:
+        """A group holds layers but is not one; no verb can act on it."""
+        return self.kind != "group"
+
+    def walk(self) -> Iterator["LayerNode"]:
+        yield self
+        for child in self.children:
+            yield from child.walk()
+
+
+def layer_tree(document) -> list[LayerNode]:
+    """The map's layers as authored, nesting preserved."""
+
+    def build(element) -> list[LayerNode]:
+        nodes: list[LayerNode] = []
+        for child in element:
+            if child.tag not in _LAYER_TAGS:
+                continue
+            node = LayerNode(child.get("name", ""), _TAG_KINDS[child.tag])
+            if child.tag == "group":
+                node.children = build(child)
+            nodes.append(node)
+        return nodes
+
+    return build(document.root)
+
 
 # --------------------------------------------------------------------------
 # Data tables

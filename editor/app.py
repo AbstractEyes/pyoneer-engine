@@ -15,6 +15,11 @@ import _bootstrap  # noqa: F401
 import argparse
 import sys
 
+# Imports NOTHING from the engine, so it cannot be broken by the code it
+# checks. Must stay above every `editor.core` import below, because those
+# reach scripts/ at module scope.
+from editor import preflight
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Pyoneer editor")
@@ -24,7 +29,15 @@ def main(argv: list[str] | None = None) -> int:
                         help="override the genre pack for this session")
     parser.add_argument("--list-genres", action="store_true",
                         help="print the installed genre packs and exit")
+    parser.add_argument("--skip-preflight", action="store_true",
+                        help="start even if the engine does not parse; the "
+                             "editor will probably crash")
     args = parser.parse_args(argv)
+
+    # The editor must not die with a bare traceback because the engine it
+    # reads is mid-edit. Measured: without this, a syntax error in
+    # scripts/core/errors.py produced no window at all.
+    preflight.enforce(args.root, skip=args.skip_preflight)
 
     from editor.core import genre as genre_module
 
