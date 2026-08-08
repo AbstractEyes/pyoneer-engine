@@ -80,6 +80,7 @@ class MapCanvas(QGraphicsView):
         self.object_class = "GameEntity"
         self.hidden_layers: set[str] = set()
         self.selected_scope: Scope | None = None
+        self.show_grid = True
 
         self.setScene(QGraphicsScene(self))
         self.setRenderHint(QPainter.SmoothPixmapTransform, False)
@@ -202,7 +203,13 @@ class MapCanvas(QGraphicsView):
             label.setZValue(z + 0.2)
             scene.addItem(label)
 
+    def set_background(self, colour) -> None:
+        if colour is not None:
+            self.setBackgroundBrush(QBrush(colour))
+
     def __draw_grid(self, scene, document, width: int, height: int) -> None:
+        if not self.show_grid:
+            return
         pen = QPen(_GRID_PEN)
         pen.setCosmetic(True)
         for column in range(document.width + 1):

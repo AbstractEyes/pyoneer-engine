@@ -62,6 +62,12 @@ def main(argv: list[str] | None = None) -> int:
     application = QApplication(sys.argv)
     application.setApplicationName("Pyoneer Editor")
 
+    # Theme before the window exists, so nothing flashes in the old palette.
+    from editor.core.settings import EditorSettings
+    from editor.ui import theme as theme_module
+    theme_module.apply(application,
+                       theme_module.Theme.parse(EditorSettings().get("theme")))
+
     try:
         session = Session.open(args.root, genre_id=args.genre)
     except Exception as exc:                                    # noqa: BLE001

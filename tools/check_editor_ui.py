@@ -496,6 +496,96 @@ try:
 
     # ----------------------------------------------------------------
     print()
+    print("settings are typed, validated, and survive a round trip")
+    # ----------------------------------------------------------------
+    from editor.core.settings import SETTINGS, EditorSettings      # noqa: E402
+
+    class FakeStore:
+        """Stands in for QSettings, and returns everything as TEXT the way
+        the ini backend does -- which is exactly how a boolean preference
+        silently stops working if nothing coerces it."""
+
+        def __init__(self):
+            self.data = {}
+
+        def value(self, key, default=None):
+            return self.data.get(key, default)
+
+        def setValue(self, key, value):
+            self.data[key] = str(value)
+
+        def remove(self, key):
+            self.data.pop(key, None)
+
+    store = EditorSettings(FakeStore())
+    expect("defaults come back typed",
+           [type(store.get(s.key)).__name__ for s in SETTINGS],
+           ["str", "str", "bool", "bool"])
+    store.set("show_grid", False)
+    expect("a bool survives a text backend", store.get("show_grid"), False)
+    store.set("show_grid", True)
+    expect("and back again", store.get("show_grid"), True)
+    store.set("theme", "dark")
+    expect("a choice round-trips", store.get("theme"), "dark")
+    store.set("theme", "banana")
+    expect("a value outside the choices falls back to the default",
+           store.get("theme"), "system")
+    store.reset()
+    expect("reset restores every default", store.as_dict()["show_grid"], True)
+
+    try:
+        store.get("nonexistent")
+        expect("an unknown setting is refused", False, True)
+    except KeyError:
+        print("  ok   an unknown setting raises rather than returning None")
+
+    # ----------------------------------------------------------------
+    print()
+    print("switching theme repaints the window AND re-inks the icons")
+    # ----------------------------------------------------------------
+    from PySide6.QtGui import QPalette                             # noqa: E402
+    from editor.ui import icons as icons_module                    # noqa: E402
+    from editor.ui.theme import Theme                              # noqa: E402
+
+    def ink_of(icon):
+        """Sample the drawn glyph so a theme change is measured, not assumed."""
+        image = icon.pixmap(22, 22).toImage()
+        total, count = 0, 0
+        for y in range(image.height()):
+            for x in range(image.width()):
+                pixel = image.pixelColor(x, y)
+                if pixel.alpha() > 200:
+                    total += pixel.lightness()
+                    count += 1
+        return total / count if count else -1
+
+    window.apply_theme(Theme.LIGHT)
+    application.processEvents()
+    light_window = application.palette().color(QPalette.Window).lightness()
+    light_ink = ink_of(icons_module.tool_icon("brush"))
+
+    window.apply_theme(Theme.DARK)
+    application.processEvents()
+    dark_window = application.palette().color(QPalette.Window).lightness()
+    dark_ink = ink_of(icons_module.tool_icon("brush"))
+
+    expect("the window palette actually darkened", dark_window < light_window,
+           True)
+    # This is the bug that prompted the whole thing: icons were a hardcoded
+    # near-white, invisible on the author's light theme. Ink must move the
+    # OPPOSITE way to the background or the glyphs vanish on one of them.
+    expect("and the icon ink moved the other way", dark_ink > light_ink, True)
+    expect("dark mode uses a style that honours the palette",
+           application.style().objectName(), "fusion")
+
+    window.apply_theme(Theme.LIGHT)
+    application.processEvents()
+    expect("every tool still has a non-null icon",
+           [t.value for t in Tool
+            if icons_module.tool_icon(t.value).isNull()], [])
+
+    # ----------------------------------------------------------------
+    print()
     print("one broken panel does not take the window down")
     # ----------------------------------------------------------------
     def explode():

@@ -18,6 +18,7 @@ import sys
 from PySide6.QtCore import QFileSystemWatcher, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDockWidget,
     QFileDialog,
@@ -41,6 +42,10 @@ from editor.ui.hierarchy import HierarchyDock
 from editor.ui.icons import tool_icon
 from editor.ui.inspector import InspectorDock
 from editor.ui.selection import Selection
+from editor.ui.settings_dialog import SettingsDialog
+from editor.ui import theme as theme_module
+from editor.ui.theme import Theme
+from editor.core.settings import EditorSettings
 
 _OBJECT_CLASSES = (
     "GamePlayer", "GameEntity", "GameFloorEntity",
@@ -61,6 +66,7 @@ class EditorWindow(QMainWindow):
     def __init__(self, session):
         super().__init__()
         self.session = session
+        self.settings = EditorSettings()
         self.map_name = (session.project.map_names() or ["<none>"])[0]
         self.database: DatabaseWindow | None = None
         self.setWindowTitle(self.__title())
@@ -109,6 +115,8 @@ class EditorWindow(QMainWindow):
         self.__seen_responses: set[str] = set()
         self.__watch_requests()
 
+        self.canvas.show_grid = self.settings.get("show_grid")
+        self.apply_theme(Theme.parse(self.settings.get("theme")))
         self.refresh_all()
         self.__select_first_paintable_layer()
 
@@ -130,6 +138,8 @@ class EditorWindow(QMainWindow):
         self.__act(file_menu, "&Play the game", "F5", self.play)
         self.__act(file_menu, "Open the &project in my IDE", None,
                    lambda: self.reveal("main.py"))
+        file_menu.addSeparator()
+        self.__act(file_menu, "Se&ttings…", "Ctrl+,", self.open_settings)
         file_menu.addSeparator()
         self.__act(file_menu, "&Quit", QKeySequence.Quit, self.close)
 
@@ -160,27 +170,6 @@ class EditorWindow(QMainWindow):
 
         project_menu = self.menuBar().addMenu("&Project")
         self.__act(project_menu, "Switch &genre…", None, self.switch_genre)
-        self.ide_menu = project_menu.addMenu("Preferred &IDE")
-        self.__build_ide_menu()
-
-    def __build_ide_menu(self) -> None:
-        self.ide_menu.clear()
-        found = ide.detect()
-        if not found:
-            action = self.ide_menu.addAction("none detected")
-            action.setEnabled(False)
-            return
-        group = QActionGroup(self)
-        group.setExclusive(True)
-        configured = self.session.project.meta.get("ide")
-        for entry in found:
-            action = self.ide_menu.addAction(f"{entry.name}  ({entry.how})")
-            action.setCheckable(True)
-            action.setChecked(entry.id == configured
-                              or (configured is None and entry is found[0]))
-            action.triggered.connect(
-                lambda _c=False, i=entry.id: self.__set_ide(i))
-            group.addAction(action)
 
     def __act(self, menu, text, shortcut, slot) -> QAction:
         action = QAction(text, self)
@@ -423,9 +412,38 @@ class EditorWindow(QMainWindow):
 
     # -- code ---------------------------------------------------------------
 
-    def __set_ide(self, ide_id: str) -> None:
-        self.session.project.meta["ide"] = ide_id
-        self.statusBar().showMessage(f"IDE set to {ide_id}", 4000)
+    # -- settings ----------------------------------------------------------
+
+    def open_settings(self) -> None:
+        dialog = SettingsDialog(
+            self.settings, self,
+            ide_choices=[(found.id, f"{found.name}  ({found.how})")
+                         for found in ide.detect()])
+        dialog.changed.connect(self.__on_setting_changed)
+        dialog.exec()
+
+    def __on_setting_changed(self, key: str, value) -> None:
+        if key == "theme":
+            self.apply_theme(Theme.parse(value))
+        elif key == "show_grid":
+            self.canvas.show_grid = bool(value)
+            self.canvas.rebuild()
+        # `ide` and `confirm_response` are read where they are used, so
+        # nothing has to happen here for them.
+
+    def apply_theme(self, theme: Theme) -> None:
+        """Repaint the whole application, icons included."""
+        application = QApplication.instance()
+        if application is None:
+            return
+        concrete = theme_module.apply(application, theme)
+        # Icons ink themselves from the palette and are cached, so they have
+        # to be re-fetched or the toolbar keeps the old contrast.
+        for tool, action in self.tool_actions.items():
+            action.setIcon(tool_icon(tool.value))
+        self.canvas.set_background(
+            theme_module.CANVAS_BACKGROUND.get(concrete))
+        self.statusBar().showMessage(f"{concrete.label} theme", 3000)
 
     def reveal(self, path: str, line: int | None = None,
                symbol: str | None = None) -> None:
@@ -440,7 +458,7 @@ class EditorWindow(QMainWindow):
         if symbol and line is None:
             line = ide.find_symbol_line(absolute, symbol)
         result = ide.open_at(absolute, line,
-                             configured=self.session.project.meta.get("ide"))
+                             configured=self.settings.get("ide") or None)
         self.statusBar().showMessage(result.message, 8000)
         if not result.ok and not ide.detect():
             QMessageBox.information(
