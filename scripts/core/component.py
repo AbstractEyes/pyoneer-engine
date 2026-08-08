@@ -863,6 +863,22 @@ class GameComponent(PyoneerGameObject, ABC):
         """
         if event is None:
             event = self.__create_event(event_type, {}, sender=self)
+
+        # Same gates __send_event enforces. This is a public dispatch entry
+        # point sitting next to send_event_advanced, and without these it
+        # would deliver a mouse event to a disabled component or a BLITS to a
+        # hidden one -- silently, and only for whoever called this method.
+        # A dispatch path with different rules from the main one is a trap.
+        #
+        # The `manager` gate is deliberately NOT copied: resize() sends with
+        # sender=self, so a managed component would refuse to repaint itself.
+        if event.handled and not event.trickle:
+            return event
+        if event_type in INPUT_EVENT_TYPES and not self.accepts_input:
+            return event
+        if event_type is GameEventType.BLITS and not self.visible:
+            return event
+
         for callback in self.__get_callback(event_type):
             self.__invoke_listener(event_type, callback, event, *args, **kwargs)
             if event.handled and not event.trickle:

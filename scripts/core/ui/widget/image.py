@@ -3,6 +3,7 @@ from typing import Optional
 import pygame
 from pygame import Surface, Rect, Vector2
 
+from scripts.core.errors import warn_content
 from scripts.core.ui.widget.draw import DrawComponent
 
 
@@ -72,6 +73,18 @@ class ImageComponent(DrawComponent):
         __scale_image reads it, so set_image() picks up the new size.
         """
         if self.base_image is None:
+            return
+        if self.scale is not None:
+            # __scale_image prefers self.scale over world_bounds, so an
+            # explicit scale would silently swallow the resize and leave the
+            # bounds and the pixels disagreeing -- a plausible wrong value,
+            # which is the exact failure shape this engine keeps producing.
+            # Say so instead.
+            warn_content(
+                f"ImageComponent resized to {int(width)}x{int(height)} but an explicit "
+                f"scale of {self.scale.width}x{self.scale.height} overrides it; "
+                f"clear .scale to let the component follow its bounds"
+            )
             return
         self.set_image(self.base_image, scale_to_size=True)
 

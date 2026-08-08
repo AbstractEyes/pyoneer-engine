@@ -297,7 +297,40 @@ class MapComposite(Layer):
                                sender=self)
 
 
-def composite_is_exact(surfaces: list[Surface]) -> bool:
+MaskCache = dict
+
+
+def _masks(surface: Surface, cache: MaskCache | None) -> tuple[pygame.mask.Mask, pygame.mask.Mask]:
+    """Opaque and partial-alpha masks, optionally memoized within one pass.
+
+    pygame.mask.from_surface over a 1600x1600 layer costs ~50ms, and
+    __split_exact_groups calls composite_is_exact with GROWING PREFIXES of the
+    same run, so the same surface is otherwise re-masked once per extension.
+    Measured: 288ms of a 347ms regroup was re-derivation.
+
+    The cache is passed IN and scoped to a single grouping pass, never module
+    global. A global keyed on id() is unsafe: CPython reuses the id of a freed
+    object, so a new surface can collide with a dead one's entry and receive
+    its mask. Scoping it to a call whose caller holds every surface alive in a
+    list makes id() collision impossible for the cache's lifetime.
+    """
+    if cache is None:
+        opaque = opaque_mask(surface)
+        partial = pygame.mask.from_surface(surface, 0)
+        partial.erase(opaque, (0, 0))
+        return opaque, partial
+    key = id(surface)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    opaque = opaque_mask(surface)
+    partial = pygame.mask.from_surface(surface, 0)
+    partial.erase(opaque, (0, 0))
+    cache[key] = (opaque, partial)
+    return opaque, partial
+
+
+def composite_is_exact(surfaces: list[Surface], cache: MaskCache | None = None) -> bool:
     """Can these surfaces be flattened without moving a single screen pixel?
 
     Flattening replaces `screen <- L0 <- L1 <- ...` with
@@ -329,8 +362,9 @@ def composite_is_exact(surfaces: list[Surface]) -> bool:
     """
     if len(surfaces) < 2:
         return True
-    opaque = [opaque_mask(s) for s in surfaces]
-    partial = [partial_alpha_mask(s) for s in surfaces]
+    computed = [_masks(s, cache) for s in surfaces]
+    opaque = [m[0] for m in computed]
+    partial = [m[1] for m in computed]
     size = surfaces[0].get_size()
 
     # later[i] = union of the opaque masks of everything drawn after i.
@@ -498,9 +532,13 @@ class LayerRenderer:
         if self._map_regroup:
             self._map_invalid.clear()
             self._map_regroup = False
-            for layers in self.map_sources.values():
-                for source in layers:
-                    source.rebake()
+            # Deliberately NOT re-rasterizing the sources here. A regroup only
+            # changes which layers are flattened TOGETHER, not what any layer
+            # contains -- and __prepare_map_layers already baked each one via
+            # core_lifecycle_prepare(). Re-running source.rebake() rasterized
+            # every layer a second time at boot for nothing (~45ms of a 90ms
+            # bill). Re-rasterizing a source is what a BAND invalidation is
+            # for, below.
             self.__regroup_map_layers()
             return
 
@@ -572,10 +610,13 @@ class LayerRenderer:
         """
         groups: list[list[MapLayer]] = []
         current: list[MapLayer] = []
+        # One cache for this pass only. `sources` holds every surface alive
+        # for its lifetime, so id() keys cannot collide with a freed object.
+        cache: MaskCache = {}
         for source in sources:
             candidate = current + [source]
             if len(candidate) > 1 and not composite_is_exact(
-                    [layer.require_image() for layer in candidate]):
+                    [layer.require_image() for layer in candidate], cache):
                 groups.append(current)
                 current = [source]
             else:
@@ -651,7 +692,26 @@ class LayerRenderer:
             self.layers[depth].append(layer)
             # A new entity layer can land in the middle of a run of tile
             # layers, and a composite spanning it would draw the tiles above
-            # the entities. Regroup rather than guess.
+            # the entities. Only regroup when that is actually possible.
+            self.__invalidate_if_inside_map_span(depth)
+
+    def __invalidate_if_inside_map_span(self, depth: int) -> None:
+        """Regroup ONLY if a new layer at `depth` could split a tile run.
+
+        Both bind paths used to call invalidate() unconditionally, which sets
+        the regroup flag and costs a full ~350ms restructure on the next
+        render(). Nothing in main.py binds after boot, so no check caught it --
+        but scene.bind -> renderer.bind IS the runtime API, so the first
+        window opened or entity spawned mid-game ate a quarter-second stall
+        that did not exist before compositing.
+
+        A layer outside the span of the tile depths cannot land inside a run,
+        so it cannot split one. UI at depth 100+ never can.
+        """
+        if not self.map_sources:
+            return
+        low, high = min(self.map_sources), max(self.map_sources)
+        if low < depth < high:
             self.invalidate()
 
     def __prepare_depth(self, depth: int | str):
@@ -672,7 +732,7 @@ class LayerRenderer:
         layer = GameComponentLayer(LayerType.UI, layer_name, depth + len(self.layers[depth]), Surface(widget.world_bounds.size))
         layer.bind(widget)
         self.layers[depth].append(layer)
-        self.invalidate()
+        self.__invalidate_if_inside_map_span(depth)
 
     def update(self, delta: float):
         """update all available layers."""

@@ -405,6 +405,27 @@ class TileLayer:
         return [values[y * self.width:(y + 1) * self.width] for y in range(self.height)]
 
     # -- writes ------------------------------------------------------------
+    def _require_gid(self, gid: int) -> int:
+        """Reject a gid the csv encoding cannot round-trip.
+
+        The serializer joins values with commas and the reader is
+        `re.compile(r"\\d+")`, which treats a leading '-' as a SEPARATOR. So a
+        negative gid does not fail, it silently comes back as its absolute
+        value: fill(rect, -5) wrote '-5,-5' and re-read as 5, with the tile
+        count still correct and nothing warning. A plausible wrong number is
+        the worst possible outcome for a map file, so this is a hard error.
+
+        Shared by set_tile and fill -- the guard existed on set_tile only,
+        which is how fill got to corrupt silently.
+        """
+        gid = int(gid)
+        if gid < 0:
+            raise PyoneerConfigError(
+                "gid %d is negative; tmx gids are unsigned (0 means empty)" % gid,
+                source=self._document.path,
+            )
+        return gid
+
     def set_tile(self, x: int, y: int, gid: int) -> bool:
         """Set one gid. Returns True if the value actually changed.
 
@@ -412,12 +433,7 @@ class TileLayer:
         tool that re-stamps an unchanged region produces an empty diff.
         """
         index = self._index(x, y)
-        gid = int(gid)
-        if gid < 0:
-            raise PyoneerConfigError(
-                "gid %d is negative; tmx gids are unsigned (0 means empty)" % gid,
-                source=self._document.path,
-            )
+        gid = self._require_gid(gid)
         if self._grid.values[index] == gid:
             return False
         self._grid.values[index] = gid
@@ -433,6 +449,7 @@ class TileLayer:
         4-tuple (x, y, width, height). The rect is clipped to the layer, so
         an over-large brush is a partial fill rather than an error.
         """
+        gid = self._require_gid(gid)
         x, y, width, height = _as_rect(rect)
         left, top = max(0, x), max(0, y)
         right, bottom = min(self.width, x + width), min(self.height, y + height)
