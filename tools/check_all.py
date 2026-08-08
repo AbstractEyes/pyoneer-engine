@@ -51,9 +51,22 @@ smoke = subprocess.run(
      "--frames", "60", "--baseline", os.path.join(ROOT, "tools", "baseline.json")],
     capture_output=True, text=True, cwd=ROOT,
 )
+# Distinguish "the frame changed" from "the harness could not run". Both used
+# to print DRIFT and invite a re-baseline -- so a crash that never rendered a
+# frame looked like an intentional visual change, and the suggested fix was to
+# bless it.
+smoke_ran = "frame_hash" in smoke.stdout
 drift_ok = smoke.returncode == 0
-print(f"  {'PASS' if drift_ok else 'DRIFT'}  smoke          frame hash, component census, blit tokens")
-if not drift_ok:
+if not smoke_ran:
+    print("  ERROR smoke          harness could not run - no frame was rendered")
+    for line in (smoke.stdout + smoke.stderr).splitlines()[-6:]:
+        if line.strip():
+            print(f"          {line.rstrip()}")
+    print("          (no baseline change will fix this; the engine failed to boot)")
+elif drift_ok:
+    print("  PASS  smoke          frame hash, component census, blit tokens")
+else:
+    print("  DRIFT smoke          frame hash, component census, blit tokens")
     for line in smoke.stdout.splitlines():
         if "DRIFT" in line or "baseline:" in line or "current" in line:
             print(f"          {line.strip()}")
@@ -61,7 +74,7 @@ if not drift_ok:
 
 failed = [n for n, ok, _ in results if not ok]
 print()
-if failed or not drift_ok:
+if failed or not drift_ok or not smoke_ran:
     print(f"FAILED: {failed or []}{'  + smoke drift' if not drift_ok else ''}")
     sys.exit(1)
 print(f"ALL {len(results)} CHECKS PASS, NO DRIFT")

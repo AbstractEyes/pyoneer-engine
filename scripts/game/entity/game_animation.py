@@ -107,7 +107,18 @@ class GameAnimationHandler:
         # single hottest operation in the entity render path. Subsurfaces
         # inherit the parent's format and cannot be converted individually,
         # so this must happen before any slicing.
-        sheet = pygame.image.load(self._data.file)
+        try:
+            sheet = pygame.image.load(self._data.file)
+        except FileNotFoundError as exc:
+            # Say WHICH config key points at the missing file. A bare
+            # FileNotFoundError on a relative path leaves the reader hunting
+            # for whatever declared it.
+            raise PyoneerAssetMissingError(
+                "spritesheet", self._data.file, available=(),
+                animation_category=self._data.name,
+                declared_in="config/animations.json -> %s.file" % self._data.name,
+                hint="the repository ships without art; see docs/ASSETS.md",
+            ) from exc
         self._spritesheet: Surface = sheet.convert_alpha() if pygame.display.get_surface() else sheet
         self._animations: dict[str, GameAnimation] = {}
         self._name = animation_data.name

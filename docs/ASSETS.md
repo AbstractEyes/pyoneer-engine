@@ -28,17 +28,26 @@ properly-licensed assets is planned work.
 
 ## What a fresh clone is missing
 
-The engine reads these paths at runtime. Without them:
+The engine reads exactly **three** image files at runtime. Without them,
+`main.py` fails in this order (verified against a real fresh clone):
 
-- `main.py` raises on boot. `config/animations.json` points the default entity
-  animation at `data/graphics/tilesets/Characters/~Garet.png`, and
-  `GameAnimationHandler.__init__` loads it eagerly.
-- `data/maps/test.tmx` **is** tracked — it is the author's own map — but its two
-  `<tileset>` elements reference `../graphics/tilesets/System/TileA2.png` and
-  `TileC.png`, so `pytmx.load_pygame` cannot resolve its tiles.
+1. **The map, first.** `main.py` calls `load_map()` before it builds any
+   entity, and `data/maps/test.tmx` — which **is** tracked, being the author's
+   own map — declares two `<tileset>` elements pointing at
+   `../graphics/tilesets/System/TileA2.png` (512×384) and `TileC.png`
+   (512×512). `AssetMapManager.load_assets` raises
+   `PyoneerAssetMissingError` naming the file and pointing here.
+2. **Then the entity spritesheet.** `config/animations.json` points the default
+   entity animation at `data/graphics/tilesets/Characters/~Garet.png` and
+   `GameAnimationHandler.__init__` loads it eagerly, raising
+   `PyoneerAssetMissingError` naming the config key that declared it.
 
-`tools/check_all.py` needs the art for the same reason: eight of the twelve
-checks boot the engine.
+`tools/check_all.py` runs 12 checks; **six** of them boot the engine and need
+the art (`animation`, `maplayers`, `singletons`, `tmx_roundtrip`, `viewclip`,
+`window_close`). The other six pass on a bare clone.
+
+The fastest fix is `tools/make_placeholder_art.py`, which writes all three at
+the required sizes; with it, all 12 checks pass.
 
 ## Where the paths live
 

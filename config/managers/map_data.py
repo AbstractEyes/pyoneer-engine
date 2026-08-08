@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 import pytmx
 
@@ -63,8 +64,39 @@ class AssetMapManager(CoreAsset):
                                           source="config/maps.json")
         if map_data.data is None or reload:
             self.__require_file(map_data)
-            map_data.data = pytmx.load_pygame(map_data.file)
+            try:
+                map_data.data = pytmx.load_pygame(map_data.file)
+            except FileNotFoundError as exc:
+                # pytmx resolves <tileset source=...> relative to the .tmx and
+                # raises a bare FileNotFoundError from three frames inside a
+                # third-party package, on a mixed-separator path with an
+                # unresolved '..' segment. On a fresh clone -- which ships the
+                # map but not the art -- that is the FIRST thing a newcomer
+                # sees, and it reads as "the checkout is broken" rather than
+                # "this repo ships without art on purpose".
+                raise PyoneerAssetMissingError(
+                    "tileset image", self.__missing_tileset_name(exc),
+                    available=(),
+                    map=map_data.name,
+                    tmx=map_data.file,
+                    hint="the repository ships without art; see docs/ASSETS.md",
+                ) from exc
         return map_data.data
+
+    @staticmethod
+    def __missing_tileset_name(exc: BaseException) -> str:
+        """Pull just the path out of pytmx's mangled FileNotFoundError.
+
+        pygame raises this with `filename` unset and the path embedded in the
+        message as "No such file or directory: '<path>'.", on a mixed-separator
+        string with an unresolved '..' segment. Recover the quoted path and
+        normalize it so the reported name matches what is on disk.
+        """
+        raw = getattr(exc, "filename", None)
+        if not raw:
+            match = re.search(r"['\"]([^'\"]+)['\"]", str(exc))
+            raw = match.group(1) if match else str(exc)
+        return os.path.normpath(str(raw)).replace("\\", "/")
 
     @staticmethod
     def __require_file(map_data: MapData) -> None:
