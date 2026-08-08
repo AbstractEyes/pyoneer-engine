@@ -35,10 +35,15 @@ class Panel(DrawComponent):
 
     def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):
         super().core_lifecycle_build(event)
+        # Sized to the PANEL, not to screen_area. screen_area is the virtual
+        # scrollable extent -- often far larger -- and the background is chrome
+        # bound to the panel rather than attached content, so it never scrolls.
+        # Building it at the scroll size drew a 376x420 rectangle inside a
+        # 376x160 panel, which is the oversized fill visible in the frame.
         self.background = ShapeComponent(
             parent=self,
             depth=0,
-            bounds=Rect(0, 0, self.screen_area.width, self.screen_area.height),
+            bounds=Rect(0, 0, self.local_bounds.width, self.local_bounds.height),
             shape=ShapeComponent.ShapeType.Rectangle
         )
         self.vertical_scroll = ScrollComponent(
@@ -79,8 +84,15 @@ class Panel(DrawComponent):
         # these a resized Panel kept a 200x120 background and scrollbars inside
         # a 320x220 frame.
         self.background.anchor = Anchor.ALL          # fills the panel
-        self.vertical_scroll.anchor = Anchor.TOP | Anchor.BOTTOM | Anchor.RIGHT
-        self.horizontal_scroll.anchor = Anchor.LEFT | Anchor.RIGHT | Anchor.BOTTOM
+        # BOTH scrollbars FILL the panel. A ScrollComponent is a full-panel
+        # overlay -- it positions its own bar, thumb and arrows relative to its
+        # own bounds, at `world_bounds.width - scroll_width` and so on. Edge
+        # anchoring them was wrong: RIGHT without LEFT MOVES rather than
+        # resizes, so shrinking the window drove vertical_scroll to x=-160
+        # while it kept its old 376 width, leaving its arrows at x=362 in a
+        # 216-wide panel -- the bars hanging off the right of the frame.
+        self.vertical_scroll.anchor = Anchor.ALL
+        self.horizontal_scroll.anchor = Anchor.ALL
         self.dead_corner.anchor = Anchor.BOTTOM_RIGHT
 
         self.bind_component("background", self.background)
@@ -223,12 +235,24 @@ class Panel(DrawComponent):
         without affecting anything else, which is exactly what that flag is
         for.
         """
+        showing = []
         for scroll in (self.vertical_scroll, self.horizontal_scroll):
             if scroll is None:
                 continue
             usable = scroll.has_overflow
             scroll.visible = usable
             scroll.active = usable
+            showing.append(usable)
+
+        # The dead corner exists only to fill the square where the two bars
+        # would otherwise overlap. With one bar it spans its whole edge and
+        # there is no gap; with none there is nothing to fill. It used to be
+        # unconditionally visible, so a panel with nothing to scroll still
+        # drew a black square in its bottom-right corner.
+        if self.dead_corner is not None:
+            both = len(showing) == 2 and all(showing)
+            self.dead_corner.visible = both
+            self.dead_corner.active = both
 
     def __event__update(self, event: Optional[PyoneerEvent] = None):
         """Per-frame scroll clamp, scrollbar visibility and transform refresh.

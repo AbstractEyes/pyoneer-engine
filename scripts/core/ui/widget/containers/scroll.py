@@ -236,6 +236,26 @@ class ScrollComponent(GameComponent):
         self.scroll_thumb.local_bounds = self.__scroll_thumb_bounds()
         #self.parent.send_event(GameEventType.TRANSFORM, PyoneerEvent(GameEventType.TRANSFORM, sender=self))
 
+    def relayout(self):
+        """Re-place the bar, thumb and BOTH ARROWS against the current bounds.
+
+        Every one of those rects is derived from `world_bounds`, and nothing
+        recomputed the arrows when the ScrollComponent itself was resized --
+        __event__update_scroll only ever moved the bar and thumb, and only on a
+        scroll event. Shrinking a window therefore left the arrows at their
+        construction coordinates: measured x=362 in a panel that had shrunk to
+        216 wide, so they hung off the right-hand edge of the frame.
+        """
+        if self.scroll_bar is None:
+            return
+        self.arrow_1.local_bounds = self.__arrow_1_bounds()
+        self.arrow_2.local_bounds = self.__arrow_2_bounds()
+        self.__event__update_scroll()
+
+    def _on_size_changed(self, width: int | float, height: int | float):
+        super()._on_size_changed(width, height)
+        self.relayout()
+
     def __event__mouse_clicked_within_scroll_bar(self, event: Optional[PyoneerEvent] = None):
 
         """Event if the mouse is down, check if it's within the scroll bar."""
