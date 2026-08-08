@@ -15,6 +15,7 @@ from pygame import Rect, Vector2
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.event_types import GameEventType
 from scripts.core.ui.widget.containers.window import GameWindow
+from scripts.game.demo_window import DemoWindow
 
 failures = []
 
@@ -27,7 +28,9 @@ def expect(label, got, want):
 
 
 def make_window():
-    w = GameWindow(header_text="Test", bounds=Rect(100, 100, 400, 400))
+    # DemoWindow: the focus assertions need a focusable child, and those
+    # live in the demo tree now rather than on GameWindow itself.
+    w = DemoWindow(bounds=Rect(100, 100, 400, 400))
     w.core_lifecycle_prepare(PyoneerEvent(GameEventType.PREPARE, sender=None, data={}))
     return w
 

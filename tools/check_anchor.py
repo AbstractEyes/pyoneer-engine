@@ -24,6 +24,7 @@ from scripts.core.event_types import GameEventType
 from scripts.core.ui.anchor import Anchor, DEFAULT_ANCHOR, reflow
 from scripts.core.ui.widget.containers.panel import Panel
 from scripts.core.ui.widget.containers.window import GameWindow
+from scripts.game.demo_window import DemoWindow
 from scripts.core.ui.widget.shape import ShapeComponent
 
 failures = []
@@ -147,7 +148,9 @@ expect("dead corner moved by the resize delta",
 print()
 print("GameWindow is now genuinely resizable")
 # --------------------------------------------------------------------------
-window = prepared(GameWindow(header_text="Test", bounds=Rect(0, 0, 400, 400)))
+# DemoWindow, not GameWindow: the demo widgets moved out of the reusable
+# chrome class, and the inner-panel assertion below needs one to exist.
+window = prepared(DemoWindow(bounds=Rect(0, 0, 400, 400)))
 window.local_bounds = Rect(0, 0, 560, 300)
 expect("body fills the window",
        (window.body.local_bounds.width, window.body.local_bounds.height), (560, 300))
@@ -158,7 +161,7 @@ expect("close button kept its size",
        (window.close_button.local_bounds.width, window.close_button.local_bounds.height), (30, 24))
 expect("close button stayed pinned to the right edge",
        window.close_button.local_bounds.right, 560)
-expect("inner panel widened", window.panel.local_bounds.width, 500)
+expect("inner panel widened", window.scroll_panel.local_bounds.width, 536)
 
 print()
 print("and shrinking does not invert anything")

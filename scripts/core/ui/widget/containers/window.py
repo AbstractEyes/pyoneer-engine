@@ -4,16 +4,11 @@ from typing import Optional
 import pygame
 from pygame import Rect, Vector2
 
-from scripts.core.ui.widget.image import ImageComponent
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.game_object import PyoneerGameObject
 from scripts.core.component import GameComponent
 from scripts.core.event_types import GameEventType
 from scripts.core.ui.widget.containers.button import Button
-from scripts.core.ui.widget.containers.checkbox import Checkbox
-from scripts.core.ui.widget.containers.listbox import ListBoxComponent
-from scripts.core.ui.widget.containers.panel import Panel
-from scripts.core.ui.widget.containers.text_box import TextBox
 from scripts.core.ui.widget.behavior.keyboard import KeyboardComponentAsync, KeyBindingType
 from scripts.core.ui.widget.behavior.mouse import MouseComponentAsync
 from scripts.core.ui.widget.shape import ShapeComponent
@@ -54,15 +49,6 @@ class GameWindow(GameComponent):
         self.header_text: TextComponent | None = None
         self.close_button: Button | None = None
         # -------------------------------------------------
-        # test components
-        self.panel: Panel | None = None
-        self.panel2: Panel | None = None
-        self.list_box: ListBoxComponent | None = None
-        self.checkbox: Checkbox | None = None
-        self.checkboxes: list[Checkbox] = []
-        self.text_box: TextBox | None = None
-        self.image_test: ImageComponent | None = None
-        # -------------------------------------------------
         self.mouse: MouseComponentAsync | None = None
         self.keyboard: KeyboardComponentAsync | None = None
         # -------------------------------------------------
@@ -77,6 +63,13 @@ class GameWindow(GameComponent):
         self.dragging_component: bool = False
         # whether or not this component is currently dragging.
         self.dragging_offset: Vector2 = Vector2(0, 0)
+        self.resize_grip: ShapeComponent | None = None
+        """Bottom-right drag handle, present when resizable."""
+        self.resize_mouse: MouseComponentAsync | None = None
+        self.resizing: bool = False
+        self.resize_offset: Vector2 = Vector2(0, 0)
+        self.minimum_size: tuple[int, int] = (120, 60)
+        """Floor for interactive resize, so the chrome cannot invert."""
         # the position from the dragging position to the top left corner of the window.
         # -------------------------------------------------
         # baseline property configuration
@@ -128,58 +121,6 @@ class GameWindow(GameComponent):
                 center_text=True
             )
             # -------------------------------------------------
-            self.checkbox = Checkbox(
-                parent=self,
-                depth=1,
-                bounds=Rect(4, self.header_height + 4, 40, 40)
-            )
-
-            self.panel = Panel(
-                parent=self,
-                depth=1,
-                bounds=Rect(4,
-                            self.header_height + self.checkbox.local_bounds.h + 8,
-                            self.local_bounds.width - 60,
-                            (self.local_bounds.height - self.header_height - self.checkbox.local_bounds.h - 12) / 2),
-                working_area=Rect(0, 0, 1000, 1000)
-            )
-            self.panel2 = Panel(
-                parent=self,
-                depth=1,
-                bounds=Rect(4,
-                            self.header_height + self.checkbox.local_bounds.h + 8 + self.panel.local_bounds.h + 4,
-                            self.local_bounds.width - 60,
-                            (self.local_bounds.height - self.header_height - self.checkbox.local_bounds.h - 12) / 2),
-                working_area=Rect(0, 0, 200, 500)
-            )
-            self.text_box = TextBox(
-                parent=self.panel,
-                depth=0,
-                bounds=Rect(4, 500, self.panel.local_bounds.width - 8, 40),
-                default_text="Type here...",
-                max_length=80
-            )
-            self.checkboxes: list[Checkbox] = [
-                Checkbox(parent=self.panel, depth=0, bounds=Rect(4, self.header_height + 4 + 40 + 4, 40, 40)),
-                Checkbox(parent=self.panel, depth=0, bounds=Rect(4, self.header_height + 4 + 40 + 4 + 40 + 4, 40, 40)),
-                Checkbox(parent=self.panel, depth=0, bounds=Rect(4, self.header_height + 4 + 40 + 4 + 40 + 4 + 40 + 4, 40, 40)),
-                Checkbox(parent=self.panel, depth=0, bounds=Rect(4, self.header_height + 4 + 40 + 4 + 40 + 4 + 40 + 4 + 40 + 4, 40, 40)),
-            ]
-
-            #self.image_test: ImageComponent = ImageComponent(
-            #    parent=self,
-            #    depth=500,
-            #    bounds=Rect(4, self.header_height + self.text_box.local_bounds.h + 8, 128, 128),
-            #    image_in="data/graphics/tilesets/Characters/~Garet.png",
-            #    piece=Rect(0, 0, 128, 128),
-            #    rotation=90
-            #)
-            #self.list_box = ListBoxComponent(
-            #    parent=self,
-            #    depth=4,
-            #    bounds=Rect(4, self.header_height + self.text_box.bounds.h + self.checkbox.bounds.h + 8, self.bounds.width / 3, self.bounds.height - self.header_height - self.text_box.bounds.h - self.checkbox.bounds.h - 12),
-            #)
-            # -------------------------------------------------
             # Anchors: this is what makes the window resizable at all. Before
             # them, resizing a GameWindow left body, title bar, title text,
             # close button and both inner panels at their original sizes.
@@ -187,10 +128,6 @@ class GameWindow(GameComponent):
             self.header_bar.anchor = Anchor.TOP | Anchor.STRETCH_X
             self.header_text.anchor = Anchor.TOP | Anchor.STRETCH_X
             self.close_button.anchor = Anchor.TOP_RIGHT      # rides the corner
-            if self.panel is not None:
-                self.panel.anchor = Anchor.TOP | Anchor.STRETCH_X
-            if self.panel2 is not None:
-                self.panel2.anchor = Anchor.STRETCH_X | Anchor.BOTTOM
 
             self.mouse = MouseComponentAsync(parent=self)
             self.mouse.bind_mouse_listener(GameEventType.MOUSE_CLICK_INSIDE, self.__event__mouse_clicked_inside)
@@ -205,20 +142,78 @@ class GameWindow(GameComponent):
             self.mouse.bind_mouse_listener(GameEventType.MOUSE_DOWN_INSIDE, self.__event_mouse_down_within_header)
             self.mouse.bind_mouse_listener(GameEventType.MOUSE_UP, self.__event_mouse_up_dropping_window)
             self.mouse.bind_mouse_listener(GameEventType.MOUSE_DRAGGING, self.__event_mouse_dragging_window)
-            # test components --------------------------------
-            self.bind_component("checkbox", self.checkbox)
-            self.bind_component("panel", self.panel)
-            self.bind_component("panel2", self.panel2)
-            self.panel.attach_component("text_box", self.text_box)
-            self.panel.attach_component("checkbox1", self.checkboxes[0])
-            self.panel.attach_component("checkbox2", self.checkboxes[1])
-            self.panel.attach_component("checkbox3", self.checkboxes[2])
-            self.panel.attach_component("checkbox4", self.checkboxes[3])
-            #self.bind_component("image_test", self.image_test)
             self.keyboard.bind_keys([pygame.K_LEFT, pygame.K_RIGHT])
             #self.keyboard.bind_key_event(KeyBindingType.KeyDown, self.__event__key_down)
             # -------------------------
+            if self.resizable:
+                self.__build_resize_grip(config)
+            self.build_content()
             self.flags["prepared_window"] = True
+
+    def __build_resize_grip(self, config):
+        """A drag handle in the bottom-right corner.
+
+        `resizable` has been a constructor argument since the beginning and did
+        nothing, because resizing a window used to leave every child at its
+        original size. Anchors made the resize meaningful, so the grip can
+        exist now.
+        """
+        size = 14
+        self.resize_grip = ShapeComponent(
+            parent=self,
+            depth=3,
+            bounds=Rect(self.local_bounds.width - size,
+                        self.local_bounds.height - size, size, size),
+            shape=ShapeComponent.ShapeType.Rectangle,
+            background_color=WidgetColor(120, 124, 128, 255, 1),
+        )
+        self.resize_grip.anchor = Anchor.BOTTOM_RIGHT
+        self.resize_grip.clickable = True
+        self.bind_component("resize_grip", self.resize_grip)
+
+        self.resize_mouse = MouseComponentAsync(parent=self.resize_grip)
+        self.resize_grip.bind_component("mouse", self.resize_mouse)
+        self.resize_mouse.bind_mouse_listener(
+            GameEventType.MOUSE_DOWN_INSIDE, self.__event_resize_begin)
+        self.resize_mouse.bind_mouse_listener(
+            GameEventType.MOUSE_DRAGGING, self.__event_resize_drag)
+        self.resize_mouse.bind_mouse_listener(
+            GameEventType.MOUSE_UP, self.__event_resize_end)
+
+    def __event_resize_begin(self, event: PyoneerEvent):
+        if not self.resizable or event.event.button != pygame.BUTTON_LEFT:
+            return
+        self.resizing = True
+        # Offset from the cursor to the window's bottom-right, so the corner
+        # does not jump to the pointer on the first drag frame -- the same
+        # correction the header drag needed.
+        self.resize_offset = (Vector2(event.event.pos)
+                              - Vector2(self.world_bounds.bottomright))
+        self.mark_event_handled(event)
+
+    def __event_resize_drag(self, event: PyoneerEvent):
+        if not self.resizing:
+            return
+        corner = Vector2(event.event.pos) - self.resize_offset
+        width = max(self.minimum_size[0], int(corner.x - self.world_bounds.x))
+        height = max(self.minimum_size[1], int(corner.y - self.world_bounds.y))
+        current = self.local_bounds
+        if (current.width, current.height) != (width, height):
+            self.local_bounds = Rect(current.x, current.y, width, height)
+        self.mark_event_handled(event)
+
+    def __event_resize_end(self, event: PyoneerEvent):
+        self.resizing = False
+
+    def build_content(self):
+        """Override to put widgets in the window. Chrome is already built.
+
+        This is the seam that keeps GameWindow reusable. It used to construct a
+        checkbox, two Panels, a TextBox and four more checkboxes inline, at
+        literal offsets like Rect(4, header + 4 + 40 + 4 + 40 + 4, 40, 40) --
+        112 components for an empty window, none of which any other window
+        would want. That demo tree now lives in scripts/game/demo_window.py.
+        """
 
     def __event_mouse_down_within_header(self, event: PyoneerEvent):
         """Begin a drag if the press landed on the header, but not on a button."""

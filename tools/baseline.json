@@ -1,49 +1,50 @@
 {
   "frames": 60,
-  "frame_hash": "2b023259c668c3f9",
-  "frame_ms_median": 8,
+  "frame_hash": "56ba98198db99688",
+  "frame_ms_median": 9,
   "screen_size": [
     1024,
     768
   ],
   "ui_roots": [
-    "GameWindow@100"
+    "DemoWindow@100"
   ],
-  "ui_component_total": 113,
+  "ui_component_total": 124,
   "ui_component_census": {
     "Button": 17,
     "Checkbox": 5,
-    "GameWindow": 1,
+    "DemoWindow": 1,
+    "GridComponent": 1,
     "KeyboardComponentAsync": 4,
-    "MouseComponentAsync": 26,
+    "MouseComponentAsync": 27,
     "Panel": 2,
     "ScrollComponent": 4,
-    "ShapeComponent": 34,
+    "ShapeComponent": 43,
     "TextBox": 1,
     "TextComponent": 19
   },
   "dispatch_per_frame": {
-    "BLITS": 51,
-    "POST_UPDATE": 34,
-    "TRANSFORM": 97,
-    "UPDATE": 37
+    "BLITS": 52,
+    "POST_UPDATE": 35,
+    "TRANSFORM": 106,
+    "UPDATE": 38
   },
-  "dispatch_total_per_frame": 219,
-  "dispatch_during_boot": 664,
-  "blit_tokens": 55,
-  "blit_culled": 4,
+  "dispatch_total_per_frame": 231,
+  "dispatch_during_boot": 825,
+  "blit_tokens": 59,
+  "blit_culled": 1,
   "blit_depths": {
     "1": 1,
     "40": 5,
     "41": 1,
     "50": 1,
     "100": 1,
-    "101": 5,
-    "102": 1,
-    "103": 11,
-    "104": 9,
-    "105": 12,
-    "106": 8
+    "101": 14,
+    "102": 2,
+    "103": 12,
+    "104": 7,
+    "105": 9,
+    "106": 6
   },
   "renderer_layer_depths": [
     1,

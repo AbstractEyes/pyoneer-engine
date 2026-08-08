@@ -19,6 +19,7 @@ from scripts.core.input import InputActionManager
 from scripts.core.scene.scene_manager import SceneManager
 from scripts.core.component import GameComponent
 from scripts.core.ui.widget.containers.window import GameWindow
+from scripts.game.demo_window import DemoWindow
 
 #from widget.factory.component_factory import ComponentFactory
 
@@ -58,7 +59,7 @@ class MainGame:
         self.camera: GameCamera | None = None
         self.renderer: LayerRenderer | None = None
         self.player: GamePlayer | None = None
-        self.window: GameWindow | None = None
+        self.window: DemoWindow | None = None
         """The test window. F1 toggles it; the close button hides it."""
         #self.test_entity = None
         self.input: InputActionManager | None = None
@@ -153,7 +154,7 @@ class MainGame:
         #component_container.bind_component("text1", text_component)
         #component_container.bind_component("textbox1", text_box)
         #bindable_objects.append((101, text_box))
-        window = GameWindow(header_text="Test Window", bounds=Rect(100, 100, 400, 400))
+        window = DemoWindow(bounds=Rect(100, 100, 400, 400))
         self.window = window
         self.scene.bind("UI_LAYER_1", window)
         return bindable_objects

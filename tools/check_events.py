@@ -394,6 +394,7 @@ print("no component with a parent overrides core_frame_update / core_render_blit
 # most of the UI from core_lifecycle_build).
 from scripts.core.game_object import PyoneerGameObject
 from scripts.core.ui.widget.containers.window import GameWindow
+from scripts.game.demo_window import DemoWindow
 
 BANNED = ("core_frame_update", "core_render_blits")
 
@@ -420,8 +421,13 @@ def walk(component, seen=None):
         yield from walk(child, seen)
 
 
-live_window = GameWindow(header_text="Census", bounds=Rect(0, 0, 400, 400))
+# DemoWindow, not GameWindow. The census needs a tree with Panels, scrollbars
+# and a TextBox in it, and those moved out of GameWindow when the reusable
+# chrome was separated from the demo content -- a bare GameWindow is now 10
+# components, which would let this guard pass over almost nothing.
+live_window = DemoWindow(bounds=Rect(0, 0, 400, 400))
 live_window.core_lifecycle_prepare(PyoneerEvent(GameEventType.PREPARE, sender=None, data={}))
+live_window.core_lifecycle_build(PyoneerEvent(GameEventType.BUILD, sender=None, data={}))
 
 walked = list(walk(live_window))
 classes = {type(c).__name__ for c in walked}
