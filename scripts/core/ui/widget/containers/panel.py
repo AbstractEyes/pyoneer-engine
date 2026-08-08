@@ -32,9 +32,6 @@ class Panel(DrawComponent):
         self.dead_corner: ShapeComponent | None = None
         self.children: list[GameComponent] = []
 
-    def core_lifecycle_prepare(self, event: Optional[PyoneerEvent] = None):
-        super().core_lifecycle_prepare(event)
-
     def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):
         super().core_lifecycle_build(event)
         self.background = ShapeComponent(

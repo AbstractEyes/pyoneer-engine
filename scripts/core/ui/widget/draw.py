@@ -62,7 +62,20 @@ class DrawComponent(GameComponent):
         self.bind_sync_listener(GameEventType.BLITS, self.__blits)
         #self.bind_sync_listener(GameEventType.PARENT_MOVED, self.__parent_moved)
 
-    def scale(self, width: int, height: int, destination: Surface | None = None):
+    def scale_surface(self, width: int, height: int, destination: Surface | None = None):
+        """Stretch this component's surface to a new pixel size.
+
+        Renamed off `scale`. That name OVERRODE GameComponent.scale(scale,
+        sender) with an incompatible signature, and component.py:266 calls
+        `self.scale(scale, self)` when a TRANSFORM event carries scale data --
+        which on any DrawComponent would arrive here as width=Vector2,
+        height=self. Latent only because nothing currently writes "scale" into
+        TRANSFORM data; it would have fired the first time anything did.
+
+        Note this stretches existing pixels. ShapeComponent and TextComponent
+        redraw themselves from world_bounds, so for those a reallocate-and-
+        repaint is correct instead -- see the planned DrawComponent.resize().
+        """
         self._image = pygame.transform.scale(self._image, (width, height), destination)
 
     def dispose_drawable(self):

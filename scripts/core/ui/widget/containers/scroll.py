@@ -49,9 +49,6 @@ class ScrollComponent(GameComponent):
         self.use_immediate_viewport = False
         self.needs_update = True
 
-    def core_lifecycle_prepare(self, event: PyoneerEvent | None = None):
-        super().core_lifecycle_prepare(event)
-
     def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):
         super().core_lifecycle_build(event)
         self.__make()

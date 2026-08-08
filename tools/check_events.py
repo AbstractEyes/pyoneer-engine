@@ -242,6 +242,43 @@ except AttributeError as exc:
     failures.append("manager gate")
 
 print()
+print("a TRANSFORM carrying scale reaches a drawable without exploding")
+# DrawComponent.scale(width, height, destination) used to OVERRIDE
+# GameComponent.scale(scale, sender). component.py calls self.scale(scale,
+# self) when a TRANSFORM carries scale data, so on any drawable that arrived
+# as width=Vector2, height=self. Latent only because nothing wrote "scale"
+# into TRANSFORM data -- this asserts it stays safe now that something can.
+from pygame import Vector2
+
+from scripts.core.ui.widget.draw import DrawComponent
+
+drawable = ShapeComponent(bounds=Rect(0, 0, 20, 20))
+expect("DrawComponent no longer shadows GameComponent.scale",
+       DrawComponent.scale is GameComponent.scale, True)
+expect("the surface operation kept a distinct name",
+       hasattr(drawable, "scale_surface"), True)
+for payload in (Vector2(2, 2), (2, 2), 2, 2.0):
+    try:
+        drawable.send_event_advanced(
+            GameEventType.TRANSFORM,
+            PyoneerEvent(GameEventType.TRANSFORM, sender=None, data={"scale": payload}))
+    except TypeError as exc:
+        print(f"  FAIL scale payload {payload!r}: {exc}")
+        failures.append(f"scale {payload!r}")
+print("  ok   Vector2 / tuple / int / float scale payloads all dispatch")
+
+print()
+print("drag events can actually be bound")
+from scripts.core.ui.widget.behavior.mouse import MouseComponentAsync
+
+host = Probe("host", [], bounds=Rect(0, 0, 40, 40))
+mouse = MouseComponentAsync(parent=host)
+for typ in (GameEventType.MOUSE_DRAG_BEGIN, GameEventType.MOUSE_DRAG_END,
+            GameEventType.MOUSE_DRAGGING):
+    mouse.bind_mouse_listener(typ, lambda e, *a, **k: None)
+    expect(f"{typ.name} accepted", mouse.has_mouse_listener(typ), True)
+
+print()
 if failures:
     print("FAILED:", failures)
     sys.exit(1)

@@ -26,6 +26,13 @@ class MouseComponentAsync(AsyncEventComponent):
         GameEventType.MOUSE_DOWN_OUTSIDE,
         GameEventType.MOUSE_UP_OUTSIDE,
         GameEventType.MOUSE_DRAGGING,
+        # Both of these are EMITTED below (MOUSE_DRAG_END at :238,
+        # MOUSE_DRAG_BEGIN at :259) but were missing from this gate list, so
+        # bind_mouse_listener refused them and the emissions could never reach
+        # anyone. That is why GameWindow and ScrollComponent each carry their
+        # own hand-rolled dragging boolean instead of using the events.
+        GameEventType.MOUSE_DRAG_BEGIN,
+        GameEventType.MOUSE_DRAG_END,
         GameEventType.MOUSE_CLICK_INSIDE,
         GameEventType.MOUSE_DOUBLE_CLICK_INSIDE,
     ]
