@@ -1,0 +1,45 @@
+Pyoneer Engine
+Copyright 2023-2026 AbstractPhil
+
+This product includes software developed by AbstractPhil
+(https://github.com/AbstractEyes/pyoneer-engine).
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file for the
+full terms.
+
+--------------------------------------------------------------------------------
+Third-party dependencies
+--------------------------------------------------------------------------------
+
+Pyoneer depends on, but does not bundle, the following. Install them from
+requirements.txt; their own licences govern their use.
+
+  pygame        LGPL-2.1-or-later      https://www.pygame.org/
+  pytmx (PyTMX) LGPL-3.0-or-later      https://github.com/bitcraft/pytmx
+
+Neither is redistributed here. Note that both are LGPL: linking to them from
+Apache-2.0 code is fine, but if you redistribute a build that bundles them,
+their terms apply to those components.
+
+--------------------------------------------------------------------------------
+Art and other assets
+--------------------------------------------------------------------------------
+
+No third-party art is included in this repository, deliberately. The engine
+reads image files at runtime that you must supply yourself. See docs/ASSETS.md
+for what is required and tools/make_placeholder_art.py for generated stand-ins.
+
+The Apache-2.0 licence above covers the SOURCE CODE of this engine. It says
+nothing about art, audio, maps or other content you load into it -- those carry
+whatever licence their author gave them, and that is your responsibility to
+check. In particular, art shipped with a commercial game-making tool is
+commonly licensed for use inside that tool's projects only and not for
+redistribution.
+
+--------------------------------------------------------------------------------
+Archived code
+--------------------------------------------------------------------------------
+
+archive/ contains two superseded component systems written by the same author.
+They are covered by the same Apache-2.0 licence and are retained for design
+reference only; neither is importable or on the engine's import path.

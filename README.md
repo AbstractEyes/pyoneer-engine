@@ -287,7 +287,18 @@ corrected by executing the code they described. So:
 
 ## Licence
 
-The code has no licence file yet, so default copyright applies: all rights
-reserved by the author until one is added. Ask before reusing it.
+[Apache License 2.0](LICENSE). Copyright 2023-2026 AbstractPhil.
 
-No third-party art is included. See [docs/ASSETS.md](docs/ASSETS.md).
+Use it, fork it, ship a game with it, ship a closed-source game with it. The
+conditions are the usual Apache ones: keep the licence and copyright notice,
+state what you changed, and don't use the project's name to endorse yours.
+Apache-2.0 rather than MIT because it grants patent rights explicitly, which
+matters for something people build tools on top of.
+
+**The licence covers the code, not content you load into it.** Art, audio and
+maps carry whatever licence their author gave them. No third-party art is
+included here — see [docs/ASSETS.md](docs/ASSETS.md) and [NOTICE](NOTICE).
+
+pygame and pytmx are dependencies, not bundled, and are both LGPL. Linking to
+them from Apache-2.0 code is fine; if you redistribute a build that bundles
+them, their terms apply to those parts.
