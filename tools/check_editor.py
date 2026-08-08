@@ -24,6 +24,7 @@ import os
 import shutil
 import sys
 import tempfile
+import warnings
 
 from editor.core import genre as genre_module
 from editor.core.commands import Command, all_verbs, describe_all, verb_names
@@ -281,6 +282,72 @@ try:
     expect("bytes unchanged",
            session.project.map("test").to_bytes() == ORIGINAL, True)
     session.undo()
+
+    # ---------------------------------------------------------------
+    print()
+    print("layers: add, remove, and undo them byte-exactly")
+    # ---------------------------------------------------------------
+    MAP = Scope.parse("map:test")
+    session.run(Command("map.layer.add", MAP,
+                        {"name": "Hazard", "kind": "tile"}))
+    expect("the layer exists",
+           "Hazard" in session.project.map("test").tile_layer_names(), True)
+    expect("at the map's size",
+           session.project.map("test").tile_layer("Hazard").width, 100)
+    expect("and empty",
+           set(session.project.map("test").tile_layer("Hazard").gids()), {0})
+    session.undo()
+    expect("undo removes it",
+           "Hazard" in session.project.map("test").tile_layer_names(), False)
+    expect("byte-identical, including nextlayerid",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    session.run(Command("map.layer.add", MAP,
+                        {"name": "Triggers", "kind": "object"}))
+    expect("an object layer too",
+           "Triggers" in session.project.map("test").object_layer_names(), True)
+    session.undo()
+    expect("and it undoes byte-identically",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    session.run(Command("map.layer.add", MAP,
+                        {"name": "Solid", "kind": "tile",
+                         "group": "Graphic", "fill": 65}))
+    expect("a fill value lands",
+           session.project.map("test").tile_layer("Solid").get_tile(0, 0), 65)
+    session.undo()
+
+    print()
+    print("removing an EXISTING layer restores it exactly -- every one of them")
+    # The whitespace before a layer lives in its previous sibling's tail, and
+    # this file mixes tabs and spaces, so a recomputed indent is wrong
+    # somewhere no matter what it computes. Each position exercises a
+    # different branch: first child, middle child, last child, only child.
+    for layer_name in ("Paralax", "GroundClutter", "Foreground", "entity"):
+        session.run(Command(
+            "map.layer.remove",
+            Scope.of(("map", "test"), ("layer", layer_name))))
+        expect(f"{layer_name}: removed",
+               layer_name in session.project.map("test").layer_names(), False)
+        session.undo()
+        expect(f"{layer_name}: restored byte-identically",
+               session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    print()
+    print("a layer with no depth mapping warns rather than silently not drawing")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        session.run(Command("map.layer.add", MAP,
+                            {"name": "NotInDepthPy", "kind": "tile"}))
+    expect("it warned", any("depth" in str(w.message) for w in caught), True)
+    session.undo()
+
+    expect("a duplicate layer name is refused", True, True)
+    expect_raises("adding a layer that already exists", PyoneerCommandApplyError,
+                  lambda: session.run(Command("map.layer.add", MAP,
+                                              {"name": "Floor", "kind": "tile"})))
+    expect("and the file is untouched",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
 
     # ---------------------------------------------------------------
     print()

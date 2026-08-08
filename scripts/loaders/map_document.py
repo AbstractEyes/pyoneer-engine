@@ -902,6 +902,247 @@ class MapDocument:
         return layer
 
     # -- object ids --------------------------------------------------------
+    # -- layers ------------------------------------------------------------
+
+    def _claim_layer_id(self) -> int:
+        """Next layer id, honouring the map's nextlayerid."""
+        declared = int(self.root.get("nextlayerid", "1"))
+        highest = 0
+        for tag in _LAYER_TAGS:
+            for element in self.root.iter(tag):
+                highest = max(highest, int(element.get("id", "0")))
+        assigned = max(declared, highest + 1)
+        self.root.set("nextlayerid", str(assigned + 1))
+        return assigned
+
+    def _release_layer_id(self, layer_id: int) -> None:
+        """Roll nextlayerid back, but only for the id just handed out."""
+        if int(self.root.get("nextlayerid", "1")) == layer_id + 1:
+            self.root.set("nextlayerid", str(layer_id))
+
+    def _layer_parent(self, kind: str) -> ElementTree.Element:
+        """Where a new layer of `kind` should go by default.
+
+        Beside its own kind, so a new tile layer lands in the group that
+        already holds tile layers rather than at the root. Falls back to the
+        root for a map with no layers at all.
+        """
+        tag = "objectgroup" if kind == "object" else "layer"
+        for candidate in (tag, "layer", "objectgroup"):
+            for element in self.root.iter(candidate):
+                parent = self._parents.get(element)
+                if parent is not None:
+                    return parent
+        return self.root
+
+    def __sibling_shape(self, parent: ElementTree.Element,
+                        tag: str) -> tuple[str | None, str | None]:
+        """How existing siblings of `tag` lay out their inner whitespace.
+
+        This file indents its first layer with tabs and the rest with
+        spaces, so a computed indent is wrong somewhere no matter what it
+        computes. Copying a sibling's shape is right everywhere, and it is
+        what makes add-then-remove byte-identical.
+        """
+        for child in parent:
+            if child.tag != tag:
+                continue
+            inner = child.text
+            closing = None
+            grandchildren = list(child)
+            if grandchildren:
+                closing = grandchildren[-1].tail
+            if inner is not None:
+                return inner, closing
+        return None, None
+
+    def add_layer(self, name: str, kind: str = "tile", *,
+                  group: str | None = None,
+                  index: int | None = None,
+                  fill: int = 0,
+                  layer_id: int | None = None) -> "TileLayer | ObjectLayer":
+        """Add a `<layer>` or `<objectgroup>` and return its wrapper.
+
+        `kind` is "tile" or "object". A tile layer is created at the map's
+        own size, filled with `fill` (0 = empty), and written in the same csv
+        shape the file already uses.
+
+        Adding a layer does NOT make it render: the engine resolves a layer
+        name to a depth through `scripts/core/depth.py`, and an unmapped name
+        draws nothing. `warn_content` says so rather than letting it be a
+        silent no-op, because that failure has already cost this project 39
+        authored tiles once.
+        """
+        if kind not in ("tile", "object"):
+            raise PyoneerConfigError(
+                "layer kind must be 'tile' or 'object', got %r" % kind,
+                source=self.path)
+        if name in self.layer_names():
+            raise PyoneerConfigError(
+                "this map already has a layer named %r" % name,
+                source=self.path)
+
+        tag = "layer" if kind == "tile" else "objectgroup"
+        if group is not None:
+            parent = self._find_named("group", group)
+            if parent is None:
+                raise PyoneerAssetMissingError(
+                    "layer group", group,
+                    available=[e.get("name", "") for e in self.root.iter("group")],
+                    source=self.path)
+        else:
+            parent = self._layer_parent(kind)
+
+        assigned = layer_id if layer_id is not None else self._claim_layer_id()
+        element = self._append_child(parent, tag, index)
+        element.set("id", str(assigned))
+        element.set("name", str(name))
+
+        if kind == "tile":
+            element.set("width", str(self.width))
+            element.set("height", str(self.height))
+            inner, closing = self.__sibling_shape(parent, "layer")
+            data = self._append_child(element, "data")
+            data.set("encoding", "csv")
+            data.text = "\n" + self.__csv_payload(fill) + "\n"
+            if inner is not None:
+                element.text = inner
+            if closing is not None:
+                data.tail = closing
+
+        self._touch()
+        trace_assets("add_layer name=%s kind=%s id=%s", name, kind, assigned)
+        from scripts.core.depth import resolve_layer_depth
+        if resolve_layer_depth(name) is None:
+            warn_content(
+                "layer %r has no depth in scripts/core/depth.py, so the "
+                "engine will not draw it. Add it to MAP_DEPTH." % name)
+        return (self.tile_layer(name) if kind == "tile"
+                else self.object_layer(name))
+
+    def __csv_payload(self, fill: int) -> str:
+        """The csv body, in the shape this file already writes.
+
+        Every row ends with a comma except the last, which is what Tiled
+        emits and what `_CsvGrid` reproduces when it round-trips an existing
+        layer. Producing a different shape would make the first human save
+        in Tiled a whole-file diff.
+        """
+        if fill < 0:
+            raise PyoneerConfigError(
+                "gid %d is negative; tmx gids are unsigned (0 means empty)" % fill,
+                source=self.path)
+        row = ",".join(str(int(fill)) for _ in range(self.width))
+        return ",\n".join(row for _ in range(self.height))
+
+    def remove_layer(self, name: str) -> bool:
+        """Remove a layer by name. Returns False if it was not there."""
+        for tag in ("layer", "objectgroup", "imagelayer"):
+            for element in list(self.root.iter(tag)):
+                if element.get("name") != name:
+                    continue
+                parent = self._parents.get(element)
+                if parent is None:
+                    return False
+                self._remove_child(parent, element)
+                self._tile_layers.pop(name, None)
+                self._object_layers.pop(name, None)
+                self._release_layer_id(int(element.get("id", "0")))
+                self._touch()
+                trace_assets("remove_layer name=%s tag=%s", name, tag)
+                return True
+        return False
+
+    def serialize_layer(self, name: str) -> dict[str, Any] | None:
+        """Everything needed to put a layer back exactly where it was.
+
+        Same reason `serialize_object` exists -- rebuilding from attributes
+        would lose the csv payload, the properties and anything this module
+        does not model -- plus two things a layer needs and an object does
+        not: which `<group>` it lived in, and its own TAIL. The tail is the
+        whitespace before whatever followed it, and recomputing it is how
+        the first version came back one byte different.
+        """
+        for tag in ("layer", "objectgroup", "imagelayer"):
+            for element in self.root.iter(tag):
+                if element.get("name") != name:
+                    continue
+                parent = self._parents.get(element)
+                if parent is None:
+                    return None
+                clone = copy.deepcopy(element)
+                clone.tail = None
+                siblings = list(parent)
+                index = siblings.index(element)
+                # The whitespace BEFORE this layer is not its own -- in
+                # ElementTree it lives in the previous sibling's tail (or in
+                # parent.text when it is first). Removal overwrites that, so
+                # it has to be carried or the restored layer comes back with
+                # a recomputed indent.
+                return {
+                    "xml": ElementTree.tostring(clone, encoding="unicode"),
+                    "index": index,
+                    "tag": tag,
+                    "tail": element.tail or "",
+                    "prev_tail": (siblings[index - 1].tail or "") if index else None,
+                    "parent_text": parent.text if index == 0 else None,
+                    "next_layer_id": self.root.get("nextlayerid", "1"),
+                    "group": parent.get("name", "") if parent is not self.root else "",
+                }
+        return None
+
+    def restore_layer(self, payload: dict[str, Any]) -> str:
+        """Put back a layer serialized by `serialize_layer`."""
+        xml = payload.get("xml") or ""
+        try:
+            parsed = ElementTree.fromstring(xml)
+        except ElementTree.ParseError as exc:
+            raise PyoneerConfigError(
+                "restore_layer was handed text that is not a layer element: "
+                "%s" % exc, source=self.path) from exc
+        if parsed.tag not in _LAYER_TAGS:
+            raise PyoneerConfigError(
+                "restore_layer expects one of %s, got <%s>"
+                % (list(_LAYER_TAGS), parsed.tag), source=self.path)
+
+        group = payload.get("group") or None
+        if group:
+            parent = self._find_named("group", group)
+            if parent is None:
+                raise PyoneerAssetMissingError(
+                    "layer group", group,
+                    available=[e.get("name", "") for e in self.root.iter("group")],
+                    source=self.path)
+        else:
+            parent = self._layer_parent(
+                "object" if parsed.tag == "objectgroup" else "tile")
+
+        index = payload.get("index")
+        placeholder = self._append_child(parent, parsed.tag, index)
+        placeholder.attrib = dict(parsed.attrib)
+        placeholder.text = parsed.text
+        for child in list(parsed):
+            placeholder.append(child)
+
+        # Put every piece of whitespace back exactly. _append_child computes
+        # indentation, and computed is not the same as original in a file
+        # that mixes tabs and spaces -- which this one does, deliberately.
+        if payload.get("tail") is not None:
+            placeholder.tail = payload["tail"]
+        siblings = list(parent)
+        position = siblings.index(placeholder)
+        if position and payload.get("prev_tail") is not None:
+            siblings[position - 1].tail = payload["prev_tail"]
+        if payload.get("parent_text") is not None:
+            parent.text = payload["parent_text"]
+        if payload.get("next_layer_id"):
+            self.root.set("nextlayerid", payload["next_layer_id"])
+
+        self._rebuild_parents()
+        self._touch()
+        trace_assets("restore_layer name=%s", placeholder.get("name"))
+        return placeholder.get("name", "")
+
     def _claim_object_id(self) -> int:
         """Hand out the next object id, honouring the map's nextobjectid."""
         declared = int(self.root.get("nextobjectid", "1"))
@@ -976,8 +1217,16 @@ class MapDocument:
             element.tail = "\n" + own_indent
             parent.append(element)
         elif position >= len(children):
+            # The last child's tail IS the whitespace before the parent's
+            # closing tag, so the new last child must INHERIT it rather than
+            # get a recomputed one. Recomputing looked equivalent and was
+            # not: appending a layer to <group> emitted "\n\t" where the file
+            # had "\n ", and since _remove_child restores from the removed
+            # element's tail, add-then-remove came back one byte different.
+            # Inheriting makes the pair exactly reversible.
+            closing = children[-1].tail
+            element.tail = closing if closing else "\n" + own_indent
             children[-1].tail = "\n" + child_indent
-            element.tail = "\n" + own_indent
             parent.append(element)
         else:
             element.tail = "\n" + child_indent

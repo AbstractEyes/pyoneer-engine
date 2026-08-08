@@ -296,9 +296,26 @@ try:
            sorted(window.database.pages), ["actors", "equipment", "items"])
     page = window.database.pages["actors"]
     expect("an uncreated table says so", page.exists, False)
+
+    # Reported from a real run: "the database + buttons don't do anything."
+    # They early-returned when the table did not exist -- which on a fresh
+    # project is always -- so all three were dead clicks with no feedback.
+    # A button that cannot act must LOOK like it cannot act.
+    expect("+ is disabled before the table exists",
+           page.add_button.isEnabled(), False)
+    expect("and its tooltip says why",
+           "create the actors table first" in page.add_button.toolTip(), True)
+    expect("Duplicate is disabled too", page.duplicate_button.isEnabled(), False)
+    expect("and remove", page.remove_button.isEnabled(), False)
+
     page._TablePage__on_create()
     application.processEvents()
     expect("creating it worked", session.project.has_table("actors"), True)
+    expect("+ is live once the table exists", page.add_button.isEnabled(), True)
+    expect("but Duplicate still needs a selected row",
+           page.duplicate_button.isEnabled(), False)
+    expect("and says so",
+           "select a row" in page.duplicate_button.toolTip(), True)
 
     window.run(Command("table.row.add", Scope.of(("table", "actors")),
                        {"id": "hero", "values": {"display_name": "Hero"}}))
@@ -307,6 +324,9 @@ try:
     expect("the row appears in the list", page.list.count(), 1)
     expect("and the detail form is showing it",
            page.view.inspection.heading, "hero")
+    expect("Duplicate and remove came alive with a selection",
+           (page.duplicate_button.isEnabled(), page.remove_button.isEnabled()),
+           (True, True))
 
     row_fields = {f.key: f for section in page.view.inspection.sections
                   for f in section.fields}

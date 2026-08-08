@@ -176,6 +176,88 @@ def _tile_fill(project: Project, cmd: Command) -> Command | None:
 
 
 # --------------------------------------------------------------------------
+# Layers
+# --------------------------------------------------------------------------
+
+@command(
+    "map.layer.add",
+    summary="Add a tile or object layer. A tile layer is created at the "
+            "map's size. Note that a layer only RENDERS if its name has a "
+            "depth in scripts/core/depth.py.",
+    scopes=["map:*"],
+    params=[
+        Param("name", str, "layer name; it is also the key the engine "
+                           "resolves to a draw depth"),
+        Param("kind", str, "what sort of layer", required=False,
+              default="tile", choices=("tile", "object")),
+        Param("group", str, "name of a Tiled <group> to put it in; empty "
+                            "means beside the existing layers of its kind",
+              required=False, default=""),
+        Param("fill", int, "gid to fill a new tile layer with; 0 is empty",
+              required=False, default=0),
+        Param("index", int, "position among its siblings; omit to append",
+              required=False, default=None),
+    ],
+    example='{"verb": "map.layer.add", "scope": "map:test",'
+            ' "args": {"name": "Hazard", "kind": "tile"}}',
+)
+def _layer_add(project: Project, cmd: Command) -> Command:
+    document = project.map(cmd.scope.require("map"))
+    before = document.root.get("nextlayerid", "1")
+    document.add_layer(cmd.args["name"], cmd.args["kind"],
+                       group=cmd.args["group"] or None,
+                       index=cmd.args["index"],
+                       fill=cmd.args["fill"])
+    return Command("map.layer.remove",
+                   cmd.scope.child("layer", cmd.args["name"]),
+                   {"next_layer_id": before})
+
+
+@command(
+    "map.layer.remove",
+    summary="Remove a layer and everything on it. The inverse restores the "
+            "whole element, its tiles included.",
+    scopes=["map:*/layer:*"],
+    params=[
+        Param("next_layer_id", str, "restore the map's nextlayerid to this "
+                                    "after removing; used by undo",
+              required=False, default=""),
+    ],
+    destructive=True,
+)
+def _layer_remove(project: Project, cmd: Command) -> Command:
+    document = project.map(cmd.scope.require("map"))
+    name = cmd.scope.require("layer")
+    payload = document.serialize_layer(name)
+    if payload is None:
+        raise PyoneerCommandArgumentError(
+            f"no layer named {name!r} to remove",
+            verb=cmd.verb, available=document.layer_names())
+    if not document.remove_layer(name):
+        raise PyoneerCommandArgumentError(
+            f"layer {name!r} could not be removed", verb=cmd.verb)
+    if cmd.args["next_layer_id"]:
+        document.root.set("nextlayerid", cmd.args["next_layer_id"])
+    return Command("map.layer.restore",
+                   Scope.of(("map", cmd.scope.require("map"))),
+                   {"payload": payload})
+
+
+@command(
+    "map.layer.restore",
+    summary="Put a layer back from a serialised payload, at its original "
+            "position and with its original whitespace. The exact inverse "
+            "of map.layer.remove; rarely written by hand.",
+    scopes=["map:*"],
+    params=[Param("payload", dict, "as produced by MapDocument.serialize_layer")],
+)
+def _layer_restore(project: Project, cmd: Command) -> Command:
+    document = project.map(cmd.scope.require("map"))
+    name = document.restore_layer(cmd.args["payload"])
+    return Command("map.layer.remove", cmd.scope.child("layer", name))
+
+
+# --------------------------------------------------------------------------
 # Objects -- the entity-spawn seam
 # --------------------------------------------------------------------------
 

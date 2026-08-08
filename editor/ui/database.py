@@ -59,15 +59,19 @@ class TablePage(QWidget):
         self.list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.list.currentItemChanged.connect(self.__on_select)
 
+        # These three used to early-return when the table did not exist or
+        # nothing was selected, which on a fresh project is ALWAYS -- so every
+        # one of them was a dead click with no feedback. A button that cannot
+        # act must look like it cannot act.
         buttons = QHBoxLayout()
-        for label, slot, tip in (
-            ("+", self.__on_add, "add a row"),
-            ("Duplicate", self.__on_duplicate, "copy the selected row"),
-            ("−", self.__on_remove, "delete the selected row"),
-        ):
-            button = QPushButton(label)
-            button.setToolTip(tip)
-            button.clicked.connect(slot)
+        self.add_button = QPushButton("+")
+        self.add_button.clicked.connect(self.__on_add)
+        self.duplicate_button = QPushButton("Duplicate")
+        self.duplicate_button.clicked.connect(self.__on_duplicate)
+        self.remove_button = QPushButton("−")
+        self.remove_button.clicked.connect(self.__on_remove)
+        for button in (self.add_button, self.duplicate_button,
+                       self.remove_button):
             buttons.addWidget(button)
         buttons.addStretch(1)
 
@@ -86,7 +90,8 @@ class TablePage(QWidget):
         self.empty.setWordWrap(True)
         self.empty.setStyleSheet("color: palette(mid); padding: 24px;")
 
-        self.create = QPushButton("Create this table from the genre")
+        self.create = QPushButton("Create this table")
+        self.create.setMinimumHeight(34)
         self.create.clicked.connect(self.__on_create)
 
         right = QWidget()
@@ -117,6 +122,24 @@ class TablePage(QWidget):
     def exists(self) -> bool:
         return self.session.project.has_table(self.table_name)
 
+    def __sync_buttons(self) -> None:
+        """Enable only what can actually happen, and say why when it cannot."""
+        exists = self.exists
+        selected = exists and self.current_row is not None
+
+        self.add_button.setEnabled(exists)
+        self.add_button.setToolTip(
+            "add a row" if exists else
+            f"create the {self.table_name} table first")
+
+        for button, verb in ((self.duplicate_button, "copy"),
+                             (self.remove_button, "delete")):
+            button.setEnabled(selected)
+            button.setToolTip(
+                f"{verb} the selected row" if selected else
+                (f"select a row to {verb} it" if exists
+                 else f"create the {self.table_name} table first"))
+
     def refresh(self) -> None:
         if not self.exists:
             declared = self.session.project.genre.table(self.table_name)
@@ -129,6 +152,8 @@ class TablePage(QWidget):
             self.create.show()
             self.view.hide()
             self.list.clear()
+            self.current_row = None
+            self.__sync_buttons()
             return
 
         self.empty.hide()
@@ -155,6 +180,7 @@ class TablePage(QWidget):
             self.current_row = self.list.item(0).data(Qt.UserRole)
         self.list.blockSignals(False)
 
+        self.__sync_buttons()
         self.__show_current()
 
     def __show_current(self) -> None:
@@ -173,6 +199,7 @@ class TablePage(QWidget):
         if current is None:
             return
         self.current_row = current.data(Qt.UserRole)
+        self.__sync_buttons()
         self.__show_current()
 
     def __on_create(self) -> None:

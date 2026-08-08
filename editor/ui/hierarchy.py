@@ -25,8 +25,11 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
+    QMessageBox,
+    QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
     QTreeWidgetItemIterator,
@@ -34,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from editor.core.commands import Command
 from editor.core.project import layer_tree
 from editor.core.scope import Scope
 from editor.ui.docks import ScopedDock
@@ -72,7 +76,74 @@ class HierarchyDock(ScopedDock):
         self.tree.currentItemChanged.connect(self.__on_current)
         self.tree.itemChanged.connect(self.__on_check)
         layout.addWidget(self.tree, 1)
+
+        buttons = QHBoxLayout()
+        self.add_tile = QPushButton("+ tile layer")
+        self.add_tile.clicked.connect(lambda: self.__on_add("tile"))
+        self.add_object = QPushButton("+ object layer")
+        self.add_object.clicked.connect(lambda: self.__on_add("object"))
+        self.remove_layer = QPushButton("−")
+        self.remove_layer.clicked.connect(self.__on_remove)
+        for button in (self.add_tile, self.add_object, self.remove_layer):
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
         return holder
+
+    # -- adding and removing layers ----------------------------------------
+
+    def __on_add(self, kind: str) -> None:
+        window = self.window()
+        map_name = self._scope.get("map")
+        if map_name is None:
+            return
+        name, ok = QInputDialog.getText(
+            self, f"New {kind} layer",
+            "Layer name — the engine resolves this to a draw depth through\n"
+            "scripts/core/depth.py, and an unmapped name will not render:")
+        if not ok or not name.strip():
+            return
+
+        group = ""
+        try:
+            document = self.session.project.map(map_name)
+            groups = [node.name for node in layer_tree(document)
+                      if not node.selectable]
+        except Exception:                                       # noqa: BLE001
+            groups = []
+        if groups:
+            choice, ok = QInputDialog.getItem(
+                self, "New layer", "Put it inside which group?",
+                groups + ["(top level)"], 0, False)
+            if not ok:
+                return
+            group = "" if choice == "(top level)" else choice
+
+        window.run(Command("map.layer.add", Scope.of(("map", map_name)),
+                           {"name": name.strip(), "kind": kind,
+                            "group": group}))
+
+    def __on_remove(self) -> None:
+        layer = self._scope.get("layer")
+        if layer is None or self._scope.kind == "object":
+            return
+        answer = QMessageBox.question(
+            self, "Remove layer",
+            f"Remove {layer!r} and everything on it?\n\nThis is undoable, "
+            f"and undo restores the layer byte-for-byte.")
+        if answer != QMessageBox.Yes:
+            return
+        self.window().run(Command(
+            "map.layer.remove",
+            Scope.of(("map", self._scope.require("map")), ("layer", layer))))
+
+    def __sync_buttons(self) -> None:
+        removable = (self._scope.get("layer") is not None
+                     and self._scope.kind != "object")
+        self.remove_layer.setEnabled(removable)
+        self.remove_layer.setToolTip(
+            f"remove the {self._scope.get('layer')!r} layer" if removable
+            else "select a layer to remove it")
 
     # -- building ----------------------------------------------------------
 
@@ -107,6 +178,7 @@ class HierarchyDock(ScopedDock):
         self.tree.expandAll()
         self.__reselect()
         self.tree.blockSignals(False)
+        self.__sync_buttons()
 
         total = sum(len(document.object_layer(n).objects())
                     for n in document.object_layer_names())
@@ -196,6 +268,7 @@ class HierarchyDock(ScopedDock):
         self.tree.blockSignals(True)
         self.__reselect(str(scope))
         self.tree.blockSignals(False)
+        self.__sync_buttons()
 
     def __reselect(self, wanted: str | None = None) -> None:
         target = wanted or str(self._scope)
