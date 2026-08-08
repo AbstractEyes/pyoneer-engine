@@ -187,7 +187,22 @@ class ScrollComponent(GameComponent):
         self.bind_sync_listener(GameEventType.VIEWPORT_SCROLLED, self.__event__update_scroll)
 
     def __event__update_scroll(self, event: Optional[PyoneerEvent] = None):
-        """Updates the scroll based on the current position."""
+        """Recompute the bar and thumb geometry for the current scroll state.
+
+        These two assignments are the reason the bounds cascade exists. The
+        thumb's height is a function of `scrollable_bounds`, so it changes
+        whenever the scrolled content changes size -- and before the cascade
+        landed, writing `local_bounds` here updated a Rect and nothing else:
+        the thumb's world bounds and the surface of the shape it actually
+        draws both kept whatever size they were built with. Measured on a
+        Panel(300x200, working_area 300x210): drive scrollable_bounds to
+        h=4000 and local_bounds became h=6 while the surface stayed h=118.
+
+        `local_bounds` now routes through GameComponent._on_bounds_changed,
+        which rebases world bounds, walks the children and lands on
+        DrawComponent.resize() for each surface. Nothing extra is needed
+        here; the assignments below are the trigger.
+        """
         self.scroll_bar.local_bounds = self.__scroll_bar_with_offsets()
         self.scroll_thumb.local_bounds = self.__scroll_thumb_bounds()
         #self.parent.send_event(GameEventType.TRANSFORM, PyoneerEvent(GameEventType.TRANSFORM, sender=self))

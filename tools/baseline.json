@@ -1,6 +1,6 @@
 {
   "frames": 60,
-  "frame_hash": "bec3f3153713a6b2",
+  "frame_hash": "2b023259c668c3f9",
   "frame_ms_median": 8,
   "screen_size": [
     1024,
@@ -25,17 +25,22 @@
   "dispatch_per_frame": {
     "BLITS": 51,
     "POST_UPDATE": 34,
-    "UPDATE": 35
+    "TRANSFORM": 97,
+    "UPDATE": 37
   },
-  "dispatch_total_per_frame": 120,
-  "dispatch_during_boot": 565,
-  "blit_tokens": 55,
+  "dispatch_total_per_frame": 219,
+  "dispatch_during_boot": 664,
+  "blit_tokens": 59,
   "blit_culled": 4,
   "blit_depths": {
     "1": 1,
+    "10": 1,
+    "30": 1,
     "40": 5,
     "41": 1,
     "50": 1,
+    "55": 1,
+    "60": 1,
     "100": 1,
     "101": 5,
     "102": 1,
@@ -46,9 +51,13 @@
   },
   "renderer_layer_depths": [
     1,
+    10,
+    30,
     40,
     41,
     50,
+    55,
+    60,
     100
   ],
   "entity_layer_counts": {

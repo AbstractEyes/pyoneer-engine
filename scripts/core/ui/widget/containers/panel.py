@@ -80,6 +80,7 @@ class Panel(DrawComponent):
         self.mouse.bind_mouse_listener(GameEventType.MOUSE_SCROLL, self.__event__mouse_scroll)
         #self.child_mouse.bind_mouse_listener(GameEventType.MOUSE_SCROLL_DOWN, self.__event__mouse_scroll_down)
         self.bind_sync_listener(GameEventType.VIEWPORT_SCROLLED, self.__event__viewport_scrolled)
+        self.bind_sync_listener(GameEventType.UPDATE, self.__event__update)
         #self.bind_sync_listener(GameEventType.VIEWPORT_SCROLLED, self.__update_scroll)
         working_area = self.working_area.copy()
         working_area.width -= self.horizontal_scroll.arrow_1.local_bounds.width
@@ -188,9 +189,14 @@ class Panel(DrawComponent):
         self.vertical_scroll.visible = self.screen_area.height > self.world_bounds.height
         # todo; add active hook
 
-    def core_frame_update(self, event: Optional[PyoneerEvent] = None):
-        """Update the scroll position based on the event."""
-        super().core_frame_update(event)
+    def __event__update(self, event: Optional[PyoneerEvent] = None):
+        """Per-frame scroll clamp, scrollbar visibility and transform refresh.
+
+        This was a `core_frame_update` override, which measured 0 calls per
+        frame: a Panel is reached through GameWindow's `components` dict, so
+        it is driven by the event bus and its core_* methods are never
+        invoked. The whole body was dead. Bound to UPDATE it actually runs.
+        """
         self.__clamp_scroll()
         self.__hide_unhide_scroll()
         self.force_update_transforms()

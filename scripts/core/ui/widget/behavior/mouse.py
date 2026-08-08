@@ -76,6 +76,17 @@ class MouseComponentAsync(AsyncEventComponent):
         """The last successful click's stored timer."""
         # ---------------------------------------------------------------- #
         self.mouse_listeners: dict[GameEventType, list[Callable]] = {}
+        # Bound here, not in a core_lifecycle_prepare override. A component
+        # reached through a parent's `components` dict is driven by the event
+        # bus, which never calls core_* on it; the override only ran at all
+        # because bind_component happens to invoke prepare directly, and it
+        # needed a `prepared_mouse` flag to stop the repeat calls from
+        # double-binding. Binding in __init__ is unconditional, runs exactly
+        # once, and does not depend on who constructs this component.
+        self.bind_async_listener(GameEventType.MOUSE_MOTION, self.__event__mouse_move)
+        self.bind_async_listener(GameEventType.MOUSE_DOWN, self.__event__mouse_down)
+        self.bind_async_listener(GameEventType.MOUSE_UP, self.__event__mouse_up)
+        self.bind_async_listener(GameEventType.MOUSE_SCROLL, self.__event__mouse_scroll)
         self.core_lifecycle_prepare()
         self.core_lifecycle_build()
 
@@ -104,15 +115,6 @@ class MouseComponentAsync(AsyncEventComponent):
         if event_type in self.mouse_listeners:
             if callback in self.mouse_listeners[event_type]:
                 self.mouse_listeners[event_type].remove(callback)
-
-    def core_lifecycle_prepare(self, event: PyoneerEvent | None = None):
-        super().core_lifecycle_prepare(event)
-        if not self.flags.get("prepared_mouse", False):
-            self.bind_async_listener(GameEventType.MOUSE_MOTION, self.__event__mouse_move)
-            self.bind_async_listener(GameEventType.MOUSE_DOWN, self.__event__mouse_down)
-            self.bind_async_listener(GameEventType.MOUSE_UP, self.__event__mouse_up)
-            self.bind_async_listener(GameEventType.MOUSE_SCROLL, self.__event__mouse_scroll)
-            self.flags["prepared_mouse"] = True
 
     def send_mouse_event(self, event: PyoneerEvent):
         self.buffer_custom_events(event)
