@@ -210,9 +210,25 @@ class Panel(DrawComponent):
 
 
     def __hide_unhide_scroll(self):
-        """Hide or unhide the scroll bars based on the scrollable bounds."""
-        self.vertical_scroll.visible = self.screen_area.height > self.world_bounds.height
-        # todo; add active hook
+        """Show a scrollbar only when its axis has something to scroll.
+
+        Both bars, and both flags. This used to set `visible` on the VERTICAL
+        bar only, leaving the horizontal one permanently shown, and it never
+        touched `active` -- the `# todo; add active hook` that sat here. So a
+        scrollbar with nothing to scroll stayed visible AND draggable, and
+        dragging it raised ZeroDivisionError, because a thumb that fills its
+        bar has zero travel to divide by.
+
+        Clearing `active` disables the whole scrollbar subtree for input
+        without affecting anything else, which is exactly what that flag is
+        for.
+        """
+        for scroll in (self.vertical_scroll, self.horizontal_scroll):
+            if scroll is None:
+                continue
+            usable = scroll.has_overflow
+            scroll.visible = usable
+            scroll.active = usable
 
     def __event__update(self, event: Optional[PyoneerEvent] = None):
         """Per-frame scroll clamp, scrollbar visibility and transform refresh.
@@ -248,6 +264,11 @@ class Panel(DrawComponent):
         it the scrollbars keep measuring whatever `working_area` was passed to
         the constructor, so a grid that grew past the panel cannot be scrolled
         to -- the content is there and unreachable.
+
+        It measures ATTACHED CHILDREN, so calling it on a panel that only
+        DECLARED a large working_area collapses the area back to the panel's
+        own size. That is what the name says, but it surprises: pass `minimum`
+        to keep a declared floor.
         """
         content = self.content_bounds()
         width = max(content.right, self.world_bounds.width)

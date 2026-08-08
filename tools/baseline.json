@@ -1,6 +1,6 @@
 {
   "frames": 60,
-  "frame_hash": "56ba98198db99688",
+  "frame_hash": "bc6d0d7c0976d1a3",
   "frame_ms_median": 9,
   "screen_size": [
     1024,
@@ -24,14 +24,14 @@
     "TextComponent": 19
   },
   "dispatch_per_frame": {
-    "BLITS": 52,
+    "BLITS": 36,
     "POST_UPDATE": 35,
     "TRANSFORM": 106,
     "UPDATE": 38
   },
-  "dispatch_total_per_frame": 231,
-  "dispatch_during_boot": 825,
-  "blit_tokens": 59,
+  "dispatch_total_per_frame": 215,
+  "dispatch_during_boot": 713,
+  "blit_tokens": 43,
   "blit_culled": 1,
   "blit_depths": {
     "1": 1,
@@ -41,10 +41,10 @@
     "100": 1,
     "101": 14,
     "102": 2,
-    "103": 12,
-    "104": 7,
-    "105": 9,
-    "106": 6
+    "103": 10,
+    "104": 3,
+    "105": 3,
+    "106": 2
   },
   "renderer_layer_depths": [
     1,

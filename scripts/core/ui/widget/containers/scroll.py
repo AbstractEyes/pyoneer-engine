@@ -81,19 +81,48 @@ class ScrollComponent(GameComponent):
         else:
             return Rect(self.world_bounds.width - (self.scroll_width * 2), self.world_bounds.height - self.scroll_height, self.scroll_width, self.scroll_height)
 
-    def __percentage_ratio(self) -> float:
-        """Calculates the percentage ratio of displayed panel based on the scrollable bounds."""
+    @property
+    def scrollable_extent(self) -> int:
+        """Content size along this scrollbar's own axis."""
         if self.__scroll_direction == ScrollDirection.Vertical:
-            return self.world_bounds.height / self.scrollable_bounds.height
-        else:
-            return self.world_bounds.width / self.scrollable_bounds.width
+            return self.scrollable_bounds.height
+        return self.scrollable_bounds.width
+
+    @property
+    def visible_extent(self) -> int:
+        """Viewport size along this scrollbar's own axis."""
+        if self.__scroll_direction == ScrollDirection.Vertical:
+            return self.world_bounds.height
+        return self.world_bounds.width
+
+    @property
+    def has_overflow(self) -> bool:
+        """Is there anything to scroll on this axis?
+
+        A scrollbar with no overflow should not be interactive; its thumb fills
+        the bar, so every ratio here divides by zero.
+        """
+        return self.scrollable_extent > self.visible_extent
+
+    def __percentage_ratio(self) -> float:
+        """Fraction of the content that is visible. 1.0 when it all fits.
+
+        A zero-sized scrollable area is legal -- an empty Panel has one -- and
+        used to divide by zero here.
+        """
+        extent = self.scrollable_extent
+        if extent <= 0:
+            return 1.0
+        return self.visible_extent / extent
 
     def __working_percentage_ratio(self) -> float:
-        """Calculates the percentage ratio of displayed panel based on the scrollable bounds."""
-        if self.__scroll_direction == ScrollDirection.Vertical:
-            return self.__scroll_bar_with_offsets().height / self.scrollable_bounds.height
-        else:
-            return self.__scroll_bar_with_offsets().width / self.scrollable_bounds.width
+        """Same fraction, measured against the bar's usable length."""
+        extent = self.scrollable_extent
+        if extent <= 0:
+            return 1.0
+        area = self.__scroll_bar_with_offsets()
+        length = area.height if self.__scroll_direction == ScrollDirection.Vertical else area.width
+        return length / extent
 
     def __calculate_bar_fill(self) -> float:
         """Calculates the fill percentage the thumb covers within the scroll bar."""
@@ -246,16 +275,24 @@ class ScrollComponent(GameComponent):
             scroll_bar_bounds.x += offset_scroll_bar.x
             scroll_bar_bounds.y += offset_scroll_bar.y
             # determine the new position of the thumb based on the current mouse position
+            # travel = how far the thumb can actually move inside the bar. It is
+            # ZERO when the content fits, because the thumb then fills the bar.
+            # Both of these divided by it unguarded, so dragging the thumb of a
+            # scrollbar with nothing to scroll raised ZeroDivisionError and
+            # killed the frame. The sibling calculation in
+            # __scroll_thumb_bounds already guarded this exact quantity
+            # (`if max_scroll_position != 0 else 0`); the drag path did not.
             if self.__scroll_direction == ScrollDirection.Vertical:
                 thumb_position = click_position.y - scroll_bar_bounds.y - self.dragging_scroll_thumb_offset.y
                 max_scroll_position = self.scrollable_bounds.height - self.world_bounds.height
-                scroll_ratio = thumb_position / (scroll_bar_bounds.height - self.scroll_thumb.world_bounds.height)
-                self.scroll_position = scroll_ratio * max_scroll_position
+                travel = scroll_bar_bounds.height - self.scroll_thumb.world_bounds.height
             else:
                 thumb_position = click_position.x - scroll_bar_bounds.x - self.dragging_scroll_thumb_offset.x
                 max_scroll_position = self.scrollable_bounds.width - self.world_bounds.width
-                scroll_ratio = thumb_position / (scroll_bar_bounds.width - self.scroll_thumb.world_bounds.width)
-                self.scroll_position = scroll_ratio * max_scroll_position
+                travel = scroll_bar_bounds.width - self.scroll_thumb.world_bounds.width
+
+            scroll_ratio = thumb_position / travel if travel > 0 else 0.0
+            self.scroll_position = scroll_ratio * max(0, max_scroll_position)
 
             #self.__clamp_scroll()
             self.__event__update_scroll()
