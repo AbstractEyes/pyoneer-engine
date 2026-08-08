@@ -35,6 +35,11 @@ from editor.core.errors import (
 from editor.core.project import Column, DataTable, Project
 from editor.core.scope import Scope
 from editor.core import genre as genre_module
+from editor.core import layers as layer_module
+
+
+def _layer_keys() -> list[str]:
+    return [capability.key for capability in layer_module.CAPABILITIES]
 
 
 # --------------------------------------------------------------------------
@@ -241,6 +246,72 @@ def _layer_remove(project: Project, cmd: Command) -> Command:
     return Command("map.layer.restore",
                    Scope.of(("map", cmd.scope.require("map"))),
                    {"payload": payload})
+
+
+def _layer_element(project: Project, scope: Scope):
+    """The TileLayer or ObjectLayer a layer scope points at."""
+    document = project.map(scope.require("map"))
+    name = scope.require("layer")
+    if name in document.tile_layer_names():
+        return document.tile_layer(name)
+    if name in document.object_layer_names():
+        return document.object_layer(name)
+    raise PyoneerCommandArgumentError(
+        f"no layer named {name!r}", scope=str(scope),
+        available=document.layer_names())
+
+
+@command(
+    "map.layer.set",
+    summary="Declare a capability on a layer -- depth, motion, parallax, "
+            "opacity, occlusion, passability, whether it renders at all. "
+            "Stored as a tmx custom property, so Tiled shows it too.",
+    scopes=["map:*/layer:*"],
+    params=[
+        Param("key", str, "capability name without the pyoneer_ prefix",
+              choices=tuple(_layer_keys())),
+        Param("value", object, "int, float, str or bool, matching the "
+                               "capability's declared type"),
+    ],
+    example='{"verb": "map.layer.set", "scope": "map:test/layer:Paralax",'
+            ' "args": {"key": "parallax_x", "value": 0.5}}',
+)
+def _layer_set(project: Project, cmd: Command) -> Command | None:
+    layer = _layer_element(project, cmd.scope)
+    key, value = cmd.args["key"], cmd.args["value"]
+    try:
+        checked = layer_module.validate_property(key, value)
+    except ValueError as exc:
+        raise PyoneerCommandArgumentError(str(exc), verb=cmd.verb) from None
+
+    name = layer_module.PREFIX + key
+    existing = layer.properties.as_dict()
+    if name in existing and existing[name] == checked:
+        return None
+    layer.properties[name] = checked
+    if name in existing:
+        return Command("map.layer.set", cmd.scope,
+                       {"key": key, "value": existing[name]})
+    return Command("map.layer.unset", cmd.scope, {"key": key})
+
+
+@command(
+    "map.layer.unset",
+    summary="Remove a declared capability, returning the layer to the "
+            "default. The inverse of setting one that was not there.",
+    scopes=["map:*/layer:*"],
+    params=[Param("key", str, "capability name without the pyoneer_ prefix")],
+    destructive=True,
+)
+def _layer_unset(project: Project, cmd: Command) -> Command | None:
+    layer = _layer_element(project, cmd.scope)
+    name = layer_module.PREFIX + cmd.args["key"]
+    existing = layer.properties.as_dict()
+    if name not in existing:
+        return None
+    del layer.properties[name]
+    return Command("map.layer.set", cmd.scope,
+                   {"key": cmd.args["key"], "value": existing[name]})
 
 
 @command(

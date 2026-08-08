@@ -334,6 +334,75 @@ try:
                session.project.map("test").to_bytes() == ORIGINAL, True)
 
     print()
+    print("layer capabilities are declared data, not inferred behaviour")
+    # A layer could previously be told exactly one thing -- its name. These
+    # are tmx custom properties, so Tiled shows them and a human edits them
+    # in the dialog they already use.
+    from editor.core import layers as layers_module  # noqa: E402
+
+    PARALAX = Scope.parse("map:test/layer:Paralax")
+    profile = layers_module.read_profile(
+        session.project.map("test").tile_layer("Paralax"))
+    expect("an undeclared layer is static by default", profile.is_static, True)
+    expect("and takes its depth from its name", profile.depth, -1)
+
+    session.run(Command("map.layer.set", PARALAX,
+                        {"key": "parallax_x", "value": 0.5}))
+    profile = layers_module.read_profile(
+        session.project.map("test").tile_layer("Paralax"))
+    expect("declaring parallax takes", profile.parallax_x, 0.5)
+    expect("and it stops being static, because it cannot be baked",
+           profile.is_static, False)
+    expect("the property carries the pyoneer_ prefix, which pytmx requires",
+           "pyoneer_parallax_x" in session.project.map("test")
+           .tile_layer("Paralax").properties.as_dict(), True)
+    session.undo()
+    expect("undo removes it entirely",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    expect_raises("an unknown capability is refused", PyoneerCommandApplyError,
+                  lambda: session.run(Command("map.layer.set", PARALAX,
+                                              {"key": "nope", "value": 1})))
+    expect_raises("a value outside a capability's choices is refused",
+                  PyoneerCommandApplyError,
+                  lambda: session.run(Command("map.layer.set", PARALAX,
+                                              {"key": "motion",
+                                               "value": "sideways"})))
+    expect_raises("and a wrong type is refused", PyoneerCommandApplyError,
+                  lambda: session.run(Command("map.layer.set", PARALAX,
+                                              {"key": "opacity",
+                                               "value": "loud"})))
+    # The STORED name is what matters. pytmx raises ValueError and makes the
+    # whole map unloadable if a custom property shadows one of its own
+    # attributes -- and `opacity` is both a natural capability name and one
+    # of those attributes, which is exactly why everything is prefixed.
+    expect("every capability is stored prefixed",
+           [c.key for c in layers_module.CAPABILITIES
+            if not c.property_name.startswith(layers_module.PREFIX)], [])
+    expect("so no stored name can collide with a pytmx attribute",
+           [c.property_name for c in layers_module.CAPABILITIES
+            if c.property_name in layers_module.RESERVED], [])
+    expect("and the prefix is doing real work here",
+           "opacity" in layers_module.RESERVED
+           and any(c.key == "opacity" for c in layers_module.CAPABILITIES), True)
+
+    print()
+    print("passability masks follow RPG Maker's bit order, set means blocked")
+    expect("an empty cell reads as open",
+           layers_module.gid_to_mask(0, 1793), layers_module.PASS_ALL)
+    expect("masks round-trip through gids",
+           [layers_module.gid_to_mask(layers_module.mask_to_gid(m, 1793), 1793)
+            for m in (0, 1, 9, 15, 16)], [0, 1, 9, 15, 16])
+    expect("star is not a direction and not 'open'",
+           layers_module.STAR > layers_module.BLOCK_ALL, True)
+    expect("a mask describes itself",
+           layers_module.describe_mask(layers_module.BLOCK_DOWN
+                                       | layers_module.BLOCK_UP),
+           "blocks down, up")
+    expect("a foreign gid reads as open rather than as garbage",
+           layers_module.gid_to_mask(65, 1793), layers_module.PASS_ALL)
+
+    print()
     print("a layer with no depth mapping warns rather than silently not drawing")
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

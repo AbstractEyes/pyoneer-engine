@@ -27,6 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from editor.core import layers
 from editor.core.commands import Command
 from editor.core.scope import Scope, code_locations
 
@@ -285,13 +286,43 @@ def _describe_layer(session, scope: Scope) -> Inspection:
         ] + [Field(f"class:{k}", k, "int", v) for k, v in sorted(classes.items())])
         subheading = "object layer"
 
-    custom = Section("Properties", note="layer properties as authored")
-    for key, value in sorted(layer.properties.as_dict().items()):
-        custom.fields.append(Field(key, key, "str", value,
-                                   blocked_reason="editing layer properties "
-                                                  "is not yet a command"))
+    profile = layers.read_profile(layer)
+    capabilities = Section(
+        "Capabilities",
+        note="what this layer declares about itself. Stored as tmx custom "
+             "properties, so Tiled shows them too.")
+    for capability in layers.CAPABILITIES:
+        current = profile.values.get(capability.key, capability.default)
+        declared = capability.key in profile.values
+        capabilities.fields.append(Field(
+            capability.key,
+            capability.label + ("" if declared else "  (default)"),
+            "choice" if capability.choices else capability.type,
+            current,
+            doc=capability.doc,
+            choices=capability.choices,
+            emit=(lambda k: lambda v: Command(
+                "map.layer.set", scope, {"key": k, "value": v}))(capability.key),
+            removable=declared,
+            remove=(lambda k: lambda _v: Command(
+                "map.layer.unset", scope, {"key": k}))(capability.key)))
+    if not profile.is_static:
+        capabilities.note += ("\n\nThis layer is DYNAMIC, so it is excluded "
+                              "from the baked map composite and costs one "
+                              "extra viewport blit per frame.")
 
-    return Inspection(scope, name, subheading, [facts, stats, custom])
+    other = {k: v for k, v in sorted(layer.properties.as_dict().items())
+             if k not in layers.BY_PROPERTY}
+    custom = Section("Other properties",
+                     note="authored properties the engine does not interpret")
+    for key, value in other.items():
+        custom.fields.append(Field(
+            key, key, "str", value,
+            blocked_reason="editing arbitrary layer properties is not yet a "
+                           "command; use the capabilities above"))
+
+    return Inspection(scope, name, subheading, [facts, stats,
+                                                capabilities, custom])
 
 
 # --------------------------------------------------------------------------
