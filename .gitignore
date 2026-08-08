@@ -115,3 +115,16 @@ Icon?
 
 # Agent worktrees (transient; created by the Workflow tool)
 .claude/worktrees/
+
+# ---------------------------------------------------------------------------
+# Third-party art
+# ---------------------------------------------------------------------------
+# data/graphics/ is NOT tracked and was removed from history. The tileset and
+# character sheets present locally match the RPG Maker VX Ace RTP by filename
+# and by exact pixel dimensions (TileA2 512x384, Actor1/People1 384x256,
+# IconSet 384x3072). That licence covers use inside RPG Maker projects and
+# does not permit redistributing the assets, which a public repo would do.
+#
+# The engine reads these paths at runtime -- see docs/ASSETS.md for what a
+# fresh clone needs and where the paths are configured.
+data/graphics/
