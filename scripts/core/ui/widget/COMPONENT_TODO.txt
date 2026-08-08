@@ -111,13 +111,24 @@ widgets;
         resize    -- not started; needs a bounds-changed hook that reallocates
                      child surfaces (see scroll, below, for the same gap)
     panel;
-        grid; NOT STARTED (not "in progress")
+        X grid;   DONE
             a functional grid lineup component for organization
-            GridComponent exists as 15 method stubs and has never executed. It
-            has no layout engine at all: add_item never calls bind_component, so
-            items never enter the component tree, and row_height / max_rows are
-            stored and never read. Its only referent is ListBoxComponent, which
-            is itself never instantiated.
+            X real layout pass: items flow left-to-right wrapping at
+              max_columns, relayout() assigns each a pixel local_bounds
+            X add_item BINDS the component, so items are in the tree, receive
+              events and get drawn. Previously it recorded a cell coordinate
+              and stopped, which is why nothing ever appeared.
+            X column widths / row heights measured from their occupants, or
+              fixed via column_width / row_height (both were write-only before)
+            X spacing and padding
+            X explicit cell pinning; removal re-flows the auto-placed items
+            X max_rows RAISES PyoneerLayoutError on overflow rather than
+              dropping the item silently
+            X grows to fit content, which is what lets a Panel scroll to it
+            X scrolls inside a Panel: attach the GRID, and its items follow via
+              world_bounds inheritance -- no per-item bookkeeping
+            deleted the dead DummyParent scaffolding.
+            Verified by tools/check_grid.py.
         scroll; in progress
             X active space;
                 # contains an active space primarily for scrolling, visual, and interactive purposes
@@ -154,6 +165,7 @@ widgets;
     listbox:
         a simple list or grid containing various simple components with text
         not started; ListBoxComponent is a stub that has never run
-        BLOCKED BY GRID, not by scroll. The "blocking; listbox" note under
-        scroll above had this backwards -- scroll already provides everything
-        listbox needs. Grid is the missing piece.
+        NO LONGER BLOCKED. Grid works now, and scroll already provided what
+        listbox needs. What remains is listbox's own concerns: row selection,
+        keyboard navigation (up/down/left/right), and a row template. It can be
+        built on GridComponent(max_columns=1) inside a Panel.

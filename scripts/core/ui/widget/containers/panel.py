@@ -110,15 +110,31 @@ class Panel(DrawComponent):
     def screen_area(self, value: Rect) -> None:
         self.__screen_area = value
 
-    def attach_component(self, name: str, obj: GameComponent, depth: int | None = None, offset: Vector2 | None = None):
-        # attach an object to the panel's active scrollable space
-        self.bind_component(name, obj)
+    def attach_component(self, name: str, obj: GameComponent,
+                         depth: int | None = None, offset: Vector2 | None = None):
+        """Put a component in the panel's scrollable content area.
 
-        #obj.bind_parent(self)
-        #obj.viewport = self.viewport
-        #if offset is not None:
-            # obj.viewport_offset = offset
+        Use this rather than bind_component for content: only attached children
+        are offset when the panel scrolls, and only they are measured by
+        content_bounds()/fit_scroll_area(). bind_component is for the panel's
+        own chrome.
+
+        Sets the parent. It previously did not -- the line was commented out --
+        and every child the panel builds for itself passes `parent=self` to its
+        constructor instead, so the omission was invisible. Anything attached
+        from outside was left parentless, and
+        GameComponent.__update_world_bounds returns immediately when parent is
+        None: the component kept world_bounds == local_bounds, drew at the wrong
+        place, and did not move when the panel scrolled. Nothing errored.
+        """
+        obj.bind_parent(self, preserve_world_bounds=False)
+        if depth is not None:
+            obj.depth = depth
+        if offset is not None:
+            obj.offset = offset
+        self.bind_component(name, obj)
         self.__add_child(obj)
+        return obj
 
     def __add_child(self, obj: GameComponent):
         self.children.append(obj)
@@ -200,6 +216,46 @@ class Panel(DrawComponent):
         self.__clamp_scroll()
         self.__hide_unhide_scroll()
         self.force_update_transforms()
+
+    def content_bounds(self) -> Rect:
+        """Union of every attached child's local rect, in panel-local space.
+
+        Measures `children` -- the components attached via attach_component --
+        and deliberately not `components`, which also holds the panel's own
+        chrome (scrollbars, background, dead corner). Including the chrome
+        would make the scroll area at least as large as the panel itself no
+        matter how little content there is.
+        """
+        union: Rect | None = None
+        for child in self.children:
+            rect = child.local_bounds
+            union = rect.copy() if union is None else union.union(rect)
+        return union if union is not None else Rect(0, 0, 0, 0)
+
+    def fit_scroll_area(self, minimum: Rect | None = None) -> Rect:
+        """Resize the scrollable area to the attached content, and refresh.
+
+        Call after adding content, e.g. after filling a GridComponent. Without
+        it the scrollbars keep measuring whatever `working_area` was passed to
+        the constructor, so a grid that grew past the panel cannot be scrolled
+        to -- the content is there and unreachable.
+        """
+        content = self.content_bounds()
+        width = max(content.right, self.world_bounds.width)
+        height = max(content.bottom, self.world_bounds.height)
+        if minimum is not None:
+            width = max(width, minimum.width)
+            height = max(height, minimum.height)
+
+        area = Rect(0, 0, int(width), int(height))
+        self.screen_area = area
+        for scroll in (self.vertical_scroll, self.horizontal_scroll):
+            if scroll is not None:
+                scroll.scrollable_bounds = area.copy()
+        self.__clamp_scroll()
+        self.__hide_unhide_scroll()
+        self.__offset_children()
+        return area
 
     def scroll(self, dir_x: float, dir_y: float):
         """Scroll the panel by the given direction scalar."""

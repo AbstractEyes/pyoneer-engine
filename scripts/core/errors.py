@@ -167,6 +167,14 @@ class PyoneerDisposedError(PyoneerLifecycleError):
         )
 
 
+class PyoneerLayoutError(PyoneerError):
+    """A layout container was asked for something geometrically impossible.
+
+    Raised rather than silently dropping the item: a widget that is simply
+    absent is the hardest kind of UI bug to trace back to its cause.
+    """
+
+
 class PyoneerAlreadyBoundError(PyoneerLifecycleError):
     """An object was bound twice, making the component tree a DAG.
 
