@@ -20,6 +20,7 @@ CHECKS = [
     ("viewclip", "exact-pixel clipping, containment, off-screen culling"),
     ("maplayers", "empty layers dropped, composites exact, rebake reproducible"),
     ("grid", "grid layout, binding, sizing, scrolling inside a Panel"),
+    ("anchor", "children reflow when their parent resizes"),
     ("events", "consumption, active-gating, depth setter"),
     ("input", "edge detection, multi-binding, load-time validation"),
     ("animation", "sequence switching, pause/resume, pre-sliced frames"),

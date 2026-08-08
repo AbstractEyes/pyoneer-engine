@@ -9,6 +9,7 @@ from scripts.core.event_manager import PyoneerEvent
 from scripts.core.game_object import PyoneerGameObject
 
 from scripts.core.event_types import GameEventType
+from scripts.core.ui.anchor import Anchor, DEFAULT_ANCHOR, reflow as anchor_reflow
 #from scripts.game.game_camera import GameCamera
 
 from config.managers.core_asset_manager import CoreAssetManager
@@ -122,6 +123,13 @@ class GameComponent(PyoneerGameObject, ABC):
         """
         self.draggable: bool = draggable
         """A manually allocated draggable flag for the component."""
+        self.anchor: Anchor = DEFAULT_ANCHOR
+        """Which parent edges this component keeps its distance to on resize.
+
+        TOP_LEFT (the default) means "do not move, do not resize" -- exactly
+        what every component did before anchoring existed, so this is opt-in.
+        Anchoring both opposite edges stretches; see scripts/core/ui/anchor.py.
+        """
         # ---------------------------------------------------------------------------------------- #
         # parent/child hierarchy system
         self.__parent: GameComponent | None = None
@@ -446,10 +454,37 @@ class GameComponent(PyoneerGameObject, ABC):
         resized = previous.size != current.size
         if not (moved or resized):
             return
+        if resized:
+            # Reflow anchored children BEFORE rebasing positions, so the
+            # rebase below sees each child's settled rect and only has to
+            # translate it. Children with the default TOP_LEFT anchor are
+            # untouched, which is why adding this moved no pixels.
+            self.reflow_children(previous, current)
         for child in tuple(self.components.values()):
             child.notify_parent_bounds_changed(self)
         if resized:
             self._on_size_changed(current.width, current.height)
+
+    def reflow_children(self, previous: Rect, current: Rect):
+        """Apply each child's anchors after this component changed size.
+
+        Nothing reflowed before this existed. Measured: resizing a Panel from
+        200x120 to 320x220 left its background, both scrollbars and its dead
+        corner at their original sizes, and resizing a GameWindow left every
+        one of its children unchanged -- so a resizable window resized into a
+        broken layout. That is why window resize was never finished.
+        """
+        delta_width = current.width - previous.width
+        delta_height = current.height - previous.height
+        if delta_width == 0 and delta_height == 0:
+            return
+        for child in tuple(self.components.values()):
+            if child.anchor == DEFAULT_ANCHOR:
+                continue                     # stays put; nothing to compute
+            updated = anchor_reflow(child.local_bounds, child.anchor,
+                                    delta_width, delta_height)
+            if updated != child.local_bounds:
+                child.local_bounds = updated
 
     def notify_parent_bounds_changed(self, parent: GameComponent):
         """A parent moved or resized; rebase this subtree onto it.

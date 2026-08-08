@@ -19,6 +19,7 @@ from scripts.core.ui.widget.behavior.mouse import MouseComponentAsync
 from scripts.core.ui.widget.shape import ShapeComponent
 from scripts.core.ui.widget.text import TextComponent
 from scripts.core.ui.widget_color import WidgetColor
+from scripts.core.ui.anchor import Anchor
 
 from config.managers.core_asset_manager import CoreAssetManager
 
@@ -179,6 +180,18 @@ class GameWindow(GameComponent):
             #    bounds=Rect(4, self.header_height + self.text_box.bounds.h + self.checkbox.bounds.h + 8, self.bounds.width / 3, self.bounds.height - self.header_height - self.text_box.bounds.h - self.checkbox.bounds.h - 12),
             #)
             # -------------------------------------------------
+            # Anchors: this is what makes the window resizable at all. Before
+            # them, resizing a GameWindow left body, title bar, title text,
+            # close button and both inner panels at their original sizes.
+            self.body.anchor = Anchor.ALL                    # fills the window
+            self.header_bar.anchor = Anchor.TOP | Anchor.STRETCH_X
+            self.header_text.anchor = Anchor.TOP | Anchor.STRETCH_X
+            self.close_button.anchor = Anchor.TOP_RIGHT      # rides the corner
+            if self.panel is not None:
+                self.panel.anchor = Anchor.TOP | Anchor.STRETCH_X
+            if self.panel2 is not None:
+                self.panel2.anchor = Anchor.STRETCH_X | Anchor.BOTTOM
+
             self.mouse = MouseComponentAsync(parent=self)
             self.mouse.bind_mouse_listener(GameEventType.MOUSE_CLICK_INSIDE, self.__event__mouse_clicked_inside)
             self.keyboard = KeyboardComponentAsync(parent=self)

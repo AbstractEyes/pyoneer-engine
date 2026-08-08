@@ -12,6 +12,7 @@ from scripts.core.ui.widget.containers.scroll import ScrollComponent, ScrollDire
 from scripts.core.ui.widget.draw import DrawComponent
 from scripts.core.ui.widget.shape import ShapeComponent
 from scripts.core.ui.widget_color import WidgetColor
+from scripts.core.ui.anchor import Anchor
 
 
 class Panel(DrawComponent):
@@ -73,6 +74,14 @@ class Panel(DrawComponent):
         self.bind_component("keyboard", self.keyboard)
         self.keyboard.bind_key_event(KeyBindingType.KeyDown, self.__event__scroll_key_down)
         self.keyboard.bind_key_event(KeyBindingType.KeyRepeat, self.__event__scroll_key_down)
+
+        # Anchors, so the chrome follows when the panel is resized. Without
+        # these a resized Panel kept a 200x120 background and scrollbars inside
+        # a 320x220 frame.
+        self.background.anchor = Anchor.ALL          # fills the panel
+        self.vertical_scroll.anchor = Anchor.TOP | Anchor.BOTTOM | Anchor.RIGHT
+        self.horizontal_scroll.anchor = Anchor.LEFT | Anchor.RIGHT | Anchor.BOTTOM
+        self.dead_corner.anchor = Anchor.BOTTOM_RIGHT
 
         self.bind_component("background", self.background)
         self.bind_component("dead_corner", self.dead_corner)
