@@ -112,3 +112,6 @@ Icon?
 #*.sai
 #*.xnb
 #*.mgcontent
+
+# Agent worktrees (transient; created by the Workflow tool)
+.claude/worktrees/
