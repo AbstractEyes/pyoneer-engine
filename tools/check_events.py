@@ -448,6 +448,69 @@ expect("no bus-driven component overrides an unreachable core_* method",
        offenders, [])
 
 print()
+print("GameSceneMap degrades to the base build instead of silence")
+# Nothing in the repo constructs GameSceneMap, so this is the only thing
+# standing between its core_lifecycle_build and a restored `pass` that
+# silently skips building every bound object.
+from scripts.core.scene.game_scene_map import GameSceneMap        # noqa: E402
+
+
+class _BuildProbe(GameComponent):
+    built = False
+
+    def core_lifecycle_build(self, event=None):
+        _BuildProbe.built = True
+        return super().core_lifecycle_build(event)
+
+
+scene_map = GameSceneMap("t")
+probe = _BuildProbe(bounds=Rect(0, 0, 4, 4))
+scene_map.bind(100, probe)
+scene_map.core_lifecycle_build()
+expect("core_lifecycle_build fans out to bound objects", _BuildProbe.built, True)
+
+
+# --------------------------------------------------------------------------
+print()
+print("offset is a LOCAL->WORLD shift, and move() does not fold it into local")
+# --------------------------------------------------------------------------
+# Reported by the author as "strange uses of offset with the transform".
+# move() used to write `local = Rect(x + offset.x, ...)`, but every other
+# site treats offset as the shift that crosses local -> world:
+# __update_world_bounds computes local + parent.world + offset, and
+# adjust_point shifts a point by it. So local absorbed the shift AND the
+# world derivation added it again -- a component with a non-zero offset
+# drifted by that offset on every move-then-resolve. Panels set offsets on
+# their children, so it was reachable.
+from pygame import Vector2                                          # noqa: E402
+
+drifter = ShapeComponent(bounds=Rect(10, 10, 20, 20))
+drifter.offset = Vector2(7, 3)
+drifter.move(10, 10)
+expect("move(10,10) puts local at exactly (10,10)",
+       tuple(drifter.local_bounds)[:2], (10, 10))
+expect("and world carries the offset, once",
+       tuple(drifter.world_bounds)[:2], (17, 13))
+
+# The double-count only shows once world is re-derived from local, which is
+# what any parent transform or reflow triggers.
+drifter.force_update_transforms()
+expect("re-deriving world does not add the offset a second time",
+       tuple(drifter.world_bounds)[:2], (17, 13))
+drifter.force_update_transforms()
+expect("and it is idempotent across repeats",
+       tuple(drifter.world_bounds)[:2], (17, 13))
+
+still = ShapeComponent(bounds=Rect(4, 5, 8, 8))
+expect("a zero offset leaves local and world identical",
+       (tuple(still.local_bounds)[:2], tuple(still.world_bounds)[:2]),
+       ((4, 5), (4, 5)))
+still.move(30, 40)
+expect("and move() is then plain assignment",
+       (tuple(still.local_bounds)[:2], tuple(still.world_bounds)[:2]),
+       ((30, 40), (30, 40)))
+
+print()
 if failures:
     print("FAILED:", failures)
     sys.exit(1)

@@ -146,6 +146,10 @@ class EditorWindow(QMainWindow):
         edit_menu = self.menuBar().addMenu("&Edit")
         self.undo_action = self.__act(edit_menu, "&Undo", QKeySequence.Undo, self.undo)
         self.redo_action = self.__act(edit_menu, "&Redo", QKeySequence.Redo, self.redo)
+        edit_menu.addSeparator()
+        self.__act(edit_menu, "Select the &parent", "Alt+Up",
+                   self.selection.select_parent)
+        self.__act(edit_menu, "&Back", "Alt+Left", self.selection.back)
 
         view_menu = self.menuBar().addMenu("&View")
         for dock in (self.hierarchy, self.inspector, self.problems,

@@ -23,12 +23,12 @@ class ShapeComponent(DrawComponent):
 
     def __init__(self,
                  background_color: WidgetColor | None = None,
-                 visible: bool = None,
+                 visible: bool | None = None,
                  border_color: WidgetColor | None = None,
-                 background_visible: bool = None,
-                 border_visible: bool = None,
-                 border_thickness: Rect = None,
-                 shape: ShapeType = ShapeType.Rectangle,
+                 background_visible: bool | None = None,
+                 border_visible: bool | None = None,
+                 border_thickness: Rect | None = None,
+                 shape: ShapeType | int = ShapeType.Rectangle,
                  *args,
                  **kwargs):
         super().__init__(*args, **kwargs)

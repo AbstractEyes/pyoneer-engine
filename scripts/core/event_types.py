@@ -6,30 +6,6 @@ from typing import Optional
 import pygame
 
 
-class EventPriority(Enum):
-    """Event priority levels."""
-    NO_PRIORITY = 0
-    """No priority, will default to normal."""
-    LOWEST = 1
-    """Lowest priority."""
-    LOWER = 2
-    """A lower priority."""
-    LOW = 3
-    """Low priority."""
-    BELOW_NORMAL = 4
-    """Below normal priority."""
-    NORMAL = 5
-    """Normal priority."""
-    ABOVE_NORMAL = 6
-    """Above normal priority."""
-    HIGH = 7
-    """High priority."""
-    HIGHER = 8
-    """A higher priority."""
-    TOP = 9
-    """Top priority, will be processed first in order based on values added."""
-
-
 class GameEventType(tuple[str, Optional[pygame.event.Event]], Enum):
     """Core event types."""
 
@@ -69,14 +45,6 @@ class GameEventType(tuple[str, Optional[pygame.event.Event]], Enum):
     """Blit events, distributed through the entity and ui component subsystems with the blit manager."""
     USE = ("use", None)
     CUSTOM_EVENT = ("custom_event", None)
-
-    SHOW = ('show', None)
-    HIDE = ('hide', None)
-
-    ACTIVATE = ('activate', None)
-    """A component or object being activated."""
-    DEACTIVATE = ('deactivate', None)
-    """A component or object being deactivated."""
 
     TRANSFORM = ('transform', None)
     """An object is transformed."""
@@ -149,5 +117,4 @@ class GameEventType(tuple[str, Optional[pygame.event.Event]], Enum):
     WINDOW_RESIZE = ('window_resize', pygame.WINDOWRESIZED)
     WINDOW_FOCUS_LOST = ('window_focus', pygame.WINDOWFOCUSLOST)
     WINDOW_FOCUS_GAINED = ('window_focus', pygame.WINDOWFOCUSGAINED)
-    USER_EVENT = ('user_event', pygame.USEREVENT)
 

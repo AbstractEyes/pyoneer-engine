@@ -22,7 +22,6 @@ from scripts.core.ui.widget.containers.panel import Panel
 from scripts.core.ui.widget.containers.text_box import TextBox
 from scripts.core.ui.widget.containers.window import GameWindow
 from scripts.core.ui.widget.shape import ShapeComponent
-from scripts.core.ui.widget.text import TextComponent
 from scripts.core.ui.widget_color import WidgetColor
 
 TILE_COLOURS = [
@@ -43,7 +42,6 @@ class DemoWindow(GameWindow):
         self.text_box: TextBox | None = None
         self.checkboxes: list[Checkbox] = []
         self.grid: GridComponent | None = None
-        self.grid_label: TextComponent | None = None
 
     # ------------------------------------------------------------------ #
 

@@ -10,7 +10,6 @@ else about how it behaves is inferred:
     measured alpha proof, none of which the author controls
   * opacity, visibility and offsets are parsed by pytmx and read by nobody
   * passability does not exist
-  * `LayerType` is stored on every layer and read nowhere in the repo
 
 So a layer cannot be TOLD anything. This module is the vocabulary for
 telling it, stored as tmx layer custom properties -- which means Tiled shows

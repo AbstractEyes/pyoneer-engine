@@ -59,25 +59,28 @@ class GamePlayer(GameAnimatedEntity):
         last_moving = self.state.moving
         moving = False
         direction = "none"
+        # held() is an unguarded dict index, so "sprint" MUST exist in
+        # config/inputs.json. The JSON key and this line are one change.
+        self.state.sprinting = self.action_manager.held("sprint")
         # held(), not pressed(): movement is continuous while the key is down.
         # This used to read pressed(), which only worked because pressed()
         # latched True for the whole hold. pressed() is now a true rising edge.
         if self.action_manager.held("up"):
             moving = True
             direction = "up"
-            self.move_direction(delta_time, "up")
+            self.move_direction(delta_time, "up", sprint=self.state.sprinting)
         if self.action_manager.held("down"):
             moving = True
             direction = "down"
-            self.move_direction(delta_time, "down")
+            self.move_direction(delta_time, "down", sprint=self.state.sprinting)
         if self.action_manager.held("left"):
             moving = True
             direction = "left"
-            self.move_direction(delta_time, "left")
+            self.move_direction(delta_time, "left", sprint=self.state.sprinting)
         if self.action_manager.held("right"):
             moving = True
             direction = "right"
-            self.move_direction(delta_time, "right")
+            self.move_direction(delta_time, "right", sprint=self.state.sprinting)
         self.state.moving = moving
         self.state.move_direction = direction
         if self.state.moving:

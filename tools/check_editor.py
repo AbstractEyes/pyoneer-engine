@@ -98,6 +98,18 @@ expect_raises("a doubled slash is refused", PyoneerScopeSyntaxError,
 expect_raises("an unnamed kind may not take a name", PyoneerScopeSyntaxError,
               lambda: Scope.parse("project:thing"))
 
+# Scope being frozen and value-comparing is what licenses sharing ONE
+# instance of each singleton across every caller, which is what
+# known_scopes() now does instead of re-parsing three literals.
+from editor.core.scope import ASSETS, GENRE, PROJECT                # noqa: E402
+
+expect("Scope is value-comparing",
+       PROJECT == Scope.of("project"), True)
+expect("Scope hashes by value",
+       hash(PROJECT) == hash(Scope.of("project")), True)
+expect("the three singletons are distinct",
+       len({PROJECT, GENRE, ASSETS}), 3)
+
 print()
 print("every code location the scope map names actually exists")
 missing = []
@@ -237,6 +249,16 @@ try:
     expect("the map parses", session.project.map("test").width, 100)
     expect("it starts byte-identical",
            session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    # IDENTITY, not equality. Scope is frozen and value-comparing, so an
+    # `==` assertion here passes whether known_scopes() shares the module
+    # singletons or re-parses three fresh literals -- it cannot tell the
+    # wire from its absence. Measured: reverting session.py to
+    # Scope.of("project") left the previous assertion printing ok.
+    leading = session.known_scopes()[:3]
+    expect("known_scopes shares the singleton INSTANCES, not equal copies",
+           [leading[0] is PROJECT, leading[1] is GENRE, leading[2] is ASSETS],
+           [True, True, True])
 
     FLOOR = Scope.parse("map:test/layer:Floor")
     ENTITY = Scope.parse("map:test/layer:entity")

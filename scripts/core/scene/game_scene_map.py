@@ -14,4 +14,4 @@ class GameSceneMap(GameScene):
         # load the entities
         # load the player
         # load the UI
-        pass
+        super().core_lifecycle_build(event)

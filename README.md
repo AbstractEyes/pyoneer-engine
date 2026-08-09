@@ -259,7 +259,7 @@ Design and reasoning: [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md).
 .venv/Scripts/python.exe tools/check_all.py
 ```
 
-20 checks plus a frame-level drift comparison, one exit code. They are not unit
+25 checks plus a frame-level drift comparison, one exit code. They are not unit
 tests; each one boots or drives real engine code and asserts measured
 behaviour — token counts, dispatch counts, frame hashes, pixel equality.
 
@@ -276,8 +276,10 @@ Deliberate visual changes are re-baselined explicitly:
 .venv/Scripts/python.exe tools/smoke.py --frames 60 --write-baseline
 ```
 
-Without art, 11 of the 20 checks pass; the other 9 boot the engine and need the
-three image files. `tools/make_placeholder_art.py` is enough for all 20.
+Without art, 18 of the 25 checks pass; the other 7 boot the engine and
+need the three image files. `tools/make_placeholder_art.py` is enough for
+all 25. That split is measured by moving the art aside and re-running,
+not estimated.
 `check_editor_ui` reports SKIP rather than PASS when PySide6 is absent — a
 check that did not run has proved nothing.
 
@@ -306,7 +308,6 @@ editor/                     the authoring application (PySide6; separate process
   ui/                         Qt panels; views only, no authority
 tools/                      checks, smoke harness, utilities
 docs/                       design plans and the code review
-archive/                    two superseded component generations, kept for reference
 ```
 
 `editor/` may import `scripts/`. `scripts/` may never import `editor/` —
@@ -342,9 +343,6 @@ Stated plainly, because most of them are recorded with measurements in
   objects are shown and preserved byte-exactly; their points are read-only.
 - **The demo map has an invisible parallax layer** — its tiles sit beneath a
   fully opaque floor.
-- **`archive/gen3_behavior_rewrite/`** is an unfinished redesign that never
-  executed. It is kept because its direction was right; see
-  `archive/README.md`.
 
 `docs/NEXT.md` is the ranked list of what is actually next.
 

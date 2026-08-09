@@ -185,9 +185,6 @@ class TextBox(DrawComponent):
             self.__carat_visible = not self.__carat_visible
             self.refresh()
 
-    def update_(self, event: Optional[PyoneerEvent] = None):
-        pass
-
     def key_down_repeat(self, event: Optional[PyoneerEvent] = None):
         """Our test keyboard listener, meant to test the input buffer"""
         if not self.focused:

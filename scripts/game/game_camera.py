@@ -6,15 +6,30 @@ from scripts.game.entity.game_entity import PyoneerGameObject, GameEntity
 
 
 class GameCamera:
-    OFFSET_CENTER = "center"
-    OFFSET_TOP_LEFT = "top_left"
-    OFFSET_BOTTOM_RIGHT = "bottom_right"
+    """The camera that views part of the game world.
+
+    Goals:
+        1. Attach a target to the camera
+        2. Attach a parent to the camera
+        3. Move the area of the camera
+        4. Move the view of the camera
+        5. Slice a view from the full area
+        6. Slice a view from the view area
+        7. Update the camera position based on the target
+        8. Update the area based on the parent
+        9. Clamp the component to the intended rect
+        10. Clamp the views based on the configuration
+
+    Two primary use cases:
+        1. entity followed by the camera
+        2. camera used as a viewport for widgets or other draw components
+           -- solving this, solves the first use case
+    """
 
     def __init__(self,
                  view_area: pygame.Vector2 | Rect,
                  full_area: Rect | None = None,
                  offset_value: pygame.Vector2 | None = None,
-                 offset_type: str = "center",
                  target: any = None,
                  scale: float = 1):
         self.view_area: Rect = pygame.Rect(0, 0, 0, 0)
@@ -33,8 +48,6 @@ class GameCamera:
         self.__last_position: pygame.Vector2 = pygame.Vector2(0, 0)
         self.offset: pygame.Vector2 = pygame.Vector2(0, 0) if offset_value is None else offset_value
         """ The offset from the target to the camera's offset type."""
-        self.__offset_type: str = offset_type
-        """ The type of offset that this camera will use the target position in order to clamp."""
 
     def attach_target(self, host):
         self.target = host
@@ -116,52 +129,3 @@ class GameCamera:
             self.view_area.x = self.full_area.width - self.view_area.width
         if self.view_area.y + self.view_area.height > self.full_area.height:
             self.view_area.y = self.full_area.height - self.view_area.height
-
-
-class OldGameCamera:
-    def __init__(self, camera_bounds: pygame.Vector2, clamping_bounds: pygame.Rect | None = None, scale: float = 1):
-        self.viewport = pygame.Rect(0, 0, camera_bounds.x, camera_bounds.y)
-        self.clamping: pygame.Rect | None = clamping_bounds
-        self.scale: float = scale
-        self.target: GameEntity | None = None
-        self._moved: bool = False
-        self.__last_position: pygame.Vector2 = pygame.Vector2(0, 0)
-        self.offset: pygame.Vector2 = pygame.Vector2(0, 0) # the offset from the entity to the camera
-
-    def attach_target(self, host: GameEntity):
-        self.target = host
-        pass
-        
-    def within_bounds(self, position: pygame.Vector2):
-        if self.viewport.collidepoint(position):
-            return True
-        else:
-            return False
-
-    def moved(self):
-        return self._moved
-
-    def update(self, position=None):
-        """if target; center camera over target"""
-        self._moved = False
-        if self.target is not None:
-            if self.__last_position.x != self.target.transform.position.x or self.__last_position.y != self.target.transform.position.y:
-                self.__last_position = self.target.transform.position
-                self._moved = True
-            self.viewport.center = self.target.transform.position
-            self.viewport.x += self.offset.x
-            self.viewport.y += self.offset.y
-        else:
-            if position is not None:
-                self.viewport.center = position
-                self._moved = True
-        """clamp camera to map"""
-        if self.viewport.x < 0:
-            self.viewport.x = 0
-        if self.viewport.y < 0:
-            self.viewport.y = 0
-        if self.viewport.x + self.viewport.width > self.clamping.width:
-            self.viewport.x = self.clamping.width - self.viewport.width
-        if self.viewport.y + self.viewport.height > self.clamping.height:
-            self.viewport.y = self.clamping.height - self.viewport.height
-                               

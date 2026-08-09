@@ -10,8 +10,6 @@ sentence about one thing; the aggregation happens in the Manifest panel.
 """
 from __future__ import annotations
 
-from typing import Callable
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -104,19 +102,3 @@ class PromptStrip(QWidget):
             self.badge.setText(f"0 / {total}")
 
 
-def wrap_with_prompt(session, scope: Scope, content: QWidget,
-                     on_staged: Callable[[object], None] | None = None
-                     ) -> tuple[QWidget, PromptStrip]:
-    """Stack `content` above a prompt strip. Returns (container, strip)."""
-    from PySide6.QtWidgets import QVBoxLayout
-
-    container = QWidget()
-    strip = PromptStrip(session, scope, container)
-    layout = QVBoxLayout(container)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(0)
-    layout.addWidget(content, 1)
-    layout.addWidget(strip)
-    if on_staged is not None:
-        strip.staged.connect(on_staged)
-    return container, strip

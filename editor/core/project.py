@@ -335,9 +335,6 @@ class Project:
             self.__open_maps[name] = MapDocument.load(path)
         return self.__open_maps[name]
 
-    def is_map_open(self, name: str) -> bool:
-        return name in self.__open_maps
-
     def dirty_maps(self) -> list[str]:
         return sorted(n for n, d in self.__open_maps.items() if d.changed)
 

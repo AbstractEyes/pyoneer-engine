@@ -1,6 +1,10 @@
 from __future__ import annotations
+from typing import Callable
+
+import pygame
 from pygame import Surface
 
+from scripts.core.event_types import GameEventType
 from scripts.core.game_object import PyoneerGameObject
 from scripts.core.renderer import LayerRenderer
 from scripts.core.scene.game_scene import GameScene
@@ -21,6 +25,13 @@ class SceneManager:
         self.current_scene: GameScene | None = None
         self.renderer: LayerRenderer | None = None
         self.camera: GameCamera | None = None
+        # event.type-keyed routes, unlike the scene fan-out in inputs(), which
+        # dispatches everything under the constant INPUTS and lets
+        # AsyncEventComponent re-key it. Must stay inside the class body: the
+        # name mangling on __on_window_resize only resolves here.
+        self.routes: dict[GameEventType, Callable] = {
+            GameEventType.WINDOW_RESIZE: self.__on_window_resize,
+        }
 
     def __bind_renderer(self, renderer: LayerRenderer | None):
         self.renderer = renderer
@@ -68,4 +79,24 @@ class SceneManager:
     def inputs(self):
         events = EventManager.get_pyo()
         for event in events:
+            # A route runs IN ADDITION to the scene fan-out below, never
+            # instead of it -- and MUST NOT call event.handle():
+            # GameComponent.__send_event returns immediately on a handled
+            # event, so consuming here would silently cut the entire
+            # component tree out of that frame's input.
+            route = self.routes.get(event.type)
+            if route is not None:
+                route(event)
             self.current_scene.core_input_receive(event)
+
+    def __on_window_resize(self, event: PyoneerEvent):
+        """Re-take the display surface at the new size and re-point everything
+        that cached the old one. The renderer holding a stale surface is the
+        failure mode that produces a black frame with no exception."""
+        width, height = event.event.x, event.event.y
+        self.game.screen = pygame.display.set_mode((width, height),
+                                                   pygame.RESIZABLE)
+        if self.renderer is not None:
+            self.renderer.image(self.game.screen)
+        if self.camera is not None:
+            self.camera.view_area.size = (width, height)

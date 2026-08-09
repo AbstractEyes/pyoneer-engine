@@ -23,8 +23,6 @@ class AsyncEventComponent(GameComponent):
         """On/Off switch for this component's input functionality."""
         self.accepts_inputs: bool = True
         """Accepts input events currently."""
-        self.auto_clear: bool = True
-        """Automatically clears the event buffer on the post_update call, effectively dumping the events."""
         self.async_callbacks: dict[GameEventType, list[Callable]] = listeners if listeners is not None else {}
         self.event_buffer: dict[GameEventType, list[PyoneerEvent]] = {}
         """A list of pygame event types to listen for."""

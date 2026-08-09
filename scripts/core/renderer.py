@@ -1,10 +1,8 @@
 from __future__ import annotations
-import enum
 
 import pygame
 import pytmx
 from pygame import Rect
-from pygame.sprite import AbstractGroup
 from pygame.surface import Surface
 
 from scripts.core.event_manager import PyoneerEvent
@@ -23,13 +21,6 @@ from scripts.core.viewclip import clip_to_view, containment, Containment
 from scripts.core.log import trace_render
 from scripts.core.errors import (PyoneerBindTargetError, PyoneerCameraMissingError,
                                  PyoneerLayerError, warn_content)
-
-
-class LayerType(str, enum.Enum):
-    TILE = 'tile'
-    ENTITY = 'entity'
-    OBJECT = 'object'
-    UI = 'ui'
 
 
 def drawable_tile_count(layer: pytmx.TiledTileLayer, tile_map: pytmx.TiledMap) -> int:
@@ -63,13 +54,11 @@ def partial_alpha_mask(surface: Surface) -> pygame.mask.Mask:
 
 class Layer(PyoneerGameObject):
 
-    def __init__(self, layer_type: LayerType, layer_name: str, layer_depth: int, layer_surface: Surface):
+    def __init__(self, layer_name: str, layer_depth: int, layer_surface: Surface):
         super().__init__()
-        self.layer_type = layer_type
         self.layer_name = layer_name
         self.layer_depth = layer_depth
         self._image = layer_surface
-        self.container: list[PyoneerGameObject] = []
 
     def core_lifecycle_prepare(self) -> Surface:
         return self._image
@@ -92,10 +81,9 @@ class Layer(PyoneerGameObject):
 
 
 class EntityLayer(Layer):
-    def __init__(self, layer_type: LayerType, layer_name: str, layer_depth: int, layer_surface: Surface):
-        super().__init__(layer_type, layer_name, layer_depth, layer_surface)
+    def __init__(self, layer_name: str, layer_depth: int, layer_surface: Surface):
+        super().__init__(layer_name, layer_depth, layer_surface)
         self.entities: list[GameEntity] = []  # list of entities
-        self.sprites: AbstractGroup = pygame.sprite.Group()
 
     def bind(self, entity: GameEntity):
         self.entities.append(entity)
@@ -156,8 +144,8 @@ class EntityLayer(Layer):
 
 
 class GameComponentLayer(Layer):
-    def __init__(self, layer_type: LayerType, layer_name: str, layer_depth: int, layer_surface: Surface):
-        super().__init__(layer_type, layer_name, layer_depth, layer_surface)
+    def __init__(self, layer_name: str, layer_depth: int, layer_surface: Surface):
+        super().__init__(layer_name, layer_depth, layer_surface)
         self.components: list[GameComponent] = []
 
     def core_lifecycle_prepare(self) -> Surface:
@@ -268,7 +256,7 @@ class MapComposite(Layer):
         if not sources:
             raise PyoneerLayerError("MapComposite needs at least one source MapLayer")
         name = "+".join(str(source.layer_name) for source in sources)
-        super().__init__(LayerType.TILE, name, layer_depth, None)
+        super().__init__(name, layer_depth, None)
         self.sources: list[MapLayer] = list(sources)
         self.depth_band: tuple[int, int] = (min(s.layer_depth for s in sources),
                                             max(s.layer_depth for s in sources))
@@ -417,7 +405,6 @@ class LayerRenderer:
 
     def __init__(self, surface: Surface):
         """Load the Tiled map data and the surface to render to."""
-        self.tiled_maps: dict[str, pytmx.TiledMap] = {}
         self.camera: GameCamera | None = None
         self._image: Surface = surface
 
@@ -454,12 +441,9 @@ class LayerRenderer:
     def __make_tile_layer(self, layer_name: str, layer_depth: int, layer_surface: Surface, tmx_data: pytmx.TiledMap,
                           layer: pytmx.TiledTileLayer) -> MapLayer:
         """Make a tile layer, and bind it to the layer list for rendering."""
-        map_layer = MapLayer(LayerType.TILE, layer_name, layer_depth, layer_surface)
+        map_layer = MapLayer(layer_name, layer_depth, layer_surface)
         map_layer.set_layer(layer, tmx_data)
         return map_layer
-
-    def __get_map(self, name: str) -> pytmx.TiledMap:
-        return self.tiled_maps[name]
 
     def __prepare_map_layers(self, tmx_data: pytmx.TiledMap):
         """Rasterize every tile layer the MAP declares.
@@ -736,7 +720,7 @@ class LayerRenderer:
                 layer_found = True
                 break
         if not layer_found:
-            layer = EntityLayer(LayerType.ENTITY, layer_name, depth, self.image())
+            layer = EntityLayer(layer_name, depth, self.image())
             layer.bind(entity)
             self.layers[depth].append(layer)
             # A new entity layer can land in the middle of a run of tile
@@ -778,7 +762,7 @@ class LayerRenderer:
         depth = self.__prepare_depth(layer_name)
         if depth not in self.layers:
             self.layers[depth] = []
-        layer = GameComponentLayer(LayerType.UI, layer_name, depth + len(self.layers[depth]), Surface(widget.world_bounds.size))
+        layer = GameComponentLayer(layer_name, depth + len(self.layers[depth]), Surface(widget.world_bounds.size))
         layer.bind(widget)
         self.layers[depth].append(layer)
         self.__invalidate_if_inside_map_span(depth)

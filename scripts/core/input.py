@@ -5,6 +5,7 @@ import pygame.joystick
 
 from config.managers.core_data import CoreAsset
 from scripts.core.errors import PyoneerBindingInvalidError
+from scripts.core.log import trace_input
 
 KEYBOARD = {
     "a": pygame.K_a, "b": pygame.K_b, "c": pygame.K_c, "d": pygame.K_d,
@@ -123,6 +124,9 @@ class InputActionManager(CoreAsset):
             action.pressed = down and not action.held
             action.released = action.held and not down
             action.held = down
+            if action.pressed or action.released:
+                trace_input("action %s pressed=%s released=%s",
+                            action.action_type, action.pressed, action.released)
 
     def pressed(self, action_name: str) -> bool:
         """True only on the frame the action went down. Use for menus, jumps."""
@@ -187,6 +191,7 @@ class InputActionManager(CoreAsset):
         # pygame.display.set_mode(), and pygame.key.get_pressed() requires an
         # initialized video mode. Every action starts held=False, so the first
         # update() already computes correct edges without priming.
+        trace_input("bindings resolved: %s", sorted(self.actions))
         return self
 
     def validate_bindings(self):

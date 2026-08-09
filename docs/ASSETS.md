@@ -42,8 +42,14 @@ The engine reads exactly **three** image files at runtime. Without them,
    `GameAnimationHandler.__init__` loads it eagerly, raising
    `PyoneerAssetMissingError` naming the config key that declared it.
 
-`tools/check_all.py` runs 18 checks; **9** of them boot the engine and need
-the art (`anchor`, `animation`, `events`, `maplayers`, `singletons`, `tmx_roundtrip`, `viewclip`, `window`, `window_close`). The rest pass on a bare clone.
+`tools/check_all.py` runs 25 checks. **7** of them boot the engine and so
+need the art: `animation`, `maplayers`, `singletons`, `tmx_roundtrip`, `viewclip`, `window_close`, `window_events`. The other 18 pass on a bare clone.
+
+That split is MEASURED, not estimated -- the art directory is moved
+aside and the suite re-run. The previous figure here named ten checks
+including `anchor`, `events` and `window`, none of which actually need
+it; it was arithmetic carried forward as the suite grew rather than
+anything anyone had run.
 
 The two editor checks are among those that do not: the editor reads maps
 through `MapDocument`, which is pure XML, and its canvas falls back to
@@ -51,7 +57,7 @@ deterministic colour swatches per gid when a tileset image is absent. So the
 editor is usable on a bare clone — visibly unfinished, but usable.
 
 The fastest fix is `tools/make_placeholder_art.py`, which writes all three at
-the required sizes; with it, all 18 checks pass.
+the required sizes; with it, all 25 checks pass.
 
 ## Where the paths live
 

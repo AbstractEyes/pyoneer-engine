@@ -31,6 +31,7 @@ CHECKS = [
     ("tileset", "byte-exact tileset add/remove, gid-range and extent guards"),
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
+    ("window_events", "os window events translate, route, and still fan out"),
     ("editor", "scopes, command stream, exact undo, genre rules, requests"),
     ("paint", "strokes, stamps, flood fill, one drag is one transaction"),
     ("autotile", "corner masks, terrain recovery, diagonal policy"),

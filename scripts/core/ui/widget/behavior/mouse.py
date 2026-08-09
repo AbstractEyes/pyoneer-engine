@@ -87,6 +87,10 @@ class MouseComponentAsync(AsyncEventComponent):
         self.bind_async_listener(GameEventType.MOUSE_DOWN, self.__event__mouse_down)
         self.bind_async_listener(GameEventType.MOUSE_UP, self.__event__mouse_up)
         self.bind_async_listener(GameEventType.MOUSE_SCROLL, self.__event__mouse_scroll)
+        # A window that loses focus mid-drag never sees the MOUSEBUTTONUP,
+        # so dragging and mouse_down latch True forever.
+        self.bind_async_listener(GameEventType.WINDOW_FOCUS_LOST, self.__reset_mouse)
+        self.bind_sync_listener(GameEventType.DISPOSE, self.__reset_mouse)
         self.core_lifecycle_prepare()
         self.core_lifecycle_build()
 
@@ -134,10 +138,6 @@ class MouseComponentAsync(AsyncEventComponent):
                                                                 "horizontal_scroll": self.horizontal_mouse_scroll,
                                                                 "vertical_scroll": self.vertical_mouse_scroll
                                                             }))
-
-    @staticmethod
-    def __unpack_mouse_move(data: list[PyoneerEvent]) -> list[Vector2]:
-        return [vec.event.pos for vec in data]
 
     def __event__mouse_entered(self, event: PyoneerEvent):
         if event is None or event.handled:
@@ -268,10 +268,17 @@ class MouseComponentAsync(AsyncEventComponent):
                         self.__execute_event_callbacks(GameEventType.MOUSE_DRAG_BEGIN, event, False)
                     self.__execute_event_callbacks(GameEventType.MOUSE_DRAGGING, event, False)
 
-    def __reset_mouse(self):
+    def __reset_mouse(self, event: PyoneerEvent | None = None):
         self.mouse_down_inside = False
         self.mouse_down_outside = False
         self.mouse_inside = False
+        # A window that loses focus mid-drag never sees the MOUSEBUTTONUP, so
+        # these two latch True forever. They are cleared for completeness --
+        # the flags that actually gate the drag are mouse_down_inside and
+        # mouse_down_outside, cleared above. mouse_down has exactly one
+        # reader (button.py) and dragging one (this file).
+        self.mouse_down = False
+        self.dragging = False
         self.mouse_down_time = 0
         self.mouse_down_pos = Vector2(0, 0)
         self.mouse_up_pos = Vector2(0, 0)

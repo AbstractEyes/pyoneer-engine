@@ -56,20 +56,6 @@ class Selection(QObject):
     def kind(self) -> str:
         return self.__scope.kind
 
-    def is_object(self) -> bool:
-        return self.__scope.kind == "object"
-
-    def is_tile_layer(self, project) -> bool:
-        """True when the selection is a layer that holds tiles."""
-        map_name = self.__scope.get("map")
-        layer_name = self.__scope.get("layer")
-        if not map_name or not layer_name or self.__scope.kind == "object":
-            return False
-        try:
-            return layer_name in project.map(map_name).tile_layer_names()
-        except Exception:                                       # noqa: BLE001
-            return False
-
     def history(self) -> list[Scope]:
         return list(self.__history)
 

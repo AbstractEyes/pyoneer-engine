@@ -47,7 +47,6 @@ class ScrollComponent(GameComponent):
         self.arrow_2: Button | None = None
         self.scroll_thumb: Button | None = None
         self.use_immediate_viewport = False
-        self.needs_update = True
 
     def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):
         super().core_lifecycle_build(event)
@@ -104,17 +103,6 @@ class ScrollComponent(GameComponent):
         """
         return self.scrollable_extent > self.visible_extent
 
-    def __percentage_ratio(self) -> float:
-        """Fraction of the content that is visible. 1.0 when it all fits.
-
-        A zero-sized scrollable area is legal -- an empty Panel has one -- and
-        used to divide by zero here.
-        """
-        extent = self.scrollable_extent
-        if extent <= 0:
-            return 1.0
-        return self.visible_extent / extent
-
     def __working_percentage_ratio(self) -> float:
         """Same fraction, measured against the bar's usable length."""
         extent = self.scrollable_extent
@@ -123,14 +111,6 @@ class ScrollComponent(GameComponent):
         area = self.__scroll_bar_with_offsets()
         length = area.height if self.__scroll_direction == ScrollDirection.Vertical else area.width
         return length / extent
-
-    def __calculate_bar_fill(self) -> float:
-        """Calculates the fill percentage the thumb covers within the scroll bar."""
-        area_bounds = self.__scroll_bar_with_offsets()
-        if self.__scroll_direction == ScrollDirection.Vertical:
-            return area_bounds.height * self.__working_percentage_ratio()
-        else:
-            return area_bounds.width * self.__working_percentage_ratio()
 
     def __scroll_thumb_bounds(self) -> Rect:
         scroll_area = self.__scroll_bar_with_offsets()

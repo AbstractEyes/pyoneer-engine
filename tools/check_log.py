@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import _bootstrap  # noqa: F401
 
+import ast
 import io
 import logging
+import os
 import sys
 
 from scripts.core import log
@@ -97,6 +99,60 @@ log.enable("mouse")
 log.trace_mouse("value=%s", Loud())
 expect("__str__ called once enabled", Loud.rendered, 1)
 log.disable()
+
+print()
+print("every advertised channel has at least one call site")
+# A channel that validates, enables, and then emits nothing is the one
+# specific failure this module exists to remove -- an advertised switch that
+# turns on and does nothing. Counted with ast over Call nodes, NOT grep:
+# grep counts the import line and the definition in log.py itself, which is
+# how a survey ended up reporting the same channel as both 5 and 7.
+ROOT = _bootstrap.REPO_ROOT
+LOG_SOURCE = os.path.join(ROOT, "scripts", "core", "log.py")
+
+call_sites = {name: 0 for name in log.CHANNELS}
+scanned = 0
+for area in ("scripts", "editor", "config", "tools"):
+    for folder, _, names in os.walk(os.path.join(ROOT, area)):
+        if "__pycache__" in folder:
+            continue
+        for name in names:
+            if not name.endswith(".py"):
+                continue
+            path = os.path.join(folder, name)
+            if os.path.abspath(path) == os.path.abspath(LOG_SOURCE):
+                continue          # its own definitions are not call sites
+            try:
+                tree = ast.parse(open(path, encoding="utf-8").read())
+            except SyntaxError:
+                continue
+            scanned += 1
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                called = func.id if isinstance(func, ast.Name) else (
+                    func.attr if isinstance(func, ast.Attribute) else "")
+                if called.startswith("trace_"):
+                    channel_name = called[len("trace_"):]
+                    if channel_name in call_sites:
+                        call_sites[channel_name] += 1
+
+tree = ast.parse(open(os.path.join(ROOT, "main.py"), encoding="utf-8").read())
+scanned += 1
+for node in ast.walk(tree):
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+            and node.func.id.startswith("trace_"):
+        channel_name = node.func.id[len("trace_"):]
+        if channel_name in call_sites:
+            call_sites[channel_name] += 1
+
+print(f"  ({scanned} source files scanned)")
+for channel_name in sorted(log.CHANNELS):
+    expect(f"channel {channel_name} has at least one call site",
+           call_sites[channel_name] > 0, True)
+expect("no advertised channel is structurally silent",
+       sorted(n for n, c in call_sites.items() if c == 0), [])
 
 print()
 if failures:

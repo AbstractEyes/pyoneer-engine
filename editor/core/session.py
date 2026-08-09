@@ -24,7 +24,7 @@ from editor.core.request import (
     read_response,
     write_bundle,
 )
-from editor.core.scope import Scope
+from editor.core.scope import ASSETS, GENRE, PROJECT, Scope
 
 
 class Session:
@@ -103,8 +103,7 @@ class Session:
 
     def known_scopes(self) -> list[Scope]:
         """Every scope currently worth naming, for pickers and validation."""
-        found: list[Scope] = [Scope.of("project"), Scope.of("genre"),
-                              Scope.of("assets")]
+        found: list[Scope] = [PROJECT, GENRE, ASSETS]
         for map_name in self.project.map_names():
             map_scope = Scope.of(("map", map_name))
             found.append(map_scope)

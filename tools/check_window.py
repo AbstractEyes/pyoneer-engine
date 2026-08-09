@@ -108,6 +108,39 @@ win4.set_focus(None)
 expect("focus cleared", tb.focused, False)
 
 print()
+print("losing focus mid-drag does not leave the drag latched")
+# A window that loses focus mid-drag never sees the MOUSEBUTTONUP, so
+# dragging and mouse_down stay True forever and the next motion drags a
+# window nobody grabbed. Delivered through the REAL path -- buffer, then the
+# UPDATE fan-out -- so this asserts the bind exists, not just the body.
+win5 = make_window()
+mouse5 = win5.components["mouse"]
+mouse5.dragging = True
+mouse5.mouse_down = True
+mouse5.mouse_down_inside = True
+mouse5.mouse_inside = True
+
+focus_lost = PyoneerEvent(GameEventType.PYGAME,
+                          py_event=pygame.event.Event(pygame.WINDOWFOCUSLOST, {}),
+                          data={})
+expect("the pygame event translated", focus_lost.type,
+       GameEventType.WINDOW_FOCUS_LOST)
+mouse5.buffer_custom_events(focus_lost)
+mouse5.core_frame_update(PyoneerEvent(GameEventType.UPDATE, sender=None,
+                                      data={"delta": 0.016}))
+expect("dragging cleared", mouse5.dragging, False)
+expect("mouse_down cleared", mouse5.mouse_down, False)
+expect("mouse_down_inside cleared", mouse5.mouse_down_inside, False)
+expect("mouse_inside cleared", mouse5.mouse_inside, False)
+
+# Assert the binds themselves, so deleting either one fails loudly even
+# though __reset_mouse's body would still be correct.
+expect("WINDOW_FOCUS_LOST is bound on the mouse component",
+       GameEventType.WINDOW_FOCUS_LOST in mouse5.async_callbacks, True)
+expect("DISPOSE is bound on the mouse component",
+       GameEventType.DISPOSE in mouse5.callbacks, True)
+
+print()
 print("depth is settable on a window (bring-to-front)")
 try:
     win4.depth = 250

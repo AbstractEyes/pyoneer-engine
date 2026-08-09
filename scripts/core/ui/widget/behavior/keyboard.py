@@ -9,6 +9,7 @@ from scripts.core.event_manager import PyoneerEvent
 from scripts.core.event_types import GameEventType
 from scripts.core.ui.widget.behavior.async_ import AsyncEventComponent
 from scripts.core.component import Config
+from scripts.core.log import trace_keyboard
 
 
 class KeyBindingSetting(int, Enum):
@@ -150,7 +151,8 @@ class KeyboardComponentAsync(AsyncEventComponent):
                     if stored_event.data[self.uuid + "key_repeat_timer"] >= self.press_repeat_delay:
                         stored_event.data[self.uuid + "key_repeat_timer"] = 0
                         stored_event.data["delta"] = event.data["delta"]
-                        #print ("Key repeat event;", stored_event)
+                        trace_keyboard("repeat %s after %ss", key,
+                                       self.press_repeat_delay)
                         for callback in self.key_callbacks[KeyBindingType.KeyRepeat]:
                             callback(stored_event)
 
@@ -165,6 +167,7 @@ class KeyboardComponentAsync(AsyncEventComponent):
                 self.keys_down[key] = [event]
             else:
                 self.keys_down[key].append(event)
+            trace_keyboard("down %s on %s", key, type(self.parent).__name__)
             # we finished the key down event, now we can call the key down callbacks
             for callback in self.key_callbacks[KeyBindingType.KeyDown]:
                 callback(event)
@@ -175,6 +178,8 @@ class KeyboardComponentAsync(AsyncEventComponent):
         #unpacked_keys = self.unpack(data)
         unpacked_key = event.event.key
         if unpacked_key in self.keys_down.keys():
+            trace_keyboard("up %s on %s", unpacked_key,
+                           type(self.parent).__name__)
             for key in self.keys_down[unpacked_key]:
                 if KeyBindingType.KeyUp in self.key_callbacks:
                     for callback in self.key_callbacks[KeyBindingType.KeyUp]:

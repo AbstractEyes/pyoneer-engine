@@ -73,7 +73,6 @@ class GameWindow(GameComponent):
         # the position from the dragging position to the top left corner of the window.
         # -------------------------------------------------
         # baseline property configuration
-        self.header_border_thickness: Rect = Rect(config["window"]["title"]["border_thickness"])
         self.header_height: int = config["window"]["title"]["height"]
 
     # -------------------------------------------------

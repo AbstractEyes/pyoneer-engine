@@ -37,7 +37,6 @@ class DataAnimation:
 class DataAnimationCategory:
     def __init__(self, config):
         self.name = config['name']
-        self.description = config['description']
         self.id = config['id']
         self.seq_data = config['sequences']
         self.order = config['order']

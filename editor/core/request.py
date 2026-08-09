@@ -537,15 +537,3 @@ def read_response(path: str) -> list[Command]:
         return parse_response(handle.read(), source=path)
 
 
-def pending_bundles(project: Any, *, requests_dir: str | None = None) -> list[Bundle]:
-    """Every bundle on disk, newest last, with whether it has been answered."""
-    base = requests_dir or os.path.join(project.root, REQUESTS_DIR)
-    if not os.path.isdir(base):
-        return []
-    found: list[Bundle] = []
-    for name in sorted(os.listdir(base)):
-        directory = os.path.join(base, name)
-        if not os.path.isdir(directory) or not name[:4].isdigit():
-            continue
-        found.append(Bundle(directory, name, []))
-    return found

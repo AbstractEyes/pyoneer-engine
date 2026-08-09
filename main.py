@@ -166,7 +166,8 @@ class MainGame:
 
     def load_renderer(self):
         bounds = self.assets.config.get('theme').get("window")["bounds"]
-        self.screen = pygame.display.set_mode((bounds[2], bounds[3]))
+        self.screen = pygame.display.set_mode((bounds[2], bounds[3]),
+                                              pygame.RESIZABLE)
         self.renderer: LayerRenderer = LayerRenderer(self.screen)
         #for i in range(0, 1000):
         #    self.test_players.append(GamePlayer(input_=None,

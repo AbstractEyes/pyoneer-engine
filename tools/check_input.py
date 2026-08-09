@@ -71,6 +71,52 @@ raw = im2._is_down(a)
 expect("one of two keys down -> down", raw, True)
 
 print()
+print("sprint is bound in config AND consumed in code")
+# These two halves are one change. held() is an unguarded dict index, so a
+# game_player.py that reads "sprint" without the JSON key raises KeyError
+# inside core_frame_update and kills the frame. Assert both ends.
+expect("sprint is bound", "sprint" in im.actions, True)
+im.keyboard = FakeKeys(["left_ctrl"])
+sprint_action = im.actions["sprint"]
+expect("sprint key down -> down", im._is_down(sprint_action), True)
+im.keyboard = FakeKeys([])
+expect("sprint key up -> up", im._is_down(sprint_action), False)
+
+# Every action the config names must resolve, or the split surfaces at frame
+# time rather than at check time.
+try:
+    InputActionManager().prepare(config).validate_bindings()
+    print(f"  ok   all {len(config)} configured actions resolve: {sorted(config)}")
+except Exception as exc:                                       # noqa: BLE001
+    print(f"  FAIL a configured action does not resolve: {exc}")
+    failures.append("configured actions resolve")
+
+print()
+print("sprint multiplies displacement, in code not config")
+from scripts.game.entity.game_entity import GameEntity          # noqa: E402
+
+
+class _Walker(GameEntity):
+    """The smallest concrete GameEntity. Displacement is the only thing under
+    test, so the two abstract lifecycle hooks stay empty deliberately."""
+
+    def core_lifecycle_build(self, event=None):
+        pass
+
+    def core_input_receive(self, event=None):
+        pass
+
+
+slow = _Walker(movement_config={"movement": {"move_speed": 10, "sprint_mult": 3}})
+fast = _Walker(movement_config={"movement": {"move_speed": 10, "sprint_mult": 3}})
+slow.move_direction(1.0, "right", sprint=False)
+fast.move_direction(1.0, "right", sprint=True)
+dx_slow = slow.transform.position.x
+dx_fast = fast.transform.position.x
+expect("walking moves at move_speed", dx_slow, 10)
+expect("sprinting multiplies by sprint_mult", dx_fast, dx_slow * 3)
+
+print()
 print("unknown binding fails at load, not mid-frame")
 try:
     InputActionManager().prepare({"oops": ["keyboard:not_a_key"]})

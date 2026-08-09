@@ -39,26 +39,10 @@ class DrawComponent(GameComponent):
         """The offset of the object on the viewport."""
         self.__make()
 
-    def __parent_moved(self, event: PyoneerEvent): ...
-        #if self.parent is not None:
-        #    set_val = self.world_bounds.copy()
-        #    if event.data.get("position") is not None:
-        #        # position moved
-        #        set_val.width = max(1, self.parent.world_bounds.width)
-        #        set_val.height = max(1, self.parent.world_bounds.height)
-        #        pass
-        #    if event.data.get("size") is not None:
-        #        # size changed
-        #        set_val.x = self.world_bounds.x
-        #        set_val.y = self.world_bounds.y
-        #        pass
-        #    self.world_bounds = set_val
-
     def __make(self):
         #self.viewport = GameCamera #Viewport(parent=self, bounds=self.bounds, full_bounds=self.bounds, offset=self.viewport_offset)
         self.bind_sync_listener(GameEventType.DISPOSE, self.dispose_drawable)
         self.bind_sync_listener(GameEventType.BLITS, self.__blits)
-        #self.bind_sync_listener(GameEventType.PARENT_MOVED, self.__parent_moved)
 
     @staticmethod
     def allocate_surface(width: int | float, height: int | float) -> Surface:

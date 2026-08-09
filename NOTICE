@@ -35,11 +35,3 @@ whatever licence their author gave them, and that is your responsibility to
 check. In particular, art shipped with a commercial game-making tool is
 commonly licensed for use inside that tool's projects only and not for
 redistribution.
-
---------------------------------------------------------------------------------
-Archived code
---------------------------------------------------------------------------------
-
-archive/ contains two superseded component systems written by the same author.
-They are covered by the same Apache-2.0 licence and are retained for design
-reference only; neither is importable or on the engine's import path.

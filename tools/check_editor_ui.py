@@ -34,7 +34,7 @@ if importlib.util.find_spec("PySide6") is None:
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEvent, QPointF, Qt                          # noqa: E402
-from PySide6.QtGui import QMouseEvent                                   # noqa: E402
+from PySide6.QtGui import QAction, QMouseEvent                          # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox                 # noqa: E402
 
 from editor.core.autotile import TerrainSet                             # noqa: E402
@@ -66,6 +66,33 @@ QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
 
 workspace = tempfile.mkdtemp(prefix="pyoneer_editor_ui_")
 application = QApplication.instance() or QApplication([])
+
+# --------------------------------------------------------------------------
+print("Selection navigation semantics, with no window and no map")
+# --------------------------------------------------------------------------
+# Deliberately synthesised scopes. Asserting against map:test/layer:Floor
+# would assert what the author has painted, and would route through
+# __on_selection -> canvas.set_active_layer() for a layer that may not exist.
+from editor.ui.selection import Selection                                # noqa: E402
+
+moves: list[str] = []
+navigator = Selection(Scope.parse("map:m/layer:l/object:1"))
+navigator.changed.connect(lambda scope: moves.append(str(scope)))
+
+expect("select_parent climbs one segment",
+       (navigator.select_parent(), str(navigator.scope)), (True, "map:m/layer:l"))
+expect("select_parent stops at the root",
+       [navigator.select_parent(), navigator.select_parent(),
+        navigator.select_parent()], [True, False, False])
+expect("back returns to the previous scope",
+       (navigator.back(), str(navigator.scope)), (True, "map:m/layer:l"))
+expect("back walks the whole history then stops",
+       [navigator.back(), navigator.back()], [True, False])
+# Two successful select_parent calls and two successful back calls. The four
+# refusals above must emit nothing -- a panel that rebuilds on a refused
+# navigation is the bug this counts.
+expect("changed fired once per real move, never on a refusal",
+       len(moves), 4)
 
 
 def mouse(window, kind, cell, button=Qt.LeftButton, buttons=None):
@@ -122,6 +149,33 @@ try:
            len(window.canvas.atlas.entries), 2)
     expect("it picked a paintable layer to start on",
            window.canvas.active_layer, "Paralax")
+
+    # ----------------------------------------------------------------
+    print()
+    print("navigation is reachable from the menu, not just from the API")
+    # ----------------------------------------------------------------
+    actions = window.findChildren(QAction)
+    shortcuts = [a.shortcut().toString() for a in actions if not a.shortcut().isEmpty()]
+    expect("exactly one action carries Alt+Up", shortcuts.count("Alt+Up"), 1)
+    expect("exactly one action carries Alt+Left", shortcuts.count("Alt+Left"), 1)
+    # A shortcut bound twice is ambiguous and Qt silently fires neither.
+    expect("no shortcut is bound twice",
+           sorted({s for s in shortcuts if shortcuts.count(s) > 1}), [])
+
+    up = next(a for a in actions if a.shortcut().toString() == "Alt+Up")
+    left = next(a for a in actions if a.shortcut().toString() == "Alt+Left")
+
+    # Scopes the CHECK creates, so this asserts the wiring and says nothing
+    # about which layers the author has painted.
+    window.selection.select(Scope.parse("map:m/layer:l/object:1"))
+    up.trigger()
+    application.processEvents()
+    expect("triggering Alt+Up climbed to the parent",
+           str(window.selection.scope), "map:m/layer:l")
+    left.trigger()
+    application.processEvents()
+    expect("triggering Alt+Left went back",
+           str(window.selection.scope), "map:m/layer:l/object:1")
 
     # ----------------------------------------------------------------
     print()

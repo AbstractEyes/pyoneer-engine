@@ -19,7 +19,6 @@ class Button(GameComponent):
                  border_color: WidgetColor = None,
                  border_thickness: Rect = None,
                  font_size: int = None,
-                 font_color: WidgetColor = None,
                  consume_click: bool = False,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -31,7 +30,6 @@ class Button(GameComponent):
         self.__text_color: WidgetColor = text_color if text_color is not None else WidgetColor().set_list(theme["button"]["text_color"])
         self.__text_shadow_color: WidgetColor = text_shadow_color if text_shadow_color is not None else WidgetColor().set_list(theme["button"]["text_shadow_color"])
         self.__font_size: int = font_size if font_size is not None else theme["button"]["font_size"]
-        self.__font_color: WidgetColor = font_color if font_color is not None else WidgetColor().set_list(theme["button"]["text_color"])
         self.__center_text: bool = center_text if center_text is not None else theme["button"]["center_text"]
         self.__consume_click: bool = consume_click
 

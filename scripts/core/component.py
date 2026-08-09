@@ -9,6 +9,7 @@ from scripts.core.event_manager import PyoneerEvent
 from scripts.core.game_object import PyoneerGameObject
 
 from scripts.core.event_types import GameEventType
+from scripts.core.log import trace_events
 from scripts.core.ui.anchor import Anchor, DEFAULT_ANCHOR, reflow as anchor_reflow
 #from scripts.game.game_camera import GameCamera
 
@@ -45,27 +46,10 @@ class GameComponent(PyoneerGameObject, ABC):
     """A simple component that can be used to build more complex components.
         \n
         Attributes:\n
-        - bounds: The bounds of the component component.
-        - __build: The build callback for the component component.
-            This builds the component before initial use.
-        - __events: This buffer accepts any custom event input and is used for data processing.
-            This accepts any buffer argument required to make the component component work.
-        - __prepare: The prepare callback for the component component.
-            This prepares the component before rendering and after building.
-        - __pre_update: The pre-update callback for the component component.
-            This is pre-update, used for additional processing before updating.
-        - __update: The update callback for the component component.
-            This is update, standard updates go here.
-        - __post_update: The post-update callback for the component component.
-            This is post-update, used for additional processing after updating.
-        - __dispose: The dispose callback for the component component.
-            This is dispose, used for cleanup.
-        - __rebuild: The rebuild callback for the component component.
-            This is rebuild, used for rebuilding the component component.
-        - __blits: The blits callback for the component.
-            This is blits, returns a compounded list of blits for all the components.
-        - __use: The use callback for the component.
-            This is use, when the component is used by the user or another component directly.
+        - local_bounds / world_bounds: the component's rectangle before and
+      after the parent transform. `bounds` is a CONSTRUCTOR PARAMETER
+      that feeds both; there is no `bounds` attribute -- ten other
+      phantoms were removed from this list and this was the eleventh.
     """
 
     def __init__(self,
@@ -80,8 +64,6 @@ class GameComponent(PyoneerGameObject, ABC):
                  draggable: bool = True,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__base_bounds: Rect = bounds.copy() if bounds is not None else Rect(0, 0, 0, 0)
-        """The base bounds of the component, used for default positioning."""
         self.__local_bounds: Rect = bounds.copy() if bounds is not None else Rect(0, 0, 0, 0)
         """The bounds of the component, used for dynamic positioning."""
         self.__world_bounds: Rect = bounds.copy() if bounds is not None else Rect(0, 0, 0, 0)
@@ -221,13 +203,42 @@ class GameComponent(PyoneerGameObject, ABC):
         self.__parent = parent_in
 
     def move(self, x: int | float, y: int | float, sender: GameComponent | None = None):
-        # determine the difference between the current x/y and the new x/y
+        """Move to local position (x, y).
+
+        `offset` is a LOCAL->WORLD shift. Every other site treats it that
+        way -- `__update_world_bounds` computes
+        `world = local + parent.world + offset`, and `adjust_point` shifts a
+        point by it to cross the same boundary.
+
+        This method used to fold it into LOCAL as well:
+
+            self.__local_bounds = Rect(x + self.offset.x, ...)
+
+        which is a different meaning of the word, and the two compounded.
+        Measured on a component with offset (7, 3): `move(10, 10)` left
+        local at (17, 13), and because world is then derived as
+        local + parent.world + offset, the offset was counted a SECOND time
+        on the next recompute. A component with a non-zero offset drifted by
+        that offset every time it was moved and re-resolved -- and panels do
+        set offsets on their children, so this was reachable rather than
+        theoretical.
+
+        Local is now exactly what the caller asked for. The world result for
+        a root is unchanged; what changed is that local no longer carries a
+        shift that does not belong to it.
+        """
         local = self.local_bounds.copy()
         world = self.world_bounds.copy()
         if self.__parent is None:
-            self.__local_bounds = Rect(x + self.offset.x, y + self.offset.y, local.width, local.height)
-            self.__world_bounds = Rect(x + self.offset.x, y + self.offset.y, world.width, world.height)
+            self.__local_bounds = Rect(x, y, local.width, local.height)
+            self.__world_bounds = Rect(x + self.offset.x, y + self.offset.y,
+                                       world.width, world.height)
         else:
+            # NOTE: this branch writes world WITHOUT the parent's origin,
+            # which disagrees with __update_world_bounds. It is left as-is
+            # deliberately -- the window drag path depends on the current
+            # behaviour and correcting it is a separate, testable change.
+            # See docs/ORPHANS.md.
             self.__world_bounds = Rect(x + self.offset.x, y + self.offset.y, world.width, world.height)
 
         if sender is None:
@@ -399,10 +410,6 @@ class GameComponent(PyoneerGameObject, ABC):
         # this and none of it's parents are viewports, we return None due to having no viewport
         # this identifies the screen itself as the sole viewport
         return None
-
-    def __get_difference(self, bounds1: Rect, bounds2: Rect):
-        """Return the difference between the current bounds and the new bounds."""
-        return (bounds1.x - bounds2.x, bounds1.y - bounds2.y, bounds1.width - bounds2.width, bounds1.height - bounds2.height)
 
     @property
     def local_bounds(self) -> Rect:
@@ -699,12 +706,15 @@ class GameComponent(PyoneerGameObject, ABC):
         # anything: a click on a window's close button was still delivered to
         # every sibling and every descendant.
         if event is not None and event.handled and not event.trickle:
+            trace_events("consumed %s at %s", typ.name, type(self).__name__)
             return
 
         # Input is gated on `active`, never on `visible`. A hidden but active
         # window still receives and can consume input; that is deliberate.
         # `active` is False only when a subtree has been explicitly disabled.
         if typ in INPUT_EVENT_TYPES and not self.accepts_input:
+            trace_events("refused %s: %s inactive", typ.name,
+                         type(self).__name__)
             return
 
         # Rendering is gated on `visible`, and it must gate the whole SUBTREE.
@@ -953,6 +963,7 @@ class GameComponent(PyoneerGameObject, ABC):
 
     def mark_event_handled(self, event: PyoneerEvent | list[PyoneerEvent] | None = None):
         """Flags the event or list of events as handled."""
+        trace_events("handled by %s", type(self).__name__)
         if event is not None:
             if isinstance(event, list):
                 for ev in event:
@@ -1032,8 +1043,4 @@ class GameComponent(PyoneerGameObject, ABC):
         # adjust the bounds to fit the correct parent/child hierarchy
         if self.__parent is not None:
             self.__update_world_bounds()
-
-    def __on_component_bound(self, event: Optional[PyoneerEvent] = None):
-        """When a component is bound, this is deployed to components."""
-        pass
 
