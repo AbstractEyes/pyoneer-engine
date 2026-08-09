@@ -28,11 +28,15 @@ CHECKS = [
     ("animation", "sequence switching, pause/resume, pre-sliced frames"),
     ("singletons", "one CoreAssetManager, tmx cached until reload is asked for"),
     ("tmx_roundtrip", "byte-identical tmx save, minimal-diff tile and object edits"),
+    ("tileset", "byte-exact tileset add/remove, gid-range and extent guards"),
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
     ("editor", "scopes, command stream, exact undo, genre rules, requests"),
     ("paint", "strokes, stamps, flood fill, one drag is one transaction"),
     ("autotile", "corner masks, terrain recovery, diagonal policy"),
+    ("collision", "three-level resolution, .blitmask round trip, mask encoding"),
+    ("collision_view", "collision overlay builds, glyphs distinguish direction bits"),
+    ("map_events", "trigger vocabulary, collision filters, tmx round trip"),
     ("editor_ui", "panels build, canvas edits are commands, responses apply"),
 ]
 

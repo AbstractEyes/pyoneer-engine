@@ -89,6 +89,7 @@ import copy
 import os
 import re
 import xml.etree.ElementTree as ElementTree
+from dataclasses import dataclass
 from typing import Any, Iterator
 
 from scripts.core.errors import PyoneerAssetMissingError, PyoneerConfigError, warn_content
@@ -703,10 +704,180 @@ class ObjectLayer:
 
 
 # ---------------------------------------------------------------------------
+# Tilesets
+#
+# A tileset is the only thing in a .tmx that OTHER elements depend on
+# numerically: every csv token and every `<object gid=...>` in the document
+# is an index into the concatenated firstgid ranges. So the tileset methods
+# below are the one place in this module where a structurally correct edit
+# can still be semantically catastrophic, and they are written defensively
+# because of it.
+# ---------------------------------------------------------------------------
+
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+# Tiled packs three flip flags into a gid's top bits. Any comparison of a
+# gid against a tileset's range has to mask them off first, or a flipped
+# tile reads as a gid in the billions and matches nothing.
+_GID_VALUE_MASK = 0x1FFFFFFF
+
+
+def image_size(path: str) -> tuple[int, int]:
+    """(width, height) of a PNG, read from the 24 bytes of its IHDR header.
+
+    No decode, no pygame, no Qt. That last one is the point: this module
+    lives under `scripts/`, and `scripts/` may never import `editor/`
+    (tools/check_editor.py asserts the direction). PySide6's QImage would
+    answer this question, and it is the right tool on the EDITOR side for
+    the formats the engine never sees -- but reaching for it here would
+    make the engine depend on the editor to learn two integers that are
+    sitting in plain sight at a fixed offset.
+
+    Raises rather than guessing on a non-PNG, so a caller that supports
+    more formats can catch it and fall back instead of silently importing
+    a tileset with a fabricated tile count.
+    """
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(24)
+    except OSError as exc:
+        raise PyoneerConfigError(
+            "cannot read tileset image %s: %s" % (path, exc), source=path) from exc
+    if len(header) < 24 or not header.startswith(_PNG_SIGNATURE) or header[12:16] != b"IHDR":
+        raise PyoneerConfigError(
+            "image_size reads PNG headers only and %s is not a PNG; pass "
+            "image_width/image_height explicitly for other formats" % path,
+            source=path)
+    return (int.from_bytes(header[16:20], "big"),
+            int.from_bytes(header[20:24], "big"))
+
+
+def tileset_geometry(image_width: int, image_height: int,
+                     tile_width: int, tile_height: int,
+                     margin: int = 0, spacing: int = 0) -> tuple[int, int, int]:
+    """(columns, rows, tile_count) for a grid tileset, the way Tiled counts.
+
+    Not `image_width // tile_width`, which is only right at margin 0 and
+    spacing 0. The last column has no trailing spacing after it, so the
+    count is "how many gaps fit, plus the one tile that needs no gap" --
+    subtract a tile before dividing, then add it back.
+
+    A tileset too small to hold a single tile yields 0 rather than a
+    negative count, because a tilecount of -1 in the file is a map Tiled
+    refuses to open at all.
+    """
+    def axis(extent: int, tile: int) -> int:
+        if tile <= 0:
+            return 0
+        usable = int(extent) - int(margin) - int(tile)
+        if usable < 0:
+            return 0
+        return usable // (int(tile) + int(spacing)) + 1
+
+    columns = axis(image_width, tile_width)
+    rows = axis(image_height, tile_height)
+    return columns, rows, columns * rows
+
+
+def _int_attribute(element: ElementTree.Element, name: str, default: int) -> int:
+    """An integer attribute, falling back rather than raising on garbage.
+
+    A tileset that declares `tilecount="lots"` should still be LISTABLE --
+    the caller needs to see it in order to fix it, and an accessor that
+    raises on read makes the broken tileset invisible instead of visible.
+    """
+    raw = element.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        warn_content("tmx <%s %s=%r> is not an integer; using %d"
+                     % (element.tag, name, raw, default))
+        return default
+
+
+@dataclass(frozen=True)
+class TilesetRef:
+    """A read-only view of one `<tileset>` declaration.
+
+    Frozen and detached from the document on purpose: this is what
+    `tilesets()` hands out, and a caller that mutated it would be editing a
+    snapshot while believing it was editing the map. `element` is here for
+    the code inside this module that does need the live node.
+
+    An EXTERNAL tileset (`<tileset firstgid="9" source="foo.tsx"/>`) has no
+    name, no image and no tile count in THIS file -- they all live in the
+    .tsx. Those fields therefore read as "" / 0 rather than being invented,
+    and `holds()` is correspondingly False for every gid. That is honest:
+    this document cannot answer the question without opening a second file,
+    and a second file is outside its byte-exactness contract.
+    """
+
+    element: ElementTree.Element
+    first_gid: int
+    name: str
+    source: str
+    image_source: str
+    tile_width: int
+    tile_height: int
+    margin: int
+    spacing: int
+    tile_count: int
+    columns: int
+
+    @property
+    def is_external(self) -> bool:
+        return bool(self.source)
+
+    @property
+    def last_gid(self) -> int:
+        """Highest gid this tileset owns. Below first_gid when it owns none."""
+        return self.first_gid + self.tile_count - 1
+
+    @property
+    def extent_known(self) -> bool:
+        """Can this document say which gids the tileset owns?
+
+        No, for an EXTERNAL tileset -- the tilecount lives in the .tsx -- and
+        no for an embedded one that omits `tilecount`, which is legal TMX
+        that Tiled always writes but a hand edit may not.
+
+        This distinction is load-bearing. `holds()` returns False for an
+        unknown-extent tileset, and False is indistinguishable from "outside
+        this range" to a caller that does not ask. Every operation whose
+        CORRECTNESS depends on knowing the extent must check this and refuse
+        rather than act on a confident-sounding no -- see
+        `require_known_extents`.
+        """
+        return self.tile_count > 0
+
+    def holds(self, gid: int) -> bool:
+        """Is `gid` (flip flags already masked off) inside this range?
+
+        False when the extent is unknown, which is NOT the same as "no".
+        Check `extent_known` first if the answer matters.
+        """
+        return self.tile_count > 0 and self.first_gid <= gid <= self.last_gid
+
+    def __repr__(self) -> str:
+        if self.is_external:
+            return "TilesetRef(external %r, firstgid=%d)" % (self.source, self.first_gid)
+        return "TilesetRef(%r, firstgid=%d, %d tiles, %d columns)" % (
+            self.name, self.first_gid, self.tile_count, self.columns)
+
+
+# ---------------------------------------------------------------------------
 # The document
 # ---------------------------------------------------------------------------
 
 _LAYER_TAGS = ("layer", "objectgroup", "imagelayer", "group")
+
+# What TMX allows in front of the first `<tileset>`. A new tileset goes
+# after the last of these, which puts it after any existing tileset and
+# still in front of every layer -- the order Tiled writes and the order the
+# .tmx DTD documents.
+_TILESET_PRECEDING_TAGS = ("properties", "editorsettings", "tileset")
 
 
 class MapDocument:
@@ -1141,6 +1312,559 @@ class MapDocument:
         self._rebuild_parents()
         self._touch()
         trace_assets("restore_layer name=%s", placeholder.get("name"))
+        return placeholder.get("name", "")
+
+    # -- tilesets ----------------------------------------------------------
+    #
+    # These mirror add_layer / remove_layer / serialize_layer / restore_layer
+    # exactly, with three differences that all come from WHERE a tileset
+    # lives and WHAT depends on it:
+    #
+    #   * a tileset is always a direct child of <map>, so there is no group
+    #     to remember -- but `_child_indent(self.root)` can only ever return
+    #     a single space (the root has no parent to be deeper than), so
+    #     EVERY tileset insert lands on the trap that add_layer only meets
+    #     at the end of a group. The whitespace is copied, never computed.
+    #   * there is no `nexttilesetid` to roll back. Layers have nextlayerid
+    #     and objects have nextobjectid; a tileset's identity is its
+    #     firstgid, which is derived from the tilesets already present. So
+    #     the "release the id" half of the add/remove pair is a no-op here,
+    #     and its absence is deliberate rather than forgotten.
+    #   * removing a tileset can corrupt tiles that are not part of the
+    #     tileset. Nothing else in this module can. See remove_tileset.
+
+    def _tileset_elements(self) -> list[ElementTree.Element]:
+        """Every `<tileset>` that is a DIRECT child of `<map>`.
+
+        `findall`, deliberately, never `iter`. An embedded tileset can carry
+        `<tile>` children which can themselves carry `<objectgroup>`, and
+        unbounded descent through that is exactly the bug pytmx ships: it
+        does `node.findall(".//objectgroup")` from the map root and injects
+        a phantom layer named None for every per-tile collision shape. TMX
+        defines `<tileset>` as a child of `<map>` and nowhere else, so
+        anything deeper is not a tileset this document owns.
+        """
+        return self.root.findall("tileset")
+
+    def __tileset_ref(self, element: ElementTree.Element) -> TilesetRef:
+        image = element.find("image")
+        return TilesetRef(
+            element=element,
+            first_gid=_int_attribute(element, "firstgid", 1),
+            name=element.get("name", ""),
+            source=element.get("source", ""),
+            image_source="" if image is None else image.get("source", ""),
+            # A tileset that omits tilewidth inherits the map's, which is
+            # what Tiled assumes when it renders one.
+            tile_width=_int_attribute(element, "tilewidth", self.tile_width),
+            tile_height=_int_attribute(element, "tileheight", self.tile_height),
+            margin=_int_attribute(element, "margin", 0),
+            spacing=_int_attribute(element, "spacing", 0),
+            tile_count=_int_attribute(element, "tilecount", 0),
+            columns=_int_attribute(element, "columns", 0),
+        )
+
+    def tilesets(self) -> list[TilesetRef]:
+        """Every tileset the map declares, in document order.
+
+        Document order, not firstgid order, because that is what a diff
+        shows and what a human editing the file sees. Nothing in the engine
+        depends on the two agreeing: pytmx's `get_tileset_from_gid` sorts by
+        firstgid itself before resolving.
+        """
+        return [self.__tileset_ref(element) for element in self._tileset_elements()]
+
+    def tileset_names(self) -> list[str]:
+        """Tileset names in document order; '' for each external tileset."""
+        return [element.get("name", "") for element in self._tileset_elements()]
+
+    def _tileset_element(self, key: str | int) -> ElementTree.Element | None:
+        """Find a tileset by NAME (str) or by FIRSTGID (int).
+
+        Both, because `_find_named` cannot do this job alone. An external
+        `<tileset firstgid="9" source="foo.tsx"/>` carries no name at all,
+        so a name-only lookup can address only some of a map's tilesets --
+        and the ones it cannot address are exactly the ones whose contents
+        this document cannot see, which is the worst combination.
+        """
+        # bool is an int in Python, so `tileset(True)` would otherwise match
+        # firstgid="1" -- a plausible wrong answer, which is the outcome this
+        # module works hardest to avoid.
+        if isinstance(key, bool):
+            return None
+        by_gid = isinstance(key, int)
+        for element in self._tileset_elements():
+            if by_gid:
+                if _int_attribute(element, "firstgid", 0) == key:
+                    return element
+            elif element.get("name", "") == key:
+                return element
+        return None
+
+    def tileset(self, key: str | int) -> TilesetRef:
+        """The tileset named `key`, or the one whose firstgid is `key`."""
+        element = self._tileset_element(key)
+        if element is None:
+            raise PyoneerAssetMissingError(
+                "tileset", str(key), available=self.tileset_names(),
+                source=self.path)
+        return self.__tileset_ref(element)
+
+    def next_tileset_firstgid(self) -> int:
+        """The firstgid a newly appended tileset should take.
+
+        The highest gid any existing tileset claims, plus one. For a map
+        Tiled wrote that is identically `1 + sum(tilecount)`, because Tiled
+        packs the ranges end to end -- but the two stop agreeing the moment
+        a tileset is removed from the middle, and only this form stays
+        collision-free across that hole. `1 + sum(tilecount)` would hand
+        back a gid the surviving top tileset already owns.
+        """
+        refs = self.tilesets()
+        if not refs:
+            return 1
+        self.require_known_extents("choose a collision-free firstgid")
+        return max(ref.first_gid + ref.tile_count for ref in refs)
+
+    def require_known_extents(self, operation: str) -> None:
+        """Refuse an operation that cannot be done safely.
+
+        A tileset whose extent this document cannot see contributes 0 to
+        every range calculation, so `next_tileset_firstgid` would hand back
+        a gid that tileset already owns. pytmx resolves a gid by taking the
+        highest firstgid at or below it, so the new sheet would silently
+        win and every tile authored against the old one would repaint with
+        the wrong art -- the exact failure `remove_tileset` refuses to
+        cause, arrived at from the other direction.
+
+        Refusing is the only honest answer: the information is in a file
+        this document does not own.
+        """
+        unknown = [ref for ref in self.tilesets() if not ref.extent_known]
+        if not unknown:
+            return
+        described = ", ".join(
+            "%s at firstgid %d" % (ref.source or ref.name or "<unnamed>",
+                                   ref.first_gid)
+            for ref in unknown)
+        raise PyoneerConfigError(
+            "cannot %s: %d tileset(s) do not declare their extent in this "
+            "file (%s). An external <tileset source=...> keeps its tilecount "
+            "in the .tsx, so this document cannot tell which gids it owns, "
+            "and guessing would silently repaint every tile that uses it."
+            % (operation, len(unknown), described),
+            source=self.path)
+
+    def tiles_using_tileset(self, key: str | int) -> list[tuple[str, int, int, int]]:
+        """(layer_name, x, y, raw_gid) for every csv cell inside this range.
+
+        The raw gid is returned with its flip flags intact, because a caller
+        that restores it has to restore the flips too; the RANGE test masks
+        them off first, since a horizontally flipped tile carries
+        0x80000000 and would otherwise match no tileset at all.
+
+        Only csv tile layers. `objects_using_tileset` covers the other half.
+        """
+        ref = self.tileset(key)
+        found: list[tuple[str, int, int, int]] = []
+        if not ref.extent_known:
+            # An empty list here reads as "nothing uses it", which is what
+            # remove_tileset's orphan guard trusts. For an external tileset
+            # that answer is a guess, and acting on it orphans every tile
+            # that referenced the sheet.
+            raise PyoneerConfigError(
+                "cannot scan for tiles using %r: it does not declare its "
+                "extent in this file, so which gids it owns is unknowable "
+                "here" % (ref.source or ref.name or key),
+                source=self.path)
+        for name in self.tile_layer_names():
+            layer = self.tile_layer(name)
+            width = layer.width or 1
+            for index, raw in enumerate(layer.gids()):
+                if raw and ref.holds(raw & _GID_VALUE_MASK):
+                    found.append((name, index % width, index // width, raw))
+        return found
+
+    def objects_using_tileset(self, key: str | int) -> list[tuple[str, int, int]]:
+        """(layer_name, object_id, raw_gid) for every TILE OBJECT in range.
+
+        Tile objects are the half of the problem that is easy to forget:
+        they carry a gid in an ATTRIBUTE rather than in the csv, so a scan
+        that only walks `<data>` reports a tileset as unused while a dozen
+        `<object gid=...>` still point into it.
+        """
+        ref = self.tileset(key)
+        found: list[tuple[str, int, int]] = []
+        if not ref.extent_known:
+            raise PyoneerConfigError(
+                "cannot scan for objects using %r: it does not declare its "
+                "extent in this file" % (ref.source or ref.name or key),
+                source=self.path)
+        for group in self.root.iter("objectgroup"):
+            layer_name = group.get("name", "")
+            for element in group.findall("object"):
+                raw = _int_attribute(element, "gid", 0)
+                if raw and ref.holds(raw & _GID_VALUE_MASK):
+                    found.append((layer_name, _int_attribute(element, "id", 0), raw))
+        return found
+
+    def __resolve_image(self, image_source: str) -> str | None:
+        """A tileset image path, resolved the way Tiled resolves it.
+
+        Relative to the .tmx, NOT to the working directory -- which is the
+        same trap `resolve_map_path` exists for. None when this document was
+        built from bytes and has no path to resolve against.
+        """
+        if not self.path:
+            return None
+        return os.path.normpath(
+            os.path.join(os.path.dirname(self.path), image_source))
+
+    def add_tileset(self, name: str, image_source: str, *,
+                    tile_width: int | None = None,
+                    tile_height: int | None = None,
+                    margin: int = 0,
+                    spacing: int = 0,
+                    columns: int | None = None,
+                    tile_count: int | None = None,
+                    image_width: int | None = None,
+                    image_height: int | None = None,
+                    first_gid: int | None = None) -> TilesetRef:
+        """Add an EMBEDDED `<tileset>` with one `<image>` child.
+
+        Everything unspecified is measured rather than assumed: tile size
+        defaults to the map's, the image is sized from its PNG header, and
+        columns/tilecount fall out of `tileset_geometry`. Pass any of them
+        explicitly to override.
+
+        APPEND ONLY. `first_gid` defaults to `next_tileset_firstgid()`, and
+        an explicit value at or below an existing range is REFUSED rather
+        than accommodated. Inserting into the middle of the gid space is not
+        an indexing inconvenience, it is a whole-file rewrite: every later
+        tileset's firstgid moves up, and so does every csv token at or above
+        the insertion point and every `<object gid=...>`, with flip flags
+        masked off first. That destroys the minimal-diff contract this
+        module exists for, and it destroys the exact-inverse contract too --
+        the undo would have to carry a map-wide gid remap instead of a
+        serialized element. Document order does not have to match firstgid
+        order for any reader (pytmx sorts), so there is never a reason to
+        pay that price.
+
+        EXTERNAL tilesets (`source="foo.tsx"`) are readable through
+        `tilesets()` but cannot be created here: a .tsx is a second file,
+        and this document's byte-exactness contract covers exactly one.
+        """
+        if not name:
+            raise PyoneerConfigError("a tileset needs a name", source=self.path)
+        if name in self.tileset_names():
+            raise PyoneerConfigError(
+                "this map already has a tileset named %r" % name, source=self.path)
+        if not image_source:
+            raise PyoneerConfigError(
+                "add_tileset builds an EMBEDDED tileset and needs an image "
+                "source; an external .tsx is a second file and is outside "
+                "this document's byte-exactness contract", source=self.path)
+
+        tile_width = int(self.tile_width if tile_width is None else tile_width)
+        tile_height = int(self.tile_height if tile_height is None else tile_height)
+        if tile_width <= 0 or tile_height <= 0:
+            raise PyoneerConfigError(
+                "tileset %r needs a positive tile size, got %dx%d"
+                % (name, tile_width, tile_height), source=self.path)
+
+        margin, spacing = int(margin), int(spacing)
+        if margin or spacing:
+            # Not a style note. Tiled subtracts the margin, pytmx's tile
+            # count ignores it entirely, and the editor's atlas ignores both
+            # -- so the three readers only agree at 0/0, and a spaced sheet
+            # imported here will render offset tiles somewhere.
+            warn_content(
+                "tileset %r declares margin=%d spacing=%d; Tiled, pytmx and "
+                "the editor's atlas only agree on tile geometry at 0/0, so "
+                "verify the tiles line up before authoring against it"
+                % (name, margin, spacing))
+
+        if image_width is None or image_height is None:
+            probe = self.__resolve_image(image_source)
+            if probe is None or not os.path.isfile(probe):
+                raise PyoneerConfigError(
+                    "cannot measure tileset image %r (%s); pass image_width "
+                    "and image_height explicitly"
+                    % (image_source,
+                       "this document has no path to resolve it against"
+                       if probe is None else "looked in %s" % probe),
+                    source=self.path)
+            measured_width, measured_height = image_size(probe)
+            image_width = measured_width if image_width is None else image_width
+            image_height = measured_height if image_height is None else image_height
+        image_width, image_height = int(image_width), int(image_height)
+
+        derived_columns, _rows, derived_count = tileset_geometry(
+            image_width, image_height, tile_width, tile_height, margin, spacing)
+        columns = derived_columns if columns is None else int(columns)
+        tile_count = derived_count if tile_count is None else int(tile_count)
+        if tile_count <= 0:
+            raise PyoneerConfigError(
+                "tileset %r would hold no tiles: a %dx%d image cannot fit a "
+                "single %dx%d tile at margin=%d spacing=%d"
+                % (name, image_width, image_height, tile_width, tile_height,
+                   margin, spacing), source=self.path)
+
+        appended_gid = self.next_tileset_firstgid()
+        if first_gid is None:
+            first_gid = appended_gid
+        else:
+            first_gid = int(first_gid)
+            if first_gid < 1:
+                raise PyoneerConfigError(
+                    "firstgid must be at least 1 (gid 0 means 'no tile'), got %d"
+                    % first_gid, source=self.path)
+            if first_gid < appended_gid:
+                raise PyoneerConfigError(
+                    "refusing to add tileset %r at firstgid %d: that range "
+                    "collides with or sits below the tilesets already in this "
+                    "map (%s), and making room would mean renumbering every "
+                    "csv token at or above %d in every layer plus every "
+                    "<object gid=...>. Append at %d instead -- document order "
+                    "does not have to match gid order for any reader."
+                    % (name, first_gid,
+                       ", ".join("%s:%d-%d" % (r.name or r.source or "?",
+                                               r.first_gid, r.last_gid)
+                                 for r in self.tilesets()) or "<none>",
+                       first_gid, appended_gid),
+                    source=self.path)
+
+        children = list(self.root)
+        index = 0
+        for position, child in enumerate(children):
+            if child.tag in _TILESET_PRECEDING_TAGS:
+                index = position + 1
+
+        # Read the sibling shape BEFORE inserting: once our element is in the
+        # tree it is a `<tileset>` sibling too, and if it sorts first
+        # __sibling_shape would hand us back the computed indentation we are
+        # trying to replace.
+        inner, closing = self.__sibling_shape(self.root, "tileset")
+        # TRAP: _append_child overwrites parent.text whenever it is
+        # whitespace-only, and _remove_child never puts it back. Reachable
+        # for real -- "add the first tileset to a map that has none" inserts
+        # at index 0 -- and it turns add-then-remove into a one-byte diff
+        # ('\n\t' becomes '\n ') that nothing else in the file explains.
+        saved_root_text = self.root.text
+        saved_prev_tail = children[index - 1].tail if index else None
+        # root.text IS the root-level separator by construction: it is the
+        # whitespace in front of the first root child. _child_indent(root)
+        # cannot derive it -- the root has no parent to be deeper than, so
+        # it returns a single space no matter what the file uses.
+        separator = (saved_root_text
+                     if saved_root_text and not saved_root_text.strip()
+                     else "\n" + self._child_indent(self.root))
+
+        element = self._append_child(self.root, "tileset", index)
+        # Tiled's attribute order. attrib is insertion-ordered and _serialize
+        # walks it in that order, so writing them out of order is a diff on
+        # every line of the element for a human reading `git diff`.
+        element.set("firstgid", str(first_gid))
+        element.set("name", str(name))
+        element.set("tilewidth", str(tile_width))
+        element.set("tileheight", str(tile_height))
+        if spacing:
+            element.set("spacing", str(spacing))
+        if margin:
+            element.set("margin", str(margin))
+        element.set("tilecount", str(tile_count))
+        element.set("columns", str(columns))
+
+        image = self._append_child(element, "image")
+        image.set("source", str(image_source))
+        image.set("width", str(image_width))
+        image.set("height", str(image_height))
+
+        if inner is not None:
+            element.text = inner
+        if closing is not None:
+            image.tail = closing
+
+        # Put every computed byte of whitespace back to a copied one.
+        siblings = list(self.root)
+        position = siblings.index(element)
+        if position == len(siblings) - 1:
+            # We are the new LAST root child. _append_child correctly handed
+            # us the old last child's tail (the whitespace in front of
+            # `</map>`), but gave the child we displaced a COMPUTED
+            # separator in exchange.
+            if position:
+                siblings[position - 1].tail = separator
+        else:
+            # We were inserted in front of something, so our tail is the
+            # separator that used to sit in front of it -- verbatim, not
+            # recomputed. Assigned unconditionally, including None, because
+            # a document written with no whitespace at all must come back
+            # with no whitespace at all.
+            element.tail = saved_prev_tail if position else saved_root_text
+        self.root.text = saved_root_text
+
+        self._touch()
+        trace_assets("add_tileset name=%s firstgid=%s tiles=%s",
+                     name, first_gid, tile_count)
+
+        resolved = self.__resolve_image(image_source)
+        if resolved is not None and not os.path.isfile(resolved):
+            # Same shape as add_layer's depth warning: the edit is valid TMX
+            # and the file will still load, but the tileset draws nothing.
+            warn_content(
+                "tileset %r points at %r, which does not exist relative to "
+                "the map (%s). Tiled and the engine will both load the map "
+                "and draw nothing for it." % (name, image_source, resolved))
+        return self.__tileset_ref(element)
+
+    def remove_tileset(self, key: str | int, *, force: bool = False) -> bool:
+        """Remove a tileset by name or firstgid. False if it was not there.
+
+        Purely structural, and pointedly so: it does NOT renumber the
+        surviving tilesets and does NOT touch a single gid. The firstgid
+        hole it leaves behind is legal TMX and pytmx reads it without
+        complaint, whereas renumbering would rewrite the entire file and
+        make the inverse of this operation a map-wide gid remap instead of
+        a serialized element -- breaking the minimal-diff contract and the
+        exact-inverse contract in one move.
+
+        What it will NOT do quietly is orphan tiles. A gid whose tileset has
+        vanished does not raise anywhere: pytmx's `get_tileset_from_gid`
+        sorts firstgids descending and returns the first one that is <= the
+        gid, so an orphan silently resolves to the tileset BELOW it and
+        paints the WRONG ART. That is worse than an error, so a tileset with
+        live references is refused, naming the layers and counts.
+
+        `force=True` proceeds anyway, and exists for exactly one caller: a
+        command that has already zeroed those gids in the same transaction
+        (through `map.tile.set_many`, whose inverse is already exact) and is
+        therefore removing a tileset nothing points at any more.
+        """
+        element = self._tileset_element(key)
+        if element is None:
+            return False
+
+        if not force:
+            ref = self.__tileset_ref(element)
+            if not ref.extent_known:
+                # The orphan scan cannot run, so the safe answer is not
+                # "nothing uses it" -- it is "I cannot tell". Refusing keeps
+                # the caller from acting on a guess; force=True is how a
+                # caller says they have checked by other means.
+                raise PyoneerConfigError(
+                    "refusing to remove %r: it does not declare its extent "
+                    "in this file, so whether any tile still points into it "
+                    "is unknowable here. An external <tileset source=...> "
+                    "keeps its tilecount in the .tsx. Remove with force=True "
+                    "if you have confirmed it is unused."
+                    % (ref.source or ref.name or key),
+                    source=self.path)
+            tiles = self.tiles_using_tileset(key)
+            objects = self.objects_using_tileset(key)
+            if tiles or objects:
+                per_layer: dict[str, int] = {}
+                for layer_name, _x, _y, _gid in tiles:
+                    per_layer[layer_name] = per_layer.get(layer_name, 0) + 1
+                for layer_name, _oid, _gid in objects:
+                    per_layer[layer_name] = per_layer.get(layer_name, 0) + 1
+                raise PyoneerConfigError(
+                    "refusing to remove tileset %r (gids %d-%d): %d tile(s) "
+                    "still reference it (%s). Removing it would not raise "
+                    "anywhere -- pytmx resolves an orphaned gid to the "
+                    "tileset BELOW it, so those tiles would silently paint "
+                    "the wrong art. Renumbering the survivors is not the fix "
+                    "either: it rewrites every csv token in the map and makes "
+                    "this operation impossible to invert from serialized "
+                    "state. Clear the tiles first (map.tile.set_many keeps an "
+                    "exact inverse), then remove with force=True."
+                    % (ref.name or ref.source or key, ref.first_gid,
+                       ref.last_gid, len(tiles) + len(objects),
+                       ", ".join("%s x%d" % (n, c)
+                                 for n, c in sorted(per_layer.items()))),
+                    source=self.path)
+
+        self._remove_child(self.root, element)
+        self._touch()
+        trace_assets("remove_tileset key=%s", key)
+        return True
+
+    def serialize_tileset(self, key: str | int) -> dict[str, Any] | None:
+        """Everything needed to put a tileset back exactly where it was.
+
+        `serialize_layer`'s payload minus the group (a tileset is always a
+        root child) and minus the next-id (a tileset has none -- its
+        firstgid is carried instead, for a caller that needs to name it in
+        an inverse command).
+
+        The whitespace fields are the whole point, and they are the same
+        three `serialize_layer` carries. In ElementTree the whitespace
+        BEFORE an element is not the element's own: it lives in the previous
+        sibling's `tail`, or in `parent.text` when the element is first.
+        Removal overwrites both, so both have to be captured here or the
+        restored tileset comes back with a recomputed indent -- which in a
+        file that mixes tabs and spaces is wrong somewhere no matter what it
+        computes.
+        """
+        element = self._tileset_element(key)
+        if element is None:
+            return None
+        clone = copy.deepcopy(element)
+        clone.tail = None
+        siblings = list(self.root)
+        index = siblings.index(element)
+        return {
+            "xml": ElementTree.tostring(clone, encoding="unicode"),
+            "index": index,
+            "tail": element.tail or "",
+            "prev_tail": (siblings[index - 1].tail or "") if index else None,
+            "parent_text": self.root.text if index == 0 else None,
+            "first_gid": element.get("firstgid", "1"),
+            "name": element.get("name", ""),
+        }
+
+    def restore_tileset(self, payload: dict[str, Any]) -> str:
+        """Put back a tileset serialized by `serialize_tileset`.
+
+        Returns its name, or '' for an external tileset -- which is why the
+        payload also carries `first_gid`: it is the only key that addresses
+        every tileset a map can hold.
+        """
+        xml = payload.get("xml") or ""
+        try:
+            parsed = ElementTree.fromstring(xml)
+        except ElementTree.ParseError as exc:
+            raise PyoneerConfigError(
+                "restore_tileset was handed text that is not a <tileset> "
+                "element: %s" % exc, source=self.path) from exc
+        if parsed.tag != "tileset":
+            raise PyoneerConfigError(
+                "restore_tileset expects a <tileset>, got <%s>" % parsed.tag,
+                source=self.path)
+
+        placeholder = self._append_child(self.root, "tileset", payload.get("index"))
+        placeholder.attrib = dict(parsed.attrib)
+        placeholder.text = parsed.text
+        for child in list(parsed):
+            placeholder.append(child)
+
+        if payload.get("tail") is not None:
+            placeholder.tail = payload["tail"]
+        siblings = list(self.root)
+        position = siblings.index(placeholder)
+        if position and payload.get("prev_tail") is not None:
+            siblings[position - 1].tail = payload["prev_tail"]
+        if payload.get("parent_text") is not None:
+            self.root.text = payload["parent_text"]
+
+        # The `<image>` grandchild was appended straight onto the parsed
+        # clone rather than through _append_child, so the parent map has
+        # never seen it. Anything that later asks _indent_of about it would
+        # get "" without this.
+        self._rebuild_parents()
+        self._touch()
+        trace_assets("restore_tileset name=%s firstgid=%s",
+                     placeholder.get("name"), placeholder.get("firstgid"))
         return placeholder.get("name", "")
 
     def _claim_object_id(self) -> int:
