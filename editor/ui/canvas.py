@@ -26,6 +26,25 @@ and the tmx csv payload was re-rendered forty times.
 While the stroke is live the canvas draws a translucent GHOST of what it
 would do. Nothing is committed until the button comes up, so dragging out a
 rectangle and changing your mind costs nothing.
+
+TWO MODES, ONE SET OF TOOLS
+---------------------------
+`EditMode.COLLISION` changes what a stroke WRITES, never what the tools ARE:
+brush still brushes, R is still a rectangle, right-drag still erases. The
+only differences are the layer that receives the write -- the active layer's
+companion passability layer -- and the value, a mask instead of a tile.
+
+That is why there is no second stroke machinery. A mask is stored as
+`first_gid + mask` in an ordinary tile layer, so `paint.Stroke` over the
+companion is already correct, down to the eraser: it writes gid 0, and gid 0
+in a companion layer is `NO_DATA`, "nobody said anything here" -- which is
+exactly what erasing collision should mean, and is NOT the same claim as
+"open". Committing is the same `map.tile.set_many`, so a collision stroke
+inherits one-transaction undo and an exact inverse for free.
+
+The companion layer is created by the FIRST stroke that needs it, inside the
+same transaction as the tiles. Three commands land together or none do, and
+one undo takes the layer, its declaration and its tiles back out in reverse.
 """
 from __future__ import annotations
 
@@ -46,21 +65,60 @@ from PySide6.QtWidgets import (
 )
 
 from editor.core import autotile
+from editor.core.collision import (
+    NO_DATA,
+    CollisionLayer,
+    gid_to_opinion,
+    opinion_to_gid,
+    resolve,
+)
 from editor.core.commands import Command
+from editor.core.layers import BLOCK_ALL, describe_mask, read_profile
 from editor.core.paint import (
     Bounds,
+    EditMode,
     Stamp,
     Stroke,
     Tool,
     edits_to_triples,
 )
 from editor.core.scope import Scope
+from editor.ui.collision_view import (
+    CollisionOverlay,
+    glyph_pixmaps,
+    layer_from_companion,
+    masks_from_layer,
+)
 from editor.ui.tileset import TilesetAtlas, gid_colour, render_layer
 
 _OBJECT_PEN = QColor(255, 90, 90)
 _OBJECT_SELECTED = QColor(120, 200, 255)
 _GRID_PEN = QColor(255, 255, 255, 28)
 _GHOST_Z = 2000
+#: Under a mask ghost, so that painting "open" or clearing -- both of which
+#: draw no glyph at all -- still shows you where the brush is.
+_MASK_GHOST_FILL = QColor(120, 200, 255, 60)
+_MASK_GHOST_PEN = QColor(120, 200, 255, 140)
+
+#: The tileset whose seventeen tiles ARE the masks, matched case-insensitively
+#: by name. A mask is a gid like any other, so it has to belong to a declared
+#: tileset or the map is one pytmx read away from an unknown-gid error; naming
+#: the tileset is how the map says which gids mean passability. There is no
+#: `map.tileset.add` verb yet, so a map without one is told what to add rather
+#: than having it invented underneath the author.
+COLLISION_TILESET = "collision"
+
+#: Appended to a layer's name for the companion this canvas creates for it.
+#: Only used when the layer does not already declare `pyoneer_passability`;
+#: a declared name always wins.
+COMPANION_SUFFIX = "Collision"
+
+
+def _EMPTY_READER(_x: int, _y: int) -> int:                       # noqa: N802
+    """Every cell empty -- what a companion layer that does not exist yet
+    holds. A `Stroke` needs a reader to drop no-op edits against, and the
+    honest answer for a layer about to be created is gid 0 everywhere."""
+    return 0
 
 
 class MapCanvas(QGraphicsView):
@@ -68,6 +126,7 @@ class MapCanvas(QGraphicsView):
 
     status = Signal(str)
     picked_gid = Signal(int)
+    picked_mask = Signal(int)          # alt/picker in collision mode
     selected = Signal(object)          # a Scope
 
     def __init__(self, session, map_name: str, parent: QWidget | None = None):
@@ -77,6 +136,9 @@ class MapCanvas(QGraphicsView):
         self.active_layer: str | None = None
         self.tool = Tool.BRUSH
         self.stamp = Stamp.single(1)
+        self.mode = EditMode.TILES
+        self.mask = BLOCK_ALL          # the collision brush; see set_mask
+        self.all_layers = False
         self.object_class = "GameEntity"
         self.hidden_layers: set[str] = set()
         self.selected_scope: Scope | None = None
@@ -98,6 +160,19 @@ class MapCanvas(QGraphicsView):
         self.__panning = False
         self.__pan_from = None
         self.__space = False
+        self.__overlay: CollisionOverlay | None = None
+        self.__overlay_geometry: tuple[int, int, int, int] | None = None
+        self.__collision_stale = True
+        self.__own_commit = False
+
+        # The overlay is kept current cell by cell as strokes commit, so it
+        # has to be told when the document moved some OTHER way -- an undo, a
+        # redo, an applied response, a command from a panel. The stream
+        # announces every one of those and this is the only way to hear about
+        # them; without it the readout would quietly disagree with the map
+        # after the first Ctrl+Z, which is the worst failure an instrument
+        # can have.
+        self.session.stream.subscribe(self.__on_transaction)
         self.rebuild()
 
     # -- document ----------------------------------------------------------
@@ -127,10 +202,77 @@ class MapCanvas(QGraphicsView):
             return None
         return document.tile_layer(self.active_layer)
 
+    # -- collision addressing ----------------------------------------------
+
+    @property
+    def collision_first_gid(self) -> int | None:
+        """The firstgid masks are stored relative to, or None if this map has
+        no collision tileset. Everything collision-shaped checks this first,
+        because without it a mask cannot be encoded OR decoded."""
+        for tileset in self.document.tilesets():
+            if tileset.name.lower() == COLLISION_TILESET:
+                return tileset.first_gid
+        return None
+
+    def companion_name(self, layer_name: str | None = None) -> str | None:
+        """Which layer holds `layer_name`'s masks.
+
+        The layer's own `pyoneer_passability` declaration if it has one --
+        the author may point two art layers at one companion, and that is a
+        legitimate thing to author -- otherwise the name this canvas would
+        create. Returning the would-be name rather than None is what lets one
+        stroke both create the companion and paint into it.
+        """
+        name = layer_name if layer_name is not None else self.active_layer
+        if name is None or name not in self.document.tile_layer_names():
+            return None
+        declared = read_profile(self.document.tile_layer(name)).passability
+        return declared or (name + COMPANION_SUFFIX)
+
+    def companion_layer(self, layer_name: str | None = None):
+        """The companion as a TileLayer, or None when it does not exist yet."""
+        document = self.document
+        name = self.companion_name(layer_name)
+        if not name or name not in document.tile_layer_names():
+            return None
+        return document.tile_layer(name)
+
+    def collision_stack(self) -> list[CollisionLayer]:
+        """Every layer that declares a companion, TOPMOST FIRST.
+
+        Topmost first is `collision.resolve`'s contract and the reverse of a
+        tmx layer list, so the sort is by draw depth and then reversed. The
+        members are lazy readers over the live document, which is why this is
+        cheap enough to rebuild whenever the stack is consulted rather than
+        cached and invalidated.
+        """
+        first_gid = self.collision_first_gid
+        if first_gid is None:
+            return []
+        document = self.document
+        names = document.tile_layer_names()
+        stack: list[CollisionLayer] = []
+        for name in sorted(names, key=self.__depth_of):
+            companion = self.companion_name(name)
+            if companion and companion in names and companion != name:
+                stack.append(layer_from_companion(
+                    document.tile_layer(companion), first_gid, name=name))
+        stack.reverse()
+        return stack
+
     # -- building ----------------------------------------------------------
+
+    def __depth_of(self, name: str) -> int:
+        declared = self.session.project.genre.layer(name)
+        return declared.depth if declared else 500
 
     def rebuild(self) -> None:
         scene = self.scene()
+        # scene.clear() DELETES what it holds, C++ side and all, and the
+        # overlay is meant to outlive a rebuild. removeItem hands ownership
+        # back to us; clearing while it is attached would leave a live Python
+        # wrapper around freed memory, which is a crash and not an exception.
+        self.__detach_overlay()
         scene.clear()
         self.__ghost = None
 
@@ -147,17 +289,16 @@ class MapCanvas(QGraphicsView):
         height = document.height * document.tile_height
         scene.setSceneRect(0, 0, width, height)
 
-        pack = self.session.project.genre
-
-        def depth_of(name: str) -> int:
-            declared = pack.layer(name)
-            return declared.depth if declared else 500
-
+        depth_of = self.__depth_of
         for name in sorted(document.tile_layer_names(), key=depth_of):
-            if name in self.hidden_layers:
+            layer = document.tile_layer(name)
+            # A data layer -- passability, region ids, spawn weights -- says
+            # so with pyoneer_renders=false, and the engine already skips it.
+            # Drawing its gids as art puts confetti over the map and hides
+            # the thing the author is actually editing.
+            if name in self.hidden_layers or not read_profile(layer).renders:
                 continue
-            item = QGraphicsPixmapItem(
-                render_layer(document.tile_layer(name), self.atlas))
+            item = QGraphicsPixmapItem(render_layer(layer, self.atlas))
             item.setZValue(depth_of(name))
             item.setTransformationMode(Qt.FastTransformation)
             # The layer being painted stays fully opaque; everything above it
@@ -173,6 +314,7 @@ class MapCanvas(QGraphicsView):
                                 depth_of(name) + 0.5, name)
 
         self.__draw_grid(scene, document, width, height)
+        self.__mount_overlay(document)
 
         if self.atlas.missing:
             self.status.emit(
@@ -228,11 +370,123 @@ class MapCanvas(QGraphicsView):
 
     def set_active_layer(self, name: str | None) -> None:
         self.active_layer = name
+        # A different layer means a different companion, so the readout is
+        # about to be about something else.
+        self.__collision_stale = True
         self.rebuild()
 
     def set_selection(self, scope: Scope) -> None:
         self.selected_scope = scope
         self.rebuild()
+
+    # -- the collision overlay ---------------------------------------------
+
+    @property
+    def overlay(self) -> CollisionOverlay | None:
+        """The collision readout, once a rebuild has had a document to size
+        it against. Exposed so a panel can read `mask_at`/`describe` rather
+        than re-deriving what is already rendered."""
+        return self.__overlay
+
+    def set_mode(self, mode: EditMode) -> None:
+        """Switch what a stroke acts on. Same tools, same keys, other layer."""
+        if mode is self.mode:
+            return
+        self.mode = mode
+        # A mode change mid-drag would commit a stroke into the layer the
+        # other mode addresses. Dropping it is the honest outcome.
+        self.__stroke = None
+        self.__terrain = None
+        self.__clear_ghost()
+        self.__collision_stale = True
+        self.rebuild()
+        self.status.emit(mode.tip)
+
+    def set_all_layers(self, on: bool) -> None:
+        """Resolve the whole stack instead of showing one layer's opinion."""
+        if bool(on) == self.all_layers:
+            return
+        self.all_layers = bool(on)
+        self.__collision_stale = True
+        if self.mode is EditMode.COLLISION:
+            self.__bake_overlay()
+
+    def set_mask(self, mask: int) -> None:
+        """The mask a collision stroke writes -- what `stamp` is to tiles."""
+        self.mask = int(mask)
+
+    def __detach_overlay(self) -> None:
+        if self.__overlay is not None and self.__overlay.scene() is not None:
+            self.__overlay.scene().removeItem(self.__overlay)
+
+    def __mount_overlay(self, document) -> None:
+        """Put the readout back into the freshly cleared scene.
+
+        Built once per map GEOMETRY and re-added, never rebuilt: the item
+        owns a scene-sized pixmap, and both making one and filling it are
+        expensive enough that doing either on every command -- and a command
+        is every click -- would be felt.
+        """
+        geometry = (document.width, document.height,
+                    document.tile_width, document.tile_height)
+        if self.__overlay is None or self.__overlay_geometry != geometry:
+            self.__overlay = CollisionOverlay(*geometry)
+            self.__overlay_geometry = geometry
+            self.__collision_stale = True
+        self.scene().addItem(self.__overlay)
+        self.__overlay.setVisible(self.mode is EditMode.COLLISION)
+        if self.mode is EditMode.COLLISION and self.__collision_stale:
+            self.__bake_overlay()
+
+    def __on_transaction(self, _transaction, action: str) -> None:
+        """Anything that changed the project other than our own stroke."""
+        if action == "apply" and self.__own_commit:
+            return          # our cells are written by __sync_overlay instead
+        self.__collision_stale = True
+
+    def __bake_overlay(self) -> None:
+        """The whole field, from the document. The expensive path."""
+        overlay = self.__overlay
+        if overlay is None:
+            return
+        self.__collision_stale = False
+        first_gid = self.collision_first_gid
+        if first_gid is None:
+            overlay.bake([])                  # pads with NO_DATA: draws nothing
+            return
+        if self.all_layers:
+            overlay.bake_resolved(self.collision_stack())
+            return
+        companion = self.companion_layer()
+        overlay.bake(masks_from_layer(companion, first_gid)
+                     if companion is not None else [])
+
+    def __sync_overlay(self, cells) -> None:
+        """Repaint only the cells a stroke just changed.
+
+        This is the reason the item is held rather than re-made: a cell is
+        10.4 us and a full bake is 6 ms, on top of the layer rendering a
+        rebuild already pays. The resolved view re-resolves the same cells
+        rather than falling back to a bake, because changing one cell of one
+        layer can only change that cell's answer.
+        """
+        overlay = self.__overlay
+        if overlay is None or self.collision_first_gid is None:
+            return
+        if self.all_layers:
+            stack = self.collision_stack()
+            for x, y in cells:
+                answer = resolve(stack, x, y, undecided=NO_DATA)
+                overlay.set_cell(x, y, answer.mask, owner=answer.layer,
+                                 conflicted=answer.conflicted)
+            return
+        companion = self.companion_layer()
+        if companion is None:
+            return
+        first_gid = self.collision_first_gid
+        for x, y in cells:
+            overlay.set_cell(
+                x, y, gid_to_opinion(companion.get_tile(x, y), first_gid))
 
     # -- ghost preview -----------------------------------------------------
 
@@ -243,7 +497,12 @@ class MapCanvas(QGraphicsView):
 
     def __draw_ghost(self) -> None:
         self.__clear_ghost()
-        if self.__stroke is None or self.atlas is None:
+        if self.__stroke is None:
+            return
+        if self.mode is EditMode.COLLISION:
+            self.__draw_mask_ghost()
+            return
+        if self.atlas is None:
             return
         group = QGraphicsItemGroup()
         group.setZValue(_GHOST_Z)
@@ -259,6 +518,37 @@ class MapCanvas(QGraphicsView):
             tile = self.atlas.pixmap(gid)
             if tile is not None:
                 item = QGraphicsPixmapItem(tile)
+                item.setPos(px, py)
+                item.setTransformationMode(Qt.FastTransformation)
+                group.addToGroup(item)
+        self.scene().addItem(group)
+        self.__ghost = group
+
+    def __draw_mask_ghost(self) -> None:
+        """The pending stroke in the overlay's own vocabulary.
+
+        A tile ghost cannot say this: what is being placed is a mask, and its
+        art is the glyph rather than anything in a tileset. The plate under
+        each glyph is what makes "open" and "clear" aimable -- both of those
+        draw no glyph at all, and a brush you cannot see is a brush you
+        cannot place.
+        """
+        first_gid = self.collision_first_gid
+        if first_gid is None:
+            return
+        glyphs = glyph_pixmaps(self.tile_width, self.tile_height)
+        group = QGraphicsItemGroup()
+        group.setZValue(_GHOST_Z)
+        group.setOpacity(0.75)
+        for x, y, gid in self.__stroke.preview():
+            px, py = x * self.tile_width, y * self.tile_height
+            plate = QGraphicsRectItem(px, py, self.tile_width, self.tile_height)
+            plate.setPen(QPen(_MASK_GHOST_PEN, 0))
+            plate.setBrush(QBrush(_MASK_GHOST_FILL))
+            group.addToGroup(plate)
+            glyph = glyphs.get(gid_to_opinion(gid, first_gid))
+            if glyph is not None:
+                item = QGraphicsPixmapItem(glyph)
                 item.setPos(px, py)
                 item.setTransformationMode(Qt.FastTransformation)
                 group.addToGroup(item)
@@ -318,8 +608,20 @@ class MapCanvas(QGraphicsView):
             return
 
         if event.modifiers() & Qt.AltModifier and event.button() == Qt.LeftButton:
-            self.__pick(column, row)
+            if self.mode is EditMode.COLLISION:
+                self.__pick_mask(column, row)
+            else:
+                self.__pick(column, row)
             event.accept()
+            return
+
+        if self.mode is EditMode.COLLISION:
+            if event.button() in (Qt.LeftButton, Qt.RightButton):
+                self.__begin_collision(
+                    column, row, erase=event.button() == Qt.RightButton)
+                event.accept()
+                return
+            super().mousePressEvent(event)
             return
 
         layer = self.__active_tile_layer()
@@ -378,9 +680,19 @@ class MapCanvas(QGraphicsView):
         if self.__stroke is not None:
             self.__stroke.extend(column, row)
             self.__draw_ghost()
+            unit = "cells" if self.mode is EditMode.COLLISION else "tiles"
             self.status.emit(f"cell ({column}, {row})   "
-                             f"{len(self.__stroke.edits())} tiles")
+                             f"{len(self.__stroke.edits())} {unit}")
             event.accept()
+            return
+
+        if self.mode is EditMode.COLLISION and self.__overlay is not None:
+            # What the overlay is already showing, said in words -- including
+            # which layer decided and whether one below it disagrees, neither
+            # of which survives being reduced to a colour.
+            self.status.emit(f"cell ({column}, {row})   "
+                             f"{self.__overlay.describe(column, row)}")
+            super().mouseMoveEvent(event)
             return
 
         self.status.emit(f"cell ({column}, {row})   "
@@ -402,7 +714,10 @@ class MapCanvas(QGraphicsView):
             return
 
         if self.__stroke is not None:
-            self.__commit_stroke()
+            if self.mode is EditMode.COLLISION:
+                self.__commit_collision()
+            else:
+                self.__commit_stroke()
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -421,6 +736,111 @@ class MapCanvas(QGraphicsView):
         self.window().run(
             Command(verb, scope, {"tiles": edits_to_triples(edits)}),
             label=f"{stroke.tool.label} ({len(edits)} tiles)")
+
+    # -- collision ---------------------------------------------------------
+
+    def __begin_collision(self, column: int, row: int, *, erase: bool) -> None:
+        """Start a stroke against the active layer's companion.
+
+        The same `Stroke` the tile tools use, over the same kind of layer,
+        writing the same kind of value -- `first_gid + mask` is a gid. What
+        changes is only where it reads and what it stamps.
+        """
+        first_gid = self.collision_first_gid
+        if first_gid is None:
+            self.status.emit(
+                f"this map has no {COLLISION_TILESET!r} tileset, so a mask "
+                f"has no gid to be stored as — add one in Tiled first")
+            return
+        if self.__active_tile_layer() is None:
+            self.status.emit("select a tile layer to give collision to")
+            return
+        if self.tool is Tool.PICKER:
+            self.__pick_mask(column, row)
+            return
+        if not self.mode.allows(self.tool):
+            self.status.emit(f"{self.tool.label} has no meaning in collision "
+                             f"mode — there is no mask sheet to index")
+            return
+
+        companion = self.companion_layer()
+        document = self.document
+        # Before the companion exists there is nothing to read, and every
+        # cell of it is empty -- which is exactly what a reader that answers 0
+        # says. The layer itself is created by the commit, at the map's size,
+        # which is why the bounds come from the map and not from the reader.
+        read = companion.get_tile if companion is not None else _EMPTY_READER
+        bounds = (Bounds(companion.width, companion.height) if companion
+                  is not None else Bounds(document.width, document.height))
+        self.__stroke = Stroke(
+            Tool.ERASER if erase else self.tool,
+            Stamp.single(opinion_to_gid(self.mask, first_gid)), bounds, read)
+        self.__stroke.begin(column, row)
+        self.__draw_ghost()
+
+    def __commit_collision(self) -> None:
+        """One stroke, one transaction -- companion layer included.
+
+        When the companion does not exist yet the transaction carries three
+        more commands in front of the tiles: create it, tell the art layer
+        which layer holds its masks, and mark it as data rather than art.
+        They land together or not at all, and one undo takes all four back
+        out in reverse, each from its own recorded inverse.
+        """
+        stroke, self.__stroke = self.__stroke, None
+        self.__clear_ghost()
+        if stroke is None:
+            return
+        edits = stroke.edits()
+        if not edits:
+            self.status.emit("nothing changed")
+            return
+
+        name = self.companion_name()
+        if name is None:
+            return
+        map_scope = Scope.of(("map", self.map_name))
+        companion_scope = map_scope.child("layer", name)
+        commands: list[Command] = []
+        if self.companion_layer() is None:
+            commands.append(Command("map.layer.add", map_scope,
+                                    {"name": name, "kind": "tile"}))
+            commands.append(Command(
+                "map.layer.set", map_scope.child("layer", self.active_layer),
+                {"key": "passability", "value": name}))
+            commands.append(Command("map.layer.set", companion_scope,
+                                    {"key": "renders", "value": False}))
+        commands.append(Command("map.tile.set_many", companion_scope,
+                                {"tiles": edits_to_triples(edits)}))
+
+        # The window refreshes -- and so rebuilds this canvas -- inside run(),
+        # so the flag has to be up for the whole call: it is how the stream
+        # listener tells our own write apart from everybody else's.
+        self.__own_commit = True
+        try:
+            applied = self.window().run(
+                commands, label=f"{stroke.tool.label} collision "
+                                f"({len(edits)} cells)")
+        finally:
+            self.__own_commit = False
+        if applied:
+            self.__sync_overlay([(x, y) for x, y, _gid in edits])
+
+    def __pick_mask(self, column: int, row: int) -> None:
+        """Alt+click, or the picker tool, in collision mode."""
+        first_gid = self.collision_first_gid
+        companion = self.companion_layer()
+        if first_gid is None or companion is None or not (
+                0 <= column < companion.width and 0 <= row < companion.height):
+            self.status.emit("no mask here to pick")
+            return
+        mask = gid_to_opinion(companion.get_tile(column, row), first_gid)
+        if mask == NO_DATA:
+            self.status.emit("no mask here to pick")
+            return
+        self.mask = mask
+        self.picked_mask.emit(mask)
+        self.status.emit(f"picked {describe_mask(mask)}")
 
     # -- terrain -----------------------------------------------------------
 

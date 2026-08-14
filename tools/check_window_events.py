@@ -126,22 +126,72 @@ expect("removing the consuming route restores delivery", len(motion_hits), 1)
 # --------------------------------------------------------------------------
 print()
 print("resize actually reconfigures the engine")
+# Wrap the engine's own route rather than replacing it, so the resize is
+# PROVED to have been delivered. Without this the section could report ok on
+# a run where no WINDOWRESIZED ever reached the route -- which is what the
+# previous "20 further frames run clean" line did: it caught an exception and
+# nothing else, so it printed ok whether or not the resize happened.
+resize_seen = []
+engine_route = game.scene.routes[GameEventType.WINDOW_RESIZE]
+
+
+def spy_on_resize(event):
+    resize_seen.append(event)
+    engine_route(event)
+
+
+game.scene.routes[GameEventType.WINDOW_RESIZE] = spy_on_resize
+
+# A DECOY, and it is the only thing that makes the identity assertion below
+# mean anything. On pygame 2.6 `set_mode` MUTATES the existing display
+# Surface in place and hands back the SAME object, so
+# `renderer.image() is pygame.display.get_surface()` is True before the
+# resize, after a resize that re-pointed nothing, and after a resize that
+# re-pointed correctly -- three different worlds, one answer. Pointing the
+# renderer somewhere else first makes "it was re-pointed" a claim that can
+# actually come out false.
+DECOY = pygame.Surface((17, 13))
+game.renderer.image(DECOY)
+expect("the renderer starts on a decoy, not the display surface",
+       game.renderer.image() is DECOY, True)
+
 pygame.event.post(pygame.event.Event(pygame.WINDOWRESIZED, {"x": 1280, "y": 800}))
 game.tick()
+expect("the engine's resize route ran, exactly once", len(resize_seen), 1)
+expect("and it carried the new size",
+       [(e.event.x, e.event.y) for e in resize_seen], [(1280, 800)])
 expect("the display surface resized", game.screen.get_size(), (1280, 800))
 # The renderer keeping a stale surface is the failure that produces a black
-# frame with no exception, so assert identity rather than size.
+# frame with no exception, so assert identity rather than size -- against the
+# decoy bound above, so a route that never re-points is caught.
 expect("the renderer re-took the live display surface",
        game.renderer.image() is pygame.display.get_surface(), True)
+expect("and is no longer pointing at the decoy",
+       game.renderer.image() is DECOY, False)
 expect("the camera view area followed", tuple(game.scene.camera.view_area.size),
        (1280, 800))
+
+# The new geometry then has to SURVIVE the frame loop. Every line below is a
+# distinct failure that only shows up after the resize frame: a per-frame
+# path re-taking the surface at the old size, GameCamera.update clamping
+# view_area back on its next tick, or a route that re-emits its own event.
+frames = 0
 try:
     for _ in range(20):
         game.tick()
-    print("  ok   20 further frames run clean after the resize")
+        frames += 1
 except Exception as exc:                                       # noqa: BLE001
     print(f"  FAIL frames after resize raised: {exc}")
     failures.append("post-resize frames")
+expect("20 further frames ran after the resize", frames, 20)
+expect("the display is still at the new size", game.screen.get_size(), (1280, 800))
+expect("the renderer still holds the live surface",
+       game.renderer.image() is pygame.display.get_surface(), True)
+expect("and still not the decoy", game.renderer.image() is DECOY, False)
+expect("the camera view area is still the new size",
+       tuple(game.scene.camera.view_area.size), (1280, 800))
+expect("and no further resize was routed", len(resize_seen), 1)
+game.scene.routes[GameEventType.WINDOW_RESIZE] = engine_route
 
 expect("the window carries the RESIZABLE flag",
        bool(pygame.display.get_surface().get_flags() & pygame.RESIZABLE), True)

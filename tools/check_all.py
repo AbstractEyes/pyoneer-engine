@@ -29,6 +29,9 @@ CHECKS = [
     ("singletons", "one CoreAssetManager, tmx cached until reload is asked for"),
     ("tmx_roundtrip", "byte-identical tmx save, minimal-diff tile and object edits"),
     ("tileset", "byte-exact tileset add/remove, gid-range and extent guards"),
+    ("tileset_verbs", "tileset add/remove/restore verbs with exact undo"),
+    ("blitmap", "the native .blitmap/.tileset format and the tmx converter"),
+    ("spawn", "object layer -> entity registry, depth resolution, y-origin"),
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
     ("window_events", "os window events translate, route, and still fan out"),
@@ -38,6 +41,7 @@ CHECKS = [
     ("collision", "three-level resolution, .blitmask round trip, mask encoding"),
     ("collision_view", "collision overlay builds, glyphs distinguish direction bits"),
     ("map_events", "trigger vocabulary, collision filters, tmx round trip"),
+    ("collision_mount", "the overlay, the mode, one stroke one transaction"),
     ("editor_ui", "panels build, canvas edits are commands, responses apply"),
 ]
 

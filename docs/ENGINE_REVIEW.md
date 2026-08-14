@@ -1,5 +1,36 @@
 # Pyoneer Engine — Code Review
 
+> ### A dated snapshot. Do not navigate by it.
+>
+> This describes commit `cd96542` — *baseline: engine as it runs today*,
+> 2026-08-07, the first commit in the repository — and has not been edited
+> since. **47 commits have landed on top of it.**
+>
+> It is kept verbatim on purpose. Its whole value is that every finding was
+> checked by executing the code at that commit; re-numbering 151 findings
+> without re-running them would convert verified observations into unverified
+> assertions, which is worse than an honestly dated document. So the text
+> stands and the date is stated instead.
+>
+> What that means concretely:
+>
+> - **Quoted code has moved on.** `GameComponentLayer(LayerType.UI,
+>   layer_name, ...)`, cited as live evidence in the
+>   `ui-layer-depth-arithmetic-collision` finding, exists in no form today:
+>   `LayerType` was deleted, and the constructor now takes
+>   `(layer_name, depth, surface)` at `scripts/core/renderer.py:765`.
+> - **Some cited files are gone.** Six rows in the tables below still file
+>   findings against `behavior/movement.py`, `event_decorator.py`,
+>   `behavior/transform.py`, `scripts/game/camera.py`, `OldGameCamera` and
+>   `GameCamera.offset_type` — every one of them deleted in `701bbb5`.
+> - **Every line number here is a `cd96542` line number.** Re-derive the
+>   location, and confirm the defect still reproduces, before acting on any
+>   finding.
+>
+> For the current state read [NEXT.md](NEXT.md) and [ORPHANS.md](ORPHANS.md).
+> [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) sequences these findings into 12
+> segments and is the same vintage.
+
 **151 verified findings.** Produced by eight parallel subsystem reviewers followed by an
 adversarial verification pass; 17 claims were refuted and dropped. Findings were checked by
 *executing* the cited code path, not by reading it — every "Failure" line below describes an

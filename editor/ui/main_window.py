@@ -32,10 +32,12 @@ from PySide6.QtWidgets import (
 from editor.core import ide
 from editor.core.commands import Command
 from editor.core.errors import PyoneerEditorError
-from editor.core.paint import Tool
+from editor.core.layers import describe_mask
+from editor.core.paint import EditMode, Tool
 from editor.core.request import REQUESTS_DIR, RESPONSE_FILE, read_response
 from editor.core.scope import Scope
 from editor.ui.canvas import MapCanvas, TilePalette
+from editor.ui.collision_view import MaskPalette, build_mode_actions
 from editor.ui.database import DatabaseWindow
 from editor.ui.docks import HistoryDock, ManifestDock, ProblemsDock
 from editor.ui.hierarchy import HierarchyDock
@@ -78,6 +80,7 @@ class EditorWindow(QMainWindow):
         self.canvas = MapCanvas(session, self.map_name, self)
         self.canvas.status.connect(self.__on_status)
         self.canvas.picked_gid.connect(self.__on_picked)
+        self.canvas.picked_mask.connect(self.__on_picked_mask)
         self.canvas.selected.connect(self.selection.select)
         self.setCentralWidget(self.canvas)
 
@@ -97,6 +100,7 @@ class EditorWindow(QMainWindow):
         self.resizeDocks([self.inspector], [420], Qt.Horizontal)
 
         self.palette_dock = self.__build_palette()
+        self.mask_dock = self.__build_mask_palette()
         self.hierarchy.visibility_changed.connect(self.canvas.set_layer_visible)
         self.manifest.ship_requested.connect(self.ship)
         self.selection.changed.connect(self.__on_selection)
@@ -131,6 +135,30 @@ class EditorWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         return dock
 
+    def __build_mask_palette(self) -> QDockWidget:
+        """The collision brush: what the tile palette becomes in that mode.
+
+        Tabified onto `palette_dock` rather than given its own strip. It
+        answers the SAME question -- what am I painting with -- and only one
+        of the two can be the answer at a time, so two side-by-side palettes
+        would be two-thirds of the left column spent saying nothing.
+        `palette_dock` is raised again afterwards because tabifyDockWidget
+        leaves the newcomer on top, and the editor opens in tile mode.
+
+        The palette emits a MASK; turning it into a gid needs the companion
+        layer's firstgid, which is the canvas's business, so `set_mask` takes
+        it raw.
+        """
+        dock = QDockWidget("Collision", self)
+        dock.setObjectName("Collision")
+        self.mask_palette = MaskPalette(dock)
+        self.mask_palette.mask_picked.connect(self.canvas.set_mask)
+        dock.setWidget(self.mask_palette)
+        self.addDockWidget(Qt.LeftDockWidgetArea, dock)
+        self.tabifyDockWidget(self.palette_dock, dock)
+        self.palette_dock.raise_()
+        return dock
+
     def __build_actions(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
         self.__act(file_menu, "&Save", QKeySequence.Save, self.save)
@@ -153,7 +181,8 @@ class EditorWindow(QMainWindow):
 
         view_menu = self.menuBar().addMenu("&View")
         for dock in (self.hierarchy, self.inspector, self.problems,
-                     self.manifest, self.history, self.palette_dock):
+                     self.manifest, self.history, self.palette_dock,
+                     self.mask_dock):
             view_menu.addAction(dock.toggleViewAction())
         view_menu.addSeparator()
         self.__act(view_menu, "Zoom &in", QKeySequence.ZoomIn,
@@ -209,6 +238,18 @@ class EditorWindow(QMainWindow):
             group.addAction(action)
             bar.addAction(action)
             self.tool_actions[tool] = action
+
+        bar.addSeparator()
+        # The mode sits beside the tools rather than in a menu because it
+        # changes what every one of them writes. `toggle` goes on the WINDOW,
+        # not the bar: it is the keyboard accelerator for the pair, not a
+        # third button.
+        self.modes = build_mode_actions(self, self.__on_mode,
+                                        self.canvas.set_all_layers)
+        for action in self.modes.actions.values():
+            bar.addAction(action)
+        bar.addAction(self.modes.all_layers)
+        self.addAction(self.modes.toggle)
 
         bar.addSeparator()
         self.stamp_label = QLabel("  brush: gid 1  ")
@@ -325,6 +366,31 @@ class EditorWindow(QMainWindow):
     def __on_picked(self, gid: int) -> None:
         self.palette.select_gid(gid)
         self.stamp_label.setText(f"  brush: gid {gid}  ")
+
+    def __on_mode(self, mode: EditMode) -> None:
+        """Point the canvas at the other layer, and the toolbar with it.
+
+        The tools do not change -- B is still brush -- but a tool the mode
+        cannot express is disabled rather than left clickable and silent, and
+        the palette that answers "painting with what" is brought forward.
+        """
+        self.canvas.set_mode(mode)
+        for tool, action in self.tool_actions.items():
+            action.setEnabled(mode.allows(tool))
+        if not mode.allows(self.canvas.tool):
+            # A disabled action that is still the checked one is a toolbar
+            # nobody can get out of, so fall back rather than just greying it.
+            self.tool_actions[Tool.BRUSH].setChecked(True)
+            self.__set_tool(Tool.BRUSH)
+        dock = self.mask_dock if mode is EditMode.COLLISION else self.palette_dock
+        dock.raise_()
+
+    def __on_picked_mask(self, mask: int) -> None:
+        """The canvas picked a mask off the map (alt-click, or the picker)."""
+        # notify=False: this mask CAME from the canvas, and echoing it back
+        # would be a round trip that ends where it started.
+        self.mask_palette.select_mask(mask, notify=False)
+        self.stamp_label.setText(f"  {describe_mask(mask)}  ")
 
     def __on_class(self, name: str) -> None:
         self.canvas.object_class = name

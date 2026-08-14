@@ -20,6 +20,16 @@ A brush is a 1x1 stamp. Selecting a rectangle in the tile palette gives a
 larger one, and every tool honours it: a rectangle tool with a 2x2 stamp
 tiles that pattern across the rectangle. Special-casing the single tile
 would mean two code paths that drift.
+
+WHAT A STROKE IS GENERIC OVER
+-----------------------------
+`gid` is a name, not a type. Everything here moves small non-negative
+integers around and never asks what one means, which is why collision
+authoring reuses this module wholesale rather than growing a second stroke
+machinery: a passability mask stored in a companion layer IS a gid --
+`first_gid + mask` -- so a mask brush is `Stamp.single(gid)`, an eraser
+writing 0 is the empty cell that means "no opinion", and one drag is still
+one `map.tile.set_many`. `EditMode` below is the whole difference.
 """
 from __future__ import annotations
 
@@ -75,6 +85,60 @@ class Tool(Enum):
         """Terrain derives its tiles from a rule, not from the palette
         selection, so a multi-tile stamp is meaningless to it."""
         return self not in (Tool.PICKER, Tool.AUTOTILE)
+
+
+class EditMode(Enum):
+    """What the tools act ON. Deliberately not what the tools ARE.
+
+    A mode that rebinds B/R/G/E/I is a mode nobody learns -- the same key has
+    to mean the same tool or the muscle memory is worse than no mode at all.
+    So brush still brushes, fill still fills, and the only thing that changes
+    is which layer receives the write and what the palette offers to write.
+
+    It lives beside `Tool` rather than beside the collision overlay it was
+    written for, because it is a fact about what a drag MEANS and that is
+    this module's entire subject. While it sat in `editor/ui/collision_view`
+    the enum that gates the feature could only be reached by importing Qt, so
+    the canvas never consulted it and the mode was unreachable.
+    `collision_view` re-exports it for the callers that already had it.
+    """
+
+    TILES = "tiles"
+    COLLISION = "collision"
+
+    @property
+    def label(self) -> str:
+        return {EditMode.TILES: "Tiles",
+                EditMode.COLLISION: "Collision"}[self]
+
+    @property
+    def tip(self) -> str:
+        return {
+            EditMode.TILES: "Paint the active tile layer.",
+            EditMode.COLLISION: "Paint the active layer's companion "
+                                "passability layer. Same tools, same keys.",
+        }[self]
+
+    @property
+    def disabled_tools(self) -> frozenset[Tool]:
+        """Tools with no meaning in this mode.
+
+        Terrain is the only one, and it is not a gap to be filled later with
+        the same code: autotile indexes a 47-tile corner sheet, and there is
+        no mask sheet to index. The useful tool for that slot derives the
+        four direction bits from the boundary of a painted solid region --
+        same 'look at the neighbours' shape, entirely different algorithm.
+        """
+        if self is EditMode.COLLISION:
+            return frozenset({Tool.AUTOTILE})
+        return frozenset()
+
+    def allows(self, tool: Tool) -> bool:
+        return tool not in self.disabled_tools
+
+    @property
+    def other(self) -> "EditMode":
+        return EditMode.COLLISION if self is EditMode.TILES else EditMode.TILES
 
 
 @dataclass(frozen=True)

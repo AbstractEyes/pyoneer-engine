@@ -107,12 +107,43 @@ print("every advertised channel has at least one call site")
 # turns on and does nothing. Counted with ast over Call nodes, NOT grep:
 # grep counts the import line and the definition in log.py itself, which is
 # how a survey ended up reporting the same channel as both 5 and 7.
+#
+# tools/ is deliberately NOT a production area. A trace_events(...) written
+# inside a check is not evidence that the ENGINE traces anything, and while
+# tools/ was scanned this section could be satisfied by its own fixtures --
+# the four log.trace_mouse calls above already count under the old walk.
 ROOT = _bootstrap.REPO_ROOT
 LOG_SOURCE = os.path.join(ROOT, "scripts", "core", "log.py")
+PRODUCTION_AREAS = ("scripts", "editor", "config")
 
 call_sites = {name: 0 for name in log.CHANNELS}
-scanned = 0
-for area in ("scripts", "editor", "config", "tools"):
+scanned_paths = []
+
+
+def count_calls(path):
+    """Add every trace_<channel>(...) call in one source file to the census.
+
+    Both spellings count: the bare `trace_render(...)` of a `from ... import`
+    site and the `log.trace_render(...)` of a module import.
+    """
+    try:
+        tree = ast.parse(open(path, encoding="utf-8").read())
+    except SyntaxError:
+        return
+    scanned_paths.append(os.path.abspath(path))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        called = func.id if isinstance(func, ast.Name) else (
+            func.attr if isinstance(func, ast.Attribute) else "")
+        if called.startswith("trace_"):
+            channel_name = called[len("trace_"):]
+            if channel_name in call_sites:
+                call_sites[channel_name] += 1
+
+
+for area in PRODUCTION_AREAS:
     for folder, _, names in os.walk(os.path.join(ROOT, area)):
         if "__pycache__" in folder:
             continue
@@ -122,37 +153,23 @@ for area in ("scripts", "editor", "config", "tools"):
             path = os.path.join(folder, name)
             if os.path.abspath(path) == os.path.abspath(LOG_SOURCE):
                 continue          # its own definitions are not call sites
-            try:
-                tree = ast.parse(open(path, encoding="utf-8").read())
-            except SyntaxError:
-                continue
-            scanned += 1
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                func = node.func
-                called = func.id if isinstance(func, ast.Name) else (
-                    func.attr if isinstance(func, ast.Attribute) else "")
-                if called.startswith("trace_"):
-                    channel_name = called[len("trace_"):]
-                    if channel_name in call_sites:
-                        call_sites[channel_name] += 1
+            count_calls(path)
 
-tree = ast.parse(open(os.path.join(ROOT, "main.py"), encoding="utf-8").read())
-scanned += 1
-for node in ast.walk(tree):
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
-            and node.func.id.startswith("trace_"):
-        channel_name = node.func.id[len("trace_"):]
-        if channel_name in call_sites:
-            call_sites[channel_name] += 1
+count_calls(os.path.join(ROOT, "main.py"))
 
-print(f"  ({scanned} source files scanned)")
+print(f"  ({len(scanned_paths)} source files scanned)")
 for channel_name in sorted(log.CHANNELS):
     expect(f"channel {channel_name} has at least one call site",
            call_sites[channel_name] > 0, True)
 expect("no advertised channel is structurally silent",
        sorted(n for n, c in call_sites.items() if c == 0), [])
+# The guard on the census itself. Put "tools" back in PRODUCTION_AREAS and
+# this is the assertion that says so, before a check file can quietly become
+# the only call site a channel has.
+TOOLS = os.path.join(ROOT, "tools") + os.sep
+expect("no check file counted as a call site",
+       sorted(os.path.relpath(p, ROOT) for p in scanned_paths
+              if p.startswith(TOOLS)), [])
 
 print()
 if failures:

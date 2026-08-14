@@ -32,13 +32,24 @@ class FakeKeys:
         return code in self.down
 
 
-def step(down=()):
-    im.keyboard = FakeKeys(down)
-    for action in im.actions.values():
-        raw = im._is_down(action)
+def drive(manager, down=()):
+    """Advance `manager` one frame with `down` held.
+
+    Deliberately not `manager.update()`: that re-reads
+    pygame.key.get_pressed(), so whatever is really on the keyboard would
+    decide the result. The three lines below are the edge derivation
+    update() runs, off the fake keyboard instead.
+    """
+    manager.keyboard = FakeKeys(down)
+    for action in manager.actions.values():
+        raw = manager._is_down(action)
         action.pressed = raw and not action.held
         action.released = action.held and not raw
         action.held = raw
+
+
+def step(down=()):
+    drive(im, down)
     return (im.pressed("left"), im.held("left"), im.released("left"))
 
 
@@ -71,10 +82,12 @@ raw = im2._is_down(a)
 expect("one of two keys down -> down", raw, True)
 
 print()
-print("sprint is bound in config AND consumed in code")
-# These two halves are one change. held() is an unguarded dict index, so a
-# game_player.py that reads "sprint" without the JSON key raises KeyError
-# inside core_frame_update and kills the frame. Assert both ends.
+print("sprint is bound in config")
+# Half of one change. held() is an unguarded dict index, so a game_player.py
+# that reads "sprint" without the JSON key raises KeyError inside
+# core_frame_update and kills the frame. The other half -- that anything in
+# the engine still reads the binding -- is asserted further down, against a
+# real GamePlayer.
 expect("sprint is bound", "sprint" in im.actions, True)
 im.keyboard = FakeKeys(["left_ctrl"])
 sprint_action = im.actions["sprint"]
@@ -115,6 +128,66 @@ dx_slow = slow.transform.position.x
 dx_fast = fast.transform.position.x
 expect("walking moves at move_speed", dx_slow, 10)
 expect("sprinting multiplies by sprint_mult", dx_fast, dx_slow * 3)
+
+print()
+print("the player still reads the sprint binding")
+# Everything above this line passes with the consumer deleted. move_direction
+# takes sprint= as an argument, so the multiplier keeps working perfectly
+# while nothing ever asks for it -- the binding resolves, the key reads as
+# down, and the player walks. The only way to catch that is to run a real
+# GamePlayer for one input frame and measure how far it moved.
+from config.managers.core_asset_manager import CoreAssetManager   # noqa: E402
+from scripts.core.event_manager import PyoneerEvent               # noqa: E402
+from scripts.core.event_types import GameEventType                # noqa: E402
+from scripts.game.entity.game_player import GamePlayer            # noqa: E402
+
+MOVEMENT = {"movement": {"move_speed": 10, "sprint_mult": 3}}
+ANIMATIONS = CoreAssetManager().animations.get("entity")
+
+
+def after_holding(down):
+    """A GamePlayer that has processed one input frame with `down` HELD.
+
+    TWO manager frames before the player runs, and the second one is the
+    whole point. `drive` computes `pressed = raw and not held`, so on the
+    first frame after a key goes down `pressed` and `held` are both True and
+    a consumer that reads `pressed("sprint")` where it means `held` is
+    indistinguishable from a correct one. The second frame is where they
+    diverge: `held` stays True, `pressed` falls to False. The label says
+    "holding", so the fixture has to actually hold.
+
+    A fresh manager per player: `held` carries across frames, so sharing one
+    would make the second player's edges depend on the first player's run.
+    """
+    manager = InputActionManager().prepare(config)
+    drive(manager, down)      # the rising edge
+    drive(manager, down)      # still down: held, no longer pressed
+    return manager
+
+
+def after_one_frame(down):
+    manager = after_holding(down)
+    player = GamePlayer(input_=manager, movement_config=MOVEMENT,
+                        animation_config=ANIMATIONS)
+    player.input_move(PyoneerEvent(GameEventType.UPDATE, data={"delta": 1.0}))
+    return player
+
+
+# The fixture is only honest if the two edges really did diverge, so assert
+# it here rather than trusting `drive`.
+_holding = after_holding(["d", "left_ctrl"])
+expect("the fixture holds rather than taps (sprint)",
+       (_holding.held("sprint"), _holding.pressed("sprint")), (True, False))
+expect("the fixture holds rather than taps (right)",
+       (_holding.held("right"), _holding.pressed("right")), (True, False))
+
+walker = after_one_frame(["d"])                  # right
+sprinter = after_one_frame(["d", "left_ctrl"])   # right + sprint
+expect("holding sprint sets state.sprinting", sprinter.state.sprinting, True)
+expect("releasing it clears state.sprinting", walker.state.sprinting, False)
+expect("the walking player moved move_speed", walker.transform.position.x, 10)
+expect("the sprinting player covered sprint_mult times that",
+       sprinter.transform.position.x, walker.transform.position.x * 3)
 
 print()
 print("unknown binding fails at load, not mid-frame")

@@ -46,7 +46,6 @@ centre square saying a layer below disagreed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import Callable, Mapping, Sequence
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
@@ -87,7 +86,13 @@ from editor.core.layers import (
     STAR,
     describe_mask,
 )
-from editor.core.paint import Tool
+# `EditMode` was defined here and is now `editor/core/paint.py`'s, imported
+# back so that `from editor.ui.collision_view import EditMode` keeps working.
+# It moved because it gates the whole feature and describes what a drag means:
+# leaving it in a Qt module meant the canvas could not read it without
+# importing this view, and nothing did. `Tool` is re-exported for the same
+# reason -- everything a mode constrains lives in one import.
+from editor.core.paint import EditMode, Tool
 
 #: The masks a companion layer can currently hold. `mask_to_gid` raises
 #: outside 0..STAR, so there are seventeen, not thirty-two. The glyphs are
@@ -130,53 +135,6 @@ PROVENANCE = (
 # --------------------------------------------------------------------------
 # Edit mode
 # --------------------------------------------------------------------------
-
-class EditMode(Enum):
-    """What the tools act ON. Deliberately not what the tools ARE.
-
-    A mode that rebinds B/R/G/E/I is a mode nobody learns -- the same key has
-    to mean the same tool or the muscle memory is worse than no mode at all.
-    So brush still brushes, fill still fills, and the only thing that changes
-    is which layer receives the write and what the palette offers to write.
-    """
-
-    TILES = "tiles"
-    COLLISION = "collision"
-
-    @property
-    def label(self) -> str:
-        return {EditMode.TILES: "Tiles",
-                EditMode.COLLISION: "Collision"}[self]
-
-    @property
-    def tip(self) -> str:
-        return {
-            EditMode.TILES: "Paint the active tile layer.",
-            EditMode.COLLISION: "Paint the active layer's companion "
-                                "passability layer. Same tools, same keys.",
-        }[self]
-
-    @property
-    def disabled_tools(self) -> frozenset[Tool]:
-        """Tools with no meaning in this mode.
-
-        Terrain is the only one, and it is not a gap to be filled later with
-        the same code: autotile indexes a 47-tile corner sheet, and there is
-        no mask sheet to index. The useful tool for that slot derives the
-        four direction bits from the boundary of a painted solid region --
-        same 'look at the neighbours' shape, entirely different algorithm.
-        """
-        if self is EditMode.COLLISION:
-            return frozenset({Tool.AUTOTILE})
-        return frozenset()
-
-    def allows(self, tool: Tool) -> bool:
-        return tool not in self.disabled_tools
-
-    @property
-    def other(self) -> "EditMode":
-        return EditMode.COLLISION if self is EditMode.TILES else EditMode.TILES
-
 
 #: Free in `main_window._TOOL_SHORTCUTS`, checked before choosing it.
 MODE_SHORTCUT = "C"

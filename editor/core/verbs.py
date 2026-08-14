@@ -329,6 +329,200 @@ def _layer_restore(project: Project, cmd: Command) -> Command:
 
 
 # --------------------------------------------------------------------------
+# Tilesets
+#
+# The only edit in this vocabulary that can corrupt something it never
+# touched. Every csv token and every `<object gid=...>` in a map is an index
+# into the concatenated firstgid ranges, so pulling a tileset out from under
+# a painted gid raises NOWHERE: pytmx sorts firstgids descending and returns
+# the first one at or below the gid, which means an orphan silently resolves
+# to the tileset underneath and paints the wrong art.
+#
+# MapDocument.remove_tileset refuses in that case and names the layers and
+# counts that block it. These verbs let that refusal through unchanged.
+# Catching it to reword it would cost the caller the one piece of
+# information that says how to proceed.
+# --------------------------------------------------------------------------
+
+def _tileset_key(cmd: Command) -> str | int:
+    """Which tileset a command addresses: its name, or its firstgid.
+
+    Both forms, because a name alone cannot address every tileset a map can
+    hold. An external `<tileset firstgid="9" source="foo.tsx"/>` carries no
+    name in this file at all -- and those are exactly the tilesets whose
+    contents the document cannot see, so being unable to name them is the
+    worst possible combination.
+    """
+    name, first_gid = cmd.args["name"], cmd.args["first_gid"]
+    if name:
+        return name
+    if first_gid > 0:
+        return first_gid
+    raise PyoneerCommandArgumentError(
+        f"{cmd.verb} needs `name`, or `first_gid` for an external tileset "
+        "that has none", verb=cmd.verb)
+
+
+@command(
+    "map.tileset.add",
+    summary="Add an embedded tileset, appended above every gid range the "
+            "map already uses. Anything left unset is measured rather than "
+            "assumed: tile size defaults to the map's, the image is sized "
+            "from its own header, and columns/tilecount fall out of the "
+            "grid. Inserting BELOW an existing range is refused -- it would "
+            "renumber every csv token in the file.",
+    scopes=["map:*"],
+    params=[
+        Param("name", str, "tileset name; unique within the map, and the key "
+                           "the other tileset verbs address it by"),
+        Param("image", str, "the sheet's path AS WRITTEN INTO THE FILE -- "
+                            "relative to the .tmx, which is what Tiled and "
+                            "the engine both resolve it against"),
+        Param("tile_width", int, "tile width in pixels; omit to inherit the "
+                                 "map's", required=False, default=None),
+        Param("tile_height", int, "tile height in pixels; omit to inherit the "
+                                  "map's", required=False, default=None),
+        Param("margin", int, "border in pixels before the first tile",
+              required=False, default=0),
+        Param("spacing", int, "pixels between adjacent tiles",
+              required=False, default=0),
+        Param("image_width", int, "sheet width in pixels; omit and the PNG "
+                                  "header is read", required=False, default=None),
+        Param("image_height", int, "sheet height in pixels; omit and the PNG "
+                                   "header is read", required=False, default=None),
+        Param("columns", int, "override the derived column count; only for a "
+                              "sheet whose grid the formula cannot describe",
+              required=False, default=None),
+        Param("tile_count", int, "override the derived tile count",
+              required=False, default=None),
+    ],
+    example='{"verb": "map.tileset.add", "scope": "map:test", "args":'
+            ' {"name": "Dungeon",'
+            ' "image": "../graphics/tilesets/System/Dungeon.png"}}',
+)
+def _tileset_add(project: Project, cmd: Command) -> Command:
+    document = project.map(cmd.scope.require("map"))
+    added = document.add_tileset(
+        cmd.args["name"], cmd.args["image"],
+        tile_width=cmd.args["tile_width"],
+        tile_height=cmd.args["tile_height"],
+        margin=cmd.args["margin"],
+        spacing=cmd.args["spacing"],
+        columns=cmd.args["columns"],
+        tile_count=cmd.args["tile_count"],
+        image_width=cmd.args["image_width"],
+        image_height=cmd.args["image_height"],
+    )
+    # force stays FALSE, deliberately. Taking an add back is only safe while
+    # nothing points into the range it created, and the refusal IS the
+    # signal that something does -- which happens when a later transaction
+    # painted with the new sheet and this one is being unwound out of order.
+    # An inverse that forced its way through would leave those tiles
+    # resolving to the tileset below, and nothing downstream would say so.
+    return Command("map.tileset.remove", cmd.scope,
+                   {"name": added.name, "force": False})
+
+
+@command(
+    "map.tileset.remove",
+    summary="Remove a tileset by name, or by firstgid for an external one. "
+            "REFUSED while any tile or tile-object still points into its "
+            "gid range: an orphaned gid raises nowhere, it just paints the "
+            "wrong art. The inverse restores the element verbatim, so undo "
+            "brings back every <tile> child with it.",
+    scopes=["map:*"],
+    params=[
+        Param("name", str, "tileset name; leave empty and pass first_gid for "
+                           "an external <tileset source=...>, which carries "
+                           "no name in this file",
+              required=False, default=""),
+        Param("first_gid", int, "address the tileset by its firstgid instead "
+                                "of its name", required=False, default=0),
+        Param("force", bool, "remove even though gids still point into the "
+                             "range. Correct in exactly one situation: those "
+                             "gids were zeroed EARLIER IN THE SAME "
+                             "transaction, so undo puts the tileset back "
+                             "before it puts the gids back. map.tile.set_many "
+                             "is the verb that zeroes them and its inverse is "
+                             "exact. Outside that, this silently repaints "
+                             "every orphaned tile with the wrong art.",
+              required=False, default=False),
+    ],
+    destructive=True,
+    example='{"verb": "map.tileset.remove", "scope": "map:test",'
+            ' "args": {"name": "Dungeon"}}',
+)
+def _tileset_remove(project: Project, cmd: Command) -> Command:
+    document = project.map(cmd.scope.require("map"))
+    key = _tileset_key(cmd)
+
+    # Serialize BEFORE removing. The payload IS the inverse, and it has to
+    # come off the live element rather than be rebuilt from a TilesetRef's
+    # attributes: a rebuilt <tileset> carries no <tile> children, so undo
+    # would drop per-tile animations, terrain definitions and collision
+    # shapes without a word. That is the same way map.object.remove once
+    # destroyed polygons.
+    payload = document.serialize_tileset(key)
+    if payload is None:
+        raise PyoneerCommandArgumentError(
+            f"no tileset {key!r} in this map",
+            verb=cmd.verb,
+            available=document.tileset_names(),
+            first_gids=[ref.first_gid for ref in document.tilesets()])
+
+    # The refusal travels out of here untouched.
+    document.remove_tileset(key, force=cmd.args["force"])
+    return Command("map.tileset.restore", cmd.scope, {"payload": payload})
+
+
+@command(
+    "map.tileset.restore",
+    summary="Put a tileset back from a serialised payload, at its original "
+            "position and with its original whitespace. The exact inverse "
+            "of map.tileset.remove; rarely written by hand.",
+    scopes=["map:*"],
+    params=[
+        Param("payload", dict, "as produced by MapDocument.serialize_tileset; "
+                               "must carry `first_gid`, which is the only key "
+                               "that addresses every tileset a map can hold"),
+    ],
+)
+def _tileset_restore(project: Project, cmd: Command) -> Command:
+    document = project.map(cmd.scope.require("map"))
+    payload = cmd.args["payload"]
+
+    # Check the payload can be ADDRESSED before restoring it, not after. A
+    # restore that succeeds and then cannot describe its own inverse leaves
+    # a mutation the transaction has no way to roll back.
+    try:
+        first_gid = int(payload.get("first_gid", 0))
+    except (TypeError, ValueError):
+        first_gid = 0
+    if first_gid <= 0:
+        raise PyoneerCommandArgumentError(
+            "a tileset payload needs a positive 'first_gid'; it is what the "
+            "inverse addresses an external tileset by, since that kind has "
+            "no name in this file",
+            verb=cmd.verb, got=sorted(payload))
+
+    name = document.restore_tileset(payload)
+    # force=True here, where map.tileset.add's inverse says False, and the
+    # asymmetry is the whole point. An add creates a range that did not
+    # exist, so taking it back can orphan tiles painted into it since --
+    # the guard has real work to do. A restore only ever puts back what was
+    # just taken out, so removing it again returns the document to a state
+    # it was already in a moment ago, and anything that painted into the
+    # range in between is a later command whose inverse runs FIRST. Without
+    # force this is also unusable on an external tileset, whose extent
+    # lives in the .tsx: the guard would refuse to undo its own undo.
+    if name:
+        return Command("map.tileset.remove", cmd.scope,
+                       {"name": name, "force": True})
+    return Command("map.tileset.remove", cmd.scope,
+                   {"first_gid": first_gid, "force": True})
+
+
+# --------------------------------------------------------------------------
 # Objects -- the entity-spawn seam
 # --------------------------------------------------------------------------
 
