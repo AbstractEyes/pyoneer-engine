@@ -83,6 +83,30 @@ def expect(label, got, want):
         failures.append(label)
 
 
+def expect_returns(label, action, want):
+    """`expect`, for a value a REFUSAL can stop from existing at all.
+
+    `expect(label, TilesetFile.parse(text).collision, want)` evaluates the
+    parse inside the caller's own argument list, so a reader that refuses
+    input it is supposed to accept takes the whole file down with a raw
+    traceback: no FAIL line, no failure list, and every assertion below it
+    never runs. The exit code stays honest, which is why this was not a CI
+    hole -- but "which claim broke" was left to whoever reads a stack, and
+    one refusal hid the rest of the run.
+
+    Here the raise IS the got, printed in the same column as every other
+    result, and the file carries on to the assertions that follow.
+    """
+    try:
+        got = action()
+    except Exception as error:                                # noqa: BLE001
+        # Flattened, because a PyoneerBlitFormatError carries its `via`
+        # context on continuation lines and a multi-line got breaks the
+        # column alignment that makes this output scannable.
+        got = " ".join(f"{type(error).__name__}: {error}".split())
+    expect(label, got, want)
+
+
 def expect_raises(label, exception, action, *, contains: str = ""):
     """Assert `action` raises, and that the message names the problem.
 
@@ -200,20 +224,20 @@ print("the format is canonical: one spelling per model")
 fixture = fixture_conversion()
 fixture_text = fixture.blitmap.render()
 
-expect("parse(render(map)) is the same model",
-       Blitmap.parse(fixture_text) == fixture.blitmap, True)
-expect("render(parse(text)) is the same bytes",
-       Blitmap.parse(fixture_text).render() == fixture_text, True)
+expect_returns("parse(render(map)) is the same model",
+               lambda: Blitmap.parse(fixture_text) == fixture.blitmap, True)
+expect_returns("render(parse(text)) is the same bytes",
+               lambda: Blitmap.parse(fixture_text).render() == fixture_text, True)
 expect("the file ends in a newline", fixture_text.endswith("\n"), True)
 expect("the first line names the format and a version",
        fixture_text.splitlines()[0], "blitmap 1")
 
 tileset = fixture.tileset("Fixture")
 tileset_text = tileset.render()
-expect("parse(render(tileset)) is the same model",
-       TilesetFile.parse(tileset_text) == tileset, True)
-expect("render(parse(tileset text)) is the same bytes",
-       TilesetFile.parse(tileset_text).render() == tileset_text, True)
+expect_returns("parse(render(tileset)) is the same model",
+               lambda: TilesetFile.parse(tileset_text) == tileset, True)
+expect_returns("render(parse(tileset text)) is the same bytes",
+               lambda: TilesetFile.parse(tileset_text).render() == tileset_text, True)
 expect("a .tileset names itself too", tileset_text.splitlines()[0], "tileset 1")
 
 # The negative control. Every assertion above compares a value-comparing
@@ -234,13 +258,15 @@ expect("one changed gid moves exactly one line",
 # Whitespace is the thing formats lose. These values survive only because
 # escape_text guards the ENDS of a value and escape_word guards a name.
 padded = Property("two words", "string", " a  b ")
-expect("a padded, spaced property survives a round trip",
-       Blitmap.parse(Blitmap(1, 1, 16, 16, properties=(padded,)).render()
-                     ).properties[0], padded)
+expect_returns("a padded, spaced property survives a round trip",
+               lambda: Blitmap.parse(
+                   Blitmap(1, 1, 16, 16, properties=(padded,)).render()
+               ).properties[0], padded)
 newline = Property("blurb", "string", "line one\nline two")
-expect("a multi-line property value survives",
-       Blitmap.parse(Blitmap(1, 1, 16, 16, properties=(newline,)).render()
-                     ).properties[0], newline)
+expect_returns("a multi-line property value survives",
+               lambda: Blitmap.parse(
+                   Blitmap(1, 1, 16, 16, properties=(newline,)).render()
+               ).properties[0], newline)
 
 # Round trip through the disk, on the real file-writing path.
 scratch = tempfile.mkdtemp(prefix="blitmap_check_")
@@ -252,13 +278,13 @@ try:
            on_disk, fixture_text.encode("utf-8"))
     expect("no platform newline translation on the way out",
            b"\r\n" in on_disk, False)
-    expect("load(save(map)) is the same model",
-           Blitmap.load(written[0]) == fixture.blitmap, True)
+    expect_returns("load(save(map)) is the same model",
+                   lambda: Blitmap.load(written[0]) == fixture.blitmap, True)
     expect("the tileset landed where the map's link points",
            os.path.relpath(written[1], scratch).replace("\\", "/"),
            fixture.blitmap.tilesets[0].source)
-    expect("load(save(tileset)) is the same model",
-           TilesetFile.load(written[1]) == tileset, True)
+    expect_returns("load(save(tileset)) is the same model",
+                   lambda: TilesetFile.load(written[1]) == tileset, True)
 finally:
     shutil.rmtree(scratch, ignore_errors=True)
 
@@ -374,8 +400,14 @@ expect("a supplied .blitmask reference is carried, not parsed",
 # it is true by dataclass construction and survives a render that never
 # writes `collision` AND a parse that never reads it. The .blitmask
 # reference is the whole engine/editor collision seam; assert the ROUND TRIP.
-expect("a .blitmask reference survives render/parse",
-       TilesetFile.parse(masked.render()).collision, "Fixture.blitmask")
+#
+# expect_returns rather than expect, because the two mutations this covers
+# fail in two different ways: a render that drops the line comes back as ""
+# and a parse that no longer knows the keyword RAISES, and only one of those
+# is a comparison. See expect_returns for what the raw raise used to cost.
+expect_returns("a .blitmask reference survives render/parse",
+               lambda: TilesetFile.parse(masked.render()).collision,
+               "Fixture.blitmask")
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
     TilesetFile(name="A", tile_width=8, tile_height=8, collision="A.png")
@@ -497,8 +529,16 @@ real = from_tmx(real_document)
 convert_seconds = time.perf_counter() - started
 
 real_text = real.blitmap.render()
+# Guarded rather than bare: this is the one parse in the file whose input the
+# AUTHOR controls, so a cell the reader will not take back is a plausible
+# failure and it must print as a FAIL rather than end the run on line 533.
+reparsed = None
+refusal = ""
 started = time.perf_counter()
-reparsed = Blitmap.parse(real_text)
+try:
+    reparsed = Blitmap.parse(real_text)
+except PyoneerBlitFormatError as error:
+    refusal = " ".join(str(error).split())
 parse_seconds = time.perf_counter() - started
 
 print(f"  ..   {'the real map, for scale':<56} "
@@ -506,11 +546,13 @@ print(f"  ..   {'the real map, for scale':<56} "
 print(f"  ..   {'convert / parse cost':<56} "
       f"{convert_seconds * 1000:.0f} ms / {parse_seconds * 1000:.0f} ms")
 
+expect("the real map's own rendered text reads back", refusal, "")
+
 want_census = xml_census(real_root)
 expect("every layer, gid, object and property survives",
        model_census(real.blitmap.layers), want_census)
-expect("and survives the trip through the text too",
-       model_census(reparsed.layers), want_census)
+expect_returns("and survives the trip through the text too",
+               lambda: model_census(reparsed.layers), want_census)
 expect("the census is not empty", len(want_census) > 0, True)
 # The census is compared derived-to-derived, so it holds no matter what the
 # author paints. This is the only place the map's own numbers are used, and
@@ -628,8 +670,9 @@ expect_raises("an external .tsx is refused rather than guessed at",
 # dropped on read. Stated as a check because "round-trips byte-exactly"
 # would otherwise be read as covering it.
 commented = "blitmap 1\n# a note\nsize 1 1\n\ntilesize 8 8\n"
-expect("comments and blank lines read fine and do not come back",
-       Blitmap.parse(commented).render(), "blitmap 1\nsize 1 1\ntilesize 8 8\n")
+expect_returns("comments and blank lines read fine and do not come back",
+               lambda: Blitmap.parse(commented).render(),
+               "blitmap 1\nsize 1 1\ntilesize 8 8\n")
 
 
 # ---------------------------------------------------------------------------

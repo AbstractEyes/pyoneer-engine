@@ -27,8 +27,22 @@ class PlayerState:
 class GamePlayer(GameAnimatedEntity):
 
     def core_input_receive(self, events: list[pygame.event.Event] | pygame.event.Event):
-        # todo; process input events for the player
-        pass
+        """Nothing, and that is the honest state rather than a missing feature.
+
+        `SceneManager.inputs` calls this once per pyo-event for every bound
+        object, so it looks like the player's input entry point and is not.
+        Movement is POLLED, not event-driven: `core_frame_update` calls
+        `input_move`, which asks `InputActionManager.held()` for each of the
+        four verbs and calls `move_direction` -- and `move_direction` is where
+        the collision gate lives, because that is the one place a position
+        actually changes.
+
+        A rising-edge action (talk, use, open a menu) is what this method is
+        for, and there is not one yet. `GameEventType.USE` is emitted exactly
+        once in the whole engine and bound by nobody, which is the same hole
+        seen from the other end.
+        """
+        return
 
     def __init__(self,
                  input_: InputActionManager=None,

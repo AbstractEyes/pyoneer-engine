@@ -10,6 +10,7 @@ from scripts.core.renderer import LayerRenderer
 from scripts.core.scene.game_scene import GameScene
 from scripts.game.entity.game_entity import GameEntity
 from scripts.game.game_camera import GameCamera
+from scripts.game.game_map import GameMap
 
 from scripts.core.depth import OBJECT_CONVERTER, OBJECT_DEPTH, MAP_DEPTH
 
@@ -50,11 +51,30 @@ class SceneManager:
         if self.current_scene is not None:
             self.current_scene.bind(depth_or_definition, game_object)
             self.renderer.bind(depth_or_definition, game_object)
+            if isinstance(game_object, GameMap):
+                self.__bind_spawned_entities()
         else:
             raise PyoneerSceneError(
                 f"no current scene to bind {type(game_object).__name__} into "
                 f"at {depth_or_definition!r}; call set_scene() first"
             )
+
+    def __bind_spawned_entities(self):
+        """Give the entities the map just spawned their frame updates.
+
+        renderer.bind(GameMap) constructs every typed object on the map's
+        object layers and binds it into an EntityLayer. That is enough to DRAW
+        an entity and nothing else: EntityLayer.core_frame_update is a no-op,
+        so one that lives only in the renderer holds its first animation frame
+        forever and never moves. Everything main.py binds by hand goes into
+        the scene as well, and a map-spawned entity is not a different kind of
+        object -- it just had nobody to bind it until now.
+
+        Into the SCENE only. The renderer already holds them, and binding them
+        there a second time would queue every sprite twice per frame.
+        """
+        for record in self.renderer.spawned_entities:
+            self.current_scene.bind(record.depth, record.entity)
 
     def add_scene(self, name: str, scene: GameScene):
         self.scenes[name] = scene

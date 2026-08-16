@@ -10,6 +10,7 @@ from scripts.core.game_object import PyoneerGameObject
 
 from scripts.core.event_types import GameEventType
 from scripts.core.log import trace_events
+from scripts.core.transform2d import Transform2D
 from scripts.core.ui.anchor import Anchor, DEFAULT_ANCHOR, reflow as anchor_reflow
 #from scripts.game.game_camera import GameCamera
 
@@ -50,6 +51,12 @@ class GameComponent(PyoneerGameObject, ABC):
       after the parent transform. `bounds` is a CONSTRUCTOR PARAMETER
       that feeds both; there is no `bounds` attribute -- ten other
       phantoms were removed from this list and this was the eleventh.
+        \n
+        The placement half of this class now lives in
+        `scripts/core/transform2d.Transform2D`, reachable as `.transform`.
+        Every accessor below still works exactly as it did -- this class owns
+        the event dispatch and the parent/child cascade, and delegates the
+        arithmetic.
     """
 
     def __init__(self,
@@ -64,16 +71,15 @@ class GameComponent(PyoneerGameObject, ABC):
                  draggable: bool = True,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__local_bounds: Rect = bounds.copy() if bounds is not None else Rect(0, 0, 0, 0)
-        """The bounds of the component, used for dynamic positioning."""
-        self.__world_bounds: Rect = bounds.copy() if bounds is not None else Rect(0, 0, 0, 0)
-        """The world bounds of the component, used for positioning in the world."""
-        self.__offset: Vector2 = Vector2(0, 0)
-        """The offset value that determines where the component is interacted with or drawn."""
-        self.__scale: float = 1.0
-        """The scale of the component, used for rendering size."""
-        self.__rotation: float = 0.0
-        """The rotation of the component, used for rendering rotation."""
+        self._transform: Transform2D = Transform2D(bounds)
+        """Local bounds, world bounds, offset, scale and rotation.
+
+        Single-underscore rather than name-mangled: subclasses genuinely need
+        to reach it, and three separate `__`-mangled slots down one MRO is
+        the exact mistake that gave `image` three meanings (see
+        PyoneerGameObject._image). The properties below are the supported
+        way in; this attribute is the one place the state actually lives.
+        """
         #self.__depth: int = 0
         #"""The depth of the component, used for rendering order."""
         # ---------------------------------------------------------------------------------------- #
@@ -130,9 +136,9 @@ class GameComponent(PyoneerGameObject, ABC):
             Managers and self can only send messages to each other.\n
             If none, accepts events from anything.
         """
-        self.__screen_area: Rect = self.__local_bounds.copy() if screen_area is None else screen_area
+        self.__screen_area: Rect = self._transform.local.copy() if screen_area is None else screen_area
         """The screen display zone of the component used for viewport clipping, default x=0, y=0, w=self.__bounds.width/height."""
-        self.__working_area: Rect = Rect(0, 0, self.__local_bounds.width, self.__local_bounds.height) if working_area is None else working_area
+        self.__working_area: Rect = Rect(0, 0, self._transform.local.width, self._transform.local.height) if working_area is None else working_area
         """The actual internal working area for more complex panels and the like, potentially any size."""
         self.__use_immediate_viewport: bool = True
         """Whether the component uses the immediate viewport or the next one up."""
@@ -155,12 +161,22 @@ class GameComponent(PyoneerGameObject, ABC):
         return self.send_event_advanced(event_type=GameEventType.BUILD, event=event)
 
     @property
+    def transform(self) -> Transform2D:
+        """This component's placement state.
+
+        Read-only on purpose: a component and its transform are bound for
+        life, and swapping one out would leave the bounds-changed cascade
+        pointing at a rect nothing else reads. Mutate through it, not over it.
+        """
+        return self._transform
+
+    @property
     def offset(self) -> Vector2:
-        return self.__offset
+        return self._transform.offset
 
     @offset.setter
     def offset(self, value: Vector2):
-        self.__offset = value
+        self._transform.offset = value
 
     @property
     def use_immediate_viewport(self) -> bool:
@@ -203,43 +219,14 @@ class GameComponent(PyoneerGameObject, ABC):
         self.__parent = parent_in
 
     def move(self, x: int | float, y: int | float, sender: GameComponent | None = None):
-        """Move to local position (x, y).
+        """Move to local position (x, y), then tell the subtree to re-resolve.
 
-        `offset` is a LOCAL->WORLD shift. Every other site treats it that
-        way -- `__update_world_bounds` computes
-        `world = local + parent.world + offset`, and `adjust_point` shifts a
-        point by it to cross the same boundary.
-
-        This method used to fold it into LOCAL as well:
-
-            self.__local_bounds = Rect(x + self.offset.x, ...)
-
-        which is a different meaning of the word, and the two compounded.
-        Measured on a component with offset (7, 3): `move(10, 10)` left
-        local at (17, 13), and because world is then derived as
-        local + parent.world + offset, the offset was counted a SECOND time
-        on the next recompute. A component with a non-zero offset drifted by
-        that offset every time it was moved and re-resolved -- and panels do
-        set offsets on their children, so this was reachable rather than
-        theoretical.
-
-        Local is now exactly what the caller asked for. The world result for
-        a root is unchanged; what changed is that local no longer carries a
-        shift that does not belong to it.
+        The arithmetic -- including why `offset` lands on world and only on
+        world, and why the parented branch is asymmetric -- is in
+        `Transform2D.move`. What is left here is the half that needs the
+        component tree: the TRANSFORM fan-out to children.
         """
-        local = self.local_bounds.copy()
-        world = self.world_bounds.copy()
-        if self.__parent is None:
-            self.__local_bounds = Rect(x, y, local.width, local.height)
-            self.__world_bounds = Rect(x + self.offset.x, y + self.offset.y,
-                                       world.width, world.height)
-        else:
-            # NOTE: this branch writes world WITHOUT the parent's origin,
-            # which disagrees with __update_world_bounds. It is left as-is
-            # deliberately -- the window drag path depends on the current
-            # behaviour and correcting it is a separate, testable change.
-            # See docs/ORPHANS.md.
-            self.__world_bounds = Rect(x + self.offset.x, y + self.offset.y, world.width, world.height)
+        self._transform.move(x, y, parented=self.__parent is not None)
 
         if sender is None:
             sender = self
@@ -250,19 +237,19 @@ class GameComponent(PyoneerGameObject, ABC):
                                                           data={"parent_moved": True}))
 
     def scale(self, scale: Vector2 | None = Vector2(1, 1), sender: GameComponent | None = None):
-        self.__scale = scale
+        self._transform.scale = scale
         if sender is None:
             self.send_event_to_children_advanced(GameEventType.TRANSFORM, PyoneerEvent(GameEventType.TRANSFORM, sender=self, data={"parent_moved": True}))
 
     def rotate(self, rotation: float, sender: GameComponent | None = None):
-        self.__rotation = rotation
+        self._transform.rotation = rotation
         if sender is None:
             self.send_event_to_children_advanced(GameEventType.TRANSFORM, PyoneerEvent(GameEventType.TRANSFORM, sender=self, data={"parent_moved": True}))
 
     @property
     def world_bounds(self) -> Rect:
         """Returns a prepared bounds object based on the parent component hierarchy."""
-        return self.__world_bounds
+        return self._transform.world
 
     def __transform_component(self, event: PyoneerEvent | None = None):
         """Handle the parent moved event."""
@@ -316,10 +303,7 @@ class GameComponent(PyoneerGameObject, ABC):
         """Update the world bounds of the component."""
         if self.parent is None:
             return
-        base_bounds = self.__local_bounds.copy()
-        base_bounds.x += self.__parent.world_bounds.x + self.offset.x
-        base_bounds.y += self.__parent.world_bounds.y + self.offset.y
-        self.__world_bounds = base_bounds
+        self._transform.resolve(self.__parent.world_bounds)
 
     @property
     def adjusted_bounds(self) -> Rect:
@@ -331,7 +315,7 @@ class GameComponent(PyoneerGameObject, ABC):
     @world_bounds.setter
     def world_bounds(self, bounds: Rect):
         """Accepts an unfiltered bounds object and sets the bounds of the component."""
-        self.__world_bounds = bounds.copy()
+        self._transform.set_world(bounds)
 
     @property
     def viewport(self) -> Rect | None:
@@ -414,7 +398,7 @@ class GameComponent(PyoneerGameObject, ABC):
     @property
     def local_bounds(self) -> Rect:
         """Returns the raw bounds of the component."""
-        return self.__local_bounds
+        return self._transform.local
 
     @local_bounds.setter
     def local_bounds(self, bounds: Rect | Vector2):
@@ -428,14 +412,14 @@ class GameComponent(PyoneerGameObject, ABC):
         the surface of its "background" child both stay at h=118.
         """
         if isinstance(bounds, Vector2):
-            new_bounds = Rect(bounds.x, bounds.y, self.__local_bounds.w, self.__local_bounds.h)
+            new_bounds = Rect(bounds.x, bounds.y, self._transform.local.w, self._transform.local.h)
         else:
             new_bounds = bounds
-        previous = self.__local_bounds
+        previous = self._transform.local
         unchanged = (previous.x == new_bounds.x and previous.y == new_bounds.y
                      and previous.w == new_bounds.w and previous.h == new_bounds.h)
         previous = previous.copy()
-        self.__local_bounds = new_bounds
+        self._transform.local = new_bounds
         if unchanged:
             return
         self._on_bounds_changed(previous, new_bounds.copy())
@@ -501,7 +485,7 @@ class GameComponent(PyoneerGameObject, ABC):
         relationship (Button, ScrollComponent) express it by assigning their
         children's `local_bounds`, which re-enters the cascade above.
         """
-        self.__resync_world_bounds(self.__local_bounds)
+        self.__resync_world_bounds(self._transform.local)
         for child in tuple(self.components.values()):
             child.notify_parent_bounds_changed(self)
 
@@ -519,13 +503,14 @@ class GameComponent(PyoneerGameObject, ABC):
         leaves a root's world bounds frozen at whatever the constructor or
         the last move() left there. For a root there is no parent transform,
         so world IS local plus offset -- the same relation the constructor
-        and move() already assume.
+        and move() already assume. `Transform2D.resync` is that rule.
+
+        The parented case still routes through `__update_world_bounds` rather
+        than calling `Transform2D.resolve` directly, so subclasses that
+        override `parent` keep whatever answer that property gives them.
         """
         if self.__parent is None:
-            world = local.copy()
-            world.x += self.__offset.x
-            world.y += self.__offset.y
-            self.__world_bounds = world
+            self._transform.resync(local, None)
             return
         self.__update_world_bounds()
 
@@ -536,11 +521,7 @@ class GameComponent(PyoneerGameObject, ABC):
             if bind_manager:
                 self.manager = parent
             if preserve_world_bounds:
-                temp = self.world_bounds
-                self.__local_bounds.x = temp.x
-                self.__local_bounds.y = temp.y
-                self.__local_bounds.width = temp.width
-                self.__local_bounds.height = temp.height
+                self._transform.adopt_world_as_local()
             self.__update_world_bounds()
 
     def bind_component(self, name: str, component_in: GameComponent,
@@ -587,9 +568,7 @@ class GameComponent(PyoneerGameObject, ABC):
             return Vector2(point.topleft)
         elif isinstance(point, tuple):
             return Vector2(point[0], point[1])
-        point.x += self.offset.x
-        point.y += self.offset.y
-        return point
+        return self._transform.shift_point(point)
 
     def get_component(self, identifier: str) -> GameComponent | None:
         """Get a specific component."""

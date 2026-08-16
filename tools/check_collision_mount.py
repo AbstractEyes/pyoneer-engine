@@ -482,14 +482,35 @@ try:
     canvas.set_mode(EditMode.COLLISION)
     real_tilesets = type(document).tilesets
     type(document).tilesets = lambda self: []
+    # The canvas now OFFERS to declare the tileset instead of only complaining,
+    # and the offer is a modal dialog. Without this stub the drag below blocks
+    # on QMessageBox.question forever -- measured at 40+ minutes with no
+    # output, which made check_all.py never return at all. `confirm` is an
+    # instance attribute precisely so a check can answer it.
+    real_confirm = canvas.confirm
+    asked: list[str] = []
+
+    def decline(_parent, title, _body):
+        asked.append(title)
+        return False
+
+    canvas.confirm = decline
     try:
         before = len(session.history())
         drag(application, canvas, [(0, 0), (2, 0)])
         expect("nothing was written", len(session.history()) - before, 0)
-        expect("and it names what is missing",
-               any(COLLISION_TILESET in m for m in messages), True)
+        # NOT `COLLISION_TILESET in message`. That string is "collision" and
+        # the fixture's own art is named collision.png, so the missing-art
+        # status line satisfied it -- the assertion passed on an unrelated
+        # message and could not fail. What is actually under test is that the
+        # canvas ASKS rather than inventing a tileset silently, so assert the
+        # question was put.
+        expect("the author was asked, not silently ignored", len(asked), 1)
+        expect("and the question names what it is about",
+               "collision" in asked[0].lower() if asked else "", True)
     finally:
         type(document).tilesets = real_tilesets
+        canvas.confirm = real_confirm
     canvas.status.disconnect(messages.append)
 
     window.close()

@@ -97,6 +97,23 @@ per query instead of baking it costs 35.7 ms per full pass, so the bake
 pays for itself before the first frame finishes. Storage is 10,000 bytes
 flat: no per-cell object, no dict, nothing to traverse.
 
+WHAT IS HERE AND WHAT IS IMPORTED
+---------------------------------
+Everything the ENGINE also needs -- the opinion vocabulary, `CollisionLayer`,
+`resolve`, `Resolution`, `CollisionField`, the tmx gid encoding and the flip
+arithmetic -- is defined once in `scripts/core/collision_runtime.py` and
+imported below. `editor/` may import `scripts/` and never the reverse, and
+the editor's overlay and the player's movement gate answering the same
+question from two hand-kept copies is the one bug this whole feature is
+supposed to make impossible. The names are re-exported from here because
+every caller in `editor/` already imports them from this module.
+
+What stays is what the runtime has no use for: the three-level stack's
+WEAKEST level (`TilesetDefaults`, `tileset_reader`) and the `.blitmask` text
+format that stores it. A companion layer's masks live in the .tmx, so the
+engine never opens a sidecar; moving a 250-line parser across the fence would
+only widen a module the game loads at boot.
+
 Pure Python. No Qt, no pygame, no document, no map. Every function here
 takes plain numbers or a `read(x, y)` callable.
 """
@@ -104,32 +121,42 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any, Callable, ClassVar, Iterator, Mapping, Sequence
+from typing import Any, ClassVar, Iterator, Mapping, Sequence
 
 from editor.core.errors import PyoneerProjectError
 from editor.core.layers import (  # the vocabulary; never redefined here
     BLOCK_ALL,
-    BLOCK_DOWN,
-    BLOCK_LEFT,
-    BLOCK_RIGHT,
-    BLOCK_UP,
     PASS_ALL,
     STAR,
-    describe_mask,
-    gid_to_mask,
-    mask_to_gid,
 )
 from editor.core.paint import Reader  # (x, y) -> gid; same idea, same name
 
-# An opinion is a mask in 0..STAR, or NO_DATA. A reader of them is the unit
-# every level of the stack is expressed as, so levels are interchangeable
-# and a test fixture is a lambda.
-OpinionReader = Callable[[int, int], int]
-
-# -1 rather than a large sentinel so that `opinion != NO_DATA` is the whole
-# abstention test and no arithmetic on a real mask can ever produce it: the
-# mask domain is 0..STAR and every converter clamps into it.
-NO_DATA = -1
+# The model, defined once on the engine side. Re-exported rather than
+# re-stated -- see WHAT IS HERE AND WHAT IS IMPORTED above.
+from scripts.core.collision_runtime import (  # noqa: F401
+    FLIP_DIAGONAL,
+    FLIP_HORIZONTAL,
+    FLIP_VERTICAL,
+    GID_FLAG_MASK,
+    GID_VALUE_MASK,
+    NO_DATA,
+    OPPOSITE,
+    STEP,
+    CollisionField,
+    CollisionLayer,
+    OpinionReader,
+    Resolution,
+    abstains,
+    companion_reader,
+    describe_opinion,
+    gid_to_opinion,
+    is_opinion,
+    join_gid,
+    opinion_to_gid,
+    resolve,
+    split_gid,
+    transform_mask,
+)
 
 
 class PyoneerBlitmaskError(PyoneerProjectError):
@@ -153,161 +180,6 @@ class PyoneerBlitmaskError(PyoneerProjectError):
         super().__init__(message, **context)
         self.line = line
         self.path = path
-
-
-# --------------------------------------------------------------------------
-# The tmx gid encoding
-# --------------------------------------------------------------------------
-# A gid in a tmx layer is not just a tile number: the top three bits are
-# flip flags. Any arithmetic that forgets to mask them off does not fail --
-# it looks up a tile id in the hundreds of millions, finds nothing, and
-# silently reports "no opinion" for every flipped tile on the map.
-#
-# These live here rather than in `scripts/` only because nothing in the
-# engine needs them yet. When a tileset module lands on the engine side of
-# the boundary, they belong there and this module should import them.
-
-GID_FLAG_MASK = 0xE0000000
-GID_VALUE_MASK = 0x1FFFFFFF
-FLIP_HORIZONTAL = 0x80000000
-FLIP_VERTICAL = 0x40000000
-FLIP_DIAGONAL = 0x20000000
-
-
-def split_gid(raw: int) -> tuple[int, int]:
-    """A raw tmx gid as (bare gid, flip flags)."""
-    return raw & GID_VALUE_MASK, raw & GID_FLAG_MASK
-
-
-def join_gid(bare: int, flags: int) -> int:
-    """The inverse of `split_gid`."""
-    return (bare & GID_VALUE_MASK) | (flags & GID_FLAG_MASK)
-
-
-# Which way each direction bit points, and what it becomes when the tile is
-# mirrored. Derived from the imported bits rather than re-stated as numbers,
-# so widening the vocabulary cannot leave these behind.
-STEP = {
-    BLOCK_DOWN: (0, 1),
-    BLOCK_LEFT: (-1, 0),
-    BLOCK_RIGHT: (1, 0),
-    BLOCK_UP: (0, -1),
-}
-OPPOSITE = {
-    BLOCK_DOWN: BLOCK_UP,
-    BLOCK_UP: BLOCK_DOWN,
-    BLOCK_LEFT: BLOCK_RIGHT,
-    BLOCK_RIGHT: BLOCK_LEFT,
-}
-
-# Where each direction bit lands under each mirror. Written as names rather
-# than as shifts: `(bits & BLOCK_LEFT) << 1` happens to be BLOCK_RIGHT today
-# and would go on being a plausible-looking number on the day the bit layout
-# moved.
-_MIRROR_DIAGONAL = {BLOCK_UP: BLOCK_LEFT, BLOCK_LEFT: BLOCK_UP,
-                    BLOCK_DOWN: BLOCK_RIGHT, BLOCK_RIGHT: BLOCK_DOWN}
-_MIRROR_HORIZONTAL = {BLOCK_LEFT: BLOCK_RIGHT, BLOCK_RIGHT: BLOCK_LEFT,
-                      BLOCK_UP: BLOCK_UP, BLOCK_DOWN: BLOCK_DOWN}
-_MIRROR_VERTICAL = {BLOCK_UP: BLOCK_DOWN, BLOCK_DOWN: BLOCK_UP,
-                    BLOCK_LEFT: BLOCK_LEFT, BLOCK_RIGHT: BLOCK_RIGHT}
-
-
-def _mirror(bits: int, mapping: Mapping[int, int]) -> int:
-    out = 0
-    for source, target in mapping.items():
-        if bits & source:
-            out |= target
-    return out
-
-
-def transform_mask(mask: int, flags: int) -> int:
-    """A mask as seen through a tile's flip flags.
-
-    A horizontally flipped wall blocks from the other side. Skipping this
-    is the kind of bug that only shows up on the mirrored half of a
-    symmetrical room, which is exactly where nobody looks.
-
-    Tiled applies the diagonal flip (a transpose, so up<->left and
-    down<->right) BEFORE the horizontal and vertical ones; that order is
-    reproduced here. Star survives untouched -- it is not a direction, so
-    there is nothing to mirror -- and it is kept as a separate bit so this
-    still holds if the mask domain ever widens to STAR|direction.
-
-    NO_DATA passes through unchanged. That guard is not defensive padding:
-    NO_DATA is -1, so the bit arithmetic below turns it into STAR|BLOCK_ALL
-    = 31, a value outside the vocabulary that nothing downstream would
-    recognise. Mirroring a value that says nothing still says nothing.
-    """
-    if mask == NO_DATA:
-        return NO_DATA
-    star = mask & STAR
-    bits = mask & BLOCK_ALL
-    if flags & FLIP_DIAGONAL:
-        bits = _mirror(bits, _MIRROR_DIAGONAL)
-    if flags & FLIP_HORIZONTAL:
-        bits = _mirror(bits, _MIRROR_HORIZONTAL)
-    if flags & FLIP_VERTICAL:
-        bits = _mirror(bits, _MIRROR_VERTICAL)
-    return star | bits
-
-
-# --------------------------------------------------------------------------
-# Opinions
-# --------------------------------------------------------------------------
-
-def is_opinion(value: int) -> bool:
-    """True for NO_DATA or any mask this vocabulary defines."""
-    return value == NO_DATA or 0 <= value <= STAR
-
-
-def describe_opinion(opinion: int) -> str:
-    """`describe_mask` extended by the one value it cannot describe."""
-    if opinion == NO_DATA:
-        return "no opinion"
-    if not 0 <= opinion <= STAR:
-        return f"invalid ({opinion})"
-    return describe_mask(opinion)
-
-
-def gid_to_opinion(gid: int, first_gid: int) -> int:
-    """A companion-layer gid as an opinion. The sibling of `gid_to_mask`.
-
-    Two branches differ, and both differ deliberately:
-
-      * an empty cell (gid 0) is NO_DATA here, where `gid_to_mask` says
-        PASS_ALL. A collision layer is empty almost everywhere, and reading
-        that emptiness as an assertion is what makes a stack of layers
-        meaningless.
-      * a gid belonging to some other tileset is NO_DATA too, for the same
-        reason: this layer holds no mask for that cell, which is not the
-        same claim as "that cell is open".
-
-    Flip flags are masked off first. A mask tile has no business being
-    flipped, but a hand-edited file can carry anything, and the alternative
-    is a silent NO_DATA for a cell that plainly holds a mask.
-
-    In range, the arithmetic is `gid_to_mask`'s own -- delegated rather than
-    copied, so there is exactly one place that knows a mask is `gid -
-    first_gid`.
-    """
-    bare, flags = split_gid(gid)
-    if bare <= 0 or not first_gid <= bare <= first_gid + STAR:
-        return NO_DATA
-    return transform_mask(gid_to_mask(bare, first_gid), flags)
-
-
-def opinion_to_gid(opinion: int, first_gid: int) -> int:
-    """The inverse: NO_DATA becomes the empty cell, everything else defers
-    to `mask_to_gid` -- including its ValueError for a mask outside the
-    vocabulary, which is a bug in the caller and should be loud."""
-    if opinion == NO_DATA:
-        return 0
-    return mask_to_gid(opinion, first_gid)
-
-
-def companion_reader(read: Reader, first_gid: int) -> OpinionReader:
-    """Level two: a companion tile layer's gids, as opinions."""
-    return lambda x, y: gid_to_opinion(read(x, y), first_gid)
 
 
 # --------------------------------------------------------------------------
@@ -439,333 +311,6 @@ def tileset_reader(art: Reader, defaults: Sequence[TilesetDefaults]
         return NO_DATA
 
     return read
-
-
-# --------------------------------------------------------------------------
-# One layer's three levels
-# --------------------------------------------------------------------------
-
-@dataclass
-class CollisionLayer:
-    """The three levels for one map layer, and the walk down them.
-
-    Fields are declared weakest first, to read in the same order the levels
-    are documented; `opinion_at` consults them in the opposite order, which
-    is the one that matters.
-
-    A level is any `OpinionReader`, so a test fixture, a companion layer, a
-    tileset table and a future runtime source are the same thing to this
-    class. `None` means the level is absent, which is not the same as a
-    level that answers NO_DATA everywhere only in that it costs nothing.
-    """
-
-    name: str = ""
-    defaults: OpinionReader | None = None      # weakest
-    companion: OpinionReader | None = None
-    overrides: dict[tuple[int, int], int] = field(default_factory=dict)
-
-    def opinion_at(self, x: int, y: int) -> int:
-        """Strongest level that has something to say, or NO_DATA.
-
-        STAR stops this walk. It is an authored abstention -- "not my
-        business" -- and a level that says it has spoken, which is how a
-        star painted over a tileset default suppresses that default instead
-        of falling through to it.
-        """
-        opinion = self.overrides.get((x, y), NO_DATA)
-        if opinion != NO_DATA:
-            return opinion
-        for level in (self.companion, self.defaults):
-            if level is None:
-                continue
-            opinion = level(x, y)
-            if opinion != NO_DATA:
-                return opinion
-        return NO_DATA
-
-    def set_override(self, x: int, y: int, opinion: int) -> None:
-        """Write the strongest level.
-
-        An override of NO_DATA REMOVES the entry rather than storing it,
-        because "this cell overrides nothing" and "there is no override for
-        this cell" resolve identically -- storing both would be two spellings
-        of one state, and the sparse dict is the fast shape precisely because
-        it holds only what was said.
-        """
-        if not is_opinion(opinion):
-            raise ValueError(f"{opinion} is not an opinion "
-                             f"(NO_DATA or 0..{STAR})")
-        if opinion == NO_DATA:
-            self.overrides.pop((x, y), None)
-        else:
-            self.overrides[(x, y)] = opinion
-
-    def clear_override(self, x: int, y: int) -> None:
-        self.overrides.pop((x, y), None)
-
-    def override_at(self, x: int, y: int) -> int:
-        return self.overrides.get((x, y), NO_DATA)
-
-
-# --------------------------------------------------------------------------
-# The layer stack
-# --------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class Resolution:
-    """What a cell resolves to, and who decided.
-
-    `layer` and `conflicted` are not for the runtime -- the runtime wants
-    the mask and nothing else. They are for the editor's overlay, which has
-    to answer "why is this cell blocked" and "does a layer under this one
-    disagree", neither of which survives being reduced to a mask.
-    """
-
-    mask: int
-    layer: int = -1              # index of the deciding layer, -1 if none did
-    conflicted: bool = False
-
-    @property
-    def decided(self) -> bool:
-        """False when every layer abstained and `mask` is the fallback."""
-        return self.layer >= 0
-
-    def describe(self) -> str:
-        if not self.decided:
-            return f"{describe_mask(self.mask)} (undecided)"
-        text = f"{describe_mask(self.mask)} (layer {self.layer})"
-        return (text + " CONFLICT") if self.conflicted else text
-
-
-def abstains(opinion: int) -> bool:
-    """Does this opinion pass the question to the layer BELOW?
-
-    Both no-data and star do, for different reasons -- nothing was written,
-    versus "ask below" was written -- and this is the one place the two are
-    treated alike.
-    """
-    return opinion == NO_DATA or opinion == STAR
-
-
-def resolve(layers: Sequence[CollisionLayer], x: int, y: int, *,
-            undecided: int = PASS_ALL) -> Resolution:
-    """Walk a layer stack and report the first layer that decides.
-
-    `layers` is ordered TOPMOST FIRST. A tmx layer list is the other way
-    round -- first child is the bottom layer -- so a caller reading a map
-    reverses it. The check pins this ordering so a refactor cannot flip it
-    quietly.
-
-    `undecided` is what a cell means when every layer abstained. It defaults
-    to PASS_ALL because an unauthored map should be walkable, but it is a
-    parameter rather than a constant: a game where unauthored means solid is
-    just as reasonable and should not have to re-implement the walk.
-    """
-    decider = -1
-    mask = undecided
-    for index, layer in enumerate(layers):
-        opinion = layer.opinion_at(x, y)
-        if abstains(opinion):
-            continue
-        decider, mask = index, opinion
-        break
-    if decider < 0:
-        return Resolution(mask, -1, False)
-    # Conflict is a channel of its own: a layer BELOW the decider that says
-    # something different is invisible in the resolved mask, and it is
-    # exactly what you want flagged while hopping between layers.
-    for lower in layers[decider + 1:]:
-        opinion = lower.opinion_at(x, y)
-        if not abstains(opinion) and opinion != mask:
-            return Resolution(mask, decider, True)
-    return Resolution(mask, decider, False)
-
-
-# --------------------------------------------------------------------------
-# The baked runtime field
-# --------------------------------------------------------------------------
-
-class CollisionField:
-    """A resolved mask per cell, flat, immutable, and cheap to ask.
-
-    This is the answer rather than the question: every NO_DATA has already
-    collapsed, every layer has already been walked, and a query is a bounds
-    check plus one index into a `bytes`. That is the whole design -- the
-    cost of resolution is paid once at load instead of once per query
-    forever.
-
-    `outside` is what a query beyond the edge returns, and it defaults to
-    BLOCK_ALL because the alternative lets an entity walk out of the world.
-    A caller who wants an open border passes PASS_ALL and means it.
-    """
-
-    __slots__ = ("width", "height", "tile_width", "tile_height",
-                 "outside", "_masks")
-
-    def __init__(self, width: int, height: int, masks: bytes | Sequence[int],
-                 *, tile_width: int = 16, tile_height: int = 16,
-                 outside: int = BLOCK_ALL) -> None:
-        if width <= 0 or height <= 0:
-            raise ValueError(f"a field is at least 1x1, got {width}x{height}")
-        if tile_width <= 0 or tile_height <= 0:
-            raise ValueError(f"tile size must be positive, got "
-                             f"{tile_width}x{tile_height}")
-        data = bytes(masks)
-        if len(data) != width * height:
-            raise ValueError(f"a {width}x{height} field wants "
-                             f"{width * height} masks, got {len(data)}")
-        bad = [m for m in data if not 0 <= m <= STAR]
-        if bad:
-            raise ValueError(f"masks outside 0..{STAR}: {sorted(set(bad))[:8]}")
-        if not 0 <= outside <= STAR:
-            raise ValueError(f"outside must be a mask, got {outside}")
-        self.width = width
-        self.height = height
-        self.tile_width = tile_width
-        self.tile_height = tile_height
-        self.outside = outside
-        self._masks = data
-
-    # -- building ----------------------------------------------------------
-
-    @classmethod
-    def bake(cls, layers: Sequence[CollisionLayer], width: int, height: int,
-             *, tile_width: int = 16, tile_height: int = 16,
-             outside: int = BLOCK_ALL,
-             undecided: int = PASS_ALL) -> "CollisionField":
-        """Resolve every cell once. `layers` is topmost first, as `resolve`.
-
-        Note what `undecided` does here: it is the moment "no opinion"
-        stops existing. Everything above this line distinguishes silence
-        from assent; nothing below it can, because a runtime answering
-        "I don't know" to a movement query is not an answer.
-        """
-        if not 0 <= undecided <= STAR:
-            raise ValueError(f"undecided must be a mask, got {undecided}")
-        stack = tuple(layers)
-        masks = bytearray(width * height)
-        at = 0
-        for y in range(height):
-            for x in range(width):
-                mask = undecided
-                for layer in stack:
-                    opinion = layer.opinion_at(x, y)
-                    if not abstains(opinion):
-                        mask = opinion
-                        break
-                masks[at] = mask
-                at += 1
-        return cls(width, height, bytes(masks), tile_width=tile_width,
-                   tile_height=tile_height, outside=outside)
-
-    @classmethod
-    def from_blitmask(cls, blitmask: "Blitmask", *, tile_width: int = 16,
-                      tile_height: int = 16, outside: int = BLOCK_ALL,
-                      undecided: int = PASS_ALL) -> "CollisionField":
-        """A field straight from a file. NO_DATA cells become `undecided`,
-        so this is a lossy direction on purpose -- see `bake`."""
-        if not 0 <= undecided <= STAR:
-            raise ValueError(f"undecided must be a mask, got {undecided}")
-        masks = bytes(undecided if v == NO_DATA else v
-                      for v in blitmask.opinions)
-        return cls(blitmask.width, blitmask.height, masks,
-                   tile_width=tile_width, tile_height=tile_height,
-                   outside=outside)
-
-    def to_blitmask(self, **meta: str) -> "Blitmask":
-        """The field as a file. Every cell is a real mask by now, so a
-        round trip through this and back is exact -- it is only the trip
-        INTO a field that loses NO_DATA."""
-        head: dict[str, str] = {"kind": "field"}
-        head.update(meta)
-        return Blitmask(self.width, self.height, tuple(self._masks), head)
-
-    # -- asking ------------------------------------------------------------
-
-    def contains(self, x: int, y: int) -> bool:
-        return 0 <= x < self.width and 0 <= y < self.height
-
-    def mask_at(self, x: int, y: int) -> int:
-        if 0 <= x < self.width and 0 <= y < self.height:
-            return self._masks[y * self.width + x]
-        return self.outside
-
-    def cell_of(self, pixel_x: float, pixel_y: float) -> tuple[int, int]:
-        """Pixel to cell, floored.
-
-        Floor rather than int(): int() truncates toward zero, so every
-        pixel in the range -15..0 lands in cell 0 and an entity a pixel
-        off the left edge reads as being inside the map.
-        """
-        return (int(pixel_x // self.tile_width),
-                int(pixel_y // self.tile_height))
-
-    def mask_at_pixel(self, pixel_x: float, pixel_y: float) -> int:
-        x, y = self.cell_of(pixel_x, pixel_y)
-        return self.mask_at(x, y)
-
-    def blocks(self, x: int, y: int, direction: int) -> bool:
-        """Does the cell itself refuse to be LEFT in this direction?
-
-        One half of a movement test -- see `can_move` for why that is not
-        the same question.
-        """
-        if direction not in STEP:
-            raise ValueError(f"{direction} is not one of the four direction "
-                             f"bits {sorted(STEP)}")
-        return bool(self.mask_at(x, y) & direction)
-
-    def can_move(self, x: int, y: int, direction: int) -> bool:
-        """Can something step from (x, y) one cell in `direction`?
-
-        Both cells get a veto, and they veto on opposite bits: leaving
-        downward is blocked by this cell's DOWN or by the cell below's UP.
-        Checking only the source is the classic one-sided collision bug --
-        a wall you cannot walk out of but can walk into. This is RPG Maker's
-        own rule (`canPass` tests the source in `d` and the destination in
-        the reverse of `d`), which is where the bit vocabulary came from.
-
-        A consequence worth knowing before designing around it: because one
-        bit governs both crossings of the same edge, blocking here is
-        SYMMETRIC and a one-way platform -- fall down through it, cannot
-        climb back up -- cannot be expressed. That needs a per-edge pair
-        rather than a per-cell nibble, which is a vocabulary change in
-        `layers.py`, not something to fake here.
-        """
-        if direction not in STEP:
-            raise ValueError(f"{direction} is not one of the four direction "
-                             f"bits {sorted(STEP)}")
-        if self.mask_at(x, y) & direction:
-            return False
-        step_x, step_y = STEP[direction]
-        return not self.mask_at(x + step_x, y + step_y) & OPPOSITE[direction]
-
-    def counts(self) -> dict[int, int]:
-        """How many cells hold each mask. For the editor's summary line and
-        for spotting a map that resolved to nothing."""
-        out: dict[int, int] = {}
-        for mask in self._masks:
-            out[mask] = out.get(mask, 0) + 1
-        return out
-
-    def masks(self) -> bytes:
-        """The flat row-major store. `bytes`, so handing it out cannot let
-        a caller mutate the field behind its back."""
-        return self._masks
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, CollisionField):
-            return NotImplemented
-        return (self.width == other.width and self.height == other.height
-                and self.outside == other.outside
-                and self.tile_width == other.tile_width
-                and self.tile_height == other.tile_height
-                and self._masks == other._masks)
-
-    def __repr__(self) -> str:
-        blocked = sum(1 for m in self._masks if m and m != STAR)
-        return (f"CollisionField({self.width}x{self.height}, "
-                f"{blocked} blocking cells)")
 
 
 # --------------------------------------------------------------------------
@@ -1037,6 +582,37 @@ class Blitmask:
 
     def __str__(self) -> str:
         return self.render()
+
+
+def field_from_blitmask(blitmask: Blitmask, *, tile_width: int = 16,
+                        tile_height: int = 16, outside: int = BLOCK_ALL,
+                        undecided: int = PASS_ALL) -> CollisionField:
+    """A field straight from a file. NO_DATA cells become `undecided`, so
+    this is a lossy direction on purpose -- see `CollisionField.bake`.
+
+    A function rather than the `CollisionField.from_blitmask` classmethod it
+    replaces. `CollisionField` is `scripts/core/collision_runtime.py`'s and
+    the engine never opens a `.blitmask`, so a constructor for it that names
+    an editor-only type would be the fence pointing the wrong way -- the
+    engine importing an authoring format it has no reader for. The two
+    directions live here, next to the format they belong to.
+    """
+    if not 0 <= undecided <= STAR:
+        raise ValueError(f"undecided must be a mask, got {undecided}")
+    masks = bytes(undecided if v == NO_DATA else v for v in blitmask.opinions)
+    return CollisionField(blitmask.width, blitmask.height, masks,
+                          tile_width=tile_width, tile_height=tile_height,
+                          outside=outside)
+
+
+def blitmask_from_field(field_in: CollisionField, **meta: str) -> Blitmask:
+    """The field as a file. Every cell is a real mask by now, so a round trip
+    through this and back is exact -- it is only the trip INTO a field that
+    loses NO_DATA."""
+    head: dict[str, str] = {"kind": "field"}
+    head.update(meta)
+    return Blitmask(field_in.width, field_in.height,
+                    tuple(field_in.masks()), head)
 
 
 def describe_stack(layers: Sequence[CollisionLayer], x: int, y: int) -> str:

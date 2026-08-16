@@ -18,9 +18,10 @@ from scripts.core.depth import MAP_DEPTH, DEPTH, resolve_layer_depth
 from scripts.core import layer_profile
 from scripts.core.blitpool import BlitPool
 from scripts.core.viewclip import clip_to_view, containment, Containment
-from scripts.core.log import trace_render
+from scripts.core.log import trace_lifecycle, trace_render
 from scripts.core.errors import (PyoneerBindTargetError, PyoneerCameraMissingError,
                                  PyoneerLayerError, warn_content)
+from scripts.loaders.map_loader import SpawnedEntity, spawn_objects
 
 
 def drawable_tile_count(layer: pytmx.TiledTileLayer, tile_map: pytmx.TiledMap) -> int:
@@ -429,6 +430,31 @@ class LayerRenderer:
         self._map_invalid: set[tuple[int, int]] = set()
         """Depth bands whose pixels are stale but whose grouping still holds."""
 
+        self.spawn_defaults: dict[str, dict] = {}
+        """Per-type constructor keyword arguments for map-placed objects.
+
+        A .tmx object carries a type, a position and custom properties. It
+        cannot carry an InputActionManager or a parsed animation category, and
+        the renderer owns no asset managers to build them from, so whoever
+        does hands them over before the map is bound -- main.py does it in
+        prepare_test_scene(). Empty means every registered class is
+        constructible with no arguments, which is true of nothing the engine
+        ships and true of every probe a check writes.
+        """
+
+        self.spawned_entities: list[SpawnedEntity] = []
+        """What the last map bind spawned, in document order.
+
+        Kept because binding into an EntityLayer is only half of what a live
+        entity needs: EntityLayer.core_frame_update is a no-op, so an entity
+        that exists only here holds its first frame forever -- it never
+        animates and never moves. SceneManager reads this list after
+        renderer.bind(GameMap) and binds the same entities into the scene,
+        which is what drives their frame updates. The renderer cannot do that
+        itself: scene_manager already imports renderer, so knowing about the
+        scene here would be an import cycle.
+        """
+
     def __bind_map(self, tmx_data: pytmx.TiledMap):
         self.__prepare_map_layers(tmx_data)
         self.__prepare_entity_layers(tmx_data)
@@ -664,7 +690,58 @@ class LayerRenderer:
         return self._image
 
     def __prepare_entity_layers(self, tmx_data: pytmx.TiledMap):
-        pass
+        """Spawn every typed object on the map's object layers and bind it.
+
+        This is the read side of the seam the editor has been authoring
+        against: `scripts/loaders/map_loader.py` constructs and positions the
+        entities, `scripts/core/spawn.py` says which class and which depth,
+        and this is where they become part of a frame.
+
+        It runs inside __bind_map, AFTER the tile layers are rasterized and
+        BEFORE anything renders, and that ordering is the whole reason a bulk
+        spawn is affordable. __prepare_map_layers has already flagged one
+        regroup that the lazy bake in render() has not serviced yet, so every
+        EntityLayer created here is folded into that single pending regroup --
+        and, more importantly, is visible to it. A spawn that happened after
+        the first render would leave a composite already baked across the
+        depths the entities landed on, and those entities would draw under
+        tiles that are supposed to be behind them.
+
+        WHY THIS DOES NOT CALL __bind_entity PER ENTITY
+        -----------------------------------------------
+        __bind_entity calls __invalidate_if_inside_map_span for every new
+        layer, and that calls invalidate() with sources_dirty defaulting to
+        True. The regroup FLAG is idempotent, so the regroup would still
+        happen only once -- but the first such call flips
+        _map_regroup_rebakes back to True, and the pending regroup then
+        re-rasterizes every tile layer __prepare_map_layers has just finished
+        rasterizing. That is the ~45ms boot-time double bake the
+        sources_dirty keyword exists to avoid, bought back silently. So the
+        span test is done once for the whole batch, and asks for the same
+        regroup WITHOUT the re-rasterization.
+
+        The properties are read through MapDocument rather than pytmx (see
+        scripts/loaders/map_loader.py for the full reasoning): pytmx casts a
+        custom property only when the file carries type="int", so a depth
+        would otherwise arrive as the string '50', which is truthy, is not
+        50, and keys nothing in self.layers.
+        """
+        spawned = spawn_objects(tmx_data, defaults=self.spawn_defaults)
+        self.spawned_entities = spawned
+        regroup = False
+        for record in spawned:
+            layer, created = self.__entity_layer(record.depth, record.layer_name)
+            layer.bind(record.entity)
+            regroup = regroup or (created and self.__inside_map_span(record.depth))
+        if regroup:
+            # sources_dirty=False for the same reason __prepare_map_layers
+            # passes it: the sources are freshly baked, only the GROUPING is
+            # stale, and re-rasterizing them cannot change a pixel.
+            self.invalidate(sources_dirty=False)
+        if spawned:
+            trace_lifecycle("map spawn bound %d entities at depths %s",
+                            len(spawned),
+                            sorted({record.depth for record in spawned}))
 
     def bind_camera(self, camera: GameCamera):
         """Bind a camera to the renderer."""
@@ -708,25 +785,43 @@ class LayerRenderer:
                 supported=("GameEntity", "GameMap", "GameComponent"),
             )
 
+    def __entity_layer(self, depth: int, layer_name: int | str) -> tuple[EntityLayer, bool]:
+        """The EntityLayer at `depth`, creating one if that depth has none.
+
+        Returns (layer, created). The caller is told whether it had to create
+        one because that is the only case that can split a run of tile layers,
+        and the two callers can afford the resulting regroup at different
+        moments -- see __prepare_entity_layers.
+        """
+        layers = self.layers.setdefault(depth, [])
+        for layer in layers:
+            if isinstance(layer, EntityLayer):
+                return layer, False
+        created = EntityLayer(layer_name, depth, self.image())
+        layers.append(created)
+        return created, True
+
     def __bind_entity(self, entity: GameEntity, layer_name: int | str = "ENTITY_2"):
         """Bind an entity to a specific layer."""
         depth = self.__prepare_depth(layer_name)
-        if depth not in self.layers:
-            self.layers[depth] = []
-        layer_found = False
-        for layer in self.layers[depth]:
-            if isinstance(layer, EntityLayer):
-                layer.bind(entity)
-                layer_found = True
-                break
-        if not layer_found:
-            layer = EntityLayer(layer_name, depth, self.image())
-            layer.bind(entity)
-            self.layers[depth].append(layer)
+        layer, created = self.__entity_layer(depth, layer_name)
+        layer.bind(entity)
+        if created:
             # A new entity layer can land in the middle of a run of tile
             # layers, and a composite spanning it would draw the tiles above
             # the entities. Only regroup when that is actually possible.
             self.__invalidate_if_inside_map_span(depth)
+
+    def __inside_map_span(self, depth: int) -> bool:
+        """Could a new layer at `depth` land inside a run of tile layers?
+
+        Strictly between the lowest and the highest tile depth: a layer at or
+        outside either end has no run to cut in half. UI at depth 100+ never
+        can, and neither can an object group that resolved above every tile.
+        """
+        if not self.map_sources:
+            return False
+        return min(self.map_sources) < depth < max(self.map_sources)
 
     def __invalidate_if_inside_map_span(self, depth: int) -> None:
         """Regroup ONLY if a new layer at `depth` could split a tile run.
@@ -737,14 +832,8 @@ class LayerRenderer:
         but scene.bind -> renderer.bind IS the runtime API, so the first
         window opened or entity spawned mid-game ate a quarter-second stall
         that did not exist before compositing.
-
-        A layer outside the span of the tile depths cannot land inside a run,
-        so it cannot split one. UI at depth 100+ never can.
         """
-        if not self.map_sources:
-            return
-        low, high = min(self.map_sources), max(self.map_sources)
-        if low < depth < high:
+        if self.__inside_map_span(depth):
             self.invalidate()
 
     def __prepare_depth(self, depth: int | str):

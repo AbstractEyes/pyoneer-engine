@@ -35,6 +35,30 @@ from typing import Any
 
 from scripts.core.layer_profile import KNOWN as ENGINE_KNOWN, PREFIX  # noqa: F401
 
+# The passability vocabulary. Defined ONCE, on the engine side, and re-exported
+# here because everything in `editor/` already imports these names from this
+# module. The bit layout is RPG Maker's -- a set bit means BLOCKED, in the
+# order down, left, right, up, and STAR is an authored abstention rather than a
+# fifth direction -- and it is stated in
+# `scripts/core/collision_runtime.py`, for the reason `layer_profile` above is:
+# the editor WRITES these gids and the engine READS them, `editor/` may import
+# `scripts/` and never the reverse, and two hand-kept copies of "a set bit
+# means blocked" drift into a map that walks differently in the overlay than
+# in the game.
+from scripts.core.collision_runtime import (  # noqa: F401
+    BLOCK_ALL,
+    BLOCK_DOWN,
+    BLOCK_LEFT,
+    BLOCK_RIGHT,
+    BLOCK_UP,
+    DIRECTION_NAMES,
+    PASS_ALL,
+    STAR,
+    describe_mask,
+    gid_to_mask,
+    mask_to_gid,
+)
+
 # pytmx attribute names a custom property may never shadow. Documented here
 # because the failure is total -- the map stops loading -- and silent until
 # it happens.
@@ -124,56 +148,6 @@ CAPABILITIES: tuple[Capability, ...] = (
 
 BY_KEY: dict[str, Capability] = {c.key: c for c in CAPABILITIES}
 BY_PROPERTY: dict[str, Capability] = {c.property_name: c for c in CAPABILITIES}
-
-
-# --------------------------------------------------------------------------
-# Passability
-# --------------------------------------------------------------------------
-# RPG Maker's bit order, copied deliberately rather than invented: a set bit
-# means BLOCKED, and the order is down, left, right, up. Star is NOT a
-# direction -- it means "abstain, ask the layer below" -- so it gets its own
-# value rather than being squeezed into the four bits.
-
-BLOCK_DOWN = 0x1
-BLOCK_LEFT = 0x2
-BLOCK_RIGHT = 0x4
-BLOCK_UP = 0x8
-PASS_ALL = 0x0
-BLOCK_ALL = BLOCK_DOWN | BLOCK_LEFT | BLOCK_RIGHT | BLOCK_UP
-STAR = 0x10                    # defer to the layer below
-
-DIRECTION_NAMES = {
-    BLOCK_DOWN: "down", BLOCK_LEFT: "left",
-    BLOCK_RIGHT: "right", BLOCK_UP: "up",
-}
-
-
-def describe_mask(mask: int) -> str:
-    """Human-readable passability, for tooltips and generated docs."""
-    if mask == STAR:
-        return "star (defer to the layer below)"
-    if mask == PASS_ALL:
-        return "open"
-    if mask == BLOCK_ALL:
-        return "blocked"
-    blocked = [name for bit, name in sorted(DIRECTION_NAMES.items())
-               if mask & bit]
-    return "blocks " + ", ".join(blocked)
-
-
-def mask_to_gid(mask: int, first_gid: int) -> int:
-    """A passability mask as a gid in its companion layer."""
-    if not 0 <= mask <= STAR:
-        raise ValueError(f"passability mask {mask} is outside 0..{STAR}")
-    return first_gid + mask
-
-
-def gid_to_mask(gid: int, first_gid: int) -> int:
-    """The inverse. gid 0 (an empty cell) reads as fully open."""
-    if gid <= 0:
-        return PASS_ALL
-    mask = gid - first_gid
-    return mask if 0 <= mask <= STAR else PASS_ALL
 
 
 # --------------------------------------------------------------------------

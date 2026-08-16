@@ -141,6 +141,7 @@ from scripts.loaders.tileset_file import (  # the shared line grammar
     read_magic,
     render_attributes,
     render_properties,
+    resolve_image,
     tail,
     unescape,
 )
@@ -149,13 +150,46 @@ MAGIC = "blitmap"
 VERSION = 1
 _INDENT = "\t"
 
+# The three high bits Tiled sets on a gid to flip or rotate a tile, and the
+# 29 bits that are left for the tile's identity. Named here rather than
+# spelled as literals at each use because a gid compared WITHOUT masking
+# matches no tileset at all -- a flipped tile carries 0x80000000 and is
+# larger than every firstgid in the file -- and that failure draws nothing
+# and raises nowhere.
+GID_FLIP_HORIZONTAL = 0x80000000
+GID_FLIP_VERTICAL = 0x40000000
+GID_FLIP_DIAGONAL = 0x20000000
+GID_FLIP_MASK = GID_FLIP_HORIZONTAL | GID_FLIP_VERTICAL | GID_FLIP_DIAGONAL
+GID_VALUE_MASK = 0x1FFFFFFF
+
 __all__ = [
     "MAGIC", "VERSION", "BLITMAP_SUFFIX", "TILESET_SUFFIX",
+    "GID_FLIP_HORIZONTAL", "GID_FLIP_VERTICAL", "GID_FLIP_DIAGONAL",
+    "GID_FLIP_MASK", "GID_VALUE_MASK", "bare_gid", "gid_flips",
     "PyoneerBlitFormatError", "Property", "TilesetFile",
     "Shape", "BlitObject", "TileLayer", "ObjectLayer", "ImageLayer",
     "LayerGroup", "TilesetLink", "Blitmap", "Conversion",
+    "LinkedTileset", "TileAddress", "LoadedMap", "load_map",
+    "MapObjectRecord", "object_records", "layer_object_records",
     "from_tmx", "write_conversion",
 ]
+
+
+def bare_gid(gid: int) -> int:
+    """A gid with its flip bits removed: the tile's identity alone."""
+    return gid & GID_VALUE_MASK
+
+
+def gid_flips(gid: int) -> tuple[bool, bool, bool]:
+    """(horizontal, vertical, diagonal), in the order pytmx's TileFlags uses.
+
+    Same order deliberately, so a value read here can be handed to
+    `pytmx.util_pygame.handle_transformation` without a shuffle that would
+    silently mirror the wrong axis.
+    """
+    return (bool(gid & GID_FLIP_HORIZONTAL),
+            bool(gid & GID_FLIP_VERTICAL),
+            bool(gid & GID_FLIP_DIAGONAL))
 
 
 # ---------------------------------------------------------------------------
@@ -522,7 +556,7 @@ class Blitmap:
         the flip flags masked off first, because a horizontally flipped tile
         carries 0x80000000 and would otherwise match nothing at all.
         """
-        bare = gid & 0x1FFFFFFF
+        bare = bare_gid(gid)
         if bare <= 0:
             return None
         best: TilesetLink | None = None
@@ -866,6 +900,254 @@ def _read_group(header: Line, cursor: Cursor, path: str | None) -> LayerGroup:
                               % line.keyword, line)
     return LayerGroup(group_id, name, tuple(layers), tuple(attributes),
                       tuple(properties))
+
+
+# ---------------------------------------------------------------------------
+# Loading a map WITH the tilesets it links
+#
+# `Blitmap.load` reads one file and follows nothing, which is the right
+# default for a caller that wants to look at layers: splitting the tileset
+# out of the map is worthless if reading the map still drags every tileset
+# in. But a caller that wants to DRAW has no gid ranges until the links are
+# followed -- a TilesetLink carries a firstgid and a name and no tile count
+# -- so that caller asks for it explicitly, here.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class LinkedTileset:
+    """A tileset link resolved to the file it names, and where that file is.
+
+    `path` is carried rather than derived because a .tileset's `image` line
+    is relative to the .TILESET, not to the map that links it. Two levels of
+    indirection, and resolving the second against the wrong base is the same
+    working-directory trap `resolve_map_path` exists for -- except it fails
+    later and quieter, as a tileset that loads and draws nothing.
+    """
+
+    link: TilesetLink
+    tileset: TilesetFile
+    path: str = ""
+
+    @property
+    def name(self) -> str:
+        return self.link.name
+
+    @property
+    def first_gid(self) -> int:
+        return self.link.first_gid
+
+    @property
+    def last_gid(self) -> int:
+        """The highest gid this tileset owns.
+
+        Built from the DECLARED tile count, not from what the image measures.
+        The map's gids were authored against the declaration, so a sheet
+        recropped outside the editor must not silently move the boundary
+        between two tilesets and repaint every tile above it.
+        """
+        return self.first_gid + self.tileset.tile_count - 1
+
+    def holds(self, gid: int) -> bool:
+        return self.first_gid <= bare_gid(gid) <= self.last_gid
+
+    def local_id(self, gid: int) -> int:
+        """The tile's index WITHIN this tileset. Negative if it is not ours."""
+        return bare_gid(gid) - self.first_gid
+
+    def image_path(self) -> str:
+        """Where this tileset's image actually is, absolutely."""
+        return resolve_image(self.tileset, self.path)
+
+    def __repr__(self) -> str:
+        return "LinkedTileset(%r, gids %d..%d)" % (self.name, self.first_gid,
+                                                   self.last_gid)
+
+
+@dataclass(frozen=True)
+class TileAddress:
+    """Where one gid's pixels live: which tileset, which cell, which flips.
+
+    The whole of what a renderer needs to turn a number into a rectangle in
+    an image, and none of what it needs to load the image -- so this stays
+    on the pygame-free side of the loaders package.
+    """
+
+    tileset: LinkedTileset
+    local_id: int
+    column: int
+    row: int
+    flips: tuple[bool, bool, bool] = (False, False, False)
+
+    @property
+    def flipped(self) -> bool:
+        return any(self.flips)
+
+
+@dataclass(frozen=True)
+class LoadedMap:
+    """A .blitmap and every .tileset it links, as one value."""
+
+    blitmap: Blitmap
+    tilesets: tuple[LinkedTileset, ...] = ()
+    path: str = ""
+
+    def tileset(self, name: str) -> LinkedTileset:
+        for found in self.tilesets:
+            if found.name == name:
+                return found
+        raise PyoneerBlitFormatError(
+            "no tileset named %r; this map links %s"
+            % (name, [t.name for t in self.tilesets]), path=self.path)
+
+    def tileset_for_gid(self, gid: int) -> LinkedTileset | None:
+        """The highest firstgid at or below `gid`. pytmx's rule, restated.
+
+        Deliberately NOT bounded above: a gid past the end of the last
+        tileset still belongs to it as far as the ranges are concerned, and
+        answering "no tileset" for it would hide the real problem, which is
+        that the tileset shrank under a map that still points into it.
+        `address` is where that becomes a refusal.
+        """
+        bare = bare_gid(gid)
+        if bare <= 0:
+            return None
+        best: LinkedTileset | None = None
+        for linked in self.tilesets:
+            if linked.first_gid <= bare and (best is None
+                                             or linked.first_gid > best.first_gid):
+                best = linked
+        return best
+
+    def address(self, gid: int) -> TileAddress | None:
+        """Resolve one gid to a cell, or None when nothing can draw it.
+
+        None for three separate reasons, and the caller cannot tell them
+        apart on purpose: gid 0 means "no tile" and is the common case, a
+        gid below every firstgid is a corrupt file, and a gid past the last
+        tile of its tileset is a tileset that shrank. Only the first is
+        ordinary, so a caller that draws should say something about the
+        other two -- see AssetMapManager's runtime view, which warns once
+        per distinct unresolvable gid rather than once per cell.
+        """
+        linked = self.tileset_for_gid(gid)
+        if linked is None:
+            return None
+        # A tile_count of 0 means the file never declared one, so there is
+        # no upper bound to enforce. Substituting what the image measures
+        # would collapse the declared/measured distinction `TilesetFile`
+        # keeps deliberately apart -- and a recropped sheet is exactly when
+        # the two disagree and exactly when it matters.
+        if linked.tileset.tile_count and not linked.holds(gid):
+            return None
+        columns = linked.tileset.columns or linked.tileset.measured[0]
+        if columns <= 0:
+            return None
+        local = linked.local_id(gid)
+        return TileAddress(linked, local, local % columns, local // columns,
+                           gid_flips(gid))
+
+    def __repr__(self) -> str:
+        return "LoadedMap(%r, tilesets=%r)" % (
+            self.blitmap, [t.name for t in self.tilesets])
+
+
+def load_map(path: str) -> LoadedMap:
+    """Load a .blitmap and every .tileset it links, resolved against IT.
+
+    A link with no `source` line raises rather than being skipped: the map
+    would still parse, every gid in that range would resolve to nothing, and
+    the map would render as holes with no error anywhere. Naming the link is
+    cheaper than explaining the holes.
+    """
+    target = os.path.abspath(path)
+    blitmap = Blitmap.load(target)
+    base = os.path.dirname(target)
+    linked: list[LinkedTileset] = []
+    for link in blitmap.tilesets:
+        if not link.source:
+            raise PyoneerBlitFormatError(
+                "tileset %r (firstgid %d) has no source line, so there is no "
+                "file to read its tile count and image from"
+                % (link.name, link.first_gid), path=target)
+        resolved = os.path.normpath(
+            link.source if os.path.isabs(link.source)
+            else os.path.join(base, link.source))
+        if not os.path.isfile(resolved):
+            raise PyoneerConfigError(
+                "map %s links tileset %r at %r, which resolves to %s and does "
+                "not exist" % (target, link.name, link.source, resolved),
+                source=target)
+        linked.append(LinkedTileset(link, TilesetFile.load(resolved), resolved))
+    return LoadedMap(blitmap, tuple(linked), target)
+
+
+# ---------------------------------------------------------------------------
+# Objects, flattened for the spawn path
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class MapObjectRecord:
+    """One placed object, flattened to what the spawn path actually reads.
+
+    Deliberately shaped like `map_document.MapObject` -- same `id`, `gid`,
+    `x`, `y`, `height` -- so `map_loader.object_top_left` works on one of
+    these unchanged. The alternative is writing the bottom-left-versus-
+    top-left rule down a second time, and two spellings of that rule means
+    one spelling that is wrong by a sprite's height and looks deliberate.
+
+    `properties` is a plain dict of TYPED values, because that is what
+    `spawn.resolve_depth` checks: it refuses a depth that arrives as the
+    string '50' rather than coercing it, so handing it raw text would turn
+    every authored depth into a raise.
+    """
+
+    id: int
+    type: str = ""
+    name: str = ""
+    x: float = 0.0
+    y: float = 0.0
+    width: float = 0.0
+    height: float = 0.0
+    gid: int = 0
+    rotation: float = 0.0
+    visible: bool = True
+    properties: dict = None                     # noqa: RUF012 - see __post_init__
+    layer_name: str = ""
+
+    def __post_init__(self) -> None:
+        if self.properties is None:
+            object.__setattr__(self, "properties", {})
+
+
+def layer_object_records(layer: ObjectLayer) -> list[MapObjectRecord]:
+    """One object layer's objects, in document order.
+
+    The whole of the model-to-record translation lives here, and
+    `object_records` is a loop over it, so the property-typing rule -- the
+    part that has to agree with `spawn.resolve_depth` -- exists once.
+    """
+    return [MapObjectRecord(
+        id=item.id, type=item.type, name=item.name,
+        x=item.x, y=item.y, width=item.width, height=item.height,
+        gid=item.gid, rotation=item.rotation, visible=item.visible,
+        properties={prop.name: prop.value for prop in item.properties},
+        layer_name=layer.name) for item in layer.objects]
+
+
+def object_records(blitmap: Blitmap,
+                   layers: Any = None) -> list[MapObjectRecord]:
+    """Every object on every object layer, in document order.
+
+    `layers` restricts the pass to named object groups, mirroring
+    `map_loader.spawn_objects`'s own argument so a caller does not have to
+    learn two filters for one idea.
+    """
+    wanted = None if layers is None else set(layers)
+    records: list[MapObjectRecord] = []
+    for layer in blitmap.object_layers():
+        if wanted is None or layer.name in wanted:
+            records.extend(layer_object_records(layer))
+    return records
 
 
 # ---------------------------------------------------------------------------

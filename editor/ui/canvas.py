@@ -45,11 +45,21 @@ inherits one-transaction undo and an exact inverse for free.
 The companion layer is created by the FIRST stroke that needs it, inside the
 same transaction as the tiles. Three commands land together or none do, and
 one undo takes the layer, its declaration and its tiles back out in reverse.
+
+The mask TILESET is the one thing that is not created for you. It is offered
+-- `CollisionTilesetOffer` says what it would declare and what the author
+still has to supply -- and then applied as `map.tileset.add`, so it is in the
+history and its inverse is exact. The asymmetry with the companion layer is
+deliberate and is explained at `COLLISION_TILESET`.
 """
 from __future__ import annotations
 
+import os
+from dataclasses import dataclass
+from typing import Any
+
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
+from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QGraphicsItemGroup,
@@ -59,10 +69,20 @@ from PySide6.QtWidgets import (
     QGraphicsSimpleTextItem,
     QGraphicsView,
     QLabel,
+    QMessageBox,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
+
+from scripts.core.collision_runtime import (  # noqa: F401  (re-exported)
+    COLLISION_TILESET,
+    COMPANION_SUFFIX,
+    collision_first_gid as engine_collision_first_gid,
+    companion_name as engine_companion_name,
+    depth_for_layer_name,
+)
+from scripts.loaders.map_document import tileset_geometry
 
 from editor.core import autotile
 from editor.core.collision import (
@@ -84,6 +104,7 @@ from editor.core.paint import (
 )
 from editor.core.scope import Scope
 from editor.ui.collision_view import (
+    MASK_DOMAIN,
     CollisionOverlay,
     glyph_pixmaps,
     layer_from_companion,
@@ -100,18 +121,159 @@ _GHOST_Z = 2000
 _MASK_GHOST_FILL = QColor(120, 200, 255, 60)
 _MASK_GHOST_PEN = QColor(120, 200, 255, 140)
 
-#: The tileset whose seventeen tiles ARE the masks, matched case-insensitively
-#: by name. A mask is a gid like any other, so it has to belong to a declared
-#: tileset or the map is one pytmx read away from an unknown-gid error; naming
-#: the tileset is how the map says which gids mean passability. There is no
-#: `map.tileset.add` verb yet, so a map without one is told what to add rather
-#: than having it invented underneath the author.
-COLLISION_TILESET = "collision"
+# COLLISION_TILESET and COMPANION_SUFFIX are imported from
+# `scripts/core/collision_runtime.py` above and re-exported here, because
+# `from editor.ui.canvas import COLLISION_TILESET` is what the checks and the
+# rest of the UI already write. They used to be spelled a second time in this
+# file. A map is PAINTED against that tileset name here and READ back by it in
+# the engine; two copies means a map painted against one spelling and read
+# against the other, which is collision the player cannot feel -- no error, no
+# warning, just walls that are not there.
+#
+# A map without the tileset is OFFERED the declaration -- see
+# `CollisionTilesetOffer` -- and never given it silently: a new `<tileset>`
+# changes what every later gid in the file means, and the author is the one
+# who has to put the sheet on disk.
 
-#: Appended to a layer's name for the companion this canvas creates for it.
-#: Only used when the layer does not already declare `pyoneer_passability`;
-#: a declared name always wins.
-COMPANION_SUFFIX = "Collision"
+#: Where the offer proposes the mask sheet. Written into the tmx and therefore
+#: RELATIVE TO THE .tmx, which is what Tiled and the engine both resolve an
+#: `<image source>` against, and spelled with forward slashes for the same
+#: reason `tileset_dialog.relative_image_path` does: a backslash here is a
+#: path that only opens on Windows. It sits beside the sheets the shipped map
+#: already names.
+COLLISION_IMAGE = "../graphics/tilesets/System/Collision.png"
+
+
+def _confirm(parent: QWidget, title: str, body: str) -> bool:
+    """Ask a yes/no question. Replaceable, which is the point.
+
+    `MapCanvas.confirm` holds this so a check can drive the whole
+    press-to-command path without a modal dialog. There is no other way to
+    prove that clicking on a map with no mask tileset reaches
+    `map.tileset.add` -- and that seam is exactly where a silent invention
+    would hide.
+    """
+    return QMessageBox.question(parent, title, body,
+                                QMessageBox.Yes | QMessageBox.No,
+                                QMessageBox.No) == QMessageBox.Yes
+
+
+@dataclass(frozen=True)
+class CollisionTilesetOffer:
+    """What declaring a `collision` tileset on one map would write.
+
+    Plain data, Qt-free once built, and derived without a window, so the
+    decision is checkable headlessly and the dialog is left with nothing to
+    do but ask. `TilesetImport` is the same shape for the same reason.
+
+    THE PIXELS ARE NEVER DRAWN. The editor renders masks from
+    `collision_view.glyph_pixmaps`, and a companion layer declares
+    `pyoneer_renders=false` so `rebuild()` skips it; the engine, when it
+    grows a reader, will read numbers. The sheet exists because pytmx opens
+    every `<image source>` it parses -- `pygame.image.load` raises
+    FileNotFoundError and the whole map stops loading, measured -- so what
+    matters about it is that it EXISTS and is the declared size, not what is
+    on it.
+    """
+
+    name: str
+    image: str                  # as written into the .tmx
+    absolute: str               # where that resolves on this machine
+    tile_width: int
+    tile_height: int
+    image_width: int
+    image_height: int
+    columns: int
+    rows: int
+    tile_count: int
+    exists: bool                # on disk AND readable; see the reader below
+
+    @property
+    def sufficient(self) -> bool:
+        """Can this grid hold every mask?
+
+        A mask is stored as `first_gid + mask`, so tile N of this sheet IS
+        mask N. A sheet with fewer than seventeen tiles leaves the high masks
+        -- including STAR, "defer to the layer below" -- pointing past its
+        end, where pytmx resolves them to whatever tileset comes next.
+        """
+        return self.tile_count >= len(MASK_DOMAIN)
+
+    def command_args(self) -> dict[str, Any]:
+        """Arguments for `map.tileset.add`.
+
+        `image_width` and `image_height` are handed over EXPLICITLY, not left
+        to be measured. `MapDocument.add_tileset` reads the PNG header when
+        they are absent and raises when the file is not there -- and the
+        whole point of this offer is that the file is usually not there yet.
+        Passing them is what lets a map declare the tileset today and the
+        author drop the sheet in afterwards.
+        """
+        return {
+            "name": self.name,
+            "image": self.image,
+            "tile_width": self.tile_width,
+            "tile_height": self.tile_height,
+            "image_width": self.image_width,
+            "image_height": self.image_height,
+            "columns": self.columns,
+            "tile_count": self.tile_count,
+        }
+
+    def grid(self) -> str:
+        """One line naming the cut, the way the import dialog does."""
+        return (f"{self.image_width}x{self.image_height} -> {self.columns} "
+                f"columns x {self.rows} rows = {self.tile_count} tiles")
+
+    def prompt(self) -> str:
+        """The offer, in full, including what the editor will NOT do.
+
+        Long on purpose. This is the one moment the author is told that a
+        file they have never heard of has to exist before the game will boot
+        again, and burying that under a Yes button is how a tool earns a
+        reputation for breaking projects.
+        """
+        lines = [
+            f"This map has no {self.name!r} tileset, so a passability mask "
+            f"has no gid to be stored as.",
+            "",
+            f"Adding one declares a {self.tile_count}-tile sheet at "
+            f"{self.tile_width}x{self.tile_height}, appended above every gid "
+            f"this map already uses:",
+            "",
+            f"    {self.image}",
+            f"    {self.grid()}",
+            "",
+            "Tile N of that sheet is mask N -- a mask is stored as firstgid + "
+            "mask -- so it must be one row of "
+            f"{len(MASK_DOMAIN)} tiles in the order the Collision palette "
+            "shows them.",
+            "",
+        ]
+        if self.exists:
+            lines += [
+                "That file is already on disk and was measured, not assumed.",
+            ]
+        else:
+            lines += [
+                "THE EDITOR WILL NOT WRITE THAT IMAGE. Every change it makes "
+                "goes through a command with an exact inverse, and a written "
+                "PNG has none -- undo can take the <tileset> back out of the "
+                "map but must not delete a file you may have since painted. "
+                "So this writes the declaration only.",
+                "",
+                "Until the file exists at",
+                "",
+                f"    {self.absolute}",
+                "",
+                f"as a {self.image_width}x{self.image_height} image, pytmx "
+                "raises FileNotFoundError on it and the game will not load "
+                "this map. Nothing ever draws its pixels -- the editor draws "
+                "the mask glyphs itself and the engine reads numbers -- so "
+                "any image of that size will do. tools/make_placeholder_art"
+                ".py is where this repo writes sheets like it.",
+            ]
+        return "\n".join(lines)
 
 
 def _EMPTY_READER(_x: int, _y: int) -> int:                       # noqa: N802
@@ -143,6 +305,9 @@ class MapCanvas(QGraphicsView):
         self.hidden_layers: set[str] = set()
         self.selected_scope: Scope | None = None
         self.show_grid = True
+        #: How this canvas asks a yes/no question. Held as an attribute so a
+        #: check can answer it; see `_confirm`.
+        self.confirm = _confirm
 
         self.setScene(QGraphicsScene(self))
         self.setRenderHint(QPainter.SmoothPixmapTransform, False)
@@ -208,11 +373,73 @@ class MapCanvas(QGraphicsView):
     def collision_first_gid(self) -> int | None:
         """The firstgid masks are stored relative to, or None if this map has
         no collision tileset. Everything collision-shaped checks this first,
-        because without it a mask cannot be encoded OR decoded."""
-        for tileset in self.document.tilesets():
-            if tileset.name.lower() == COLLISION_TILESET:
-                return tileset.first_gid
-        return None
+        because without it a mask cannot be encoded OR decoded.
+
+        The engine's own function, called rather than mirrored: this canvas
+        WRITES the gids that function READS, and the two answering from
+        separate copies of "the tileset called collision, case-insensitively"
+        is a difference the author would only meet as a wall that is not
+        there.
+        """
+        return engine_collision_first_gid(self.document)
+
+    def collision_tileset_offer(self) -> CollisionTilesetOffer:
+        """What declaring the mask tileset on THIS map would write.
+
+        The geometry comes from `tileset_geometry`, which is the function
+        `MapDocument.add_tileset` itself uses to write `columns` and
+        `tilecount` -- so what the offer describes and what the file records
+        come from one function rather than from two divisions that agree
+        until margins exist.
+
+        A sheet already on disk is MEASURED rather than assumed, because the
+        author may have supplied one of their own shape. One that is present
+        but undecodable counts as absent: the canonical size is the better
+        guess, and a file Qt cannot read is a file the author has to replace
+        anyway.
+        """
+        document = self.document
+        directory = os.path.dirname(document.path or "")
+        absolute = (os.path.normpath(os.path.join(directory, COLLISION_IMAGE))
+                    if directory else COLLISION_IMAGE)
+        tile_width, tile_height = document.tile_width, document.tile_height
+
+        image = QImage(absolute) if os.path.isfile(absolute) else QImage()
+        exists = not image.isNull()
+        width = image.width() if exists else tile_width * len(MASK_DOMAIN)
+        height = image.height() if exists else tile_height
+
+        columns, rows, count = tileset_geometry(
+            width, height, tile_width, tile_height, 0, 0)
+        return CollisionTilesetOffer(
+            name=COLLISION_TILESET, image=COLLISION_IMAGE, absolute=absolute,
+            tile_width=tile_width, tile_height=tile_height,
+            image_width=width, image_height=height,
+            columns=columns, rows=rows, tile_count=count, exists=exists)
+
+    def offer_collision_tileset(self) -> bool:
+        """Ask, then declare the tileset masks are stored in.
+
+        Through the command stream like every other change, so it appears in
+        the history and `map.tileset.add`'s inverse takes it back out
+        exactly. The alternative -- creating it quietly on the first stroke,
+        the way the companion LAYER is created -- is not the same move: a
+        companion layer is empty and named after the layer that asked for it,
+        while a tileset claims a gid range the author has to supply art for.
+        """
+        offer = self.collision_tileset_offer()
+        if not offer.sufficient:
+            self.status.emit(
+                f"{offer.absolute} is {offer.image_width}x"
+                f"{offer.image_height}, which cuts into {offer.tile_count} "
+                f"tiles — too few to hold {len(MASK_DOMAIN)} masks")
+            return False
+        if not self.confirm(self, "No collision tileset", offer.prompt()):
+            return False
+        return self.window().run(
+            Command("map.tileset.add", Scope.of(("map", self.map_name)),
+                    offer.command_args()),
+            label=f"Add the {offer.name!r} tileset")
 
     def companion_name(self, layer_name: str | None = None) -> str | None:
         """Which layer holds `layer_name`'s masks.
@@ -222,12 +449,18 @@ class MapCanvas(QGraphicsView):
         legitimate thing to author -- otherwise the name this canvas would
         create. Returning the would-be name rather than None is what lets one
         stroke both create the companion and paint into it.
+
+        Only the "which layer is this about" part is this canvas's: the
+        answer itself comes from the engine's `companion_name`, so the layer
+        this stroke paints into is by construction the layer the game reads
+        the masks out of. None means the question does not apply -- no active
+        layer, or a name this map does not have -- which is not something the
+        engine's version has to answer.
         """
         name = layer_name if layer_name is not None else self.active_layer
         if name is None or name not in self.document.tile_layer_names():
             return None
-        declared = read_profile(self.document.tile_layer(name)).passability
-        return declared or (name + COMPANION_SUFFIX)
+        return engine_companion_name(self.document, name)
 
     def companion_layer(self, layer_name: str | None = None):
         """The companion as a TileLayer, or None when it does not exist yet."""
@@ -263,8 +496,24 @@ class MapCanvas(QGraphicsView):
     # -- building ----------------------------------------------------------
 
     def __depth_of(self, name: str) -> int:
+        """How high a layer draws, and therefore where it sits in the
+        collision stack.
+
+        The genre pack first, because that is the editor's authored contract
+        with the author, then the ENGINE's table for anything it does not
+        declare. The fallback used to be a bare 500, which meant a layer the
+        renderer ranks (`ENTITY_1`, `FOREGROUND_2`, `UI_LAYER_1` -- all in
+        `scripts/core/depth.MAP_DEPTH`, none in any genre pack) sorted here at
+        500 and there at 20, 90 or 100. `resolve` walks TOPMOST FIRST, so that
+        is a different DECIDING layer for the same cell in the overlay than in
+        the game. See UNRANKED_DEPTH in `scripts/core/collision_runtime.py`;
+        `tools/check_collision_runtime.py` asserts the two tables agree
+        wherever both rank a name.
+        """
         declared = self.session.project.genre.layer(name)
-        return declared.depth if declared else 500
+        if declared is not None:
+            return declared.depth
+        return depth_for_layer_name(name)
 
     def rebuild(self) -> None:
         scene = self.scene()
@@ -748,9 +997,14 @@ class MapCanvas(QGraphicsView):
         """
         first_gid = self.collision_first_gid
         if first_gid is None:
-            self.status.emit(
-                f"this map has no {COLLISION_TILESET!r} tileset, so a mask "
-                f"has no gid to be stored as — add one in Tiled first")
+            # The offer applies a command, which refreshes the window, which
+            # rebuilds this canvas -- and the button may well have come back
+            # up while the dialog was open. Starting a stroke on the far side
+            # of that would be a stroke whose release nobody saw, so this
+            # gesture ends with the tileset existing and the next one paints.
+            if self.offer_collision_tileset():
+                self.status.emit(
+                    f"{COLLISION_TILESET!r} tileset added — paint again")
             return
         if self.__active_tile_layer() is None:
             self.status.emit("select a tile layer to give collision to")

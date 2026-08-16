@@ -11,6 +11,8 @@ from config.managers.entity_data import DataEntityMovement
 from scripts.core.event_manager import PyoneerEvent
 
 from scripts.core.blitpool import BlitPool
+from scripts.core.collision_runtime import (CollisionField, DIRECTION_BITS,
+                                            STEP, allowed_distance)
 from scripts.game.entity.game_animation import GameAnimationHandler
 from scripts.core.game_object import PyoneerGameObject
 from scripts.game.entity.game_transform import Transform
@@ -52,6 +54,33 @@ class GameEntity(GameEntitySimple, ABC):
         self.sprint_mult = movement.get('sprint_mult', 2)
         self.__started = False
         self.__stopped = False
+
+        self.collision_field: CollisionField | None = None
+        """The baked passability this entity's movement is gated by.
+
+        None means ungated, and it is the default because it has to be: the
+        maps in this repository declare no companion layer, so
+        `field_from_map` returns None for all of them and `move_direction`
+        keeps arithmetic identical to the day before this field existed.
+        Nothing in the engine assigns it yet -- map load builds the field and
+        the binder hands it out, and that wiring is one line in the renderer
+        and one in main.py.
+        """
+
+        self.collision_offset: tuple[float, float] = (0.0, 0.0)
+        """Where this entity's collision point sits inside its sprite.
+
+        `transform.position` is the sprite's TOP-LEFT -- `EntityLayer`
+        blits with `get_rect(topleft=position)` -- so (0, 0) tests the
+        top-left pixel, and the top-left of a 32px-tall character is its
+        head. A game that wants feet sets this to roughly (width/2,
+        height - 1) per entity.
+
+        Deliberately not defaulting to the sprite's centre: the sprite may be
+        None at construction, and a default that reads the image would move
+        an entity's collision point the day its spritesheet gained a row --
+        a hitbox that changes because of art the entity does not mention.
+        """
 
     @staticmethod
     def __movement_values(movement_config: dict[str, any] | None) -> dict[str, any]:
@@ -98,6 +127,51 @@ class GameEntity(GameEntitySimple, ABC):
     def rotate(self, angle: float):
         self.transform.rotation += angle
 
+    def collision_point(self) -> tuple[float, float]:
+        """The single pixel this entity's movement is tested at."""
+        offset_x, offset_y = self.collision_offset
+        return (self.transform.position.x + offset_x,
+                self.transform.position.y + offset_y)
+
+    def allowed_move(self, wanted: Vector2, direction: str) -> Vector2:
+        """`wanted` as far as the map allows, which is `wanted` when ungated.
+
+        Returns the ARGUMENT ITSELF whenever nothing clamps it, rather than a
+        vector rebuilt from the magnitude and the step. For the four
+        axis-aligned moves `move_direction` makes, the two are numerically
+        identical -- multiplying by 0 and +/-1 is exact -- so this is a claim
+        about structure and not about arithmetic: a gate that does not clamp
+        must be incapable of changing anything, and handing the argument back
+        is the only way to say that without re-deriving it.
+
+        It has one behavioural consequence worth knowing. The rebuild
+        PROJECTS onto the direction axis, so a caller passing a vector that
+        is not axis-aligned would silently lose its other component. Passing
+        one is outside this method's contract, but losing it silently is the
+        kind of thing that gets found six months later in a dash or a
+        knockback, so the unclamped path does not do it at all.
+
+        A direction this vocabulary does not know is passed through rather
+        than raising. `move_direction` accepts any string and does nothing
+        for an unknown one, so a typo already moves the entity zero pixels;
+        making the gate the thing that raises would move the failure to the
+        wrong place.
+        """
+        field = self.collision_field
+        bit = DIRECTION_BITS.get(direction)
+        if field is None or bit is None:
+            return wanted
+        step_x, step_y = STEP[bit]
+        # The signed magnitude along the direction. A dot product with a unit
+        # step is exact in floating point (the factors are 0 and +/-1), so a
+        # move that is not clamped travels precisely as far as it asked to.
+        distance = wanted.x * step_x + wanted.y * step_y
+        pixel_x, pixel_y = self.collision_point()
+        allowed = allowed_distance(field, pixel_x, pixel_y, bit, distance)
+        if allowed >= distance:
+            return wanted
+        return Vector2(step_x * allowed, step_y * allowed)
+
     def move_direction(self, delta: float, direction: str, sprint: bool = False):
         changes = Transform()
         if direction == "left":
@@ -110,7 +184,10 @@ class GameEntity(GameEntitySimple, ABC):
             changes.position.y += 1 * self.move_speed * delta
         if sprint:
             changes.position *= self.sprint_mult
-        self.transform.position += changes.position
+        # += rather than a rebind: the position Vector2 is handed out by
+        # `Transform.position` and mutated in place everywhere else in this
+        # file, and replacing the object would break any holder of it.
+        self.transform.position += self.allowed_move(changes.position, direction)
 
 
 # the animated entity, is a type of entity that contains the potential for animation

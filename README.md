@@ -6,9 +6,9 @@ Its distinguishing idea is that **rendering is a sorted queue, not a surface
 stack**. Nothing draws to the screen directly. Every drawable object pushes a
 `BlitToken` into a global pool keyed by depth and priority, and the renderer
 flattens the whole frame into a single `surface.blits()` call. Layers are a
-sort key. That makes a frame *data* before it is pixels, which is why this repo
-can assert things like "41 blit tokens across 11 depths" instead of
-comparing screenshots.
+sort key. That makes a frame *data* before it is pixels, which is why the
+regression harness can record a blit-token histogram keyed by depth, and a
+per-frame count of listener invocations, instead of comparing screenshots.
 
 ```
 python main.py
@@ -26,14 +26,15 @@ is the whole entry point. It needs no `PYTHONPATH` and no install step.
 
 ## Status
 
-Working, and honest about where it is not. ~12,350 lines of tracked Python.
+Working, and honest about where it is not. 37,630 lines of tracked Python
+across 145 files — `scripts/` 12,773, `editor/` 12,947, `tools/` 11,118.
 
 | | |
 |---|---|
 | Runs | yes — headless or windowed, on pygame 2.6 / Python 3.11 |
-| Tested | 20 check tools plus a frame-level regression harness |
+| Tested | 29 check tools plus a frame-level regression harness |
 | Stable API | **no.** Names are still moving. See [Known rough edges](#known-rough-edges) |
-| Docs | design plans in [`docs/`](docs/), all reconciled against the code |
+| Docs | design plans in [`docs/`](docs/), reconciled against the code. `ENGINE_REVIEW.md` is a dated snapshot and carries a banner saying so |
 
 This is a personal engine being cleaned up in public, not a released library.
 It is usable, and reading it will teach you something about deferred
@@ -70,8 +71,10 @@ engine boots and every check passes. Replace them with your own art at the
 same paths whenever you like — nothing requires the original layout, because
 animation frame rectangles are declared in `config/animations.json`.
 
-Controls in the demo scene: **WASD** move, **F1** toggles the test window,
-**←/→** rotate the player, **Esc** quits.
+Controls in the demo scene: **WASD** move, **Ctrl** sprint, **F1** toggles the
+test window, **←/→** rotate the player, **Esc** quits. Bindings live in
+`config/inputs.json` and are validated at load, so a typo raises rather than
+producing a key that silently does nothing.
 
 ## How rendering works
 
@@ -104,8 +107,12 @@ Consequences that surprise people:
   are flattened into one surface, but only when it is provably lossless —
   `composite_is_exact()` refuses a merge where partial alpha would land on
   partial alpha, because pygame's RGBA blitter writes the blended colour back
-  un-normalized in that one case. Entity layers still interleave. Measured on
-  the demo map: 6.21 ms → 3.25 ms per frame, byte-identical output.
+  un-normalized in that one case. Entity layers still interleave, and
+  `check_maplayers` asserts the merged output is byte-identical to the
+  unmerged one. (Earlier drafts of this file quoted a per-frame speedup for
+  this; no measurement in the tree supports the figure, so it is not repeated
+  here. The startup cost it buys **is** measured — see
+  [Known rough edges](#known-rough-edges).)
 - **Compositing is invalidatable.** `renderer.invalidate(band)` and
   `rebake_map()` exist so runtime map editing is possible; the bake is not
   hidden in a constructor.
@@ -189,14 +196,24 @@ it; pytmx cannot write it. So `scripts/loaders/map_document.py` is a
 doc = MapDocument.load("data/maps/test.tmx")
 doc.tile_layer("Floor").set_tile(4, 7, gid=65)
 doc.object_layer("entity").add_object(name="chest", type="Chest", x=128, y=96)
+doc.add_layer("Collision", kind="tile")
+doc.add_tileset("props", "../graphics/props.png")   # geometry is measured
 doc.save()
 ```
 
-Load-and-save of the shipped 133,940-byte map reproduces it exactly, including
-its inconsistent indentation and CRLF endings, and add-object-then-remove
-returns the original bytes. That matters because the intent is for a human to
-edit in Tiled while a script edits programmatically — a writer that reflows the
-file makes every subsequent human diff unreadable.
+Load-and-save of the shipped map reproduces it byte for byte, including its
+inconsistent indentation and CRLF endings, and add-then-remove — of an object,
+a layer or a tileset — returns the original bytes. That matters because the
+intent is for a human to edit in Tiled while a script edits programmatically:
+a writer that reflows the file makes every subsequent human diff unreadable.
+
+There is also a **native format**, `scripts/loaders/blitmap.py` and
+`tileset_file.py`: `.blitmap` and `.tileset` are tab-indented plain text that
+parse with no pygame, no pytmx and no Qt, plus a converter that carries a
+`.tmx` across losslessly and *names* in `Conversion.dropped` anything it
+cannot. It is a format and a converter only — **nothing in the engine reads
+one yet**, deliberately, because making it do so touches the renderer, the
+asset manager and the scene at once.
 
 ## The editor
 
@@ -246,6 +263,35 @@ A response is applied as one transaction. Unknown verb, unknown argument,
 missing argument or wrong type rejects the whole thing — nothing is ever
 half-applied, and types are never coerced (`"5"` is not `5`).
 
+### Painting, terrain and collision
+
+The canvas has two **modes**, and the mode changes what every tool writes.
+In tile mode the tools paint art; in **collision mode** the same brush,
+rectangle, fill and picker paint a passability mask, with a palette of
+direction bits instead of a tileset. A tool the mode cannot express is
+disabled rather than left clickable and silent.
+
+The reason a whole second editing surface costs so little is that it is not a
+second surface. A mask is stored in a companion tile layer as
+`first_gid + mask` — which is an ordinary gid — so a collision stroke reuses
+the very same `paint.Stroke` and commits the very same `map.tile.set_many`,
+and inherits one-drag-one-transaction undo and an exact inverse for free.
+The companion layer is created by the first stroke that needs it, inside the
+same transaction, so one undo takes the layer, its declaration and its tiles
+back out together. Erasing writes gid 0, which in a companion means
+`NO_DATA` — "nobody said anything here" — deliberately not the same claim as
+"open".
+
+Terrain painting is a Wang **corner** set rather than an orthogonal bitmask,
+because the art demands it; a whole terrain is one integer, so choosing one is
+"click any tile of it". See [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md) for
+the half-cell trap that follows from corner lattices.
+
+**The engine cannot read these masks yet.** The editor authors them, the tmx
+carries them, `check_collision.py` proves the round trip — and nothing in
+`scripts/` decodes one. That is the largest gap in this repository and it is
+[`docs/NEXT.md`](docs/NEXT.md) item 2.
+
 Genre packs in `editor/genres/` declare what a genre's maps and data look
 like, so "make me a platformer with guns and aliens" costs a page of
 conditioning rather than a thousand-line prompt. Two ship: `topdown_rpg` and
@@ -259,9 +305,17 @@ Design and reasoning: [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md).
 .venv/Scripts/python.exe tools/check_all.py
 ```
 
-25 checks plus a frame-level drift comparison, one exit code. They are not unit
+29 checks plus a frame-level drift comparison, one exit code. They are not unit
 tests; each one boots or drives real engine code and asserts measured
 behaviour — token counts, dispatch counts, frame hashes, pixel equality.
+
+A check here is expected to have **teeth**: the convention is that whoever
+writes one breaks the code it covers and confirms it goes red. That is not
+ceremony. Reviews of this repository have now found five assertions that
+could not fail — one comparing a value against the constructor argument it
+came from, one driving a single frame where the property under test only
+appears on the second, one asserting identity against a pygame singleton that
+`set_mode` mutates in place and returns unchanged.
 
 `tools/smoke.py` is the instrument the rest rely on. It runs N frames headless
 and reports a frame hash, the component census, the blit-token histogram by
@@ -276,10 +330,12 @@ Deliberate visual changes are re-baselined explicitly:
 .venv/Scripts/python.exe tools/smoke.py --frames 60 --write-baseline
 ```
 
-Without art, 18 of the 25 checks pass; the other 7 boot the engine and
-need the three image files. `tools/make_placeholder_art.py` is enough for
-all 25. That split is measured by moving the art aside and re-running,
-not estimated.
+Without art, **20 of the 29 checks pass**; the other nine read the image
+files — eight boot the engine through `GameAnimationHandler`, and
+`check_blitmap` reads a real PNG to prove asset interning copies bytes.
+`tools/make_placeholder_art.py` is enough for all 29. That split is measured
+by moving the art aside and re-running, not estimated.
+
 `check_editor_ui` reports SKIP rather than PASS when PySide6 is absent — a
 check that did not run has proved nothing.
 
@@ -297,17 +353,24 @@ scripts/core/               engine
   errors.py                   exception hierarchy
   log.py                      opt-in trace channels
   input.py                    action bindings, edge detection, text capture
+  spawn.py                    tmx object class -> entity, and its depth
   scene/                      scene graph
   ui/widget/                  widgets, containers, mouse/keyboard behaviours
 scripts/game/               entities, animation, camera, map
-scripts/loaders/            MapDocument — TMX read/write
+scripts/loaders/            no pygame, no Qt: bytes on disk <-> plain Python
+  map_document.py             MapDocument — byte-faithful TMX read/write
+  map_loader.py               a loaded map -> spawned entities
+  blitmap.py                  the native .blitmap format and a tmx converter
+  tileset_file.py             the native .tileset format and asset interning
 config/                     JSON: animations, entities, inputs, maps, theme
 editor/                     the authoring application (PySide6; separate process)
   core/                       headless: scopes, commands, genres, requests
+    collision.py                masks, three-level resolution, .blitmask
+    map_events.py               trigger vocabulary (no panel offers it yet)
   genres/                     genre packs — layers, tables, rules, art briefs
   ui/                         Qt panels; views only, no authority
 tools/                      checks, smoke harness, utilities
-docs/                       design plans and the code review
+docs/                       design plans, the code review, and NEXT.md
 ```
 
 `editor/` may import `scripts/`. `scripts/` may never import `editor/` —
@@ -319,30 +382,42 @@ the editor deleted.
 Stated plainly, because most of them are recorded with measurements in
 [`docs/`](docs/):
 
+- **The engine cannot read a collision mask.** The editor authors them in a
+  mounted, tested UI; nothing in `scripts/` decodes one. Biggest gap here.
+- **Placing an object does not yet spawn an entity in a running game.** The
+  reader exists and is proven — `scripts/core/spawn.py` and
+  `scripts/loaders/map_loader.py` turn tmx objects into entities with depths
+  resolved, behind a 525-line check — but nothing calls `spawn_objects`
+  outside that check, and `GameSceneMap.core_lifecycle_build` still has
+  `# load the entities` as a comment with nothing under it.
+- **`.blitmap` has no reader.** The native format, its converter and asset
+  interning are finished and checked; the engine still loads `.tmx` only.
+- **The tileset import dialog is not reachable.** `map.tileset.add` is a
+  registered verb and `editor/ui/tileset_dialog.py` is a working dialog with
+  a live grid preview, but no menu constructs it — so adding the `collision`
+  tileset that collision mode needs still means a trip through Tiled.
 - **`GameComponent` is a god class.** ~9 responsibilities in one file. Being
   split incrementally; `docs/IMPROVEMENT_PLAN.md` segment 8.
-- **Boot costs ~640 ms**, up from ~230 ms, because map compositing proves its
-  merges are lossless with `pygame.mask` work at startup. One-time cost buying
-  2.6 ms per frame; pays back in ~150 frames. Not yet optimized.
+- **Boot costs ~350 ms**, most of it map compositing proving its merges are
+  lossless with `pygame.mask` work at startup. Measured headless on the demo
+  map: five fresh processes, 330–446 ms to construct the game, of which one
+  full `rebake_map()` is 243–252 ms. Not yet optimized, and do not optimize it
+  by caching the proof — that was tried and it broke live map editing.
 - **Listbox does not work.** `ListBoxComponent` has never run. The grid it
-  needs now exists; what is missing is its own row selection, keyboard
-  navigation and row template.
+  needs now exists and it already builds one; what is missing is its own row
+  selection (it declares three selection fields and assigns none), keyboard
+  navigation and a row template.
 - **The scroll bar builds from the wrong formula** and shifts 14 px on its
-  first scroll event.
+  first scroll event — measured live, `docs/IMPROVEMENT_PLAN.md:358`. The
+  `Button`'s body surface keeps its construction-time size, so the graphic is
+  drawn 14 px taller than its logical bounds as well as offset from them.
 - **No drag-and-drop.** `GridComponent.snap()` places by pixel position and
   `MOUSE_DRAG_BEGIN`/`END` are bindable, but nothing wires them together.
-- **Placing an object does not spawn an entity.** The editor can author the
-  object layer and `MapDocument` writes it byte-exactly, but
-  `renderer.__prepare_map_layers` skips `TiledObjectGroup` entirely, so
-  nothing reads it at runtime. `OBJECT_CONVERTER` and `ComponentFactory` both
-  exist and are wired to nothing. This is the next real step.
-- **`MapDocument` cannot add or remove layers.** It reads and writes existing
-  ones. That is why the editor has no `map.layer.add` command, and no way to
-  edit layer opacity, offset or tint.
 - **The editor cannot edit shape geometry.** Polygon, ellipse and text
   objects are shown and preserved byte-exactly; their points are read-only.
-- **The demo map has an invisible parallax layer** — its tiles sit beneath a
-  fully opaque floor.
+- **Map event triggers have no authoring surface.** `editor/core/map_events.py`
+  is a complete, checked vocabulary that no panel offers — and nothing in the
+  engine would execute one if it did.
 
 `docs/NEXT.md` is the ranked list of what is actually next.
 

@@ -36,10 +36,15 @@ from editor.core.project import Column, DataTable, Project
 from editor.core.scope import Scope
 from editor.core import genre as genre_module
 from editor.core import layers as layer_module
+from editor.core import map_events as map_event_module
 
 
 def _layer_keys() -> list[str]:
     return [capability.key for capability in layer_module.CAPABILITIES]
+
+
+def _action_keys() -> tuple[str, ...]:
+    return tuple(capability.key for capability in map_event_module.FIELDS)
 
 
 # --------------------------------------------------------------------------
@@ -761,6 +766,176 @@ def _object_property_remove(project: Project, cmd: Command) -> Command | None:
     del found.properties[key]
     return Command("map.object.property.set", cmd.scope,
                    {"key": key, "value": existing[key]})
+
+
+# --------------------------------------------------------------------------
+# Map events -- the trigger declaration on an object
+#
+# `editor/core/map_events.py` owns the vocabulary, the reader and the rules;
+# these three verbs are the only door onto it. They are separate from
+# map.object.property.* deliberately. That pair writes ANY property and
+# checks nothing but the Python type, so a trigger authored through it can
+# say `pyoneer_trigger="entre"` -- which reads back as no trigger at all and
+# announces that in a warning nobody is watching for. Here the authoring
+# door is where the mistake is cheap.
+#
+# NOTHING IN THE ENGINE EXECUTES ONE OF THESE. Not "not fully": there is no
+# collision detection, entities are not on the event bus, no MAP_TRIGGER_*
+# event type exists, and the renderer skips object layers entirely. A map
+# authored with these plays exactly as it did before. That is written here,
+# in the generated COMMANDS.md through the summaries below, and on screen in
+# the Actions panel -- three places, because a caveat that lives only in a
+# docstring is a caveat the AI writing a response never sees.
+#
+# ONE LIMIT, STATED. `MapProperties` can delete a `<property>` and append
+# one, but cannot insert at an index, so taking a field back and putting it
+# back again re-appends it at the END of `<properties>`. Every VALUE survives
+# exactly; the element ORDER survives only while the field being taken back
+# was the last one declared -- which is always true of a field this panel
+# just added, and not of one hand-authored in Tiled above another.
+# `map.object.property.remove` has had the same limit since it was written.
+# --------------------------------------------------------------------------
+
+def _action_property(cmd: Command) -> str:
+    """The tmx property name a map-event command addresses.
+
+    `Param.choices` has already refused anything outside the vocabulary, so
+    this cannot miss -- it exists so the three verbs never spell the
+    `pyoneer_` prefix themselves.
+    """
+    return map_event_module.BY_KEY[cmd.args["key"]].property_name
+
+
+def _action_inverse(scope: Scope, key: str, existing: dict[str, Any]) -> Command:
+    """What puts one map-event field back exactly as it was found.
+
+    `map.object.action.restore` rather than `.set`, and this is the whole
+    reason `restore` exists. `map_events.validate` NORMALISES -- it sorts and
+    case-folds a filter list, and it REFUSES a trigger kind it does not know
+    -- so an inverse routed back through it would rewrite a hand-authored
+    `pyoneer_filter_tags="B,a"` as `"a,b"`, and would raise mid-undo on
+    `pyoneer_trigger="entre"`, taking the rollback with it. Both of those are
+    values this vocabulary never wrote, which is exactly why the inverse has
+    to carry the value it FOUND rather than one it can re-derive.
+    """
+    name = map_event_module.BY_KEY[key].property_name
+    if name not in existing:
+        return Command("map.object.action.unset", scope, {"key": key})
+    return Command("map.object.action.restore", scope,
+                   {"key": key, "value": existing[name]})
+
+
+@command(
+    "map.object.action.set",
+    summary="Declare one field of an object's map-event trigger -- when it "
+            "fires, which entities may fire it, whether it also blocks "
+            "movement, and what it carries. Stored as a pyoneer_ tmx custom "
+            "property, so Tiled edits it in the same dialog. NOTHING RUNS "
+            "THIS YET: the engine has no collision detection, no "
+            "MAP_TRIGGER_* event type and no reader for the object layer, so "
+            "a map authored with these plays exactly as it did before. The "
+            "authoring is real, reversible and readable; the firing is not "
+            "built.",
+    scopes=["map:*/layer:*/object:*"],
+    params=[
+        Param("key", str, "which field of the declaration",
+              choices=_action_keys()),
+        Param("value", object, "str, int or bool, matching the field's "
+                               "declared type. A filter list is comma "
+                               "separated ('player,npc'); args are "
+                               "'key=value;key=value'."),
+    ],
+    example='{"verb": "map.object.action.set",'
+            ' "scope": "map:test/layer:entity/object:14",'
+            ' "args": {"key": "trigger", "value": "enter"}}',
+)
+def _action_set(project: Project, cmd: Command) -> Command | None:
+    found = _object(project, cmd.scope)
+    key = cmd.args["key"]
+    try:
+        checked = map_event_module.validate(key, cmd.args["value"])
+    except ValueError as exc:
+        raise PyoneerCommandArgumentError(str(exc), verb=cmd.verb) from None
+
+    name = _action_property(cmd)
+    existing = found.properties.as_dict()
+    if name in existing and existing[name] == checked:
+        return None
+    found.properties[name] = checked
+    return _action_inverse(cmd.scope, key, existing)
+
+
+@command(
+    "map.object.action.unset",
+    summary="Remove one field of a trigger declaration, returning it to its "
+            "default. Deleting a whole trigger is one of these per declared "
+            "field, emitted together -- so it lands as one transaction and "
+            "undoes as one step.",
+    scopes=["map:*/layer:*/object:*"],
+    params=[Param("key", str, "which field", choices=_action_keys())],
+    destructive=True,
+)
+def _action_unset(project: Project, cmd: Command) -> Command | None:
+    found = _object(project, cmd.scope)
+    name = _action_property(cmd)
+    existing = found.properties.as_dict()
+    if name not in existing:
+        return None
+    del found.properties[name]
+
+    # `MapProperties.__delitem__` drops the `<properties>` container once it
+    # empties, but `_remove_child` hands the whitespace back to the OWNER --
+    # so an `<object .../>` the file wrote self-closing comes back as
+    # `<object ...>\n</object>`. Two lines of diff on a declare-then-undo
+    # that should leave no diff at all, which is the one thing the tmx
+    # contract exists to prevent. A childless object is written self-closing
+    # by Tiled and by this document, so `text = None` is returning it to the
+    # file's own spelling; `ObjectLayer.remove_object` does exactly this one
+    # level up, from a remembered `_original_text`.
+    #
+    # The real home for this is `MapProperties.__delitem__`, where
+    # map.object.property.remove would get it too. That is a change to
+    # scripts/loaders/map_document.py, and this guard becomes a harmless
+    # no-op the moment it lands.
+    if not list(found.element):
+        found.element.text = None
+
+    return Command("map.object.action.restore", cmd.scope,
+                   {"key": cmd.args["key"], "value": existing[name]})
+
+
+@command(
+    "map.object.action.restore",
+    summary="Write one map-event property back VERBATIM, without validating "
+            "the value. The exact inverse of map.object.action.set and "
+            "map.object.action.unset, and the only reason those two can take "
+            "back a hand-authored value that the validator would reformat or "
+            "reject. Rarely written by hand -- use map.object.action.set, "
+            "which checks what you give it.",
+    scopes=["map:*/layer:*/object:*"],
+    params=[
+        Param("key", str, "which field", choices=_action_keys()),
+        Param("value", object, "the value exactly as it was found; a tmx "
+                               "property holds a str, int, float or bool"),
+    ],
+)
+def _action_restore(project: Project, cmd: Command) -> Command | None:
+    found = _object(project, cmd.scope)
+    value = cmd.args["value"]
+    # The one thing still checked. `MapProperties.__setitem__` would hand a
+    # list or a dict to `format_property` and write its repr into the file,
+    # and nothing downstream would ever read it back as anything else.
+    if not isinstance(value, (int, float, str, bool)):
+        raise PyoneerCommandArgumentError(
+            f"a tmx property holds a scalar; {cmd.args['key']!r} was handed "
+            f"{type(value).__name__}", verb=cmd.verb)
+
+    name = _action_property(cmd)
+    existing = found.properties.as_dict()
+    if name in existing and existing[name] == value:
+        return None
+    found.properties[name] = value
+    return _action_inverse(cmd.scope, cmd.args["key"], existing)
 
 
 # --------------------------------------------------------------------------

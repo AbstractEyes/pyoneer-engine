@@ -24,6 +24,7 @@ CHECKS = [
     ("scroll", "no-overflow scrollbars are hidden, inactive, and safe to drag"),
     ("textbox", "placeholder semantics, text placement, font auto-fit"),
     ("events", "consumption, active-gating, depth setter"),
+    ("transform2d", "the extracted transform, and GameComponent unchanged"),
     ("input", "edge detection, multi-binding, load-time validation"),
     ("animation", "sequence switching, pause/resume, pre-sliced frames"),
     ("singletons", "one CoreAssetManager, tmx cached until reload is asked for"),
@@ -31,7 +32,9 @@ CHECKS = [
     ("tileset", "byte-exact tileset add/remove, gid-range and extent guards"),
     ("tileset_verbs", "tileset add/remove/restore verbs with exact undo"),
     ("blitmap", "the native .blitmap/.tileset format and the tmx converter"),
+    ("blitmap_engine", "the engine loads a .blitmap equivalently to its tmx"),
     ("spawn", "object layer -> entity registry, depth resolution, y-origin"),
+    ("spawn_runtime", "map objects become bound entities at the right depths"),
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
     ("window_events", "os window events translate, route, and still fan out"),
@@ -42,6 +45,8 @@ CHECKS = [
     ("collision_view", "collision overlay builds, glyphs distinguish direction bits"),
     ("map_events", "trigger vocabulary, collision filters, tmx round trip"),
     ("collision_mount", "the overlay, the mode, one stroke one transaction"),
+    ("collision_runtime", "the engine reads a mask and gates movement"),
+    ("actions_panel", "trigger authoring, action verbs, exact inverses"),
     ("editor_ui", "panels build, canvas edits are commands, responses apply"),
 ]
 
@@ -53,7 +58,19 @@ results = []
 skipped = []
 for name, blurb in CHECKS:
     path = os.path.join(ROOT, "tools", f"check_{name}.py")
-    proc = subprocess.run([PYTHON, path], capture_output=True, text=True, cwd=ROOT)
+    # timeout is not belt-and-braces: a check that blocks on a modal dialog
+    # makes this script never return, and a suite that hangs is strictly
+    # worse than one that fails -- it looks like a slow machine. Measured:
+    # check_collision_mount blocked on QMessageBox.question for 40+ minutes
+    # with zero output and no way to tell it from a long run.
+    try:
+        proc = subprocess.run([PYTHON, path], capture_output=True, text=True,
+                              cwd=ROOT, timeout=600)
+    except subprocess.TimeoutExpired:
+        results.append((name, False, blurb))
+        print(f"  HANG  check_{name:<14} exceeded 600s -- probably blocked on "
+              f"a dialog or waiting on input")
+        continue
     ok = proc.returncode == 0
     # A check may opt out when an OPTIONAL dependency is absent -- the editor
     # needs PySide6 and the engine does not. Report that as SKIP, never as

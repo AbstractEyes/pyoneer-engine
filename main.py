@@ -90,6 +90,9 @@ class MainGame:
         self.scene.set_scene("test")
         self.scene.bind("renderer", self.renderer)
         self.scene.bind("camera", game_camera)
+        # Before the map, not after: binding the map is what spawns the
+        # objects on its object layers, and they are constructed with these.
+        self.renderer.spawn_defaults = self.spawn_arguments()
         self.scene.bind("MAP", game_map)
         test_objects = self.load_test_objects()
         for obj in test_objects:
@@ -97,6 +100,29 @@ class MainGame:
         self.scene.current_scene.core_lifecycle_prepare_pre()
         self.scene.current_scene.core_lifecycle_prepare()
         self.scene.current_scene.core_lifecycle_prepare_post()
+
+    def spawn_arguments(self) -> dict[str, dict]:
+        """Constructor arguments for the entity types a map may place.
+
+        A .tmx object carries a type, a position and custom properties. It
+        cannot carry an InputActionManager or a parsed animation category, so
+        an authored `<object type="GamePlayer">` gets exactly what this file
+        hands a GamePlayer it builds itself -- minus the input manager.
+
+        input_ is None deliberately, and it is the one open question in this
+        path. Nothing in the map format says WHICH object is the one the human
+        drives, and handing the live manager to every spawned player would
+        move all of them at once with one key press. Marking the player is an
+        authoring decision (a `pyoneer_player` property is the obvious shape)
+        and is not guessed here.
+        """
+        return {
+            "GamePlayer": {
+                "input_": None,
+                "movement_config": self.assets.config.get('entity').get('default'),
+                "animation_config": self.assets.animations.get('entity'),
+            },
+        }
 
     def load_map(self) -> tuple[GameCamera, GameMap]:
         map_data = self.assets.maps.load_assets("test")

@@ -45,6 +45,8 @@ from editor.core.collision import (
     companion_reader,
     describe_opinion,
     describe_stack,
+    blitmask_from_field,
+    field_from_blitmask,
     gid_to_opinion,
     is_opinion,
     join_gid,
@@ -426,6 +428,32 @@ expect("walking off the map edge is refused",
 expect_raises("can_move rejects anything but a direction bit", ValueError,
               lambda: walls.can_move(0, 0, PASS_ALL))
 
+# The same one-sided edge, turned ninety degrees, and it is not decoration.
+# Every assertion above uses either a cell with ALL FOUR bits set or a
+# VERTICAL edge, so a destination veto that looked up the wrong bit
+# horizontally -- an OPPOSITE table that stops mirroring left into right --
+# answers every one of them correctly and lets an author walk in through the
+# side of a wall. Both mirrors are taken, so neither direction of the pair is
+# the one that happens to be right by accident.
+#  . | .    (1,0)'s LEFT edge is closed
+one_sided = CollisionField(3, 1, bytes([0, BLOCK_LEFT, 0]))
+expect("a closed left edge cannot be crossed from the left",
+       one_sided.can_move(0, 0, BLOCK_RIGHT), False)
+expect("nor left out of the cell that owns it",
+       one_sided.can_move(1, 0, BLOCK_LEFT), False)
+expect("while that cell's right edge is open both ways",
+       [one_sided.can_move(1, 0, BLOCK_RIGHT), one_sided.can_move(2, 0, BLOCK_LEFT)],
+       [True, True])
+#  . | .    (1,0)'s RIGHT edge is closed
+other_side = CollisionField(3, 1, bytes([0, BLOCK_RIGHT, 0]))
+expect("a closed right edge cannot be crossed from the right",
+       other_side.can_move(2, 0, BLOCK_LEFT), False)
+expect("nor right out of the cell that owns it",
+       other_side.can_move(1, 0, BLOCK_RIGHT), False)
+expect("while that cell's left edge is open both ways",
+       [other_side.can_move(1, 0, BLOCK_LEFT), other_side.can_move(0, 0, BLOCK_RIGHT)],
+       [True, True])
+
 expect("pixels floor into cells", walls.cell_of(31, 17), (1, 1))
 expect("the cell's first pixel is inside it", walls.cell_of(16, 16), (1, 1))
 expect("its last pixel too", walls.cell_of(31.9, 31.9), (1, 1))
@@ -437,6 +465,13 @@ expect("so a pixel off the edge reads as the outside mask",
        walls.mask_at_pixel(-1, 0), BLOCK_ALL)
 expect("and a pixel inside reads the cell under it",
        walls.mask_at_pixel(24, 24), BLOCK_ALL)
+# (2,1) and (1,2) hold DIFFERENT masks, which is what makes this able to
+# fail: every other pixel probe here lands on the diagonal or outside the
+# field, where mask_at(x, y) and mask_at(y, x) answer the same thing, so an
+# x/y transpose inside mask_at_pixel passed all of them.
+expect("...and it is x then y, not y then x",
+       (walls.mask_at_pixel(40, 24), walls.mask_at_pixel(24, 40)),
+       (BLOCK_UP, PASS_ALL))
 expect("counts add up to the cell total",
        sum(walls.counts().values()), 12)
 expect("two fields with the same cells are equal",
@@ -627,22 +662,22 @@ print()
 print("field <-> file, and what the trip into a field costs")
 # --------------------------------------------------------------------------
 sparse = Blitmask.from_rows([[NO_DATA, PASS_ALL], [BLOCK_ALL, STAR]])
-baked = CollisionField.from_blitmask(sparse)
+baked = field_from_blitmask(sparse)
 expect("an authored open cell stays open", baked.mask_at(1, 0), PASS_ALL)
 expect("a silent cell becomes the fallback", baked.mask_at(0, 0), PASS_ALL)
 expect("a caller can make silence mean solid instead",
-       CollisionField.from_blitmask(sparse, undecided=BLOCK_ALL).mask_at(0, 0),
+       field_from_blitmask(sparse, undecided=BLOCK_ALL).mask_at(0, 0),
        BLOCK_ALL)
 expect("which does not touch the authored open cell",
-       CollisionField.from_blitmask(sparse, undecided=BLOCK_ALL).mask_at(1, 0),
+       field_from_blitmask(sparse, undecided=BLOCK_ALL).mask_at(1, 0),
        PASS_ALL)
 expect("the trip into a field is lossy, and says so by losing the dots",
-       baked.to_blitmask().render().splitlines()[-2], "00")
+       blitmask_from_field(baked).render().splitlines()[-2], "00")
 expect("but a field's own round trip is exact",
-       CollisionField.from_blitmask(baked.to_blitmask()), baked)
+       field_from_blitmask(blitmask_from_field(baked)), baked)
 expect("a whole stack bakes, writes, and reloads to the same field",
-       CollisionField.from_blitmask(
-           CollisionField.bake(stack, 8, 4).to_blitmask()),
+       field_from_blitmask(
+           blitmask_from_field(CollisionField.bake(stack, 8, 4))),
        CollisionField.bake(stack, 8, 4))
 
 print()
