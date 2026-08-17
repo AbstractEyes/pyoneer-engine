@@ -5,7 +5,7 @@
 
 > File > Settings.
 
-`editor.ui.settings_dialog` · 109 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.settings_dialog` · 117 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,9 +15,9 @@
 
 ### `class SettingsDialog(QDialog)` #TAG:SettingsDialog
 
-`editor/ui/settings_dialog.py:30`–`108`
+`editor/ui/settings_dialog.py:30`–`116`
 
 - `editor/ui/settings_dialog.py:33` `__init__(self, settings: EditorSettings, parent: QWidget | None=None, *, ide_choices: list[tuple[str, str]] | None=None)` #TAG:SettingsDialog.__init__
-- `editor/ui/settings_dialog.py:70` `__editor_for(self, setting) -> QWidget` #TAG:SettingsDialog.__editor_for
-- `editor/ui/settings_dialog.py:95` `__apply(self, key: str, value: Any) -> None` #TAG:SettingsDialog.__apply
-- `editor/ui/settings_dialog.py:99` `__restore(self) -> None` #TAG:SettingsDialog.__restore
+- `editor/ui/settings_dialog.py:73` `__editor_for(self, setting) -> QWidget` #TAG:SettingsDialog.__editor_for
+- `editor/ui/settings_dialog.py:103` `__apply(self, key: str, value: Any) -> None` #TAG:SettingsDialog.__apply
+- `editor/ui/settings_dialog.py:107` `__restore(self) -> None` #TAG:SettingsDialog.__restore

@@ -28,11 +28,15 @@ import os
 import sys
 import tempfile
 
+from scripts.core import collision_runtime as runtime
 from editor.core.collision import (
     FLIP_DIAGONAL,
     FLIP_HORIZONTAL,
     FLIP_VERTICAL,
     NO_DATA,
+    SUBCELL,
+    companion_subcell,
+    field_subcell,
     Blitmask,
     CollisionField,
     CollisionLayer,
@@ -679,6 +683,52 @@ expect("a whole stack bakes, writes, and reloads to the same field",
        field_from_blitmask(
            blitmask_from_field(CollisionField.bake(stack, 8, 4))),
        CollisionField.bake(stack, 8, 4))
+
+# --------------------------------------------------------------------------
+print()
+print("a companion may be finer than the map, and level ONE may not")
+# --------------------------------------------------------------------------
+# The editor authors the companion (level two) and the sub-cell property, so
+# both names have to reach `editor/` from the one module that defines them.
+# Identity, not equality, for section 8 of check_collision_runtime's reason:
+# a pasted copy is equal on the day it is pasted.
+expect("the sub-cell property name is the engine's own object",
+       (SUBCELL is runtime.SUBCELL,
+        companion_subcell is runtime.companion_subcell,
+        field_subcell is runtime.field_subcell), (True, True, True))
+expect("and it is prefixed, so pytmx cannot refuse the map over it",
+       SUBCELL, "pyoneer_subcell")
+
+# The scale, through the editor's own re-export. A 4x field asking a 1x
+# companion has to land on the layer cell that COVERS it -- the overlay is
+# what an author reads to find out where a wall is, so a mis-scaled read
+# draws walls in places nobody painted.
+coarse_cells = {(0, 0): FIRST + BLOCK_ALL, (1, 0): FIRST + BLOCK_DOWN}
+scaled = companion_reader(reader(coarse_cells), FIRST, scale=4)
+unscaled = companion_reader(reader(coarse_cells), FIRST)
+expect("four field cells across read one layer cell",
+       [scaled(x, 0) for x in range(4)], [BLOCK_ALL] * 4)
+expect("and the fifth reads the next one",
+       (scaled(4, 0), scaled(7, 0)), (BLOCK_DOWN, BLOCK_DOWN))
+expect("...while the unscaled reader over the same cells does not",
+       (unscaled(3, 0), unscaled(4, 0)), (NO_DATA, NO_DATA))
+expect("a scaled read is still bounded by the layer, not extended past it",
+       (scaled(8, 0), scaled(0, 4)), (NO_DATA, NO_DATA))
+
+# LEVEL ONE STAYS PER-TILE, and this is the assertion that says so out loud.
+# A tileset default is addressed by GID, and a gid is stamped on the ART
+# layer, which is at map resolution by definition -- there is no sub-tile art
+# gid to look up. Sixteen opinions per tile would also break the .blitmask
+# invariant that the file has the shape of the thing it describes, and
+# `opinion_to_token` is written to make any widening of the opinion domain
+# loud rather than free.
+brick = TilesetDefaults(FIRST, 2, 2, (BLOCK_ALL, NO_DATA, NO_DATA, NO_DATA))
+expect("a tileset holds one opinion per TILE, not one per sub-cell",
+       (brick.tile_count, len(brick.opinions)), (4, 4))
+expect("so one stamped tile means one thing over its whole square",
+       brick.opinion_for_gid(FIRST), BLOCK_ALL)
+expect_raises("and widening the opinion domain is refused, not encoded",
+              PyoneerBlitmaskError, lambda: opinion_to_token(STAR | BLOCK_ALL))
 
 print()
 if failures:

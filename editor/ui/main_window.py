@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QSpinBox,
     QToolBar,
 )
 
@@ -167,6 +168,7 @@ class EditorWindow(QMainWindow):
         self.__watch_requests()
 
         self.canvas.show_grid = self.settings.get("show_grid")
+        self.canvas.grid_step = self.settings.get("grid_step")
         self.apply_theme(Theme.parse(self.settings.get("theme")))
         self.refresh_all()
         self.__select_first_paintable_layer()
@@ -314,6 +316,24 @@ class EditorWindow(QMainWindow):
         bar.addSeparator()
         self.stamp_label = QLabel("  brush: gid 1  ")
         bar.addWidget(self.stamp_label)
+
+        # THE FOOTPRINT, not the grid and not the tile size. It counts the
+        # cells a click addresses, so the same number means 3 tiles here and
+        # 3 sub-cells the day collision is authored finer -- one integer,
+        # one control, the unit derived rather than stored, so the two can
+        # never disagree because there is only one of them. The label under
+        # it spells the unit out in pixels.
+        bar.addSeparator()
+        bar.addWidget(QLabel("  size "))
+        self.size_spin = QSpinBox()
+        self.size_spin.setRange(1, 9)
+        self.size_spin.setValue(self.canvas.brush_size)
+        self.size_spin.valueChanged.connect(self.__on_brush_size)
+        bar.addWidget(self.size_spin)
+        self.size_label = QLabel("")
+        self.size_label.setStyleSheet("color: palette(mid);")
+        bar.addWidget(self.size_label)
+        self.__sync_size_control()
 
         bar.addSeparator()
         bar.addWidget(QLabel("  place "))
@@ -483,7 +503,42 @@ class EditorWindow(QMainWindow):
 
     def __set_tool(self, tool: Tool) -> None:
         self.canvas.tool = tool
+        self.__sync_size_control()
         self.statusBar().showMessage(tool.label, 2000)
+
+    def __on_brush_size(self, size: int) -> None:
+        self.canvas.brush_size = int(size)
+        self.__sync_size_control()
+
+    def __sync_size_control(self) -> None:
+        """Lit for the tools a footprint reaches, greyed WITH A REASON for
+        the rest.
+
+        Measured, and this is the whole justification for `Tool.uses_size`:
+        a rectangle, a filled rectangle and a flood fill read the stamp as
+        a repeating pattern keyed on map coordinates, so a uniform 3x3
+        produces bit-identical edits to a 1x1. Leaving the spinner live for
+        those three would be a control the author turns and watches do
+        nothing -- the exact shape the last pass spent itself removing.
+        """
+        tool = self.canvas.tool
+        live = tool.uses_size
+        self.size_spin.setEnabled(live)
+        size = self.canvas.brush_size
+        # The unit, spelled out. A size is in CELLS, and how big a cell is
+        # depends on what is being painted -- which is the confusion this
+        # whole control exists to end.
+        try:
+            unit = f"{self.canvas.paint_width}px"
+        except Exception:                                       # noqa: BLE001
+            unit = "cells"                  # no readable map; say nothing false
+        self.size_label.setText(f" × {unit}  " if live else "  n/a  ")
+        self.size_spin.setToolTip(
+            f"Brush footprint: {size} × {size} cells of {unit}."
+            if live else
+            f"{tool.label} has no footprint — it reads the brush as a "
+            f"repeating pattern over the area it covers, so a size larger "
+            f"than 1 would change nothing.")
 
     def __on_stamp(self, stamp) -> None:
         self.canvas.stamp = stamp
@@ -510,6 +565,9 @@ class EditorWindow(QMainWindow):
             # nobody can get out of, so fall back rather than just greying it.
             self.tool_actions[Tool.BRUSH].setChecked(True)
             self.__set_tool(Tool.BRUSH)
+        # The size is in cells of the ACTIVE mode's paint unit, so its
+        # readout has to be re-derived even when the tool did not change.
+        self.__sync_size_control()
         dock = self.mask_dock if mode is EditMode.COLLISION else self.palette_dock
         dock.raise_()
 
@@ -675,6 +733,13 @@ class EditorWindow(QMainWindow):
             self.apply_theme(Theme.parse(value))
         elif key == "show_grid":
             self.canvas.show_grid = bool(value)
+            self.canvas.rebuild()
+        elif key == "grid_step":
+            # Grid only. `cell_at` is deliberately NOT consulted here and
+            # must not be: the spacing decides which boundaries are DRAWN,
+            # never which cell a click lands in, and the moment those two
+            # can disagree the grid starts lying about the map.
+            self.canvas.grid_step = int(value)
             self.canvas.rebuild()
         # `ide` is read in `reveal`, and `confirm_response` in
         # `apply_response` and `__offer` -- both at the moment they matter,

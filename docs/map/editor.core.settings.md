@@ -5,14 +5,14 @@
 
 > Editor preferences.
 
-`editor.core.settings` · 103 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.settings` · 121 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
 - `editor/core/settings.py:18` `ORGANISATION` #TAG:ORGANISATION
 - `editor/core/settings.py:19` `APPLICATION` #TAG:APPLICATION
 - `editor/core/settings.py:32` `SETTINGS` #TAG:SETTINGS
-- `editor/core/settings.py:52` `BY_KEY` #TAG:settings.BY_KEY
+- `editor/core/settings.py:62` `BY_KEY` #TAG:settings.BY_KEY
 
 ## Classes
 
@@ -24,13 +24,13 @@
 
 ### `class EditorSettings` #TAG:EditorSettings
 
-`editor/core/settings.py:55`–`102`
+`editor/core/settings.py:65`–`120`
 
 > Typed access to the stored preferences.
 
-- `editor/core/settings.py:58` `__init__(self, backend=None)` #TAG:EditorSettings.__init__
-- `editor/core/settings.py:64` `get(self, key: str) -> Any` #TAG:EditorSettings.get
-- `editor/core/settings.py:72` `set(self, key: str, value: Any) -> None` #TAG:EditorSettings.set
-- `editor/core/settings.py:78` `reset(self) -> None` #TAG:EditorSettings.reset
-- `editor/core/settings.py:82` `as_dict(self) -> dict[str, Any]` #TAG:EditorSettings.as_dict
-- `editor/core/settings.py:86` `@staticmethod __coerce(setting: Setting, raw: Any) -> Any` #TAG:EditorSettings.__coerce
+- `editor/core/settings.py:68` `__init__(self, backend=None)` #TAG:EditorSettings.__init__
+- `editor/core/settings.py:74` `get(self, key: str) -> Any` #TAG:EditorSettings.get
+- `editor/core/settings.py:82` `set(self, key: str, value: Any) -> None` #TAG:EditorSettings.set
+- `editor/core/settings.py:88` `reset(self) -> None` #TAG:EditorSettings.reset
+- `editor/core/settings.py:92` `as_dict(self) -> dict[str, Any]` #TAG:EditorSettings.as_dict
+- `editor/core/settings.py:96` `@staticmethod __coerce(setting: Setting, raw: Any) -> Any` #TAG:EditorSettings.__coerce

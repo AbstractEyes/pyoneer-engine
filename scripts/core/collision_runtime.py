@@ -89,6 +89,51 @@ tmx is loaded once through `CoreAssetManager` and cached, and re-reading the
 grid from the file would let collision disagree with the tiles actually being
 drawn the moment the author saves in Tiled while the game is running.
 
+SUB-CELL RESOLUTION -- WHAT `pyoneer_subcell` BUYS AND WHAT IT DOES NOT
+-----------------------------------------------------------------------
+A companion layer may be authored FINER than the map it belongs to. A
+companion carrying `pyoneer_subcell="4"` is 4x the map's width and height,
+each of its cells is a quarter-tile square, and each still holds one gid of
+`firstgid + mask` -- the same seventeen tiles, the same nibble, the same
+editor stroke, the same undo. The property is on the COMPANION layer, is an
+int, and ABSENT MEANS 1: every map authored before this existed is already
+correct under it, so this is the file format's default rather than a
+fallback.
+
+Almost nothing here changed to allow it, and that is the point. `CollisionField`
+never knew what a "tile" was: it stores `tile_width`/`tile_height` and
+`cell_of` floors a pixel by them, so a field built at 4px cells gates on 4px
+boundaries with no new vocabulary. Measured on a 16x16 field of 4px cells:
+`cell_of` puts 3.999 in cell 0 and 4.0 in cell 1, and `allowed_distance`
+walking down from y=2.0 into a wall at sub-cell row 7 returns 25.9990234375 --
+it stops on the 4px boundary at y=28, minus EDGE_INSET. What DID change is the
+three things below, and the middle one is the one that bites:
+
+  * `field_from_map` baked at the DOCUMENT's dimensions. A 4x companion had
+    100% of its authored sub-cells discarded in silence -- measured, 256
+    painted sub-cells in, 0 blocking cells out, no exception and no warning.
+    It bakes at the FINEST declared resolution in the stack now, and a
+    companion LARGER than its declaration allows raises rather than being
+    truncated.
+  * a stack may MIX resolutions, and reading a 1x layer at sub-cell
+    coordinates does not lose it -- it RELOCATES it. Measured before the fix:
+    a 1x wall on map row 7 answered at sub-cell row 7, which is 84 pixels up
+    the map, a wall in the wrong place rather than a wall that vanished. So
+    every companion is read through a `scale`, and `companion_reader` takes
+    it. A cell of the field maps to `(x // scale, y // scale)` of the layer.
+  * a companion may still be SMALLER than `subcell x` the map -- reads past
+    its edge answer 0, which is NO_DATA, which is the right answer. Only
+    LARGER raises, because larger is the case where authored data is dropped.
+
+What this does NOT buy is slopes. A 4x4 nibble field DESCRIBES a 4px-granular
+surface, and nothing in the movement code climbs one: driven through this gate
+four ways, a body walks DOWN a staircase of sub-cells cleanly and freezes
+against the first riser going up, because BLOCK_ALL sets BLOCK_LEFT and the
+next column refuses entry. A slope needs a step-up in the movement behavior --
+retry a refused horizontal move lifted by N sub-cells, then drop -- which is a
+different change in a different file. The honest promise of this section is
+4px collision granularity.
+
 THE GATE
 --------
 `allowed_distance` is a tile-grid test and nothing more. One anchor point per
@@ -129,6 +174,21 @@ bake is a real 23 ms against a ~350 ms boot. That is the price of answering
 every later query with one index into a `bytes`; resolving per query instead
 would cost more than that on every full pass.
 
+WHAT `pyoneer_subcell="4"` COSTS. Re-measured on the same machine, 100x100,
+one companion, median of five: the .tmx grows 42,476 -> 364,205 bytes (8.6x),
+`pytmx.TiledMap` goes 15.6 -> 82.8 ms, and the bake goes 10.7 -> 176.6 ms
+because there are sixteen times as many cells to resolve. Every per-QUERY
+number above is unchanged -- `mask_at` is still one index -- so this is boot
+cost and nothing else, and it is roughly a doubling of boot per 4x companion.
+Tell an author that before he repaints a 100x100 map at 4x. The per-cell bake
+loop is where it goes, not the resolution itself: the same 160,000-cell field
+built straight from a flat gid array through a 256-entry lookup is 24.8 ms
+median of seven, so a fast path for the common stack (one companion, no
+defaults, no overrides) has 7x in it. It has deliberately NOT been written
+here: a second resolution walk that has to agree with `resolve` cell for cell
+is the one thing this module is not allowed to grow, and it is worth doing
+only with a check that asserts the two bakes are byte-identical.
+
 A map that declares no companion bakes nothing at all: `field_from_map`
 returns None, `GameEntity.collision_field` stays None, and `move_direction`
 runs the arithmetic it ran before this module existed, to the bit. That is
@@ -140,8 +200,8 @@ from dataclasses import dataclass, field as dataclass_field
 from typing import Any, Callable, Mapping, Sequence
 
 from scripts.core.depth import resolve_layer_depth
-from scripts.core.errors import warn_content
-from scripts.core.layer_profile import DEPTH, PASSABILITY
+from scripts.core.errors import PyoneerConfigError, warn_content
+from scripts.core.layer_profile import DEPTH, PASSABILITY, PREFIX
 from scripts.core.log import trace_assets
 
 # A reader of gids at a cell. The unit every level of the stack is expressed
@@ -363,9 +423,31 @@ def opinion_to_gid(opinion: int, first_gid: int) -> int:
     return mask_to_gid(opinion, first_gid)
 
 
-def companion_reader(read: Reader, first_gid: int) -> OpinionReader:
-    """A companion tile layer's gids, as opinions."""
-    return lambda x, y: gid_to_opinion(read(x, y), first_gid)
+def companion_reader(read: Reader, first_gid: int, *,
+                     scale: int = 1) -> OpinionReader:
+    """A companion tile layer's gids, as opinions.
+
+    `scale` is how many FIELD cells one of this layer's own cells covers --
+    the field's resolution divided by this layer's. It is 1 for every
+    single-resolution map, which is why it is keyword-only with a default:
+    the ordinary call is unchanged.
+
+    It exists because a stack may mix resolutions, and asking a 1x layer for
+    a sub-cell coordinate does not merely lose that layer -- it MOVES it.
+    Measured before this argument existed, on a stack of one 4x companion and
+    one 1x companion baked at 4x: the 1x layer's wall on map row 7 answered at
+    sub-cell row 7, which is pixel row 28 rather than pixel row 112. A wall 84
+    pixels up the map is strictly worse than a wall that vanished, because it
+    still looks like collision working.
+
+    `//` and not `/`, and floor and not truncate, for `cell_of`'s reason: a
+    field cell at x = -1 belongs to layer cell -1, not to layer cell 0.
+    """
+    if scale == 1:
+        return lambda x, y: gid_to_opinion(read(x, y), first_gid)
+    if scale < 1:
+        raise ValueError(f"scale is 1 or more, got {scale}")
+    return lambda x, y: gid_to_opinion(read(x // scale, y // scale), first_gid)
 
 
 def abstains(opinion: int) -> bool:
@@ -781,6 +863,31 @@ COLLISION_TILESET = "collision"
 #: `editor/ui/canvas.py` imports it, for the reason above.
 COMPANION_SUFFIX = "Collision"
 
+#: How many sub-cells a companion layer divides each map TILE into, along each
+#: axis. Declared on the COMPANION layer, `type="int"`, and ABSENT MEANS 1.
+#:
+#: That default is the load-bearing half. Every map in this repository and
+#: every map the editor has ever written carries a companion at exactly the
+#: map's size, so 1 is what the file format already says when it says nothing
+#: -- it is not law 7's "plausible default" but the documented meaning of an
+#: omitted property, in the same way an omitted `pyoneer_depth` means "use the
+#: name". The value that would be a guess is the one this refuses to make:
+#: inferring the ratio from the layer's DIMENSIONS cannot work, because a
+#: companion SMALLER than the map is already legal and already supported
+#: (`file_gid_reader` answers 0 past its edge on purpose), so 100x100 against a
+#: 400x400 map is "half the map is authored at 1x" and 400x400 against a
+#: 100x100 map is "the whole map is authored at 4x", and nothing but a
+#: declaration separates them.
+#:
+#: It lives here rather than in `scripts/core/layer_profile.py` for the reason
+#: `COLLISION_TILESET` and `COMPANION_SUFFIX` do: `layer_profile.KNOWN` is the
+#: vocabulary the editor's layer INSPECTOR renders and `tools/check_editor.py`
+#: asserts the two sides declare exactly the same set, so a property that only
+#: a companion layer can carry would have to be offered on every layer to get
+#: in there. `editor/core/map_events.py`'s `pyoneer_trigger_layer` set the
+#: precedent and its check pins it as deliberately outside KNOWN.
+SUBCELL = PREFIX + "subcell"
+
 #: Where a layer sorts when nothing places it.
 #:
 #: THE TWO DEPTH TABLES, AND WHAT WAS DONE ABOUT THEM
@@ -848,6 +955,107 @@ def companion_name(document, layer_name: str) -> str:
     """
     declared = document.tile_layer(layer_name).properties.get(PASSABILITY, "")
     return str(declared or "") or (layer_name + COMPANION_SUFFIX)
+
+
+def companion_subcell(document, companion: str) -> int:
+    """How finely `companion` divides a map tile, validated against the map.
+
+    Returns 1 for a layer that declares nothing, which is every companion
+    written before `SUBCELL` existed -- see that constant for why an absent
+    property is the format's default rather than a fallback.
+
+    Everything else RAISES, and each raise closes a way for authored collision
+    to disappear or move without anybody being told:
+
+      * a value that is not a positive integer. `int("banana")` cannot be
+        guessed at, and treating it as 1 would silently discard fifteen
+        sixteenths of a 4x companion.
+      * a value the map's tile size is not divisible by. A 3-subcell on a 16px
+        tile is a 5.33px cell; `CollisionField` would take the floor and every
+        boundary in the field would drift off the pixels the author painted.
+      * a companion LARGER than `subcell x` the map. That is the one case
+        where the cells exist, the reader can see them, and the bake throws
+        them away -- measured at HEAD before this function: 256 painted
+        sub-cells in, 0 blocking cells out, no exception and no warning.
+
+    A companion SMALLER than that is NOT an error and deliberately so. Reads
+    past its edge answer 0, `gid_to_opinion` reads 0 as NO_DATA, and "this
+    layer has masks for part of the map" is a real authoring shape that both
+    `file_gid_reader` and `document_gid_reader` already support.
+    """
+    layer = document.tile_layer(companion)
+    raw = layer.properties.get(SUBCELL, 1)
+    try:
+        subcell = int(raw)
+    except (TypeError, ValueError):
+        raise PyoneerConfigError(
+            f"collision layer {companion!r} declares {SUBCELL}={raw!r}, which "
+            f"is not an integer; it is how many sub-cells one map tile is "
+            f"divided into along each axis, and an absent property means 1",
+            source=getattr(document, "path", None)) from None
+    if subcell < 1:
+        raise PyoneerConfigError(
+            f"collision layer {companion!r} declares {SUBCELL}={subcell}; it "
+            f"is 1 or more (1 means one mask per map tile)",
+            source=getattr(document, "path", None))
+    if document.tile_width % subcell or document.tile_height % subcell:
+        raise PyoneerConfigError(
+            f"collision layer {companion!r} declares {SUBCELL}={subcell} but "
+            f"the map's tiles are {document.tile_width}x"
+            f"{document.tile_height}px, which {subcell} does not divide "
+            f"evenly; a sub-cell has to land on whole pixels",
+            source=getattr(document, "path", None))
+    wide, tall = document.width * subcell, document.height * subcell
+    if layer.width > wide or layer.height > tall:
+        # The suggestion is a CEILING on both axes, not `layer.width //
+        # document.width`: a 17x17 layer on a 4x4 map floors to 4 and 4x4 is
+        # 16, so the "fix" the message offered would raise again on the next
+        # load and read as the engine not knowing its own arithmetic.
+        wants = max(-(-layer.width // document.width),
+                    -(-layer.height // document.height))
+        raise PyoneerConfigError(
+            f"collision layer {companion!r} is {layer.width}x{layer.height} "
+            f"but declares {SUBCELL}={subcell}, which allows at most "
+            f"{wide}x{tall} on a {document.width}x{document.height} map; "
+            f"either declare {SUBCELL}={wants} or resize the layer, because "
+            f"the cells past that edge would be read by nothing",
+            source=getattr(document, "path", None))
+    return subcell
+
+
+def field_subcell(document,
+                  pairs: Sequence[tuple[str, str]] | None = None) -> int:
+    """The resolution the whole stack has to bake at: the FINEST declared.
+
+    Not the coarsest and not the first: a field baked at anything less than
+    the finest layer throws that layer's detail away, which is the failure
+    this whole function exists downstream of.
+
+    Every other layer then has to divide it exactly, because a coarser layer
+    is read at `x // (finest // its own)` and that arithmetic is only a
+    containment when the division is exact. A stack declaring 2 and 3 raises
+    naming both rather than silently picking 3 and reading the 2x layer at
+    one-and-a-half of its own cells.
+
+    `pairs` is `companion_pairs(document)` when the caller already has it --
+    that call can WARN about a dangling companion, and asking for it twice
+    would report the same authoring accident twice.
+    """
+    if pairs is None:
+        pairs = companion_pairs(document)
+    declared = [(companion, companion_subcell(document, companion))
+                for _name, companion in pairs]
+    finest = max((value for _c, value in declared), default=1)
+    coarse = [(companion, value) for companion, value in declared
+              if finest % value]
+    if coarse:
+        raise PyoneerConfigError(
+            f"this map's collision layers declare {SUBCELL} values that do "
+            f"not nest: the finest is {finest} and "
+            + ", ".join(f"{c!r} declares {v}" for c, v in coarse)
+            + f". Every {SUBCELL} in one map has to divide the finest one",
+            source=getattr(document, "path", None))
+    return finest
 
 
 def layer_depth(document, layer_name: str) -> int:
@@ -1023,19 +1231,37 @@ def document_gid_reader(tile_layer) -> Reader:
     return read
 
 
-def collision_layers(document, tmx_data=None) -> list[CollisionLayer]:
+def collision_layers(document, tmx_data=None, *, subcell: int | None = None,
+                     pairs: Sequence[tuple[str, str]] | None = None
+                     ) -> list[CollisionLayer]:
     """The map's collision stack, TOPMOST FIRST, as lazy readers.
 
     Cells come from `tmx_data` when it is given -- the parsed map the engine
     already holds -- and from the document otherwise. Properties always come
     from the document; see the module docstring for why the two sources are
     split.
+
+    `subcell` is the resolution the FIELD will be baked at, so that every
+    layer, whatever it declares for itself, answers in the field's own
+    coordinates. It defaults to `field_subcell(document)`, which is the finest
+    any layer declares -- so calling this with two arguments, as everything
+    did before sub-cells existed, still returns a stack that composes.
     """
     first_gid = collision_first_gid(document)
     if first_gid is None:
         return []
+    if pairs is None:
+        pairs = companion_pairs(document)
+    if subcell is None:
+        subcell = field_subcell(document, pairs)
     stack: list[CollisionLayer] = []
-    for name, companion in companion_pairs(document):
+    for name, companion in pairs:
+        own = companion_subcell(document, companion)
+        if subcell % own:
+            raise PyoneerConfigError(
+                f"collision layer {companion!r} declares {SUBCELL}={own}, "
+                f"which does not divide the field's {subcell}",
+                source=getattr(document, "path", None))
         read: Reader | None = None
         if tmx_data is not None:
             parsed = parsed_layer(tmx_data, companion)
@@ -1044,7 +1270,9 @@ def collision_layers(document, tmx_data=None) -> list[CollisionLayer]:
         if read is None:
             read = document_gid_reader(document.tile_layer(companion))
         stack.append(CollisionLayer(
-            name=name, companion=companion_reader(read, first_gid)))
+            name=name,
+            companion=companion_reader(read, first_gid,
+                                       scale=subcell // own)))
     return stack
 
 
@@ -1091,15 +1319,27 @@ def field_from_map(source, *, document=None, undecided: int = PASS_ALL,
     tmx_data = source if getattr(source, "layers", None) is not None else None
     document = as_document(document if document is not None else source)
 
-    stack = collision_layers(document, tmx_data)
+    # The field is sized by the FINEST companion, not by the map. Baking at
+    # the map's dimensions is what silently discarded every sub-cell a 4x
+    # companion held -- see `companion_subcell`, which has the number. The
+    # tileset scan comes first so that a map declaring no collision at all
+    # never reaches a property reader that can raise about one.
+    stack: list[CollisionLayer] = []
+    subcell = 1
+    if collision_first_gid(document) is not None:
+        pairs = companion_pairs(document)
+        subcell = field_subcell(document, pairs)
+        stack = collision_layers(document, tmx_data, subcell=subcell,
+                                 pairs=pairs)
     if not stack:
         return None
     field = CollisionField.bake(
-        stack, document.width, document.height,
-        tile_width=document.tile_width, tile_height=document.tile_height,
+        stack, document.width * subcell, document.height * subcell,
+        tile_width=document.tile_width // subcell,
+        tile_height=document.tile_height // subcell,
         outside=outside, undecided=undecided)
     counts = field.counts()
-    trace_assets("collision field map=%s layers=%d %dx%d blocking=%d",
-                 document.path, len(stack), field.width, field.height,
+    trace_assets("collision field map=%s layers=%d %dx%d subcell=%d blocking=%d",
+                 document.path, len(stack), field.width, field.height, subcell,
                  sum(n for mask, n in counts.items() if mask and mask != STAR))
     return field

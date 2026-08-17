@@ -43,6 +43,16 @@ SETTINGS: tuple[Setting, ...] = (
             "locations before falling back to PATH."),
     Setting("show_grid", "Show the tile grid", "bool", True,
             "Draws cell boundaries over the map."),
+    Setting("grid_step", "Grid line every", "int", 1,
+            "How far apart the grid lines are, counted in the cells a "
+            "click actually addresses. A line is only ever drawn ON a real "
+            "boundary, so the grid can be COARSER than the paint cell but "
+            "never finer -- a finer grid would show cells no click can "
+            "reach, which is worse than no grid at all.",
+            choices=(("1", "Every cell"),
+                     ("2", "Every 2 cells"),
+                     ("4", "Every 4 cells"),
+                     ("8", "Every 8 cells"))),
     Setting("confirm_response", "Confirm before applying an AI response",
             "bool", True,
             "Untick to apply a response as soon as it arrives. It is still "
@@ -93,9 +103,17 @@ class EditorSettings:
             return str(raw).strip().lower() in ("1", "true", "yes", "on")
         if setting.type == "int":
             try:
-                return int(raw)
+                number = int(raw)
             except (TypeError, ValueError):
                 return setting.default
+            # The `choices` guard used to live only on the str branch below,
+            # so an int setting validated NOTHING: measured, a stored 0 came
+            # straight back as 0, and 0 is a ZeroDivisionError in the code
+            # that divides a pixel by a cell size. A fallback that can never
+            # fire is not a fallback.
+            if setting.choices and str(number) not in [c for c, _l in setting.choices]:
+                return setting.default
+            return number
         value = "" if raw is None else str(raw)
         if setting.choices and value not in [c for c, _l in setting.choices]:
             return setting.default

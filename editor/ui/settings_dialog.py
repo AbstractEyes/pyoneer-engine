@@ -50,6 +50,9 @@ class SettingsDialog(QDialog):
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         for setting in SETTINGS:
             editor = self.__editor_for(setting)
+            # Named so a check can find one field without guessing at child
+            # order -- the generated form has no other handle on a row.
+            editor.setObjectName(f"setting:{setting.key}")
             label = QLabel(setting.label)
             label.setToolTip(setting.doc)
             editor.setToolTip(setting.doc)
@@ -83,7 +86,12 @@ class SettingsDialog(QDialog):
 
         combo = QComboBox()
         for value, label in choices:
-            combo.addItem(label, value)
+            # A choice is authored as a string because that is what a label
+            # table wants, but `EditorSettings.get` hands back the SETTING's
+            # type. Carrying the raw string as item data made findData miss
+            # for an int setting, so reopening the dialog showed the first
+            # entry however the preference was actually set.
+            combo.addItem(label, int(value) if setting.type == "int" else value)
         index = combo.findData(current)
         combo.setCurrentIndex(index if index >= 0 else 0)
         combo.activated.connect(

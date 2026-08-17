@@ -5,7 +5,7 @@
 
 > The map canvas and the tile palette.
 
-`editor.ui.canvas` · 1615 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.canvas` · 1709 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,151 +13,158 @@
 
 ## Module constants
 
-- `editor/ui/canvas.py:144` `COLLISION_IMAGE` #TAG:canvas.COLLISION_IMAGE
+- `editor/ui/canvas.py:146` `COLLISION_IMAGE` #TAG:canvas.COLLISION_IMAGE
 
 ## Functions
 
-- `editor/ui/canvas.py:147` `write_mask_sheet(path: str, tile_width: int, tile_height: int) -> bool` #TAG:write_mask_sheet
+- `editor/ui/canvas.py:149` `write_mask_sheet(path: str, tile_width: int, tile_height: int) -> bool` #TAG:write_mask_sheet
   - Put the mask sheet on disk. CREATE-ONLY-IF-ABSENT, never overwrite.
-- `editor/ui/canvas.py:286` `_EMPTY_READER(_x: int, _y: int) -> int` #TAG:_EMPTY_READER
+- `editor/ui/canvas.py:288` `_EMPTY_READER(_x: int, _y: int) -> int` #TAG:_EMPTY_READER
   - Every cell empty -- what a companion layer that does not exist yet
 
 ## Classes
 
 ### `@dataclass(frozen=True) class CollisionTilesetOffer` #TAG:CollisionTilesetOffer
 
-`editor/ui/canvas.py:203`–`283`
+`editor/ui/canvas.py:205`–`285`
 
 > What declaring a `collision` tileset on one map would write.
 
-- `editor/ui/canvas.py:249` `@property sufficient(self) -> bool` #TAG:CollisionTilesetOffer.sufficient
+- `editor/ui/canvas.py:251` `@property sufficient(self) -> bool` #TAG:CollisionTilesetOffer.sufficient
   - Can this grid hold every mask?
-- `editor/ui/canvas.py:259` `command_args(self) -> dict[str, Any]` #TAG:CollisionTilesetOffer.command_args
+- `editor/ui/canvas.py:261` `command_args(self) -> dict[str, Any]` #TAG:CollisionTilesetOffer.command_args
   - Arguments for `map.tileset.add`.
-- `editor/ui/canvas.py:280` `grid(self) -> str` #TAG:CollisionTilesetOffer.grid
+- `editor/ui/canvas.py:282` `grid(self) -> str` #TAG:CollisionTilesetOffer.grid
   - One line naming the cut, the way the import dialog does.
 
 ### `class MapCanvas(QGraphicsView)` #TAG:MapCanvas
 
-`editor/ui/canvas.py:293`–`1364`
+`editor/ui/canvas.py:295`–`1440`
 
 > A depth-ordered, paintable view of one map.
 
-- `editor/ui/canvas.py:301` `__init__(self, session, map_name: str, parent: QWidget | None=None)` #TAG:MapCanvas.__init__
-- `editor/ui/canvas.py:365` `@property document(self)` #TAG:MapCanvas.document
-- `editor/ui/canvas.py:369` `@property tile_width(self) -> int` #TAG:MapCanvas.tile_width
-- `editor/ui/canvas.py:373` `@property tile_height(self) -> int` #TAG:MapCanvas.tile_height
-- `editor/ui/canvas.py:376` `cell_at(self, scene_x: float, scene_y: float) -> tuple[int, int]` #TAG:MapCanvas.cell_at
-- `editor/ui/canvas.py:381` `__active_tile_layer(self)` #TAG:MapCanvas.__active_tile_layer
-- `editor/ui/canvas.py:392` `@property collision_first_gid(self) -> int | None` #TAG:MapCanvas.collision_first_gid
+- `editor/ui/canvas.py:303` `__init__(self, session, map_name: str, parent: QWidget | None=None)` #TAG:MapCanvas.__init__
+- `editor/ui/canvas.py:377` `@property document(self)` #TAG:MapCanvas.document
+- `editor/ui/canvas.py:381` `@property tile_width(self) -> int` #TAG:MapCanvas.tile_width
+- `editor/ui/canvas.py:385` `@property tile_height(self) -> int` #TAG:MapCanvas.tile_height
+- `editor/ui/canvas.py:405` `@property paint_width(self) -> int` #TAG:MapCanvas.paint_width
+  - Pixels per addressable cell, horizontally.
+- `editor/ui/canvas.py:410` `@property paint_height(self) -> int` #TAG:MapCanvas.paint_height
+  - Pixels per addressable cell, vertically.
+- `editor/ui/canvas.py:414` `cell_at(self, scene_x: float, scene_y: float) -> tuple[int, int]` #TAG:MapCanvas.cell_at
+- `editor/ui/canvas.py:420` `__footprint(self, stamp: Stamp | None=None)` #TAG:MapCanvas.__footprint
+  - The stamp this press should place, and where it sits.
+- `editor/ui/canvas.py:432` `__active_tile_layer(self)` #TAG:MapCanvas.__active_tile_layer
+- `editor/ui/canvas.py:443` `@property collision_first_gid(self) -> int | None` #TAG:MapCanvas.collision_first_gid
   - The firstgid masks are stored relative to, or None if this map has
-- `editor/ui/canvas.py:405` `collision_tileset_offer(self) -> CollisionTilesetOffer` #TAG:MapCanvas.collision_tileset_offer
+- `editor/ui/canvas.py:456` `collision_tileset_offer(self) -> CollisionTilesetOffer` #TAG:MapCanvas.collision_tileset_offer
   - What declaring the mask tileset on THIS map would write.
-- `editor/ui/canvas.py:439` `collision_tileset_ref(self)` #TAG:MapCanvas.collision_tileset_ref
+- `editor/ui/canvas.py:490` `collision_tileset_ref(self)` #TAG:MapCanvas.collision_tileset_ref
   - The `<tileset>` masks are stored in, as a ref, or None.
-- `editor/ui/canvas.py:457` `provision_collision_tileset(self) -> CollisionTilesetOffer | None` #TAG:MapCanvas.provision_collision_tileset
+- `editor/ui/canvas.py:508` `provision_collision_tileset(self) -> CollisionTilesetOffer | None` #TAG:MapCanvas.provision_collision_tileset
   - Get the mask sheet onto disk, and say what to declare for it.
-- `editor/ui/canvas.py:501` `companion_name(self, layer_name: str | None=None) -> str | None` #TAG:MapCanvas.companion_name
+- `editor/ui/canvas.py:552` `companion_name(self, layer_name: str | None=None) -> str | None` #TAG:MapCanvas.companion_name
   - Which layer holds `layer_name`'s masks.
-- `editor/ui/canvas.py:522` `companion_layer(self, layer_name: str | None=None)` #TAG:MapCanvas.companion_layer
+- `editor/ui/canvas.py:573` `companion_layer(self, layer_name: str | None=None)` #TAG:MapCanvas.companion_layer
   - The companion as a TileLayer, or None when it does not exist yet.
-- `editor/ui/canvas.py:530` `collision_stack(self) -> list[CollisionLayer]` #TAG:MapCanvas.collision_stack
+- `editor/ui/canvas.py:581` `collision_stack(self) -> list[CollisionLayer]` #TAG:MapCanvas.collision_stack
   - Every layer that declares a companion, TOPMOST FIRST.
-- `editor/ui/canvas.py:555` `__depth_of(self, name: str) -> int` #TAG:MapCanvas.__depth_of
+- `editor/ui/canvas.py:606` `__depth_of(self, name: str) -> int` #TAG:MapCanvas.__depth_of
   - How high a layer draws, and therefore where it sits in the
-- `editor/ui/canvas.py:575` `rebuild(self) -> None` #TAG:MapCanvas.rebuild
-- `editor/ui/canvas.py:630` `__draw_objects(self, scene, layer, z: float, layer_name: str) -> None` #TAG:MapCanvas.__draw_objects
-- `editor/ui/canvas.py:654` `set_background(self, colour) -> None` #TAG:MapCanvas.set_background
-- `editor/ui/canvas.py:658` `__draw_grid(self, scene, document, width: int, height: int) -> None` #TAG:MapCanvas.__draw_grid
-- `editor/ui/canvas.py:670` `set_layer_visible(self, name: str, visible: bool) -> None` #TAG:MapCanvas.set_layer_visible
-- `editor/ui/canvas.py:677` `set_active_layer(self, name: str | None) -> None` #TAG:MapCanvas.set_active_layer
-- `editor/ui/canvas.py:684` `set_selection(self, scope: Scope) -> None` #TAG:MapCanvas.set_selection
-- `editor/ui/canvas.py:691` `@property overlay(self) -> CollisionOverlay | None` #TAG:MapCanvas.overlay
+- `editor/ui/canvas.py:626` `rebuild(self) -> None` #TAG:MapCanvas.rebuild
+- `editor/ui/canvas.py:681` `__draw_objects(self, scene, layer, z: float, layer_name: str) -> None` #TAG:MapCanvas.__draw_objects
+- `editor/ui/canvas.py:705` `set_background(self, colour) -> None` #TAG:MapCanvas.set_background
+- `editor/ui/canvas.py:709` `__draw_grid(self, scene, document, width: int, height: int) -> None` #TAG:MapCanvas.__draw_grid
+  - Cell boundaries, every `grid_step` of them.
+- `editor/ui/canvas.py:737` `set_layer_visible(self, name: str, visible: bool) -> None` #TAG:MapCanvas.set_layer_visible
+- `editor/ui/canvas.py:744` `set_active_layer(self, name: str | None) -> None` #TAG:MapCanvas.set_active_layer
+- `editor/ui/canvas.py:751` `set_selection(self, scope: Scope) -> None` #TAG:MapCanvas.set_selection
+- `editor/ui/canvas.py:758` `@property overlay(self) -> CollisionOverlay | None` #TAG:MapCanvas.overlay
   - The collision readout, once a rebuild has had a document to size
-- `editor/ui/canvas.py:697` `set_mode(self, mode: EditMode) -> None` #TAG:MapCanvas.set_mode
+- `editor/ui/canvas.py:764` `set_mode(self, mode: EditMode) -> None` #TAG:MapCanvas.set_mode
   - Switch what a stroke acts on. Same tools, same keys, other layer.
-- `editor/ui/canvas.py:715` `set_all_layers(self, on: bool) -> None` #TAG:MapCanvas.set_all_layers
+- `editor/ui/canvas.py:782` `set_all_layers(self, on: bool) -> None` #TAG:MapCanvas.set_all_layers
   - Resolve the whole stack instead of showing one layer's opinion.
-- `editor/ui/canvas.py:724` `set_mask(self, mask: int) -> None` #TAG:MapCanvas.set_mask
+- `editor/ui/canvas.py:791` `set_mask(self, mask: int) -> None` #TAG:MapCanvas.set_mask
   - The mask a collision stroke writes -- what `stamp` is to tiles.
-- `editor/ui/canvas.py:728` `__detach_overlay(self) -> None` #TAG:MapCanvas.__detach_overlay
-- `editor/ui/canvas.py:732` `__mount_overlay(self, document) -> None` #TAG:MapCanvas.__mount_overlay
+- `editor/ui/canvas.py:795` `__detach_overlay(self) -> None` #TAG:MapCanvas.__detach_overlay
+- `editor/ui/canvas.py:799` `__mount_overlay(self, document) -> None` #TAG:MapCanvas.__mount_overlay
   - Put the readout back into the freshly cleared scene.
-- `editor/ui/canvas.py:751` `__on_transaction(self, _transaction, action: str) -> None` #TAG:MapCanvas.__on_transaction
+- `editor/ui/canvas.py:818` `__on_transaction(self, _transaction, action: str) -> None` #TAG:MapCanvas.__on_transaction
   - Anything that changed the project other than our own stroke.
-- `editor/ui/canvas.py:757` `__bake_overlay(self) -> None` #TAG:MapCanvas.__bake_overlay
+- `editor/ui/canvas.py:824` `__bake_overlay(self) -> None` #TAG:MapCanvas.__bake_overlay
   - The whole field, from the document. The expensive path.
-- `editor/ui/canvas.py:774` `__sync_overlay(self, cells) -> None` #TAG:MapCanvas.__sync_overlay
+- `editor/ui/canvas.py:841` `__sync_overlay(self, cells) -> None` #TAG:MapCanvas.__sync_overlay
   - Repaint only the cells a stroke just changed.
-- `editor/ui/canvas.py:803` `__clear_ghost(self) -> None` #TAG:MapCanvas.__clear_ghost
-- `editor/ui/canvas.py:808` `__draw_ghost(self) -> None` #TAG:MapCanvas.__draw_ghost
-- `editor/ui/canvas.py:837` `__draw_mask_ghost(self) -> None` #TAG:MapCanvas.__draw_mask_ghost
+- `editor/ui/canvas.py:870` `__clear_ghost(self) -> None` #TAG:MapCanvas.__clear_ghost
+- `editor/ui/canvas.py:875` `__draw_ghost(self) -> None` #TAG:MapCanvas.__draw_ghost
+- `editor/ui/canvas.py:904` `__draw_mask_ghost(self) -> None` #TAG:MapCanvas.__draw_mask_ghost
   - The pending stroke in the overlay's own vocabulary.
-- `editor/ui/canvas.py:870` `keyPressEvent(self, event) -> None` #TAG:MapCanvas.keyPressEvent
-- `editor/ui/canvas.py:876` `keyReleaseEvent(self, event) -> None` #TAG:MapCanvas.keyReleaseEvent
-- `editor/ui/canvas.py:882` `wheelEvent(self, event) -> None` #TAG:MapCanvas.wheelEvent
+- `editor/ui/canvas.py:940` `keyPressEvent(self, event) -> None` #TAG:MapCanvas.keyPressEvent
+- `editor/ui/canvas.py:946` `keyReleaseEvent(self, event) -> None` #TAG:MapCanvas.keyReleaseEvent
+- `editor/ui/canvas.py:952` `wheelEvent(self, event) -> None` #TAG:MapCanvas.wheelEvent
   - Plain wheel zooms.
-- `editor/ui/canvas.py:909` `mousePressEvent(self, event) -> None` #TAG:MapCanvas.mousePressEvent
-- `editor/ui/canvas.py:967` `mouseMoveEvent(self, event) -> None` #TAG:MapCanvas.mouseMoveEvent
-- `editor/ui/canvas.py:1012` `mouseReleaseEvent(self, event) -> None` #TAG:MapCanvas.mouseReleaseEvent
-- `editor/ui/canvas.py:1035` `__commit_stroke(self) -> None` #TAG:MapCanvas.__commit_stroke
-- `editor/ui/canvas.py:1052` `__begin_collision(self, column: int, row: int, *, erase: bool) -> None` #TAG:MapCanvas.__begin_collision
+- `editor/ui/canvas.py:979` `mousePressEvent(self, event) -> None` #TAG:MapCanvas.mousePressEvent
+- `editor/ui/canvas.py:1039` `mouseMoveEvent(self, event) -> None` #TAG:MapCanvas.mouseMoveEvent
+- `editor/ui/canvas.py:1084` `mouseReleaseEvent(self, event) -> None` #TAG:MapCanvas.mouseReleaseEvent
+- `editor/ui/canvas.py:1107` `__commit_stroke(self) -> None` #TAG:MapCanvas.__commit_stroke
+- `editor/ui/canvas.py:1124` `__begin_collision(self, column: int, row: int, *, erase: bool) -> None` #TAG:MapCanvas.__begin_collision
   - Start a stroke against the active layer's companion.
-- `editor/ui/canvas.py:1144` `__commit_collision(self) -> None` #TAG:MapCanvas.__commit_collision
+- `editor/ui/canvas.py:1218` `__commit_collision(self) -> None` #TAG:MapCanvas.__commit_collision
   - One stroke, one transaction -- tileset and companion layer included.
-- `editor/ui/canvas.py:1229` `__pick_mask(self, column: int, row: int) -> None` #TAG:MapCanvas.__pick_mask
+- `editor/ui/canvas.py:1303` `__pick_mask(self, column: int, row: int) -> None` #TAG:MapCanvas.__pick_mask
   - Alt+click, or the picker tool, in collision mode.
-- `editor/ui/canvas.py:1247` `__terrain_for_brush(self)` #TAG:MapCanvas.__terrain_for_brush
+- `editor/ui/canvas.py:1321` `__terrain_for_brush(self)` #TAG:MapCanvas.__terrain_for_brush
   - The autotile group the currently-picked tile belongs to.
-- `editor/ui/canvas.py:1266` `__begin_terrain(self, layer, column: int, row: int, *, erase: bool) -> None` #TAG:MapCanvas.__begin_terrain
-- `editor/ui/canvas.py:1276` `__draw_terrain_ghost(self) -> None` #TAG:MapCanvas.__draw_terrain_ghost
-- `editor/ui/canvas.py:1294` `__commit_terrain(self) -> None` #TAG:MapCanvas.__commit_terrain
-- `editor/ui/canvas.py:1311` `__pick(self, column: int, row: int) -> None` #TAG:MapCanvas.__pick
-- `editor/ui/canvas.py:1325` `__object_under(self, point)` #TAG:MapCanvas.__object_under
-- `editor/ui/canvas.py:1338` `__click_object(self, point, column: int, row: int) -> None` #TAG:MapCanvas.__click_object
-- `editor/ui/canvas.py:1356` `__delete_object_under(self, point) -> None` #TAG:MapCanvas.__delete_object_under
+- `editor/ui/canvas.py:1340` `__begin_terrain(self, layer, column: int, row: int, *, erase: bool) -> None` #TAG:MapCanvas.__begin_terrain
+- `editor/ui/canvas.py:1352` `__draw_terrain_ghost(self) -> None` #TAG:MapCanvas.__draw_terrain_ghost
+- `editor/ui/canvas.py:1370` `__commit_terrain(self) -> None` #TAG:MapCanvas.__commit_terrain
+- `editor/ui/canvas.py:1387` `__pick(self, column: int, row: int) -> None` #TAG:MapCanvas.__pick
+- `editor/ui/canvas.py:1401` `__object_under(self, point)` #TAG:MapCanvas.__object_under
+- `editor/ui/canvas.py:1414` `__click_object(self, point, column: int, row: int) -> None` #TAG:MapCanvas.__click_object
+- `editor/ui/canvas.py:1432` `__delete_object_under(self, point) -> None` #TAG:MapCanvas.__delete_object_under
 
 ### `class _TerrainStroke` #TAG:_TerrainStroke
 
-`editor/ui/canvas.py:1367`–`1409`
+`editor/ui/canvas.py:1443`–`1503`
 
 > One press-drag-release of the terrain tool.
 
-- `editor/ui/canvas.py:1380` `__init__(self, layer, terrain: autotile.TerrainSet, *, erase: bool=False)` #TAG:_TerrainStroke.__init__
-- `editor/ui/canvas.py:1390` `read(self, x: int, y: int) -> int` #TAG:_TerrainStroke.read
+- `editor/ui/canvas.py:1456` `__init__(self, layer, terrain: autotile.TerrainSet, *, erase: bool=False, size: int=1)` #TAG:_TerrainStroke.__init__
+- `editor/ui/canvas.py:1474` `read(self, x: int, y: int) -> int` #TAG:_TerrainStroke.read
   - Uncommitted edits win, so a drag builds on its own work.
-- `editor/ui/canvas.py:1396` `extend(self, column: int, row: int) -> None` #TAG:_TerrainStroke.extend
-- `editor/ui/canvas.py:1407` `edits(self) -> list[tuple[int, int, int]]` #TAG:_TerrainStroke.edits
+- `editor/ui/canvas.py:1480` `extend(self, column: int, row: int) -> None` #TAG:_TerrainStroke.extend
+- `editor/ui/canvas.py:1501` `edits(self) -> list[tuple[int, int, int]]` #TAG:_TerrainStroke.edits
 
 ### `class TilePalette(QWidget)` #TAG:TilePalette
 
-`editor/ui/canvas.py:1416`–`1549`
+`editor/ui/canvas.py:1510`–`1643`
 
 > Pick a tile, or drag out a rectangle to pick a multi-tile stamp.
 
-- `editor/ui/canvas.py:1427` `__init__(self, parent: QWidget | None=None)` #TAG:TilePalette.__init__
-- `editor/ui/canvas.py:1455` `set_atlas(self, atlas: TilesetAtlas) -> None` #TAG:TilePalette.set_atlas
-- `editor/ui/canvas.py:1468` `__on_choose(self, index: int) -> None` #TAG:TilePalette.__on_choose
-- `editor/ui/canvas.py:1477` `@property columns(self) -> int` #TAG:TilePalette.columns
-- `editor/ui/canvas.py:1481` `@property rows(self) -> int` #TAG:TilePalette.rows
-- `editor/ui/canvas.py:1486` `gid_at(self, column: int, row: int) -> int | None` #TAG:TilePalette.gid_at
-- `editor/ui/canvas.py:1496` `begin(self, column: int, row: int) -> None` #TAG:TilePalette.begin
-- `editor/ui/canvas.py:1500` `extend(self, column: int, row: int) -> None` #TAG:TilePalette.extend
-- `editor/ui/canvas.py:1506` `commit(self) -> None` #TAG:TilePalette.commit
-- `editor/ui/canvas.py:1529` `selection_rect(self) -> tuple[int, int, int, int] | None` #TAG:TilePalette.selection_rect
-- `editor/ui/canvas.py:1536` `select_gid(self, gid: int) -> None` #TAG:TilePalette.select_gid
+- `editor/ui/canvas.py:1521` `__init__(self, parent: QWidget | None=None)` #TAG:TilePalette.__init__
+- `editor/ui/canvas.py:1549` `set_atlas(self, atlas: TilesetAtlas) -> None` #TAG:TilePalette.set_atlas
+- `editor/ui/canvas.py:1562` `__on_choose(self, index: int) -> None` #TAG:TilePalette.__on_choose
+- `editor/ui/canvas.py:1571` `@property columns(self) -> int` #TAG:TilePalette.columns
+- `editor/ui/canvas.py:1575` `@property rows(self) -> int` #TAG:TilePalette.rows
+- `editor/ui/canvas.py:1580` `gid_at(self, column: int, row: int) -> int | None` #TAG:TilePalette.gid_at
+- `editor/ui/canvas.py:1590` `begin(self, column: int, row: int) -> None` #TAG:TilePalette.begin
+- `editor/ui/canvas.py:1594` `extend(self, column: int, row: int) -> None` #TAG:TilePalette.extend
+- `editor/ui/canvas.py:1600` `commit(self) -> None` #TAG:TilePalette.commit
+- `editor/ui/canvas.py:1623` `selection_rect(self) -> tuple[int, int, int, int] | None` #TAG:TilePalette.selection_rect
+- `editor/ui/canvas.py:1630` `select_gid(self, gid: int) -> None` #TAG:TilePalette.select_gid
   - Move the highlight to a gid chosen elsewhere (the canvas picker).
 
 ### `class _PaletteSurface(QWidget)` #TAG:_PaletteSurface
 
-`editor/ui/canvas.py:1552`–`1614`
+`editor/ui/canvas.py:1646`–`1708`
 
 > The drawn grid. Split out so the palette can own scrolling.
 
-- `editor/ui/canvas.py:1555` `__init__(self, palette: TilePalette)` #TAG:_PaletteSurface.__init__
-- `editor/ui/canvas.py:1561` `rebuild(self) -> None` #TAG:_PaletteSurface.rebuild
-- `editor/ui/canvas.py:1586` `paintEvent(self, _event) -> None` #TAG:_PaletteSurface.paintEvent
-- `editor/ui/canvas.py:1599` `__cell(self, position) -> tuple[int, int]` #TAG:_PaletteSurface.__cell
-- `editor/ui/canvas.py:1603` `mousePressEvent(self, event) -> None` #TAG:_PaletteSurface.mousePressEvent
-- `editor/ui/canvas.py:1608` `mouseMoveEvent(self, event) -> None` #TAG:_PaletteSurface.mouseMoveEvent
-- `editor/ui/canvas.py:1612` `mouseReleaseEvent(self, event) -> None` #TAG:_PaletteSurface.mouseReleaseEvent
+- `editor/ui/canvas.py:1649` `__init__(self, palette: TilePalette)` #TAG:_PaletteSurface.__init__
+- `editor/ui/canvas.py:1655` `rebuild(self) -> None` #TAG:_PaletteSurface.rebuild
+- `editor/ui/canvas.py:1680` `paintEvent(self, _event) -> None` #TAG:_PaletteSurface.paintEvent
+- `editor/ui/canvas.py:1693` `__cell(self, position) -> tuple[int, int]` #TAG:_PaletteSurface.__cell
+- `editor/ui/canvas.py:1697` `mousePressEvent(self, event) -> None` #TAG:_PaletteSurface.mousePressEvent
+- `editor/ui/canvas.py:1702` `mouseMoveEvent(self, event) -> None` #TAG:_PaletteSurface.mouseMoveEvent
+- `editor/ui/canvas.py:1706` `mouseReleaseEvent(self, event) -> None` #TAG:_PaletteSurface.mouseReleaseEvent

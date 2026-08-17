@@ -181,6 +181,23 @@ def _build_glyph(mask: int, tile_width: int, tile_height: int,
     Geometry is in sixteenths of a tile, because 16px is where this was
     designed and verified; `ux`/`uy` are kept separate so a non-square tile
     stretches the bars along their own edge instead of skewing them.
+
+    THE SUB-CELL SIZES, AND WHY DETAIL IS DROPPED RATHER THAN SHRUNK
+    ----------------------------------------------------------------
+    A `pyoneer_subcell="4"` companion asks for a 4px cell, and every accent
+    here has a minimum width of one device pixel that the shapes underneath
+    them do not. Measured at 4px before `_wants_keyline` existed: a fully
+    blocked cell held ZERO pixels of `BAR` -- the 1px keyline exactly covered
+    the 1px bar, so a blocked edge rendered in the keyline's near-black
+    instead of red, and at 2px the whole glyph was keyline. The star had the
+    same disease from the other end: its outline rim is `max(1.0, unit)` wide
+    and its ring is `(outer - inner) / 2`, which at 4px is 1.0 over 0.6, so
+    "abstain" rendered dark brown rather than amber.
+
+    So an accent is drawn only while it is thinner than the thing it accents.
+    That is a real degradation and it is the right one: at these sizes the
+    channel that survives is COLOUR (red edge, amber centre, washed cell) and
+    the channel that cannot is the hairline that separates two reds.
     """
     width = max(1, tile_width)
     height = max(1, tile_height)
@@ -203,6 +220,7 @@ def _build_glyph(mask: int, tile_width: int, tile_height: int,
 
     thin = QPen(keyline)
     thin.setWidthF(max(1.0, unit))
+    keyed = _wants_keyline(ux, uy)
     for bit in _DIRECTION_BITS:
         if not mask & bit:
             continue
@@ -210,14 +228,32 @@ def _build_glyph(mask: int, tile_width: int, tile_height: int,
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(BAR))
         painter.drawRect(bar)
-        painter.setPen(thin)
-        painter.drawLine(inward[0], inward[1])
+        if keyed:
+            painter.setPen(thin)
+            painter.drawLine(inward[0], inward[1])
 
     if mask & STAR:
         _draw_star(painter, width, height, unit)
 
     painter.end()
     return pixmap
+
+
+#: A bar is 4u thick, so at a 16px cell it is 4 device pixels and the 1px
+#: keyline on its inward edge is a quarter of it. Below this the keyline is
+#: half the bar or all of it, and the accent stops being an accent.
+KEYLINE_MIN_BAR = 2.0
+
+
+def _wants_keyline(ux: float, uy: float) -> bool:
+    """Is there room for the hairline on the bar's inward edge?
+
+    False for a cell small enough that the keyline would BE the bar. The
+    threshold is on the bar, not on the cell, because a non-square sub-cell
+    can have room along one axis and not the other, and a keyline drawn on
+    only two of four edges reads as a mask the author did not paint.
+    """
+    return min(4.0 * ux, 4.0 * uy) >= KEYLINE_MIN_BAR
 
 
 def _bar_geometry(bit: int, width: float, height: float,
@@ -254,18 +290,25 @@ def _draw_star(painter: QPainter, width: float, height: float,
 
     Drawn as a stroked circle rather than two filled ellipses so the ring
     keeps its weight at any tile size, and outlined on both rims so it still
-    reads over amber-ish art.
+    reads over amber-ish art -- but only while the rim is THINNER than the
+    ring it outlines. A rim has a one-device-pixel floor and the ring does
+    not, so below an 8px cell the outline is wider than the amber it is meant
+    to edge and the star renders as a dark blob. See `_build_glyph`.
     """
     centre = QPointF(width / 2.0, height / 2.0)
     outer, inner = 8.0 * unit, 3.2 * unit
     painter.setBrush(Qt.NoBrush)
+    ring_width = (outer - inner) / 2.0
     ring = QPen(STAR_INK)
-    ring.setWidthF((outer - inner) / 2.0)
+    ring.setWidthF(ring_width)
     painter.setPen(ring)
     radius = (outer + inner) / 4.0
     painter.drawEllipse(centre, radius, radius)
+    rim_width = max(1.0, unit)
+    if rim_width >= ring_width:
+        return
     rim = QPen(STAR_OUTLINE)
-    rim.setWidthF(max(1.0, unit))
+    rim.setWidthF(rim_width)
     painter.setPen(rim)
     painter.drawEllipse(centre, outer / 2.0, outer / 2.0)
     painter.drawEllipse(centre, inner / 2.0, inner / 2.0)
@@ -577,15 +620,24 @@ def masks_from_layer(layer, first_gid: int) -> list[int]:
             for y in range(height) for x in range(width)]
 
 
-def layer_from_companion(layer, first_gid: int, name: str = "") -> CollisionLayer:
+def layer_from_companion(layer, first_gid: int, name: str = "", *,
+                         scale: int = 1) -> CollisionLayer:
     """A document tile layer as a stack member, without copying its cells.
 
     A `CollisionLayer` is three lazy readers, so this costs one closure --
     which matters, because the all-layers view holds one of these per
     collision layer and rebuilds them whenever the document changes.
+
+    `scale` is the field's resolution divided by this layer's own -- see
+    `companion_reader`, which is where the arithmetic and the measurement
+    live. It matters here for the same reason it matters in the runtime and
+    for a worse-looking reason: the all-layers overlay is what an author reads
+    to find out where a wall IS, so a stack that mixes a 1x and a 4x companion
+    and drops the scale draws the 1x layer's walls in the wrong place.
     """
-    return CollisionLayer(name=name or getattr(layer, "name", ""),
-                          companion=companion_reader(layer.get_tile, first_gid))
+    return CollisionLayer(
+        name=name or getattr(layer, "name", ""),
+        companion=companion_reader(layer.get_tile, first_gid, scale=scale))
 
 
 def layer_from_masks(masks: Sequence[int], width: int,

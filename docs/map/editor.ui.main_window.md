@@ -5,7 +5,7 @@
 
 > The editor window.
 
-`editor.ui.main_window` · 846 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.main_window` · 911 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,63 +15,66 @@
 
 ### `class EditorWindow(QMainWindow)` #TAG:EditorWindow
 
-`editor/ui/main_window.py:91`–`845`
+`editor/ui/main_window.py:92`–`910`
 
-- `editor/ui/main_window.py:92` `__init__(self, session)` #TAG:EditorWindow.__init__
-- `editor/ui/main_window.py:176` `__build_palette(self) -> QDockWidget` #TAG:EditorWindow.__build_palette
-- `editor/ui/main_window.py:185` `__build_mask_palette(self) -> QDockWidget` #TAG:EditorWindow.__build_mask_palette
+- `editor/ui/main_window.py:93` `__init__(self, session)` #TAG:EditorWindow.__init__
+- `editor/ui/main_window.py:178` `__build_palette(self) -> QDockWidget` #TAG:EditorWindow.__build_palette
+- `editor/ui/main_window.py:187` `__build_mask_palette(self) -> QDockWidget` #TAG:EditorWindow.__build_mask_palette
   - The collision brush: what the tile palette becomes in that mode.
-- `editor/ui/main_window.py:209` `__build_actions(self) -> None` #TAG:EditorWindow.__build_actions
-- `editor/ui/main_window.py:267` `__act(self, menu, text, shortcut, slot) -> QAction` #TAG:EditorWindow.__act
-- `editor/ui/main_window.py:275` `__build_toolbar(self) -> None` #TAG:EditorWindow.__build_toolbar
-- `editor/ui/main_window.py:333` `__title(self) -> str` #TAG:EditorWindow.__title
-- `editor/ui/main_window.py:338` `__select_first_paintable_layer(self) -> None` #TAG:EditorWindow.__select_first_paintable_layer
-- `editor/ui/main_window.py:349` `notify(self, message: str, *, seconds: float=6.0) -> None` #TAG:EditorWindow.notify
+- `editor/ui/main_window.py:211` `__build_actions(self) -> None` #TAG:EditorWindow.__build_actions
+- `editor/ui/main_window.py:269` `__act(self, menu, text, shortcut, slot) -> QAction` #TAG:EditorWindow.__act
+- `editor/ui/main_window.py:277` `__build_toolbar(self) -> None` #TAG:EditorWindow.__build_toolbar
+- `editor/ui/main_window.py:353` `__title(self) -> str` #TAG:EditorWindow.__title
+- `editor/ui/main_window.py:358` `__select_first_paintable_layer(self) -> None` #TAG:EditorWindow.__select_first_paintable_layer
+- `editor/ui/main_window.py:369` `notify(self, message: str, *, seconds: float=6.0) -> None` #TAG:EditorWindow.notify
   - Something happened. Read it or don't.
-- `editor/ui/main_window.py:353` `report(self, message: str, *, key: str, scope: Scope | None=None, detail: str='', severity: str='hard', fix: str='', seconds: float=12.0) -> None` #TAG:EditorWindow.report
+- `editor/ui/main_window.py:373` `report(self, message: str, *, key: str, scope: Scope | None=None, detail: str='', severity: str='hard', fix: str='', seconds: float=12.0) -> None` #TAG:EditorWindow.report
   - Something happened that must be SEEN, even later.
-- `editor/ui/main_window.py:373` `clear(self, key: str) -> None` #TAG:EditorWindow.clear
+- `editor/ui/main_window.py:393` `clear(self, key: str) -> None` #TAG:EditorWindow.clear
   - Retire a reported situation.
-- `editor/ui/main_window.py:379` `run(self, commands, *, label: str | None=None, source: str='editor') -> bool` #TAG:EditorWindow.run
+- `editor/ui/main_window.py:399` `run(self, commands, *, label: str | None=None, source: str='editor') -> bool` #TAG:EditorWindow.run
   - Apply commands. Returns True on success; reports and returns False
-- `editor/ui/main_window.py:407` `refresh_all(self) -> None` #TAG:EditorWindow.refresh_all
-- `editor/ui/main_window.py:420` `__sync_actions(self) -> None` #TAG:EditorWindow.__sync_actions
+- `editor/ui/main_window.py:427` `refresh_all(self) -> None` #TAG:EditorWindow.refresh_all
+- `editor/ui/main_window.py:440` `__sync_actions(self) -> None` #TAG:EditorWindow.__sync_actions
   - A menu entry that cannot act is greyed and says why.
-- `editor/ui/main_window.py:447` `__safely(self, call, what: str) -> None` #TAG:EditorWindow.__safely
+- `editor/ui/main_window.py:467` `__safely(self, call, what: str) -> None` #TAG:EditorWindow.__safely
   - One panel failing must not take the window down.
-- `editor/ui/main_window.py:461` `refresh_manifest(self) -> None` #TAG:EditorWindow.refresh_manifest
-- `editor/ui/main_window.py:469` `__on_selection(self, scope: Scope) -> None` #TAG:EditorWindow.__on_selection
-- `editor/ui/main_window.py:484` `__set_tool(self, tool: Tool) -> None` #TAG:EditorWindow.__set_tool
-- `editor/ui/main_window.py:488` `__on_stamp(self, stamp) -> None` #TAG:EditorWindow.__on_stamp
-- `editor/ui/main_window.py:494` `__on_picked(self, gid: int) -> None` #TAG:EditorWindow.__on_picked
-- `editor/ui/main_window.py:498` `__on_mode(self, mode: EditMode) -> None` #TAG:EditorWindow.__on_mode
+- `editor/ui/main_window.py:481` `refresh_manifest(self) -> None` #TAG:EditorWindow.refresh_manifest
+- `editor/ui/main_window.py:489` `__on_selection(self, scope: Scope) -> None` #TAG:EditorWindow.__on_selection
+- `editor/ui/main_window.py:504` `__set_tool(self, tool: Tool) -> None` #TAG:EditorWindow.__set_tool
+- `editor/ui/main_window.py:509` `__on_brush_size(self, size: int) -> None` #TAG:EditorWindow.__on_brush_size
+- `editor/ui/main_window.py:513` `__sync_size_control(self) -> None` #TAG:EditorWindow.__sync_size_control
+  - Lit for the tools a footprint reaches, greyed WITH A REASON for
+- `editor/ui/main_window.py:543` `__on_stamp(self, stamp) -> None` #TAG:EditorWindow.__on_stamp
+- `editor/ui/main_window.py:549` `__on_picked(self, gid: int) -> None` #TAG:EditorWindow.__on_picked
+- `editor/ui/main_window.py:553` `__on_mode(self, mode: EditMode) -> None` #TAG:EditorWindow.__on_mode
   - Point the canvas at the other layer, and the toolbar with it.
-- `editor/ui/main_window.py:516` `__on_picked_mask(self, mask: int) -> None` #TAG:EditorWindow.__on_picked_mask
+- `editor/ui/main_window.py:574` `__on_picked_mask(self, mask: int) -> None` #TAG:EditorWindow.__on_picked_mask
   - The canvas picked a mask off the map (alt-click, or the picker).
-- `editor/ui/main_window.py:523` `__on_class(self, name: str) -> None` #TAG:EditorWindow.__on_class
-- `editor/ui/main_window.py:526` `__on_status(self, message: str) -> None` #TAG:EditorWindow.__on_status
-- `editor/ui/main_window.py:529` `__reset_zoom(self) -> None` #TAG:EditorWindow.__reset_zoom
-- `editor/ui/main_window.py:534` `undo(self) -> None` #TAG:EditorWindow.undo
-- `editor/ui/main_window.py:539` `redo(self) -> None` #TAG:EditorWindow.redo
-- `editor/ui/main_window.py:544` `save(self) -> int | None` #TAG:EditorWindow.save
+- `editor/ui/main_window.py:581` `__on_class(self, name: str) -> None` #TAG:EditorWindow.__on_class
+- `editor/ui/main_window.py:584` `__on_status(self, message: str) -> None` #TAG:EditorWindow.__on_status
+- `editor/ui/main_window.py:587` `__reset_zoom(self) -> None` #TAG:EditorWindow.__reset_zoom
+- `editor/ui/main_window.py:592` `undo(self) -> None` #TAG:EditorWindow.undo
+- `editor/ui/main_window.py:597` `redo(self) -> None` #TAG:EditorWindow.redo
+- `editor/ui/main_window.py:602` `save(self) -> int | None` #TAG:EditorWindow.save
   - Write every dirty document. Returns how many, or None on failure.
-- `editor/ui/main_window.py:560` `play(self) -> None` #TAG:EditorWindow.play
+- `editor/ui/main_window.py:618` `play(self) -> None` #TAG:EditorWindow.play
   - Save, then launch the game as a subprocess. Not the runtime.
-- `editor/ui/main_window.py:593` `open_database(self) -> None` #TAG:EditorWindow.open_database
-- `editor/ui/main_window.py:603` `add_tileset(self) -> None` #TAG:EditorWindow.add_tileset
+- `editor/ui/main_window.py:651` `open_database(self) -> None` #TAG:EditorWindow.open_database
+- `editor/ui/main_window.py:661` `add_tileset(self) -> None` #TAG:EditorWindow.add_tileset
   - Declare a sheet on the open map.
-- `editor/ui/main_window.py:629` `switch_genre(self) -> None` #TAG:EditorWindow.switch_genre
-- `editor/ui/main_window.py:648` `copy_art_brief(self) -> None` #TAG:EditorWindow.copy_art_brief
-- `editor/ui/main_window.py:665` `open_settings(self) -> None` #TAG:EditorWindow.open_settings
-- `editor/ui/main_window.py:673` `__on_setting_changed(self, key: str, value) -> None` #TAG:EditorWindow.__on_setting_changed
-- `editor/ui/main_window.py:685` `apply_theme(self, theme: Theme) -> None` #TAG:EditorWindow.apply_theme
+- `editor/ui/main_window.py:687` `switch_genre(self) -> None` #TAG:EditorWindow.switch_genre
+- `editor/ui/main_window.py:706` `copy_art_brief(self) -> None` #TAG:EditorWindow.copy_art_brief
+- `editor/ui/main_window.py:723` `open_settings(self) -> None` #TAG:EditorWindow.open_settings
+- `editor/ui/main_window.py:731` `__on_setting_changed(self, key: str, value) -> None` #TAG:EditorWindow.__on_setting_changed
+- `editor/ui/main_window.py:750` `apply_theme(self, theme: Theme) -> None` #TAG:EditorWindow.apply_theme
   - Repaint the whole application, icons included.
-- `editor/ui/main_window.py:699` `reveal(self, path: str, line: int | None=None, symbol: str | None=None) -> None` #TAG:EditorWindow.reveal
+- `editor/ui/main_window.py:764` `reveal(self, path: str, line: int | None=None, symbol: str | None=None) -> None` #TAG:EditorWindow.reveal
   - Open a source file in the developer's IDE.
-- `editor/ui/main_window.py:726` `ship(self) -> None` #TAG:EditorWindow.ship
-- `editor/ui/main_window.py:760` `apply_response_dialog(self) -> None` #TAG:EditorWindow.apply_response_dialog
-- `editor/ui/main_window.py:771` `apply_response(self, path: str) -> None` #TAG:EditorWindow.apply_response
-- `editor/ui/main_window.py:804` `__watch_requests(self) -> None` #TAG:EditorWindow.__watch_requests
-- `editor/ui/main_window.py:815` `__on_requests_changed(self, directory: str) -> None` #TAG:EditorWindow.__on_requests_changed
-- `editor/ui/main_window.py:825` `__offer(self, path: str) -> None` #TAG:EditorWindow.__offer
+- `editor/ui/main_window.py:791` `ship(self) -> None` #TAG:EditorWindow.ship
+- `editor/ui/main_window.py:825` `apply_response_dialog(self) -> None` #TAG:EditorWindow.apply_response_dialog
+- `editor/ui/main_window.py:836` `apply_response(self, path: str) -> None` #TAG:EditorWindow.apply_response
+- `editor/ui/main_window.py:869` `__watch_requests(self) -> None` #TAG:EditorWindow.__watch_requests
+- `editor/ui/main_window.py:880` `__on_requests_changed(self, directory: str) -> None` #TAG:EditorWindow.__on_requests_changed
+- `editor/ui/main_window.py:890` `__offer(self, path: str) -> None` #TAG:EditorWindow.__offer
   - A file appeared on disk. That is news, not a question.

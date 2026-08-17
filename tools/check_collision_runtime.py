@@ -1,6 +1,6 @@
 """Verify that the engine reads authored masks and refuses a blocked step.
 
-Eight claims. Every one of them is something the code is otherwise free to
+Nine claims. Every one of them is something the code is otherwise free to
 break with no visible symptom until a player walks through a wall in a room
 nobody tests twice:
 
@@ -12,6 +12,26 @@ nobody tests twice:
     pytmx's renumbering is undone, flip flags and all
     an entity with no field moves by the arithmetic it moved by before
     editor/core/collision.py is still this module, and not a copy of it
+    a companion may be four times the map, and an old one gates as it did
+
+WHAT SECTION 9 IS FOR
+---------------------
+`pyoneer_subcell` is a file-format string, so both halves of it have to be
+pinned or the migration is a hope. Section 9 asserts, on its own fixtures:
+
+  * a DECLARED 4x companion bakes a field at 4x dimensions and a quarter tile
+    size, and two sub-cells inside ONE map tile hold different masks -- which
+    is the thing a whole-tile field cannot say. A body is stopped by one of
+    them and passes through the other, one sub-cell apart.
+  * an UNDECLARED oversized companion RAISES naming both shapes. At HEAD
+    before this section, that map baked a truncated field and dropped 100% of
+    the authored sub-cells with no exception and no warning.
+  * a 1x companion bakes the SAME BYTES it baked before any of this existed,
+    and declaring `pyoneer_subcell="1"` explicitly changes nothing. That is
+    the migration guarantee and it is the one that will actually break.
+  * a stack mixing 1x and 4x puts the 1x layer's wall at the PIXELS it was
+    painted at. Dropping the scale does not lose that layer, it moves it 40
+    pixels up the map, which is worse: it still looks like collision working.
 
 THE FIXTURE IS THIS FILE'S OWN
 ------------------------------
@@ -72,6 +92,7 @@ from scripts.core.collision_runtime import (
     BLOCK_RIGHT,
     BLOCK_UP,
     COMPANION_SUFFIX,
+    SUBCELL,
     CollisionField,
     CollisionLayer,
     DIRECTION_BITS,
@@ -85,10 +106,13 @@ from scripts.core.collision_runtime import (
     allowed_distance,
     collision_first_gid,
     companion_pairs,
+    companion_reader,
+    companion_subcell,
     describe_mask,
     describe_opinion,
     document_gid_reader,
     field_from_map,
+    field_subcell,
     file_gid_reader,
     gid_to_mask,
     gid_to_opinion,
@@ -101,6 +125,7 @@ from scripts.core.collision_runtime import (
     transform_mask,
 )
 from scripts.core.depth import MAP_DEPTH, resolve_layer_depth
+from scripts.core.errors import PyoneerConfigError
 from scripts.game.entity.game_entity import GameEntity
 from scripts.loaders.map_document import MapDocument
 
@@ -959,6 +984,258 @@ if editor_collision is not None:
     # spells it the same way) and MAP_DEPTH (which does not) in agreement.
     expect("and the misspelled shipped layer resolves through the alias",
            runtime.depth_for_layer_name("Paralax"), MAP_DEPTH["Parallax"])
+
+
+# ---------------------------------------------------------------------------
+# 9. A companion finer than the map
+# ---------------------------------------------------------------------------
+print()
+print("a companion may be finer than the map, and an old one is unchanged")
+
+MASK_FIRST_GID = 5
+BLOCK_ALL_GID = MASK_FIRST_GID + BLOCK_ALL
+
+
+def rows_csv(values, columns):
+    """A csv payload, one map row per text row, as Tiled writes it."""
+    return ",\n".join(",".join(str(v) for v in values[y * columns:(y + 1) * columns])
+                      for y in range(len(values) // columns))
+
+
+def subcell_fixture(*, subcell=4, declare="4", painted=((4, 6),),
+                    companion_cells=None, extra_layer=""):
+    """A 4x4 map at 16px whose Floor companion is `subcell` times finer.
+
+    `painted` is in the COMPANION's own cells, so `(4, 6)` at subcell 4 is
+    the quarter-tile at pixels x 16..19, y 24..27 -- the left column, third
+    row, of map tile (1, 1). Nothing about that square is expressible as a
+    whole-tile mask, which is the entire point of the format.
+
+    `declare` is written verbatim into the property so a check can author the
+    values an author will actually mistype. `None` omits the property, which
+    is the shape every map written before `pyoneer_subcell` existed has.
+    """
+    side = 4 * subcell if companion_cells is None else companion_cells
+    cells = [0] * (side * side)
+    for x, y in painted:
+        cells[y * side + x] = BLOCK_ALL_GID
+    prop = ""
+    if declare is not None:
+        prop = ('  <properties>\n   <property name="%s" type="int" '
+                'value="%s"/>\n  </properties>\n' % (SUBCELL, declare))
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" \
+renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="9" nextobjectid="1">
+ <tileset firstgid="1" name="probe" tilewidth="16" tileheight="16" tilecount="4" columns="2">
+  <image source="no-such-art.png" width="32" height="32"/>
+ </tileset>
+ <tileset firstgid="5" name="collision" tilewidth="16" tileheight="16" tilecount="17" columns="17">
+  <image source="no-such-masks.png" width="272" height="16"/>
+ </tileset>
+{extra_layer} <layer id="1" name="Floor" width="4" height="4">
+  <data encoding="csv">
+{rows_csv([1] * 16, 4)}
+</data>
+ </layer>
+ <layer id="2" name="FloorCollision" width="{side}" height="{side}">
+{prop}  <data encoding="csv">
+{rows_csv(cells, side)}
+</data>
+ </layer>
+</map>
+"""
+
+
+def write(name, text):
+    path = os.path.join(scratch, name)
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+    return path
+
+
+FINE_PATH = write("fine.tmx", subcell_fixture())
+fine = field_from_map(MapDocument.load(FINE_PATH))
+
+expect("the declared resolution is read off the companion layer",
+       companion_subcell(MapDocument.load(FINE_PATH), "FloorCollision"), 4)
+expect("and the stack bakes at the finest one it holds",
+       field_subcell(MapDocument.load(FINE_PATH)), 4)
+expect("so the field is subcell x the map, at a quarter of the tile",
+       (fine.width, fine.height, fine.tile_width, fine.tile_height),
+       (16, 16, 4, 4))
+# The half a whole-tile field cannot express: two cells of ONE map tile
+# disagreeing. Both of these are inside tile (1, 1).
+expect("a painted sub-cell blocks",
+       fine.mask_at(4, 6), BLOCK_ALL)
+expect("and its neighbour inside the SAME map tile does not",
+       (fine.mask_at(4, 4), fine.mask_at(5, 6)), (PASS_ALL, PASS_ALL))
+expect("...so one map tile really does hold more than one answer",
+       len({fine.mask_at(x, y) for x in (4, 5) for y in (4, 6)}), 2)
+
+# Driven through the real gate, one sub-cell apart. The two probes are 8
+# pixels apart vertically -- half a tile -- and start in the same map tile
+# column, so a field baked at whole-tile resolution answers both the same way
+# whatever it holds.
+stopped = probe(10.0, 26.0, field=fine, speed=16)
+stopped.move_direction(1.0, "right")
+expect_close("a body is stopped by a sub-cell wall",
+             stopped.transform.position.x, 16.0 - EDGE_INSET)
+passing = probe(10.0, 18.0, field=fine, speed=16)
+passing.move_direction(1.0, "right")
+expect("while one 8px higher -- same map tile -- walks straight through",
+       passing.transform.position.x, 26.0)
+expect("and the two really were in the same map tile to begin with",
+       (int(10.0 // 16), int(26.0 // 16), int(18.0 // 16)), (0, 1, 1))
+
+# --- the migration guarantee -------------------------------------------
+# `field` is section 6's 1x fixture, baked before any of this existed. The
+# bytes are written out rather than compared to a re-bake of themselves: a
+# check that asserts bake(x) == bake(x) passes for every possible bake.
+expect("a 1x map still bakes at the map's own size and tile size",
+       (field.width, field.height, field.tile_width, field.tile_height),
+       (4, 3, 16, 16))
+expect("and to exactly the bytes it baked before sub-cells existed",
+       field.masks(),
+       bytes([PASS_ALL, BLOCK_ALL, PASS_ALL, BLOCK_LEFT,
+              PASS_ALL, PASS_ALL, PASS_ALL, PASS_ALL,
+              BLOCK_ALL, PASS_ALL, BLOCK_DOWN, PASS_ALL]))
+
+PLAIN_PATH = write("plain.tmx",
+                   subcell_fixture(subcell=1, declare=None, painted=((1, 1),)))
+DECLARED_ONE_PATH = write("one.tmx",
+                          subcell_fixture(subcell=1, declare="1",
+                                          painted=((1, 1),)))
+plain = field_from_map(MapDocument.load(PLAIN_PATH))
+expect("an undeclared companion is 1x, which is the format's default",
+       companion_subcell(MapDocument.load(PLAIN_PATH), "FloorCollision"), 1)
+expect("declaring 1 explicitly bakes the identical field",
+       field_from_map(MapDocument.load(DECLARED_ONE_PATH)) == plain, True)
+expect("...and that field is the map's shape, not the companion's",
+       (plain.width, plain.tile_width), (4, 16))
+# The other half: the two paths are only identical because the DATA is the
+# same. A 4x companion over the same map is a different field, so the
+# assertion above is not passing on a field that ignores its input.
+expect("while the 4x companion over the same map is a different field",
+       fine == plain, False)
+
+# --- a companion smaller than the map is still legal --------------------
+SMALL_PATH = write("small.tmx", subcell_fixture(
+    subcell=1, declare=None, companion_cells=2, painted=((0, 0),)))
+small = field_from_map(MapDocument.load(SMALL_PATH))
+expect("a companion smaller than the map is not an error",
+       (small.width, small.height), (4, 4))
+expect("its cells decide, and past its edge nothing does",
+       (small.mask_at(0, 0), small.mask_at(3, 3)), (BLOCK_ALL, PASS_ALL))
+
+# --- the silent drop, now loud -----------------------------------------
+# The failure this section exists for. Measured at HEAD before it: a 16x16
+# companion on a 4x4 map baked a 4x4 field, discarded every sub-cell outside
+# the top-left corner, raised nothing and warned nothing.
+UNDECLARED_PATH = write("undeclared.tmx", subcell_fixture(declare=None))
+expect_raises("an oversized companion that declares nothing is refused",
+              PyoneerConfigError,
+              lambda: field_from_map(MapDocument.load(UNDECLARED_PATH)),
+              # the layer, its real shape, what it currently claims, what the
+              # map allows, and what to declare instead. An error that named
+              # only the layer would leave the author guessing the ratio.
+              "'FloorCollision'", "16x16", f"{SUBCELL}=1", "4x4",
+              f"{SUBCELL}=4")
+
+for label, value, fragment in (
+        ("a value that is not an integer", "banana", "not an integer"),
+        ("a value below one", "0", "1 or more"),
+        ("a value the tile size does not divide by", "3",
+         "does not divide evenly")):
+    path = write(f"bad-{value}.tmx", subcell_fixture(declare=value))
+    expect_raises(f"{label} is refused", PyoneerConfigError,
+                  lambda p=path: field_from_map(MapDocument.load(p)), fragment)
+
+# --- a stack that mixes resolutions ------------------------------------
+# Foreground draws at depth 60 and Floor at 10, so Foreground is TOPMOST and
+# `resolve` asks it first. Its companion is 1x; Floor's is 4x. The wall is
+# painted at map cell (0, 3) -- pixels y 48..63.
+FOREGROUND = """ <layer id="3" name="Foreground" width="4" height="4">
+  <data encoding="csv">
+0,0,0,0,
+0,0,0,0,
+0,0,0,0,
+0,0,0,0
+</data>
+ </layer>
+ <layer id="4" name="ForegroundCollision" width="4" height="4">
+  <data encoding="csv">
+0,0,0,0,
+0,0,0,0,
+0,0,0,0,
+20,0,0,0
+</data>
+ </layer>
+"""
+MIXED_PATH = write("mixed.tmx", subcell_fixture(extra_layer=FOREGROUND))
+expect("a mixed stack's resolution is the FINEST, never the coarsest",
+       field_subcell(MapDocument.load(MIXED_PATH)), 4)
+mixed = field_from_map(MapDocument.load(MIXED_PATH))
+expect("a mixed stack bakes at the FINEST layer, not the topmost",
+       (mixed.width, mixed.tile_width), (16, 4))
+# The load-bearing pair. Read the 1x layer at sub-cell coordinates and its
+# wall does not vanish -- it MOVES, from pixel row 48 to pixel row 12. Both
+# halves are needed: the first alone passes for a field with a wall
+# everywhere, the second alone for a field with no wall at all.
+expect("the 1x layer's wall is at the pixels it was painted at",
+       mixed.mask_at_pixel(2.0, 56.0), BLOCK_ALL)
+expect("and NOT 40 pixels up the map, where an unscaled read would put it",
+       mixed.mask_at_pixel(2.0, 14.0), PASS_ALL)
+expect("while the 4x layer under it still decides its own sub-cell",
+       mixed.mask_at(4, 6), BLOCK_ALL)
+expect("and the topmost layer really is the 1x one",
+       [name for name, _c in companion_pairs(MapDocument.load(MIXED_PATH))][0],
+       "Foreground")
+
+NESTING_PATH = write("nesting.tmx", subcell_fixture(
+    subcell=2, declare="2", painted=((0, 0),), extra_layer=FOREGROUND))
+expect("1 divides 2, so a stack of the two bakes at the finer one",
+       field_subcell(MapDocument.load(NESTING_PATH)), 2)
+BAD_NEST = subcell_fixture(subcell=3, declare="3", painted=((0, 0),))
+# 16 is divisible by neither 3 nor a stack containing it; use tile size 12 so
+# the only complaint left is the nesting one.
+BAD_NEST = BAD_NEST.replace('tilewidth="16" tileheight="16" infinite',
+                            'tilewidth="12" tileheight="12" infinite')
+BAD_NEST = BAD_NEST.replace(
+    ' <layer id="1" name="Floor"',
+    ' <layer id="3" name="Foreground" width="4" height="4">\n'
+    '  <data encoding="csv">\n0,0,0,0,\n0,0,0,0,\n0,0,0,0,\n0,0,0,0\n</data>\n'
+    ' </layer>\n'
+    ' <layer id="4" name="ForegroundCollision" width="8" height="8">\n'
+    '  <properties>\n   <property name="%s" type="int" value="2"/>\n'
+    '  </properties>\n'
+    '  <data encoding="csv">\n' % SUBCELL
+    + rows_csv([0] * 64, 8) + '\n</data>\n </layer>\n'
+    ' <layer id="1" name="Floor"')
+BAD_NEST_PATH = write("badnest.tmx", BAD_NEST)
+expect_raises("a stack whose resolutions do not nest is refused",
+              PyoneerConfigError,
+              lambda: field_from_map(MapDocument.load(BAD_NEST_PATH)),
+              "do not nest", "finest is 3", "declares 2")
+
+# --- the scale, on its own ---------------------------------------------
+grid = {(0, 0): BLOCK_ALL_GID, (1, 1): MASK_FIRST_GID + BLOCK_DOWN}
+cells = lambda x, y: grid.get((x, y), 0)                          # noqa: E731
+coarse = companion_reader(cells, MASK_FIRST_GID, scale=4)
+exact = companion_reader(cells, MASK_FIRST_GID)
+expect("scale 4 spreads one layer cell over four field cells each way",
+       [coarse(x, 0) for x in range(5)],
+       [BLOCK_ALL, BLOCK_ALL, BLOCK_ALL, BLOCK_ALL, NO_DATA])
+expect("and it is a different reader from the unscaled one",
+       (exact(3, 0), coarse(3, 0)), (NO_DATA, BLOCK_ALL))
+expect("scale floors on the negative side too, rather than truncating",
+       (coarse(-1, -1), coarse(-4, -4)), (NO_DATA, NO_DATA))
+expect("the second layer cell starts where the first one ends",
+       (coarse(4, 4), coarse(7, 7), coarse(8, 8)),
+       (BLOCK_DOWN, BLOCK_DOWN, NO_DATA))
+expect_raises("a scale below one is refused", ValueError,
+              lambda: companion_reader(cells, MASK_FIRST_GID, scale=0),
+              "1 or more")
 
 
 # ---------------------------------------------------------------------------

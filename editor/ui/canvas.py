@@ -102,6 +102,8 @@ from editor.core.paint import (
     Stroke,
     Tool,
     edits_to_triples,
+    footprint,
+    grid_lines,
 )
 from editor.core.scope import Scope
 from editor.ui.collision_view import (
@@ -312,6 +314,16 @@ class MapCanvas(QGraphicsView):
         self.hidden_layers: set[str] = set()
         self.selected_scope: Scope | None = None
         self.show_grid = True
+        #: How many paint cells apart the grid lines are drawn. A view
+        #: preference, so it comes from `editor.core.settings` -- the one
+        #: store -- and it can only ever SKIP boundaries, never invent
+        #: them. See `paint.grid_lines`.
+        self.grid_step = 1
+        #: The brush footprint, in paint cells, for the tools that have
+        #: one. Transient like `tool` and `stamp` and deliberately not
+        #: persisted: it is a moment-to-moment choice, not a view
+        #: preference, and every editor the author has used forgets it.
+        self.brush_size = 1
         #: The tileset this stroke will declare in front of its tiles, or
         #: None. Set at press by `provision_collision_tileset`, consumed by
         #: `__commit_collision`, and cleared either way -- so a gesture that
@@ -373,10 +385,49 @@ class MapCanvas(QGraphicsView):
     def tile_height(self) -> int:
         return self.document.tile_height
 
+    # -- the paint unit ----------------------------------------------------
+    #
+    # THE ONE NUMBER THAT USED TO DO THREE JOBS. `document.tile_width`
+    # decided how big the displayed grid was, what a click snapped to, and
+    # how much a single press painted, and it reached all three through
+    # separate reads -- so nothing coupled them and nothing could move one
+    # without the others.
+    #
+    # Everything that means "an addressable CELL" now reads `paint_width` /
+    # `paint_height`, and everything that means "the size of a tile's ART"
+    # -- the atlas, the tile ghost, the terrain ghost, an object's default
+    # box -- still reads `tile_width` / `tile_height`. Today the two are
+    # equal, which is precisely why the split is worth making now: it is a
+    # rename with no behaviour in it, and it is the single seam a sub-cell
+    # collision resolution divides.
+
+    @property
+    def paint_width(self) -> int:
+        """Pixels per addressable cell, horizontally."""
+        return self.document.tile_width
+
+    @property
+    def paint_height(self) -> int:
+        """Pixels per addressable cell, vertically."""
+        return self.document.tile_height
+
     def cell_at(self, scene_x: float, scene_y: float) -> tuple[int, int]:
         # Floor division, not int(): int(-0.5) is 0, which puts the cell one
         # to the right of where the cursor actually is on the left edge.
-        return (int(scene_x // self.tile_width), int(scene_y // self.tile_height))
+        return (int(scene_x // self.paint_width),
+                int(scene_y // self.paint_height))
+
+    def __footprint(self, stamp: Stamp | None = None):
+        """The stamp this press should place, and where it sits.
+
+        The gate is `self.tool.uses_size` -- the SELECTED tool, not the
+        effective one. A right-drag substitutes the eraser, which does take
+        a footprint, but the toolbar's size control is greyed or lit for
+        what is selected: making the two disagree would give the author a
+        greyed control that quietly changed the size of a right-drag.
+        """
+        size = self.brush_size if self.tool.uses_size else 1
+        return footprint(self.stamp if stamp is None else stamp, size)
 
     def __active_tile_layer(self):
         if self.active_layer is None:
@@ -656,15 +707,31 @@ class MapCanvas(QGraphicsView):
             self.setBackgroundBrush(QBrush(colour))
 
     def __draw_grid(self, scene, document, width: int, height: int) -> None:
+        """Cell boundaries, every `grid_step` of them.
+
+        Drawn in PAINT cells rather than in tiles, and only on boundaries
+        that exist -- `grid_lines` returns a subset of the real ones, so a
+        coarser grid hides lines and can never invent them. That is the
+        difference between a grid setting and a lie: at any step, every
+        line the author sees is somewhere a click can actually land.
+        """
         if not self.show_grid:
             return
         pen = QPen(_GRID_PEN)
         pen.setCosmetic(True)
-        for column in range(document.width + 1):
-            x = column * document.tile_width
+        # Not clamped here. `EditorSettings` validates the stored value
+        # against its own choices and falls back if it is nonsense -- a
+        # corrupt preference must not stop the editor booting -- so a bad
+        # step arriving at the canvas means a CALLER set it, and
+        # `grid_lines` raising is the right way to find that out.
+        step = self.grid_step
+        columns = width // self.paint_width
+        rows = height // self.paint_height
+        for column in grid_lines(columns, step):
+            x = column * self.paint_width
             scene.addLine(x, 0, x, height, pen).setZValue(1000)
-        for row in range(document.height + 1):
-            y = row * document.tile_height
+        for row in grid_lines(rows, step):
+            y = row * self.paint_height
             scene.addLine(0, y, width, y, pen).setZValue(1000)
 
     def set_layer_visible(self, name: str, visible: bool) -> None:
@@ -846,13 +913,16 @@ class MapCanvas(QGraphicsView):
         first_gid = self.collision_first_gid
         if first_gid is None:
             return
-        glyphs = glyph_pixmaps(self.tile_width, self.tile_height)
+        # A mask ghost is drawn in PAINT cells, not in tiles: what is being
+        # placed is an opinion about one addressable cell, and its art is
+        # the glyph rather than anything in a tileset.
+        glyphs = glyph_pixmaps(self.paint_width, self.paint_height)
         group = QGraphicsItemGroup()
         group.setZValue(_GHOST_Z)
         group.setOpacity(0.75)
         for x, y, gid in self.__stroke.preview():
-            px, py = x * self.tile_width, y * self.tile_height
-            plate = QGraphicsRectItem(px, py, self.tile_width, self.tile_height)
+            px, py = x * self.paint_width, y * self.paint_height
+            plate = QGraphicsRectItem(px, py, self.paint_width, self.paint_height)
             plate.setPen(QPen(_MASK_GHOST_PEN, 0))
             plate.setBrush(QBrush(_MASK_GHOST_FILL))
             group.addToGroup(plate)
@@ -946,9 +1016,11 @@ class MapCanvas(QGraphicsView):
                 event.accept()
                 return
             self.__erasing = event.button() == Qt.RightButton
+            stamp, anchor = self.__footprint()
             self.__stroke = Stroke(
                 Tool.ERASER if self.__erasing else self.tool,
-                self.stamp, Bounds(layer.width, layer.height), layer.get_tile)
+                stamp, Bounds(layer.width, layer.height), layer.get_tile,
+                anchor=anchor)
             self.__stroke.begin(column, row)
             self.__draw_ghost()
             event.accept()
@@ -1135,9 +1207,11 @@ class MapCanvas(QGraphicsView):
         read = companion.get_tile if companion is not None else _EMPTY_READER
         bounds = (Bounds(companion.width, companion.height) if companion
                   is not None else Bounds(document.width, document.height))
+        stamp, anchor = self.__footprint(
+            Stamp.single(opinion_to_gid(self.mask, first_gid)))
         self.__stroke = Stroke(
             Tool.ERASER if erase else self.tool,
-            Stamp.single(opinion_to_gid(self.mask, first_gid)), bounds, read)
+            stamp, bounds, read, anchor=anchor)
         self.__stroke.begin(column, row)
         self.__draw_ghost()
 
@@ -1269,7 +1343,9 @@ class MapCanvas(QGraphicsView):
         if terrain is None:
             self.status.emit("pick a tile from an autotile sheet first")
             return
-        self.__terrain = _TerrainStroke(layer, terrain, erase=erase)
+        self.__terrain = _TerrainStroke(
+            layer, terrain, erase=erase,
+            size=self.brush_size if self.tool.uses_size else 1)
         self.__terrain.extend(column, row)
         self.__draw_terrain_ghost()
 
@@ -1378,10 +1454,18 @@ class _TerrainStroke:
     """
 
     def __init__(self, layer, terrain: autotile.TerrainSet, *,
-                 erase: bool = False):
+                 erase: bool = False, size: int = 1):
+        if size < 1:
+            raise ValueError(f"a terrain footprint must be at least 1 cell, "
+                             f"got {size}")
         self.layer = layer
         self.terrain = terrain
         self.erase = erase
+        #: A footprint in CELLS, the same number the brush uses. Terrain
+        #: has no stamp -- `Tool.uses_stamp` is False for it -- but it does
+        #: have a size, which is why `Tool.uses_size` had to be its own
+        #: property rather than the negation of that one.
+        self.size = size
         self.bounds = autotile.Bounds(layer.width, layer.height)
         self.pending: dict[tuple[int, int], int] = {}
         self.__last: tuple[int, int] | None = None
@@ -1397,9 +1481,19 @@ class _TerrainStroke:
         if (column, row) == self.__last:
             return
         self.__last = (column, row)
+        # A size-N terrain brush is the UNION of the per-cell corner sets
+        # over an NxN block, centred the same way a tile brush is. At size
+        # 1 that is one call to `corners_for_cell_brush` with the cell the
+        # cursor is on -- byte for byte the previous behaviour, which is
+        # why the default is safe.
+        half = (self.size - 1) // 2
+        corners: set[autotile.Corner] = set()
+        for down in range(self.size):
+            for across in range(self.size):
+                corners.update(autotile.corners_for_cell_brush(
+                    column - half + across, row - half + down))
         edits, self.field = autotile.paint(
-            self.read, self.bounds, self.terrain,
-            autotile.corners_for_cell_brush(column, row),
+            self.read, self.bounds, self.terrain, corners,
             erase=self.erase, field=self.field)
         for x, y, gid in edits:
             self.pending[(x, y)] = gid

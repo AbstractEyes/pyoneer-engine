@@ -21,6 +21,33 @@ larger one, and every tool honours it: a rectangle tool with a 2x2 stamp
 tiles that pattern across the rectangle. Special-casing the single tile
 would mean two code paths that drift.
 
+A SIZE IS NOT A PATTERN, AND A GRID IS NOT A BRUSH
+--------------------------------------------------
+Two quantities used to be one number -- the map's tile size decided how big
+the displayed grid was, what a click snapped to, AND how much one press
+painted -- so none of the three could move without the others.
+
+They are separated here, and the separation is only sound because of two
+measurements:
+
+  * A brush FOOTPRINT is real for `Tool.BRUSH` and `Tool.ERASER` and
+    provably inert for `RECTANGLE`, `FILLED_RECT` and `FILL`. Those three
+    go through `Stroke.__cover`, which reads the stamp as a repeating
+    PATTERN keyed on map coordinates, so a uniform NxN tiles to itself and
+    produces BIT-IDENTICAL edits to a 1x1. Hence `Tool.uses_size` -- a
+    control that silently does nothing for three of seven tools is worse
+    than no control. It is deliberately NOT `uses_stamp`, which is False
+    for terrain and terrain does take a size.
+  * Growing a picked PATTERN into a footprint disagrees with `__cover`'s
+    map-aligned phase in every cell, so the same 4x4 patch could be
+    authored two ways and come out different. `footprint()` therefore
+    grows only a SINGLE stamp, into a uniform block that has no phase, and
+    hands a picked pattern back untouched.
+
+`grid_lines` is the other half. The grid may draw a SUBSET of the real cell
+boundaries and never a superset: a line the author can see but no click can
+land on is a lie the code would have to keep telling.
+
 WHAT A STROKE IS GENERIC OVER
 -----------------------------
 `gid` is a name, not a type. Everything here moves small non-negative
@@ -85,6 +112,28 @@ class Tool(Enum):
         """Terrain derives its tiles from a rule, not from the palette
         selection, so a multi-tile stamp is meaningless to it."""
         return self not in (Tool.PICKER, Tool.AUTOTILE)
+
+    @property
+    def uses_size(self) -> bool:
+        """Does a brush FOOTPRINT change what this tool writes?
+
+        Not a synonym for `uses_stamp`, and the two disagree in both
+        directions -- which is exactly why this exists rather than reusing
+        that one:
+
+          * AUTOTILE has `uses_stamp` False (it cannot take a pattern) and
+            `uses_size` True (it takes a block of cells and sets their
+            corners).
+          * RECTANGLE, FILLED_RECT and FILL have `uses_stamp` True and
+            `uses_size` False. Measured: those three reach `Stroke.__cover`,
+            which treats the stamp as a repeating pattern keyed on MAP
+            coordinates, so a uniform 3x3 tiles to itself and yields the
+            same edits, cell for cell and gid for gid, as a 1x1. A size
+            control wired to them would move a number and change nothing.
+
+        PICKER edits nothing at all, so it has no footprint either.
+        """
+        return self in (Tool.BRUSH, Tool.ERASER, Tool.AUTOTILE)
 
 
 class EditMode(Enum):
@@ -169,6 +218,21 @@ class Stamp:
         return cls(1, 1, (gid,))
 
     @classmethod
+    def uniform(cls, gid: int, size: int) -> "Stamp":
+        """A size x size FOOTPRINT of one gid.
+
+        Uniform on purpose, and it is the whole reason `footprint()` refuses
+        to grow a picked pattern: a uniform block has no phase, so it reads
+        the same whether it is placed by `place()` under a cursor or tiled
+        by `Stroke.__cover` across an area. A grown 2x2 pattern does not --
+        measured, all 16 cells of a 4x4 disagree between those two routes.
+        """
+        if size < 1:
+            raise ValueError(f"a brush footprint must be at least 1 cell, "
+                             f"got {size}")
+        return cls(size, size, (gid,) * (size * size))
+
+    @classmethod
     def from_rows(cls, rows: list[list[int]]) -> "Stamp":
         if not rows or not rows[0]:
             raise ValueError("a stamp needs at least one cell")
@@ -218,6 +282,57 @@ def place(stamp: Stamp, x: int, y: int, bounds: Bounds) -> list[Edit]:
         if bounds.contains(target_x, target_y):
             out.append((target_x, target_y, gid))
     return out
+
+
+def footprint(stamp: Stamp, size: int) -> tuple[Stamp, tuple[int, int]]:
+    """What a brush of `size` cells actually places, and where.
+
+    Returns the stamp to place and the offset from the CURSOR to that
+    stamp's top-left, so a size-3 brush is centred on the cell under the
+    pointer instead of hanging down and right of it. `place()` anchors
+    top-left, which is correct for a pattern picked out of the palette --
+    you place it by the corner you selected -- and wrong for a swept
+    footprint, so the two are distinguished here rather than in `place`.
+
+    A picked PATTERN comes back untouched at any size, and this is the rule
+    that keeps the feature from changing anything that already works: the
+    pattern's own dimensions are its footprint, exactly as before. Only a
+    single stamp grows, and it grows into `Stamp.uniform`.
+
+    Even sizes cannot be centred on a cell -- there is no middle -- so they
+    bias up and left, which is `(size - 1) // 2` and needs no special case.
+    """
+    if size < 1:
+        raise ValueError(f"a brush footprint must be at least 1 cell, "
+                         f"got {size}")
+    if size == 1 or not stamp.is_single:
+        return stamp, (0, 0)
+    offset = -((size - 1) // 2)
+    return Stamp.uniform(stamp.primary, size), (offset, offset)
+
+
+def grid_lines(count: int, step: int) -> list[int]:
+    """Which of `count` cells' boundaries the displayed grid draws.
+
+    ALWAYS A SUBSET of `range(count + 1)`, never a superset, and that is
+    the whole rule the setting exists under. A grid drawn finer than the
+    cell a click addresses shows the author boundaries no click can land
+    on -- measured, `MapCanvas.cell_at` and `MapCanvas.__draw_grid` read
+    the tile size independently and nothing couples them, so a free
+    "8px grid" option over 16px tiles would have drawn sixteen visible
+    cells per addressable one and painted the same tile for all of them.
+    A coarser grid is honest because every line it draws is a real
+    boundary; it just draws fewer of them.
+
+    The far edge is always included, so the map never ends on a step
+    boundary it does not have.
+    """
+    if step < 1:
+        raise ValueError(f"a grid step must be at least one cell, got {step}")
+    lines = list(range(0, count + 1, step))
+    if lines[-1] != count:
+        lines.append(count)
+    return lines
 
 
 def line(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
@@ -326,6 +441,12 @@ class Stroke:
     read: Reader
     origin: tuple[int, int] | None = None
     last: tuple[int, int] | None = None
+    #: Where the stamp's top-left goes relative to the cursor -- what
+    #: `footprint()` returns beside the stamp. It applies to the POINT
+    #: operations only: an area tool defines its own cells and a flood
+    #: starts from the cell actually clicked, so offsetting either would
+    #: move the shape rather than centre a brush.
+    anchor: tuple[int, int] = (0, 0)
     # init=False: this is accumulated state, not something a caller supplies.
     # Without it the mangled name leaks into the generated __init__ signature.
     __pending: dict[tuple[int, int], int] = field(
@@ -361,8 +482,12 @@ class Stroke:
     def __apply_at(self, x: int, y: int) -> None:
         """Apply the tool at one cursor position -- a POINT operation."""
         if self.tool is Tool.FILL:
+            # Before the anchor is applied: a flood starts from the cell the
+            # author clicked, and a brush footprint must not move which
+            # region gets filled.
             self.__cover(flood(self.read, self.bounds, x, y))
             return
+        x, y = x + self.anchor[0], y + self.anchor[1]
         if self.tool is Tool.ERASER:
             # The eraser's stamp is a footprint, not a pattern.
             for column, row, _gid in self.stamp.cells():

@@ -430,6 +430,137 @@ expect("the selection sticks", palette.mask, STAR)
 palette.select_mask(999)
 expect("an unauthorable mask is refused", palette.mask, STAR)
 
+
+# --------------------------------------------------------------------------
+print()
+print("a 4px sub-cell still reads as red, amber and washed")
+# --------------------------------------------------------------------------
+# `pyoneer_subcell="4"` asks this module to draw a quarter-tile cell. Every
+# accent here has a one-device-pixel floor that the shape underneath it does
+# not, so at 4px the 1px keyline exactly covered the 1px bar and the star's
+# 1px outline swallowed its 0.6px ring. Measured before `_wants_keyline`: a
+# fully blocked 4px cell held ZERO pixels of BAR and rendered near-black.
+SUB = 4
+
+
+def dominant(pixmap):
+    """The most common fully-opaque colour in a glyph, as an (r, g, b)."""
+    image = pixmap.toImage().convertToFormat(QImage.Format_ARGB32)
+    tally: dict[tuple[int, int, int], int] = {}
+    for y in range(image.height()):
+        for x in range(image.width()):
+            colour = image.pixelColor(x, y)
+            if colour.alpha() <= 128:
+                continue
+            key = (colour.red(), colour.green(), colour.blue())
+            tally[key] = tally.get(key, 0) + 1
+    return max(tally, key=tally.get) if tally else None
+
+
+def redness(colour):
+    """Is this colour on the BAR side of the palette rather than the keyline
+    side? BAR is (255, 74, 74) and KEYLINE is (40, 0, 6), so one number
+    separates them and no threshold has to be tuned."""
+    return colour is not None and colour[0] > 128
+
+
+fine = glyph_pixmaps(SUB, SUB)
+expect("the whole domain still draws at a sub-cell size",
+       (len(fine), {(g.width(), g.height()) for g in fine.values()}),
+       (len(MASK_DOMAIN), {(SUB, SUB)}))
+expect("a blocked 4px cell reads as the bar's red, not the keyline's black",
+       redness(dominant(fine[BLOCK_ALL])), True)
+expect("...and its 16px sibling still does too, so nothing regressed",
+       redness(dominant(glyphs[BLOCK_ALL])), True)
+# The other half of the keyline rule: at 16px the hairline is still THERE.
+# Dropping it everywhere would pass the two assertions above and quietly
+# undo the design this module was verified at. The keyline's signature is an
+# opaque pixel inside the bar that is DARKER than the bar, which is what it
+# is for and needs no threshold tuning: BAR's red is 255 and KEYLINE's is 40.
+def darkened(image, rect) -> int:
+    left, top, width, height = rect
+    count = 0
+    for y in range(top, top + height):
+        for x in range(left, left + width):
+            colour = image.pixelColor(x, y)
+            if colour.alpha() > 128 and colour.red() < 200:
+                count += 1
+    return count
+
+
+up_16 = glyph_image(BLOCK_UP)
+expect("the 16px bar keeps its inward keyline",
+       (darkened(up_16, (3, 0, 10, 5)) > 0,
+        opaque_pixels(up_16, (3, 0, 10, 5)) > 0), (True, True))
+up_4 = fine[BLOCK_UP].toImage().convertToFormat(QImage.Format_ARGB32)
+expect("while the 4px bar is bar and nothing else",
+       (darkened(up_4, (0, 0, SUB, SUB)), opaque_pixels(up_4, (0, 0, SUB, SUB)) > 0),
+       (0, True))
+expect("which is the rule, stated where the drawing reads it",
+       view._wants_keyline(SUB / 16.0, SUB / 16.0), False)
+expect("while an 8px sub-cell still has room, so the rule is not 'never'",
+       view._wants_keyline(8 / 16.0, 8 / 16.0), True)
+
+star_fine = fine[STAR].toImage().convertToFormat(QImage.Format_ARGB32)
+amber = [star_fine.pixelColor(x, y)
+         for y in range(SUB) for x in range(SUB)
+         if star_fine.pixelColor(x, y).alpha() > 0]
+expect("a 4px star is still amber rather than a dark blob",
+       all(c.red() > 128 and c.green() > 96 and c.blue() < 160 for c in amber)
+       and bool(amber), True)
+blank_sub = QPixmap(SUB, SUB)
+blank_sub.fill(Qt.transparent)
+expect("and 'open' still draws nothing at any size",
+       fingerprint(fine[PASS_ALL]), fingerprint(blank_sub))
+expect("...while a blocked one at the same size draws something",
+       fingerprint(fine[BLOCK_ALL]) == fingerprint(blank_sub), False)
+
+# The overlay at sub-cell resolution costs the same PIXMAP -- 400 cells of
+# 4px is the same 1600x1600 surface as 100 cells of 16px -- which is the
+# whole reason this is affordable. Do not "supersample" it: 400x400 at 16px
+# would be a 6400x6400 pixmap, ~164 MB.
+coarse_overlay = CollisionOverlay(4, 4, TILE, TILE)
+fine_overlay = CollisionOverlay(4 * SUB, 4 * SUB, TILE // SUB, TILE // SUB)
+expect("a 4x overlay covers exactly the same scene rectangle",
+       fine_overlay.boundingRect(), coarse_overlay.boundingRect())
+fine_overlay.bake([BLOCK_ALL if (x // SUB, y // SUB) == (1, 1) and y % SUB == 2
+                   else NO_DATA
+                   for y in range(4 * SUB) for x in range(4 * SUB)])
+expect("and it can ink part of a map tile and leave the rest alone",
+       (fine_overlay.mask_at(4, 6), fine_overlay.mask_at(4, 5)),
+       (BLOCK_ALL, NO_DATA))
+inked = opaque_pixels(fine_overlay.cell_image(4, 6)
+                      .convertToFormat(QImage.Format_ARGB32), (0, 0, SUB, SUB))
+bare = opaque_pixels(fine_overlay.cell_image(4, 5)
+                     .convertToFormat(QImage.Format_ARGB32), (0, 0, SUB, SUB))
+expect("which is visible in the pixels, not only in the model",
+       (inked > 0, bare), (True, 0))
+
+# A 1x layer read into a 4x overlay. Without the scale the wall does not
+# vanish -- it moves to a quarter of its coordinates, which still looks like
+# collision working.
+FIRST_GID = 5
+
+
+class _Cells:
+    """The smallest thing `layer_from_companion` accepts."""
+
+    name = "ForegroundCollision"
+    width = height = 4
+
+    def get_tile(self, x, y):
+        return FIRST_GID + BLOCK_ALL if (x, y) == (0, 3) else 0
+
+
+scaled = view.layer_from_companion(_Cells(), FIRST_GID, scale=SUB)
+plain_layer = view.layer_from_companion(_Cells(), FIRST_GID)
+expect("a 1x companion read at 4x answers over its whole map tile",
+       [scaled.opinion_at(0, y) for y in (11, 12, 15, 16)],
+       [NO_DATA, BLOCK_ALL, BLOCK_ALL, NO_DATA])
+expect("...where the unscaled read puts the same wall four times higher",
+       (plain_layer.opinion_at(0, 3), plain_layer.opinion_at(0, 12)),
+       (BLOCK_ALL, NO_DATA))
+
 print()
 if failures:
     print("FAILED:", failures)

@@ -59,11 +59,15 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEvent, QPointF, Qt                          # noqa: E402
 from PySide6.QtGui import QAction, QMouseEvent                          # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox                 # noqa: E402
+from PySide6.QtWidgets import (                                         # noqa: E402
+    QApplication,
+    QGraphicsLineItem,
+    QMessageBox,
+)
 
 from editor.core.autotile import TerrainSet                             # noqa: E402
 from editor.core.commands import Command                                # noqa: E402
-from editor.core.paint import Stamp, Tool                               # noqa: E402
+from editor.core.paint import Stamp, Tool, grid_lines                   # noqa: E402
 from editor.core.scope import Scope                                     # noqa: E402
 from editor.core.session import Session                                 # noqa: E402
 from editor.ui import ask as ask_module                                 # noqa: E402
@@ -341,6 +345,138 @@ try:
 
     # ----------------------------------------------------------------
     print()
+    print("the BRUSH has a footprint of its own, and it is still one undo")
+    # ----------------------------------------------------------------
+    # On a layer this check creates, so nothing here asserts what the author
+    # has painted -- only what a press does.
+    window.run(Command("map.layer.add", Scope.of(("map", "test")),
+                       {"name": "SizeProbe", "kind": "tile"}))
+    select_layer(window, "SizeProbe")
+    window.canvas.tool = Tool.BRUSH
+    window.canvas.stamp = Stamp.single(77)
+
+    def probe():
+        return session.project.map("test").tile_layer("SizeProbe")
+
+    def painted(gid=77):
+        layer = probe()
+        return {(x, y) for y in range(layer.height) for x in range(layer.width)
+                if layer.get_tile(x, y) == gid}
+
+    window.canvas.brush_size = 1
+    before_stroke = len(session.history())
+    drag(window, [(20, 20)])
+    expect("size 1 paints exactly the cell clicked", painted(), {(20, 20)})
+    expect("as one transaction", len(session.history()) - before_stroke, 1)
+    window.undo()
+
+    window.canvas.brush_size = 3
+    before_stroke = len(session.history())
+    drag(window, [(20, 20)])
+    expect("size 3 paints exactly 9 cells", len(painted()), 9)
+    expect("centred on the cell clicked, not hung off its corner",
+           painted(), {(x, y) for x in (19, 20, 21) for y in (19, 20, 21)})
+    expect("and a 3x3 press is STILL one transaction",
+           len(session.history()) - before_stroke, 1)
+    window.undo()
+    expect("which one undo takes back completely", painted(), set())
+
+    # A DRAG at size 3, which is the property easiest to break: the stroke
+    # accumulates a wide trail and must still commit once.
+    before_stroke = len(session.history())
+    drag(window, [(30, 30), (33, 30), (36, 30)])
+    expect("a size-3 drag sweeps a 3-wide trail", len(painted()), 3 * 9)
+    expect("and commits as a single transaction",
+           len(session.history()) - before_stroke, 1)
+    expect("with every cell written once, not once per mouse move",
+           len(session.history()[-1].commands[-1].args["tiles"]), 27)
+    window.undo()
+    window.canvas.brush_size = 1
+
+    print()
+    print("the size control is lit or greyed for a measured reason")
+    # Both halves: live for the tools a footprint reaches, greyed for the
+    # three that read a stamp as a repeating pattern and would ignore it.
+    for tool, want in ((Tool.BRUSH, True), (Tool.ERASER, True),
+                       (Tool.AUTOTILE, True), (Tool.FILLED_RECT, False),
+                       (Tool.RECTANGLE, False), (Tool.FILL, False),
+                       (Tool.PICKER, False)):
+        window.tool_actions[tool].trigger()
+        application.processEvents()
+        expect(f"{tool.value}: spinner enabled == {want}",
+               window.size_spin.isEnabled(), want)
+    window.tool_actions[Tool.FILLED_RECT].trigger()
+    expect("a greyed control says WHY, rather than sitting there dead",
+           "no footprint" in window.size_spin.toolTip(), True)
+    window.tool_actions[Tool.BRUSH].trigger()
+    expect("and a live one names the unit in pixels",
+           f"{window.canvas.paint_width}px" in window.size_spin.toolTip(), True)
+
+    # A greyed control must also be INERT, not merely un-clickable: set the
+    # size behind its back and prove the filled rectangle ignores it.
+    window.tool_actions[Tool.FILLED_RECT].trigger()
+    window.canvas.brush_size = 3
+    drag(window, [(50, 50), (52, 51)])
+    expect("a filled rectangle ignores the footprint entirely",
+           painted(), {(x, y) for x in (50, 51, 52) for y in (50, 51)})
+
+    # The half that is NOT visible through a filled rectangle, because a
+    # uniform footprint tiles to itself there and hides the difference. A
+    # right-drag substitutes the eraser, which DOES take a footprint -- so
+    # the gate has to read the SELECTED tool, or a greyed spinner would
+    # silently resize a right-drag the author cannot see the size of.
+    drag(window, [(51, 50)], button=Qt.RightButton)
+    expect("a right-drag under a greyed size erases one cell, not nine",
+           painted(), {(50, 50), (52, 50), (50, 51), (51, 51), (52, 51)})
+    window.undo()
+    window.undo()
+    window.canvas.brush_size = 1
+    window.tool_actions[Tool.BRUSH].trigger()
+
+    print()
+    print("the GRID setting changes what is drawn and NOTHING about a click")
+    document = session.project.map("test")
+
+    def grid_line_count():
+        window.canvas.rebuild()
+        application.processEvents()
+        return len([item for item in window.canvas.scene().items()
+                    if isinstance(item, QGraphicsLineItem)])
+
+    window.canvas.show_grid = True
+    window.canvas.grid_step = 1
+    fine = grid_line_count()
+    expect("step 1 draws every boundary of the map",
+           fine, (document.width + 1) + (document.height + 1))
+    window.canvas.grid_step = 4
+    coarse = grid_line_count()
+    expect("step 4 draws strictly fewer lines", coarse < fine, True)
+    expect("and exactly the boundaries paint.grid_lines names",
+           coarse, len(grid_lines(document.width, 4))
+           + len(grid_lines(document.height, 4)))
+
+    # THE HALF THAT MATTERS. A grid that changes what a click addresses is
+    # the failure this whole design is arranged to prevent, so it is proved
+    # twice: by the coordinate function, and by actually painting.
+    samples = [(0.0, 0.0), (17.0, 33.0), (99.5, 1.5), (640.0, 640.0)]
+    window.canvas.grid_step = 1
+    at_step_1 = [window.canvas.cell_at(x, y) for x, y in samples]
+    window.canvas.grid_step = 4
+    expect("cell_at is untouched by the grid spacing",
+           [window.canvas.cell_at(x, y) for x, y in samples], at_step_1)
+    drag(window, [(40, 40)])
+    expect("and a click still paints the one cell it always did",
+           painted(), {(40, 40)})
+    window.undo()
+    window.canvas.grid_step = 1
+    grid_line_count()
+
+    window.undo()          # the probe layer
+    expect("the probe layer undoes byte-identically",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    # ----------------------------------------------------------------
+    print()
     print("the terrain tool re-tiles cells the cursor never touched")
     # ----------------------------------------------------------------
     # Paint on a layer this check CREATES, so the fixture is guaranteed
@@ -375,6 +511,29 @@ try:
     expect("and used more than one gid",
            len({g for _x, _y, g in touched}) > 1, True)
     window.undo()          # the stroke
+
+    # AUTOTILE takes a SIZE even though it takes no STAMP, which is the
+    # whole reason `uses_size` had to be its own property instead of the
+    # negation of `uses_stamp`. Both halves, on the check's own empty
+    # layer: a bigger footprint re-tiles strictly more, and a size of 1
+    # still re-tiles exactly the block it always did.
+    def terrain_cells(size):
+        window.canvas.brush_size = size
+        drag(window, [(50, 50)])
+        touched = {(x, y) for x, y, _g
+                   in session.history()[-1].commands[0].args["tiles"]}
+        window.undo()
+        return touched
+
+    small, large = terrain_cells(1), terrain_cells(3)
+    window.canvas.brush_size = 1
+    expect("a size-1 terrain brush re-tiles the cells its 4 corners touch",
+           len(small), 9)
+    expect("size 3 sets a 4x4 corner lattice and re-tiles 25",
+           len(large), 25)
+    expect("and the small footprint sits inside the large one",
+           small <= large, True)
+
     window.undo()          # the probe layer
     expect("terrain and the probe layer both undo byte-identically",
            session.project.map("test").to_bytes() == ORIGINAL, True)
@@ -1065,7 +1224,7 @@ try:
     store = EditorSettings(FakeStore())
     expect("defaults come back typed",
            [type(store.get(s.key)).__name__ for s in SETTINGS],
-           ["str", "str", "bool", "bool"])
+           ["str", "str", "bool", "int", "bool"])
     store.set("show_grid", False)
     expect("a bool survives a text backend", store.get("show_grid"), False)
     store.set("show_grid", True)
@@ -1075,14 +1234,69 @@ try:
     store.set("theme", "banana")
     expect("a value outside the choices falls back to the default",
            store.get("theme"), "system")
+    # An INT setting used to validate nothing at all: the `choices` guard sat
+    # inside the str branch, so any stored number came straight back --
+    # including 0, which is a ZeroDivisionError in the code that turns a
+    # pixel into a cell. Both halves, because a fallback that cannot fire is
+    # not a fallback.
+    store.set("grid_step", 4)
+    expect("an int choice round-trips as an int", store.get("grid_step"), 4)
+    store._backend.setValue("grid_step", 0)
+    expect("a stored 0 is refused and falls back to the default",
+           store.get("grid_step"), 1)
+    store._backend.setValue("grid_step", 7)
+    expect("so is a number that is simply not one of the choices",
+           store.get("grid_step"), 1)
+    store._backend.setValue("grid_step", "banana")
+    expect("and so is something that is not a number at all",
+           store.get("grid_step"), 1)
     store.reset()
     expect("reset restores every default", store.as_dict()["show_grid"], True)
+    expect("including the grid spacing", store.as_dict()["grid_step"], 1)
 
     try:
         store.get("nonexistent")
         expect("an unknown setting is refused", False, True)
     except KeyError:
         print("  ok   an unknown setting raises rather than returning None")
+
+    # The dialog is generated from SETTINGS, so an int setting has to survive
+    # the trip through a combo box's item data as an INT: it was authored as
+    # a string, and findData against an int missed, which showed the first
+    # entry however the preference was actually set.
+    from editor.ui.settings_dialog import SettingsDialog            # noqa: E402
+    from PySide6.QtWidgets import QComboBox                         # noqa: E402
+
+    def shown(key):
+        dialog = SettingsDialog(store, window)
+        try:
+            return dialog.findChild(QComboBox, f"setting:{key}").currentData()
+        finally:
+            dialog.deleteLater()
+
+    store.set("grid_step", 4)
+    expect("the dialog shows the stored int, not the first entry",
+           shown("grid_step"), 4)
+    store.set("grid_step", 1)
+    expect("and follows it back down", shown("grid_step"), 1)
+    expect("a str setting still round-trips through the same field",
+           (store.set("theme", "dark"), shown("theme"))[1], "dark")
+    store.reset()
+
+    # And it has to REACH the canvas, through the one preference store and
+    # no other route. Driven through the slot `open_settings` connects the
+    # dialog's `changed` signal to, because that is the only path a real
+    # change takes.
+    apply_setting = window._EditorWindow__on_setting_changed
+    window.canvas.grid_step = 1
+    before_click = window.canvas.cell_at(17.0, 33.0)
+    apply_setting("grid_step", 4)
+    expect("changing the preference reaches the canvas",
+           window.canvas.grid_step, 4)
+    expect("and STILL changes nothing about what a click addresses",
+           window.canvas.cell_at(17.0, 33.0), before_click)
+    apply_setting("grid_step", 1)
+    expect("and back down again", window.canvas.grid_step, 1)
 
     # ----------------------------------------------------------------
     print()

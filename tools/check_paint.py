@@ -29,6 +29,8 @@ from editor.core.paint import (
     edits_to_triples,
     flood,
     flood_or_raise,
+    footprint,
+    grid_lines,
     line,
     place,
     rectangle,
@@ -280,6 +282,153 @@ expect("only the picker does not edit",
        sorted(t.value for t in Tool if not t.edits), ["picker"])
 expect("every tool has a label",
        [t for t in Tool if not t.label], [])
+
+# --------------------------------------------------------------------------
+print()
+print("a brush FOOTPRINT is one number in cells, and it is not a pattern")
+# --------------------------------------------------------------------------
+# `footprint` is the only producer of a sized brush, so both halves of every
+# rule about sizing are assertable here without a window.
+single = Stamp.single(7)
+grown, offset = footprint(single, 3)
+expect("size 3 grows a single stamp to 3x3", (grown.width, grown.height), (3, 3))
+expect("uniformly, so it has no phase to disagree about",
+       set(grown.gids), {7})
+expect("and it is centred on the cursor, not hung off its corner",
+       offset, (-1, -1))
+expect("size 1 hands the stamp straight back",
+       footprint(single, 1), (single, (0, 0)))
+expect("an even size cannot centre, so it biases up and left",
+       footprint(single, 2)[1], (0, 0))
+expect("size 5 offsets by two", footprint(single, 5)[1], (-2, -2))
+# The rule that keeps this from changing anything that already works: a
+# PATTERN picked out of the palette is its own footprint, at any size.
+grid_pattern = Stamp.from_rows([[1, 2], [3, 4]])
+expect("a picked pattern is returned untouched at size 4",
+       footprint(grid_pattern, 4), (grid_pattern, (0, 0)))
+expect_raises("a size below 1 raises rather than being quietly fixed",
+              ValueError, lambda: footprint(single, 0))
+expect_raises("and Stamp.uniform refuses it too", ValueError,
+              lambda: Stamp.uniform(7, 0))
+
+print()
+print("an NxN brush paints exactly NxN cells; a 1x1 still paints exactly one")
+stamp, anchor = footprint(Stamp.single(7), 3)
+stroke = Stroke(Tool.BRUSH, stamp, BOUNDS, empty, anchor=anchor)
+stroke.begin(4, 4)
+expect("one click with size 3 writes 9 cells", len(stroke.edits()), 9)
+expect("the block is centred on the clicked cell",
+       sorted((x, y) for x, y, _g in stroke.edits()),
+       [(x, y) for x in (3, 4, 5) for y in (3, 4, 5)])
+stamp, anchor = footprint(Stamp.single(7), 1)
+stroke = Stroke(Tool.BRUSH, stamp, BOUNDS, empty, anchor=anchor)
+stroke.begin(4, 4)
+expect("one click with size 1 writes exactly one cell, at the cursor",
+       stroke.edits(), [(4, 4, 7)])
+
+print()
+print("the eraser takes the same footprint, in both directions")
+stamp, anchor = footprint(Stamp.single(1), 3)
+stroke = Stroke(Tool.ERASER, stamp, BOUNDS, solid, anchor=anchor)
+stroke.begin(5, 5)
+expect("size 3 clears 9 cells around the cursor",
+       sorted((x, y) for x, y, _g in stroke.edits()),
+       [(x, y) for x in (4, 5, 6) for y in (4, 5, 6)])
+expect("and clears them, rather than writing the footprint's gid",
+       {gid for _x, _y, gid in stroke.edits()}, {0})
+stamp, anchor = footprint(Stamp.single(1), 1)
+stroke = Stroke(Tool.ERASER, stamp, BOUNDS, solid, anchor=anchor)
+stroke.begin(5, 5)
+expect("size 1 clears exactly one", stroke.edits(), [(5, 5, 0)])
+
+print()
+print("one press-drag-release is ONE stroke at any size, with no cell twice")
+stamp, anchor = footprint(Stamp.single(7), 3)
+stroke = Stroke(Tool.BRUSH, stamp, BOUNDS, empty, anchor=anchor)
+stroke.begin(4, 4)
+stroke.extend(6, 4)
+stroke.extend(8, 4)
+positions = [(x, y) for x, y, _g in stroke.edits()]
+# Columns 3..9 by rows 3..5: a 3-wide trail swept across five cells.
+expect("a size-3 drag covers a 3-wide trail", len(positions), 21)
+expect("every cell appears exactly once, so one commit is one write",
+       len(positions), len(set(positions)))
+expect("and it is still a single edit list ready for map.tile.set_many",
+       len(edits_to_triples(stroke.edits())), 21)
+
+print()
+print("the anchor moves a FOOTPRINT, never a shape the tool defined itself")
+# The other half of centring. A brush is centred on the cursor; a flood
+# starts from the cell that was clicked and a dragged rectangle keeps the
+# corners the author dragged. Offsetting either would move the shape.
+row_region = reader({(x, 0): 1 for x in range(10)})
+stroke = Stroke(Tool.FILL, Stamp.single(7), BOUNDS, row_region, anchor=(-1, -1))
+stroke.begin(5, 0)
+expect("a flood fills the region under the CURSOR, offset or not",
+       len(stroke.edits()), 10)
+stroke = Stroke(Tool.FILLED_RECT, Stamp.single(7), BOUNDS, empty,
+                anchor=(-1, -1))
+stroke.begin(2, 2)
+stroke.extend(4, 4)
+expect("a dragged rectangle keeps the corners that were dragged",
+       sorted((x, y) for x, y, _g in stroke.edits()),
+       [(x, y) for x in (2, 3, 4) for y in (2, 3, 4)])
+
+print()
+print("the tools a size does NOT reach are proved inert, not just disabled")
+# The load-bearing half. `uses_size` is only honest if the three tools it
+# excludes really do ignore a footprint -- they read the stamp as a
+# repeating pattern keyed on map coordinates, so a uniform NxN tiles to
+# itself. If that ever stopped being true, greying the control would be
+# hiding a feature rather than declining one.
+expect("exactly three tools take a footprint",
+       sorted(t.value for t in Tool if t.uses_size),
+       ["autotile", "brush", "eraser"])
+expect("uses_size is not a synonym for uses_stamp",
+       sorted(t.value for t in Tool if t.uses_size != t.uses_stamp),
+       ["autotile", "fill", "filled_rect", "rectangle"])
+for inert in (Tool.FILLED_RECT, Tool.RECTANGLE, Tool.FILL):
+    one = Stroke(inert, Stamp.single(7), BOUNDS, empty)
+    one.begin(1, 1)
+    one.extend(5, 4)
+    many = Stroke(inert, Stamp.uniform(7, 3), BOUNDS, empty)
+    many.begin(1, 1)
+    many.extend(5, 4)
+    expect(f"{inert.value}: a 3x3 footprint changes nothing at all",
+           (sorted(many.edits()) == sorted(one.edits()), len(one.edits()) > 0),
+           (True, True))
+    expect(f"{inert.value}: and it is declared as taking no size",
+           inert.uses_size, False)
+
+# --------------------------------------------------------------------------
+print()
+print("the displayed grid may SKIP boundaries and may never invent one")
+# --------------------------------------------------------------------------
+expect("step 1 draws every boundary of a 10-cell run",
+       grid_lines(10, 1), list(range(11)))
+expect("step 4 draws every fourth, and still closes the far edge",
+       grid_lines(10, 4), [0, 4, 8, 10])
+expect("a step that divides exactly does not repeat the last line",
+       grid_lines(8, 4), [0, 4, 8])
+expect("a step larger than the map is just the two edges",
+       grid_lines(3, 8), [0, 3])
+expect("a zero-cell run is one line, not an index error",
+       grid_lines(0, 4), [0])
+# THE HONESTY INVARIANT, both halves. Every line drawn at any step is a real
+# cell boundary -- a subset of the step-1 set, never a superset. A grid finer
+# than the addressable cell would show the author boundaries no click can
+# land on, and `cell_at` divides by the paint unit regardless of what is
+# drawn, so the lie would be permanent.
+for step in (1, 2, 3, 4, 8, 16):
+    lines = grid_lines(37, step)
+    expect(f"step {step}: every line is a real boundary",
+           set(lines) <= set(range(38)), True)
+    expect(f"step {step}: and the map's own edges are always drawn",
+           (lines[0], lines[-1]), (0, 37))
+expect("a coarser grid draws strictly fewer lines",
+       len(grid_lines(37, 4)) < len(grid_lines(37, 1)), True)
+expect_raises("a step below one raises rather than drawing nothing",
+              ValueError, lambda: grid_lines(10, 0))
 
 print()
 if failures:
