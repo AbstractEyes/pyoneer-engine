@@ -641,6 +641,32 @@ expect("...which is support, its grace, and the same motion pair",
        sorted(declared(PLATFORMER_MOVE)),
        ["state.facing", "state.phase", "state.support", "state.support_grace"])
 
+# THE IDLE HALF. `movement.py:327` sets PHASE_MOVING if horizontal else
+# PHASE_IDLE, and only the MOVING branch was covered: deleting the else made
+# no check red, so a side-on body that stopped kept playing its walk cycle
+# forever -- which is the exact bug `phase` exists to make impossible. The
+# top-down twin of this assertion already lives in check_movement.
+_idle_probe = Body()
+_idle_probe.intent = MoveIntent()
+_idle_probe.collision_field = FLOOR
+_idle_probe.animation = Recorder()
+compose(_idle_probe, "platformer_move,animation_drive")
+_idle_probe.moveto((16.0, 16.0))
+for _ in range(20):                       # settle onto the floor, then walk
+    frame(_idle_probe, delta=0.2777)
+_idle_probe.intent.right = True
+for _ in range(4):
+    frame(_idle_probe, delta=0.2777)
+expect("a side-on body that is walking reads PHASE_MOVING",
+       state_of(_idle_probe).phase, PHASE_MOVING)
+_idle_probe.intent.right = False
+frame(_idle_probe, delta=0.2777)
+expect("...and one that STOPS returns to PHASE_IDLE",
+       state_of(_idle_probe).phase, PHASE_IDLE)
+expect("...and the animator emits the idle sequence on that frame, which is "
+       "what the axis is for",
+       _idle_probe.animation.started[-1], "idle_right")
+
 # The animator declares what it READS. `missing_requirements` names the AXIS
 # rather than the bare record, which is the difference between "this needs a
 # state" and "this needs something to publish a phase".

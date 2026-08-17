@@ -135,11 +135,11 @@ def object_at(session, scope: Scope):
     undo, a layer renamed under it -- and every caller wants the same answer
     for all of them.
 
-    `editor/ui/actions_panel.py` carries a function of the same name and the
-    same six lines. That one is in a Qt module, so it cannot be the shared
-    home and this cannot import it (`editor/core/` may not import
-    `editor/ui/`). This is the headless home; the panel's copy should be
-    deleted in favour of this one the next time that file is touched.
+    THE headless home, and the only one. `editor/ui/actions_panel.py` used to
+    carry a byte-identical copy; a Qt module cannot be the shared home, since
+    `editor/core/` may not import `editor/ui/`, so the direction that works is
+    the panel importing this. `tools/check_behavior_ui.py` asserts there is
+    exactly one definition of it in `editor/`.
     """
     if scope.kind != "object":
         return None, None

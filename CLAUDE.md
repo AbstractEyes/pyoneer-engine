@@ -187,7 +187,7 @@ Things that are *missing*, not broken. Each is a real hole someone will hit.
 - **`GameEntity.__init__` accepts a `transform` keyword and discards it**
   (`scripts/game/entity/game_entity.py:34`). Pass position via `moveto`.
 - **`allowed_move` swallows an unrecognised direction**
-  (`scripts/game/entity/game_entity.py:236`): a bad bit returns the wanted
+  (`scripts/game/entity/game_entity.py:241`): a bad bit returns the wanted
   vector unclamped through cells that block everything. Harmless only while
   `move_direction` is its sole caller.
 - **`GameAnimationHandler` plays `idle_down` unconditionally at construction**
@@ -231,7 +231,7 @@ scripts/core/depth.py:42 :: "Paralax": "Parallax"
 scripts/core/input.py:147 :: return self.actions[action_name].held
 scripts/game/behavior/base.py:50 :: milliseconds divided by 60
 scripts/game/entity/game_entity.py:34 :: self.transform: Transform = Transform(
-scripts/game/entity/game_entity.py:236 :: if field is None or bit is None
+scripts/game/entity/game_entity.py:241 :: if field is None or bit is None
 scripts/game/entity/game_animation.py:128 :: self.start(self.DEFAULT_ANIMATION)
 scripts/core/spawn.py:61 :: SPAWN_REGISTRY: dict
 scripts/core/component.py:943 :: def mark_event_handled

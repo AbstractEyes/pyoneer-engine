@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (
 )
 
 from editor.core import layers, map_events
+from editor.core.behavior_view import object_at
 from editor.core.commands import Command
 from editor.core.inspect import Field, Inspection, Section
 from editor.core.scope import Scope
@@ -92,23 +93,6 @@ _NO_OBJECT = ("Select an object on an object layer. A trigger is a region, "
 # --------------------------------------------------------------------------
 # Reading
 # --------------------------------------------------------------------------
-
-def object_at(session, scope: Scope):
-    """`(object_layer, object)` for an object scope, or `(None, None)`.
-
-    Never raises. A selection goes stale constantly -- an object removed by
-    an undo, a layer renamed under it -- and every caller here wants the same
-    answer for all of those.
-    """
-    if scope.kind != "object":
-        return None, None
-    try:
-        document = session.project.map(scope.require("map"))
-        layer = document.object_layer(scope.require("layer"))
-        return layer, layer.find(int(scope.require("object")))
-    except Exception:                                           # noqa: BLE001
-        return None, None
-
 
 def declared_keys(obj: Any) -> tuple[str, ...]:
     """Which map-event fields this object actually authors, in FIELDS order.

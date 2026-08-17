@@ -178,6 +178,11 @@ class GameEntity(GameEntitySimple, ABC):
         `getattr(entity, "grounded", default)` still answers `default` for a
         body that was never given one -- which is what it did when this was an
         attribute only `platformer_move.attach` created.
+
+        NOTE the scope of that fallback, because it is narrower than it reads:
+        every COMPOSED body now carries a `BodyState`, so the `getattr` default
+        is reachable only for a bare entity with no behaviors at all. It is
+        kept for that case and for hand-built probes, not as a live path.
         """
         found = behavior_state.state_of(self)
         if found is None:

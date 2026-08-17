@@ -652,6 +652,17 @@ borrow.begin()
 expect("the flow holds the two bodies that carry a record",
        [b is free or b is already_held for b in borrow.held_bodies], [True, True])
 expect("...and silently ignores the one that does not", len(borrow.held_bodies), 2)
+# The stateless object is FIRST in the tuple above by accident of writing.
+# Put it first deliberately: a `held_bodies` that filtered by index rather
+# than by "carries a record" would pass the length assertion either way.
+_lead = SceneFlow([FlowStep("beat")], bodies=[object(), free, already_held],
+                  name="lead")
+_lead.begin()
+expect("a stateless object FIRST in the list is still skipped, not held",
+       ([b is free for b in _lead.held_bodies],
+        [b is already_held for b in _lead.held_bodies]),
+       ([True, False], [False, True]))
+_lead.end()
 expect("both bodies are unsteerable while it runs",
        (state_of(free).steerable, state_of(already_held).steerable), (False, False))
 borrow.end()
