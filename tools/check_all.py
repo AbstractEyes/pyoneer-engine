@@ -38,6 +38,7 @@ CHECKS = [
     ("behavior", "behavior contract, registry, declared order, ordered drive"),
     ("movement", "top-down and platformer bodies, the intent, the animator"),
     ("behavior_docs", "BEHAVIORS.md is generated, and every column is backed"),
+    ("action", "discrete verbs, cooldowns, the per-entity record, no bus"),
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
     ("window_events", "os window events translate, route, and still fan out"),
@@ -49,8 +50,10 @@ CHECKS = [
     ("map_events", "trigger vocabulary, collision filters, tmx round trip"),
     ("collision_mount", "the overlay, the mode, one stroke one transaction"),
     ("collision_runtime", "the engine reads a mask and gates movement"),
+    ("collision_field", "map load bakes passability and every body is handed it"),
     ("actions_panel", "trigger authoring, action verbs, exact inverses"),
     ("editor_ui", "panels build, canvas edits are commands, responses apply"),
+    ("demos", "three prototype games boot headless and answer injected input"),
 ]
 
 ROOT = _bootstrap.REPO_ROOT

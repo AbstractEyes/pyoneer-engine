@@ -686,6 +686,14 @@ def _swap_section(registry) -> list[str]:
         for spec in ordered:
             if spec.genres and genre_id not in spec.genres:
                 continue
+            # This column is read as a RECOMMENDATION, so it may only offer
+            # what works out of the box. A `needs-host` behavior runs
+            # correctly and still does nothing until the game assigns
+            # something the engine never will -- and `requires` is reported,
+            # never enforced, so there is no crash to reveal the mistake.
+            # `authoring-only` is excluded for the plainer reason.
+            if spec.status != "live":
+                continue
             # Legality is decided by the engine's own rule, not by a second
             # copy of it here: a candidate is accepted only if `validate_list`
             # accepts the list it would produce. That is what keeps this table

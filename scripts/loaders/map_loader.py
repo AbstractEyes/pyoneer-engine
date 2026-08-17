@@ -129,6 +129,30 @@ def as_document(source: Any) -> MapDocument:
     )
 
 
+def has_tmx_document(source: Any) -> bool:
+    """Can `as_document` re-read this source's .tmx? A native map cannot.
+
+    A parsed `.tmx` remembers a `filename` that `MapDocument.load` can parse,
+    and so does a path or a `MapDocument` itself. A native `.blitmap` map ALSO
+    carries a `filename` -- `config/managers/map_data.py` sets it deliberately,
+    "because that is what pytmx calls it and what map_loader.as_document looks
+    for" -- but it names a binary file, and handing it to `MapDocument.load`
+    is an `ElementTree.ParseError` rather than a clean answer.
+
+    The test is the METHOD `object_records`, not the class. That duck test is
+    the one `config/managers/map_data.py` documents as the way to recognise a
+    native map, and it is a duck test precisely so `scripts/loaders/` never
+    has to import `config/` to make the distinction.
+
+    False is not an error and must not be reported as one: a caller that
+    re-reads the document for OPTIONAL information -- passability, say -- takes
+    it as "this map declares none", which is the same answer a `.tmx` with no
+    companion layer gets. A caller that genuinely needs the document still
+    calls `as_document` and still gets its raise.
+    """
+    return not callable(getattr(source, "object_records", None))
+
+
 def object_group_elements(document: MapDocument) -> list[ElementTree.Element]:
     """Every real `<objectgroup>` in the map, in document order.
 

@@ -131,9 +131,11 @@ anything*, not *open*.
 `topdown_move` inherits that gate for free by going through
 `GameEntity.move_direction`. Two limits worth knowing before designing
 against it: the test is at one anchor point per entity rather than a box, and
-blocking is symmetric, so a one-way tile is not expressible. Nothing in
-production assigns `GameEntity.collision_field` yet, so the gate is present
-and unfed — see the integration table in `docs/BEHAVIORS.md`.
+blocking is symmetric, so a one-way tile is not expressible. `LayerRenderer`
+feeds the gate at bind, from whatever the map declares — and a map with no
+companion layer feeds it `None`, which means ungated rather than open. See the
+integration table in `docs/BEHAVIORS.md`, which is measured rather than
+asserted.
 
 ### Data lives in tables, not in code
 

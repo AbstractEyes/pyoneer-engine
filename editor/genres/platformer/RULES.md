@@ -14,7 +14,7 @@ control, tile collision and a spawn system all exist now.
 | tile map loading and compositing | a swept or box collider; the test is one anchor point |
 | a spawn path that reads each object's `pyoneer_behaviors` and composes it | a genre pack's default list being applied for you -- the object carries its own |
 | gravity, terminal velocity, air control and a jump with coyote time -- the `platformer_move` behavior | jump *buffering* (pressing early, before landing) |
-| a runtime tile-passability gate that clamps a move | any production code that assigns `GameEntity.collision_field`, so every body is currently **ungated** |
+| a passability gate that is baked at map load and handed to every entity bound | a body gated on a map that declares no companion layer -- that bakes `None`, which is ungated |
 | behavior composition: swap what an entity does by editing a list | a class-free way to mark which object the human drives; that is `player_input` in the list |
 | input actions with real edge detection, `jump` among them | anything that reads the actors table at runtime |
 
@@ -81,11 +81,12 @@ player are one class and one spawn entry, distinguished by one token.
 
 ### Four things that will bite a platformer body
 
-1. **Nothing assigns `GameEntity.collision_field`.** The gate is written and
-   checked; the field defaults to `None`, which means *ungated*, and no
-   production code sets it. An ungated `platformer_move` accelerates downward
-   forever and never lands. That looks exactly like a physics bug and is not
-   one — check the integration table in `docs/BEHAVIORS.md` first.
+1. **A map with no companion layer bakes `None`, and `None` means UNGATED.**
+   The field IS assigned now -- `LayerRenderer` bakes the map's passability at
+   bind and hands it to every entity, both routes -- so a body falling forever
+   is not a missing wire, it is a map with nothing painted on it. Paint a mask
+   in the editor's collision mode, or the body has no world to stand on. Check
+   the integration table in `docs/BEHAVIORS.md`, which is measured.
 2. **An authoring error in the list raises at LOAD, not at play.** An unknown
    token, a duplicate, or two behaviors that conflict all stop the map from
    spawning and name the `<object>` that carried them. That is deliberate: a

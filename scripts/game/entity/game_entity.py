@@ -63,9 +63,12 @@ class GameEntity(GameEntitySimple, ABC):
         maps in this repository declare no companion layer, so
         `field_from_map` returns None for all of them and `move_direction`
         keeps arithmetic identical to the day before this field existed.
-        Nothing in the engine assigns it yet -- map load builds the field and
-        the binder hands it out, and that wiring is one line in the renderer
-        and one in main.py.
+
+        `LayerRenderer` ASSIGNS this, by both binding routes -- a sweep at the
+        end of `__bind_map` for map-placed objects, and `__bind_entity` for
+        hand-built ones -- so a body is gated by the map it was bound on
+        without anyone remembering to do it. A map with no passability layer
+        bakes None, which is why the shipped demo is ungated and correct.
         """
 
         self.collision_offset: tuple[float, float] = (0.0, 0.0)

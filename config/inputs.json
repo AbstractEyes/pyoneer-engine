@@ -3,9 +3,9 @@
     "right": ["keyboard:d", "gamepad:right"],
     "up": ["keyboard:w", "gamepad:up"],
     "down": ["keyboard:s", "gamepad:down"],
-    "action": ["keyboard:space", "gamepad:button_0"],
-    "attack": ["keyboard:left_shift", "gamepad:button_1"],
-    "sprint": ["keyboard:left_ctrl", "gamepad:button_2"],
-    "jump": ["keyboard:space", "gamepad:button_0"],
-    "pause": ["keyboard:escape", "gamepad:button_9"]
+    "action": ["keyboard:e", "gamepad:b"],
+    "attack": ["keyboard:left_shift", "gamepad:x"],
+    "sprint": ["keyboard:left_ctrl", "gamepad:right_bumper"],
+    "jump": ["keyboard:space", "gamepad:a"],
+    "pause": ["keyboard:escape", "gamepad:start"]
 }

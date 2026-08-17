@@ -85,9 +85,14 @@ arithmetic is identical -- and `tools/smoke.py` will report the drift.
 Taken from `scripts/core/collision_runtime.py`, not restated from memory: a
 mask is per-CELL and tested at ONE anchor point rather than a box; blocking is
 symmetric, so a one-way platform is not expressible; and an anchor outside the
-field is ungated rather than blocked. Nothing in production assigns
-`GameEntity.collision_field` yet, so a movement behavior that expects a gate
-gets an ungated one until that is wired.
+field is ungated rather than blocked.
+
+`GameEntity.collision_field` IS assigned in production: `LayerRenderer` bakes
+the map's passability once at bind and hands it to every entity it binds, by
+either route. A map that declares no passability layer bakes `None`, which
+means ungated -- so a body on such a map still moves freely, and that is the
+shipped demo's state rather than a missing wire. The measured integration
+table below is the authority on this; this paragraph is prose and can rot.
 
 ## Adding a behavior
 
@@ -136,9 +141,13 @@ design.
 | token | order | status | writes | summary |
 | --- | --- | --- | --- | --- |
 | `player_input` | 10 | live | `intent`, `state.sprinting` | Polls the bound input manager and publishes a MoveIntent. The entity carrying this one is the entity the human drives. |
+| `attack_action` | 15 | live | `action_intent.attack_action` | Fires on the rising edge of the 'attack' verb, with a cooldown. Records an ActionFired; reaches no event bus. |
+| `interact_action` | 15 | live | `action_intent.interact_action` | Fires on the rising edge of the 'action' verb -- talk, use, open. The explicit interaction a `use` map trigger is waiting for. |
+| `pause_action` | 15 | live | `action_intent.pause_action` | Fires on the rising edge of the 'pause' verb. The entity-side half of a pause; what it MEANS is the sink's business. |
 | `platformer_move` | 20 | live | `transform.position`, `velocity`, `grounded`, `coyote_left`, `state.moving`, `state.move_direction`, `state.last_direction` | A side-on body: gravity, terminal velocity, air control and a jump with coyote time. Reads the actors table's own columns. |
 | `topdown_move` | 20 | live | `transform.position`, `state.moving`, `state.move_direction`, `state.last_direction` | Eight-direction axis-aligned movement, each held verb gated separately. The demo's controller. |
 | `animation_drive` | 80 | live | `animation` | Names the animation from the movement state, on the frame it changes. The sequence naming is parameters, not code. |
+| `action_relay` | 90 | needs-host | -- | Calls entity.action_sink(entity, fired) for every action that fired this frame. The only behavior that reaches outward, and it calls rather than dispatches. |
 
 ### `player_input`
 
@@ -164,6 +173,80 @@ Polls the bound input manager and publishes a MoveIntent. The entity carrying th
 
 ```
 <property name="pyoneer_behaviors" value="player_input,topdown_move,animation_drive"/>
+```
+
+### `attack_action`
+
+Fires on the rising edge of the 'attack' verb, with a cooldown. Records an ActionFired; reaches no event bus.
+
+- **class** `GameActionInputBehavior`
+- **order** 15
+- **hooks** `attach`, `update`, `detach`
+- **binds** nothing (not on the event bus)
+- **writes** `action_intent.attack_action`
+- **requires** `action_manager`
+- **conflicts with** --
+- **genres** any
+
+| parameter | type | default | source | required | meaning |
+| --- | --- | --- | --- | --- | --- |
+| `verb` | str | `'attack'` | object | no | Action name polled with pressed() -- a rising edge. Must be bound in config/inputs.json; an unbound one raises at attach rather than as a KeyError mid-frame. Empty disables this action for this entity. |
+| `cooldown_ms` | int | `0` | object | no | Minimum milliseconds between two firings. 0 means no limit. The clock ticks through the input gate, so a cooldown is wall time and not gameplay time. |
+| `once` | bool | `False` | object | no | Disarm after the first firing, for the whole life of this behavior. Survives a detach/attach cycle. |
+| `payload` | str | `''` | object | no | An opaque key carried on the firing -- a door id, a cutscene name, a quest step. Deliberately not interpreted: the engine should not need a schema for every game built on it. |
+
+```
+<property name="pyoneer_behaviors" value="player_input,topdown_move,attack_action"/>
+<property name="pyoneer_param_cooldown_ms" type="int" value="400"/>
+```
+
+### `interact_action`
+
+Fires on the rising edge of the 'action' verb -- talk, use, open. The explicit interaction a `use` map trigger is waiting for.
+
+- **class** `GameActionInputBehavior`
+- **order** 15
+- **hooks** `attach`, `update`, `detach`
+- **binds** nothing (not on the event bus)
+- **writes** `action_intent.interact_action`
+- **requires** `action_manager`
+- **conflicts with** --
+- **genres** any
+
+| parameter | type | default | source | required | meaning |
+| --- | --- | --- | --- | --- | --- |
+| `verb` | str | `'action'` | object | no | Action name polled with pressed() -- a rising edge. Must be bound in config/inputs.json; an unbound one raises at attach rather than as a KeyError mid-frame. Empty disables this action for this entity. |
+| `cooldown_ms` | int | `0` | object | no | Minimum milliseconds between two firings. 0 means no limit. The clock ticks through the input gate, so a cooldown is wall time and not gameplay time. |
+| `once` | bool | `False` | object | no | Disarm after the first firing, for the whole life of this behavior. Survives a detach/attach cycle. |
+| `payload` | str | `''` | object | no | An opaque key carried on the firing -- a door id, a cutscene name, a quest step. Deliberately not interpreted: the engine should not need a schema for every game built on it. |
+
+```
+<property name="pyoneer_behaviors" value="player_input,topdown_move,interact_action"/>
+<property name="pyoneer_param_payload" value="door_north"/>
+```
+
+### `pause_action`
+
+Fires on the rising edge of the 'pause' verb. The entity-side half of a pause; what it MEANS is the sink's business.
+
+- **class** `GameActionInputBehavior`
+- **order** 15
+- **hooks** `attach`, `update`, `detach`
+- **binds** nothing (not on the event bus)
+- **writes** `action_intent.pause_action`
+- **requires** `action_manager`
+- **conflicts with** --
+- **genres** any
+
+| parameter | type | default | source | required | meaning |
+| --- | --- | --- | --- | --- | --- |
+| `verb` | str | `'pause'` | object | no | Action name polled with pressed() -- a rising edge. Must be bound in config/inputs.json; an unbound one raises at attach rather than as a KeyError mid-frame. Empty disables this action for this entity. |
+| `cooldown_ms` | int | `0` | object | no | Minimum milliseconds between two firings. 0 means no limit. The clock ticks through the input gate, so a cooldown is wall time and not gameplay time. |
+| `once` | bool | `False` | object | no | Disarm after the first firing, for the whole life of this behavior. Survives a detach/attach cycle. |
+| `payload` | str | `''` | object | no | An opaque key carried on the firing -- a door id, a cutscene name, a quest step. Deliberately not interpreted: the engine should not need a schema for every game built on it. |
+
+```
+<property name="pyoneer_behaviors" value="player_input,topdown_move,pause_action"/>
 ```
 
 ### `platformer_move`
@@ -236,6 +319,27 @@ Names the animation from the movement state, on the frame it changes. The sequen
 <property name="pyoneer_param_walk_format" value="run_{}"/>
 ```
 
+### `action_relay`
+
+Calls entity.action_sink(entity, fired) for every action that fired this frame. The only behavior that reaches outward, and it calls rather than dispatches.
+
+> **Status: needs-host.** Nothing in the engine runs this yet.
+
+- **class** `GameActionRelayBehavior`
+- **order** 90
+- **hooks** `update`
+- **binds** nothing (not on the event bus)
+- **writes** --
+- **requires** `action_sink`
+- **conflicts with** --
+- **genres** any
+
+Takes no parameters.
+
+```
+<property name="pyoneer_behaviors" value="player_input,interact_action,action_relay"/>
+```
+
 <!-- Everything above this line is `describe_all()` in scripts/game/behavior/registry.py. Everything below is derived from the engine and the genre packs by tools/check_behavior_docs.py. Regenerate the whole file with:  .venv/Scripts/python.exe tools/check_behavior_docs.py --write  -->
 
 ## Integration status
@@ -251,7 +355,7 @@ Every row below is measured, not declared: the drive row is produced by construc
 | a behavior is registered | **yes** | one `register(BehaviorSpec(...))` in `scripts/game/behavior/registry.py` |
 | a declaration is turned into attached behaviors somewhere | **yes** | done in `scripts/game/entity/game_player.py`, `scripts/loaders/map_loader.py` |
 | a **tmx object's** `pyoneer_behaviors` property is read when it spawns | **yes** | read in `scripts/loaders/map_loader.py` |
-| `GameEntity.collision_field` is assigned in production | no | `field_from_map` at map load, handed to each spawned entity. Until then every body is UNGATED -- a platformer body accelerates downward forever and never lands. |
+| `GameEntity.collision_field` is assigned in production | **yes** | assigned in `scripts/core/renderer.py` |
 | a `jump` input action exists | **yes** | `config/inputs.json` binds `action`, `attack`, `down`, `jump`, `left`, `pause`, `right`, `sprint`, `up` |
 
 ## What each genre pack declares
@@ -278,7 +382,7 @@ This is the whole point of the design: the same class, the same spawn entry, a d
 
 | genre | a complete, legal list |
 | --- | --- |
-| `platformer` | `player_input,platformer_move,animation_drive` |
-| `topdown_rpg` | `player_input,topdown_move,animation_drive` |
+| `platformer` | `player_input,attack_action,interact_action,pause_action,platformer_move,animation_drive` |
+| `topdown_rpg` | `player_input,attack_action,interact_action,pause_action,topdown_move,animation_drive` |
 
-Set the object's `pyoneer_behaviors` property to one of those values. Same `type`, same `SPAWN_REGISTRY` entry, same depth, same class -- only the list changes. `player_input`, `animation_drive` declare no genre and so belong in any list.
+Set the object's `pyoneer_behaviors` property to one of those values. Same `type`, same `SPAWN_REGISTRY` entry, same depth, same class -- only the list changes. `player_input`, `attack_action`, `interact_action`, `pause_action`, `animation_drive`, `action_relay` declare no genre and so belong in any list.

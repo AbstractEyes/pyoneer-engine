@@ -153,13 +153,22 @@ PARAM_SOURCES: tuple[str, ...] = ("object", "actors")
               default -- most specific wins, the same shape as `resolve_depth`.
 """
 
-STATUSES: tuple[str, ...] = ("live", "authoring-only")
+STATUSES: tuple[str, ...] = ("live", "authoring-only", "needs-host")
 """Whether anything in the engine actually runs this behavior.
 
 `authoring-only` is not a shameful state, it is an honest one. This repo has
 shipped authoring ahead of runtime three times (`pyoneer_passability`, map
 events, `.blitmap`) and every one of them wrote the caveat into the generated
 surface rather than letting a reader assume.
+
+`needs-host` is the third honest state, and it is NOT the same as either. The
+behavior runs, and runs correctly -- but it requires something no part of the
+ENGINE assigns, so it does nothing until the GAME provides it. `action_relay`
+is the case: it calls `entity.action_sink`, and a sink is by definition the
+game's. Such a behavior is excluded from the generated "a complete, legal
+list" column, because that column is read as a recommendation and recommending
+one silently does nothing -- `requires` is REPORTED, never enforced, so there
+is no crash to reveal the mistake.
 """
 
 

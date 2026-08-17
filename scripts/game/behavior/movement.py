@@ -148,8 +148,9 @@ class GamePlatformerMoveBehavior(EntityBehavior):
     fall through it, land on top of it -- is not expressible. And an entity
     whose `collision_field` is None is UNGATED: it accelerates downward
     forever and never lands, which is the correct outcome for a body with
-    no world to stand on and looks exactly like a physics bug. Nothing in
-    production assigns `collision_field` yet.
+    no world to stand on and looks exactly like a physics bug. `LayerRenderer`
+    assigns the field at bind, so None here means the MAP declared no
+    passability layer -- not that the wire is missing.
     """
 
     def __init__(self,

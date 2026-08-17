@@ -1063,12 +1063,27 @@ def field_from_map(source, *, document=None, undecided: int = PASS_ALL,
     supplies the cells and is re-read from disk through `MapDocument` for the
     properties, which is `scripts/loaders/map_loader.py`'s own arrangement
     and is reused rather than rebuilt.
+
+    A NATIVE .blitmap ANSWERS None RATHER THAN RAISING
+    --------------------------------------------------
+    It has a `filename` like a parsed .tmx does, but it names a binary file
+    `MapDocument` cannot parse, and the format carries no collision tileset to
+    find in it. So "this map declares no passability" is both the true answer
+    and the same answer a .tmx with no companion layer gets, and it is given
+    here rather than left as a ParseError three frames down -- because this
+    function is called on the map-bind path now, and a bind that raised for a
+    format that draws perfectly well would be the wiring breaking the engine.
+    A caller holding a path or a MapDocument is unaffected: only a source that
+    answers its own `object_records` takes this exit.
     """
     # Imported here, not at module scope: `scripts.loaders.map_loader` pulls
     # in the spawn registry, which imports the entity classes, which import
     # this module's siblings. A top-level import would be a cycle the day an
     # entity wants to read a mask.
-    from scripts.loaders.map_loader import as_document
+    from scripts.loaders.map_loader import as_document, has_tmx_document
+
+    if document is None and not has_tmx_document(source):
+        return None
 
     # A parsed map has `.layers`; a MapDocument and a path do not. Cheaper and
     # more honest than an isinstance chain, which would have to name every

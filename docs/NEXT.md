@@ -19,12 +19,12 @@ integration table is *measured* by constructing a real entity and running
 frames — so **read that table, not this list**, for what is wired. These are
 the things it currently reports as `no`, plus what the review found and left:
 
-1. **Nothing assigns `GameEntity.collision_field`, so every body is ungated.**
-   *M.* This is the single biggest gap. The gate is written, shared and
-   checked; the field defaults to `None`, which means *ungated*, and no
-   production code sets it. An ungated `platformer_move` accelerates downward
-   forever and never lands — it looks exactly like a physics bug and is not
-   one. Wants `field_from_map` at map load, handed to each spawned entity.
+1. ~~**Nothing assigns `GameEntity.collision_field`.**~~ **DONE.**
+   `LayerRenderer` bakes the map's passability once at bind and gates every
+   entity by both routes. A map with no companion layer bakes `None`, which
+   means ungated — so the shipped demo is ungated and correct, and a body
+   falling forever now means an unpainted map rather than a missing wire.
+   `demos/sidestep.py` lands on an authored mask.
 2. **`GamePlayer.input_move` has zero production callers.** *XS.* Kept alive
    only by `tools/check_input.py`. Any future caller invoking both it and
    `core_frame_update` gets exactly double movement speed. Its docstring warns;

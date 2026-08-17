@@ -541,8 +541,15 @@ expect("the override property name is derived from the key",
 print("\n5. an unknown token raises and lists the registry")
 # ===========================================================================
 _shipped = sorted(BEHAVIOR_REGISTRY)
-expect("the shipped table is exactly the four concrete behaviors", _shipped,
-       ["animation_drive", "platformer_move", "player_input", "topdown_move"])
+# Pinned deliberately, and edited by hand when a behavior lands. The registry
+# is CODE, not map content, so this is a legal thing to pin -- and what it
+# catches is an accidental registration: a fixture registered into the shipped
+# table instead of a scratch one, or a demo's behavior leaking into the
+# engine's. `demos/behaviors.py` registers `patrol_input` and must NOT appear
+# here, because it is a game's behavior and not the engine's.
+expect("the shipped table is exactly the engine's own behaviors", _shipped,
+       ["action_relay", "animation_drive", "attack_action", "interact_action",
+        "pause_action", "platformer_move", "player_input", "topdown_move"])
 expect_raises("an unknown token names itself and lists the SHIPPED table",
               PyoneerAssetMissingError, lambda: resolve("topdown_mvoe"),
               "topdown_mvoe", "entity behavior", "topdown_move",

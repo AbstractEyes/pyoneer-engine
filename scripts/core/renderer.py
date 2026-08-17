@@ -16,6 +16,7 @@ from scripts.game.game_camera import GameCamera
 from scripts.game.game_map import GameMap
 from scripts.core.depth import MAP_DEPTH, DEPTH, resolve_layer_depth
 from scripts.core import layer_profile
+from scripts.core.collision_runtime import CollisionField, field_from_map
 from scripts.core.blitpool import BlitPool
 from scripts.core.viewclip import clip_to_view, containment, Containment
 from scripts.core.log import trace_lifecycle, trace_render
@@ -456,9 +457,61 @@ class LayerRenderer:
         scene here would be an import cycle.
         """
 
+        self.collision_field: CollisionField | None = None
+        """The bound map's baked passability, or None when it declares none.
+
+        The renderer holds it because the renderer is where the two halves
+        meet: it is handed the parsed map, and it is the single funnel every
+        entity passes through on its way into a frame -- `bind()` for the ones
+        a caller builds by hand, `__prepare_entity_layers` for the ones the
+        map itself places. One field, one owner, and `__gate` is the only
+        thing that hands it out, so a map-spawned body and a hand-built one
+        cannot end up gated differently.
+
+        None means UNGATED, and it is the default for the same reason
+        `field_from_map` returns None rather than an all-open field: a map
+        that authors no passability must cost nothing and must move exactly as
+        it did before any of this existed.
+        """
+
     def __bind_map(self, tmx_data: pytmx.TiledMap):
+        # BEFORE the layers, not after: __prepare_entity_layers spawns and
+        # binds this map's own objects, and __gate_entities below hands them
+        # this field. Baking afterwards would be the same three lines in an
+        # order where the gate briefly reads a previous map's field.
+        self.collision_field = field_from_map(tmx_data)
         self.__prepare_map_layers(tmx_data)
         self.__prepare_entity_layers(tmx_data)
+        # Every entity the renderer draws is gated by the map it is drawn on,
+        # whether it was placed by the map or bound by hand, and whether it
+        # was bound before this map or after. Doing it as one sweep here plus
+        # one call in __bind_entity is what makes that sentence true with no
+        # ordering rule for a caller to get wrong: main.py binds its player
+        # AFTER the map and a check may well bind one before.
+        self.__gate_entities()
+
+    def __gate(self, entity: GameEntity) -> None:
+        """Hand `entity` the passability of the map it is being drawn on.
+
+        The only assignment to `collision_field` in the engine, deliberately:
+        an entity that reached a frame through some second route and stayed
+        ungated would not raise, would not warn, and would walk through walls
+        while everything around it did not.
+
+        Assigns unconditionally, None included. "This map declares no
+        passability" is a real answer and has to overwrite a previous map's
+        field rather than let an entity carry a gate into a world that has
+        none. A caller wanting a hand-built field sets it AFTER the bind.
+        """
+        entity.collision_field = self.collision_field
+
+    def __gate_entities(self) -> None:
+        """Re-gate every entity the renderer currently draws."""
+        for layers in self.layers.values():
+            for layer in layers:
+                if isinstance(layer, EntityLayer):
+                    for entity in layer.entities:
+                        self.__gate(entity)
 
     #def prepare(self):
     #    self.prepare_map_layers()
@@ -726,6 +779,11 @@ class LayerRenderer:
         custom property only when the file carries type="int", so a depth
         would otherwise arrive as the string '50', which is truthy, is not
         50, and keys nothing in self.layers.
+
+        It does NOT gate the entities it binds. __bind_map sweeps every bound
+        entity once, immediately after this returns, and that one sweep also
+        catches an entity bound BEFORE the map -- so the gate is one call site
+        for both cases instead of one here and a different one there.
         """
         spawned = spawn_objects(tmx_data, defaults=self.spawn_defaults)
         self.spawned_entities = spawned
@@ -815,6 +873,11 @@ class LayerRenderer:
         depth = self.__prepare_depth(layer_name)
         layer, created = self.__entity_layer(depth, layer_name)
         layer.bind(entity)
+        # The hand-built half of the gate. main.py's player arrives here and a
+        # map-placed one arrives through __prepare_entity_layers; both are
+        # gated by the same call with the same field, which is what stops
+        # "the player" and "an entity" being two different things.
+        self.__gate(entity)
         if created:
             # A new entity layer can land in the middle of a run of tile
             # layers, and a composite spanning it would draw the tiles above

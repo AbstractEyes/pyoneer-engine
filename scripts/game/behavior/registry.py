@@ -422,9 +422,14 @@ arithmetic is identical -- and `tools/smoke.py` will report the drift.
 Taken from `scripts/core/collision_runtime.py`, not restated from memory: a
 mask is per-CELL and tested at ONE anchor point rather than a box; blocking is
 symmetric, so a one-way platform is not expressible; and an anchor outside the
-field is ungated rather than blocked. Nothing in production assigns
-`GameEntity.collision_field` yet, so a movement behavior that expects a gate
-gets an ungated one until that is wired.
+field is ungated rather than blocked.
+
+`GameEntity.collision_field` IS assigned in production: `LayerRenderer` bakes
+the map's passability once at bind and hands it to every entity it binds, by
+either route. A map that declares no passability layer bakes `None`, which
+means ungated -- so a body on such a map still moves freely, and that is the
+shipped demo's state rather than a missing wire. The measured integration
+table below is the authority on this; this paragraph is prose and can rot.
 
 ## Adding a behavior
 
@@ -565,8 +570,14 @@ def describe_all(registry: Mapping[str, BehaviorSpec] | None = None) -> str:
 from scripts.game.behavior.input import PLAYER_INPUT           # noqa: E402
 from scripts.game.behavior.movement import (ANIMATION_DRIVE,   # noqa: E402
                                             PLATFORMER_MOVE, TOPDOWN_MOVE)
+# Three tokens, ONE factory class -- the alias case `register` documents above.
+# The first of them stamps the class; every instance `build` produces is
+# stamped per instance, which is what keys each action's slot in the record.
+from scripts.game.behavior.action import (ACTION_RELAY,        # noqa: E402
+                                          ACTION_SPECS)
 
 register_all((PLAYER_INPUT, TOPDOWN_MOVE, PLATFORMER_MOVE, ANIMATION_DRIVE))
+register_all(ACTION_SPECS + (ACTION_RELAY,))
 
 __all__ = [
     "ACTOR", "BEHAVIORS", "BEHAVIOR_REGISTRY", "KNOWN", "PARAM_PREFIX",
