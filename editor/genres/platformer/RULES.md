@@ -4,47 +4,141 @@ Read this before writing anything.
 
 ### What the engine already gives you, honestly
 
+Re-derived against the tree, not inherited. Five rows of the previous
+revision's table were false by the time it was read: gravity, a jump, air
+control, tile collision and a spawn system all exist now.
+
 | you get | you do not get |
 |---|---|
-| deferred depth-sorted rendering | gravity |
-| tile map loading and compositing | tile collision |
-| an object layer that can hold spawn data | a spawn system reading it |
-| `GameBoundingBox.collide(other)`, a pairwise AABB test | a broadphase, or swept resolution |
-| input actions with real edge detection (`pressed` / `held` / `released`) | jump buffering or coyote time |
-| an 8-direction top-down player controller | a side-on one |
+| deferred depth-sorted rendering | a one-way platform (the mask vocabulary is symmetric) |
+| tile map loading and compositing | a swept or box collider; the test is one anchor point |
+| a spawn path that turns object-layer objects into live entities | a tmx object's `pyoneer_behaviors` list being read when it spawns |
+| gravity, terminal velocity, air control and a jump with coyote time -- the `platformer_move` behavior | jump *buffering* (pressing early, before landing) |
+| a runtime tile-passability gate that clamps a move | any production code that assigns `GameEntity.collision_field`, so every body is currently **ungated** |
+| behavior composition: swap what an entity does by editing a list | a class-free way to mark which object the human drives; that is `player_input` in the list |
+| input actions with real edge detection, `jump` among them | anything that reads the actors table at runtime |
 
-So a platformer request against this engine is **not** a data-only change.
-The tables and the map are data; movement is code you have to write. Say
-which of the two you did in `NOTES.md`.
+**Read `docs/BEHAVIORS.md` before this file.** It is generated from the
+registry the engine binds from, so it cannot describe a behavior that does
+not exist or omit one that does; this table can, and has. It also carries the
+integration status, measured rather than asserted.
+
+So a platformer request against this engine is now mostly a *data* change:
+compose the right behavior list and fill in the actors row. Say in `NOTES.md`
+which parts were data and which were code.
+
+### A platformer player is not a class
+
+This is the load-bearing paragraph of this file.
+
+There is no platformer-specific subclass of `GamePlayer` and there must not
+be one. The previous revision sent you to write a `game_platformer_body.py`
+holding a component that owns velocity, and named two classes that exist
+nowhere in the tree. A side-on player and a top-down player are **the same
+`GamePlayer` class carrying a different behavior list**:
+
+```xml
+<!-- a top-down character -->
+<property name="pyoneer_behaviors" value="player_input,topdown_move,animation_drive"/>
+
+<!-- a side-on character: same class, same spawn entry, different list -->
+<property name="pyoneer_behaviors" value="player_input,platformer_move,animation_drive"/>
+<property name="pyoneer_param_jump_verb" value="jump"/>
+<property name="pyoneer_param_initial_sequence" value="idle_right"/>
+```
+
+`platformer_move` and `topdown_move` declare that they **conflict**, so a
+list naming both is refused at attach rather than producing two behaviors
+that both write `transform.position` and one silently winning.
+
+`player_input` is the entire marker for "this is the entity the human
+drives". An entity without it never polls a key, so five inert decoys and one
+player are one class and one spawn entry, distinguished by one token.
 
 ### Where the code goes
 
-- Movement and gravity: a new `scripts/game/entity/game_platformer_body.py`
-  holding a component that owns velocity and integrates it. It must not
-  live on `GameComponent` -- that class is already a god class and there is
-  a live plan to split it.
-- Tile collision: read solids from the `Floor` layer. Resolve **axis by
-  axis**, horizontal first then vertical, using the tile grid directly.
-  Do not build a general physics engine; a tile platformer does not need
-  one and a general one will get the corner cases wrong.
-- Tunables belong in the `actors` table, never as Python literals. The
-  columns already exist: `gravity`, `jump_velocity`, `max_fall_speed`,
-  `air_control`, `coyote_ms`.
+- **A behavior**, in `scripts/game/behavior/`, deriving `EntityBehavior` --
+  `attach(entity)` / `update(entity, event)` / `detach(entity)`, no event-bus
+  presence. Register it in `scripts/game/behavior/registry.py` with a
+  `BehaviorSpec` declaring what it writes, what it requires, what it conflicts
+  with, its run order, and the actors columns it consumes. Name it
+  `Game<Thing>Behavior`, like `GamePlatformerMoveBehavior`. The step-by-step
+  is in `docs/BEHAVIORS.md`; do not restate it here, because a second copy of
+  a procedure drifts from the first.
+- **Not** a `GameComponent`. That class is the widget machinery -- bounds,
+  anchor, viewport, a callbacks dict -- and an entity wants none of it. A
+  behavior is *called* from the entity's frame update, never dispatched to,
+  which is what keeps it clear of the event system entirely.
+- **Not** a new entity subclass. If you are about to add one to change how
+  something moves, the thing you want is a behavior.
+- Tunables belong in the `actors` table, never as Python literals.
+  `platformer_move` already consumes `move_speed`, `jump_velocity`,
+  `gravity`, `max_fall_speed`, `air_control` and `coyote_ms` -- a behavior
+  claims a column by declaring a `BehaviorParam` whose key **is the column
+  name**, not a private alias. Every one of those columns is declared by this
+  pack, and `tools/check_behavior_docs.py` fails if a behavior ever consumes
+  one that is not.
 
-### Solid means the Floor layer
+### Four things that will bite a platformer body
 
-A non-zero gid on `Floor` is solid. Nothing else is. That is a rule, not a
-default -- resist adding a second solid layer, because two sources of
-collision truth is how a platformer starts feeling inconsistent.
+1. **Nothing assigns `GameEntity.collision_field`.** The gate is written and
+   checked; the field defaults to `None`, which means *ungated*, and no
+   production code sets it. An ungated `platformer_move` accelerates downward
+   forever and never lands. That looks exactly like a physics bug and is not
+   one — check the integration table in `docs/BEHAVIORS.md` first.
+2. **A tmx object's behavior list is not read at spawn yet.** A list authored
+   in Tiled currently does nothing; only a Python caller composing the list
+   (as `main.py` does) gets behaviors attached. The XML above is the format,
+   and the wire that reads it is named in `docs/BEHAVIORS.md`.
+3. **`delta` is milliseconds ÷ 60, not seconds.** `main.py` divides elapsed
+   milliseconds by the target tick rate. The columns above are documented in
+   pixels per second, so a number used raw is about 16.7× wrong in a way that
+   still looks like it works. `platformer_move` converts through
+   `SECONDS_PER_DELTA`; anything new must too.
+4. **Jump-through platforms are not expressible.** Blocking is per-cell and
+   symmetric — one bit governs both crossings of an edge — so falling through
+   a ledge and landing on it cannot both be authored. That is a vocabulary
+   change in `scripts/core/collision_runtime.py`, not something to fake in a
+   behavior.
 
-Hazards go on the `entity` object layer as objects, not as tiles, so they
-can carry damage values and trigger regions.
+### Solid is a companion layer, not the Floor layer's tiles
+
+The previous revision said a non-zero gid on `Floor` is solid. It is not, and
+it never was in the shipped engine.
+
+`Floor` is art. Passability is authored into a **companion tile layer** --
+`FloorCollision` by default, or whatever `Floor`'s `pyoneer_passability`
+property names -- where each cell holds a four-bit mask (down 1, left 2,
+right 4, up 8; a **set** bit means **blocked**). The editor's collision mode
+creates that layer on the first mask stroke and marks it
+`pyoneer_renders=false` so it never draws. `gid 0` there means *nobody said
+anything*, not *open*.
+
+That is still exactly one source of collision truth, which is the rule the
+old text was protecting. Do not add a second. Painting a `Floor` tile does
+not make it solid, and it should not — a doorway and its frame come from the
+same tileset.
+
+Hazards go on the `entity` object layer as objects, not as tiles, so they can
+carry damage values and trigger regions.
+
+### An object's Type must be spawnable
+
+The `entity` layer declares `GamePlayer` and nothing else, because
+`SPAWN_REGISTRY` in `scripts/core/spawn.py` contains `GamePlayer` and nothing
+else — and an object whose Type is not registered makes the whole map **raise
+at load**. The earlier list of six classes named four that exist nowhere in
+the tree. To place a new kind of thing, register the class first; this list
+mirrors the registry and is not a wish list.
+
+What distinguishes two objects of that one class is their behavior list.
 
 ### Screen space is y-down
 
-Up is negative y. Store `jump_velocity` as a positive number in the table
-and negate it at the moment of use, so a designer reading the table is not
-doing sign arithmetic in their head.
+Up is negative y. `jump_velocity` is stored as a **positive** number in the
+table and negated at the instant of use, so a designer reading the table is
+not doing sign arithmetic in their head. `platformer_move` already does this;
+match it.
 
 ### Rendering is a sorted queue, not a surface stack
 
@@ -72,12 +166,18 @@ self.bind_sync_listener(GameEventType.UPDATE, self.__on_update)
 ```
 
 The exception: `bind_component()` calls `core_lifecycle_prepare*` and
-`core_lifecycle_build` directly, so those do run at bind time.
+`core_lifecycle_build` directly, so those do run at bind time. Note also that
+`GameScene.begin` runs the prepare triple a **second** time on every bound
+object — which is why a behavior allocates in `attach` and the behavior
+contract has no `prepare` hook at all.
 
 ### Do not restructure the event system
 
 Add event types, listeners and components freely. Do not change dispatch,
-`mark_event_handled` consumption, or the listener registries.
+`mark_event_handled` consumption, or the listener registries. A behavior
+never needs to: it is called from the entity's frame update and binds
+nothing, so it can never call `handle()` and silence its siblings for the
+rest of the frame.
 
 `active` gates input. `visible` gates blits and cascades to the subtree.
 A window with `visible=False` and `active=True` still eats input,
@@ -85,12 +185,18 @@ deliberately.
 
 ### Naming
 
-- Classes: `<Paradigm><Usage><Actions><Behavior>` -- `GamePlatformerBody`,
-  `GameProjectileEmitter`.
-- Engine errors: every one starts `Pyoneer` and ends `Error`, under a
-  domain base. Never `raise Exception`.
+- Classes: `<Paradigm><Usage><Actions><Behavior>` -- `GameAnimatedEntity`,
+  `GameSceneMap`. A behavior class ends `Behavior`: `Game<Thing>Behavior`.
+- Behavior tokens (what goes in the tmx): `snake_case`, stable once
+  referenced, never renamed — the same rule as a table row id and for the
+  same reason. A renamed token silently disarms every object carrying the old
+  one, which is why the reader raises on an unknown token instead of skipping
+  it.
+- Engine errors: every one starts `Pyoneer` and ends `Error`, under a domain
+  base. Never `raise Exception`.
 - Table row ids: `snake_case`, stable once referenced (`plasma_rifle`).
-- Columns: `snake_case`; durations end `_ms`, speeds are per second.
+- Columns: `snake_case`; durations end `_ms`, speeds are per second. A column
+  name is also a behavior parameter key, so the two are one vocabulary.
 
 ### Fail loud
 
@@ -102,6 +208,13 @@ codebase keeps producing, and it costs more to find than a crash.
 
 ```bash
 .venv/Scripts/python.exe tools/check_all.py
+```
+
+If you changed a `BehaviorSpec` or a genre pack, regenerate the document
+first, or the docs check fails on the drift:
+
+```bash
+.venv/Scripts/python.exe tools/check_behavior_docs.py --write
 ```
 
 If a smoke field moves, name which one, from what to what, and why, in

@@ -15,6 +15,7 @@ from scripts.core.collision_runtime import (CollisionField, DIRECTION_BITS,
                                             STEP, allowed_distance)
 from scripts.game.entity.game_animation import GameAnimationHandler
 from scripts.core.game_object import PyoneerGameObject
+from scripts.game.behavior import EntityBehaviors
 from scripts.game.entity.game_transform import Transform
 from pygame import Vector2
 
@@ -82,6 +83,17 @@ class GameEntity(GameEntitySimple, ABC):
         a hitbox that changes because of art the entity does not mention.
         """
 
+        self.behaviors: EntityBehaviors = EntityBehaviors(self)
+        """Behavior components composed onto this entity, in declared order.
+
+        Empty by default and therefore frame-neutral: `core_frame_update`
+        iterates nothing until something attaches, which is the state every
+        entity in the shipped tree is in until a map or a caller says
+        otherwise. Populated from a tmx object's `pyoneer_behaviors` property
+        via `scripts.game.behavior.read_requests` + `build`; see
+        docs/BEHAVIORS.md. What an entity DOES lives here, not in a subclass.
+        """
+
     @staticmethod
     def __movement_values(movement_config: dict[str, any] | None) -> dict[str, any]:
         """Accept either the entity block or the movement block itself.
@@ -119,7 +131,16 @@ class GameEntity(GameEntitySimple, ABC):
         pass
 
     def core_frame_update(self, event: Optional[PyoneerEvent] = None):
-        pass
+        # The per-frame drive for composed behaviors. This was `pass`, and
+        # while the set is empty it still is in effect, which is why landing
+        # it moved no frame. GameAnimatedEntity and GamePlayer both call
+        # super() FIRST, so behaviors run before the animation update -- a
+        # position written here is the one the animation and the collision
+        # gate see this frame. Moving this call into core_frame_update_post
+        # would change what the CAMERA sees, because SceneManager updates the
+        # camera BEFORE the scene's frame update, and tools/smoke.py would
+        # drift on arithmetic that did not change.
+        self.behaviors.update(event)
 
     def core_lifecycle_dispose(self, event: Optional[PyoneerEvent] = None):
         pass

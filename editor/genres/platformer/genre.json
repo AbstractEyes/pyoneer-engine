@@ -15,7 +15,7 @@
       "name": "Floor",
       "kind": "tile",
       "depth": 10,
-      "doc": "SOLID GEOMETRY. A non-zero tile here is something the player stands on and collides with. This is the only layer collision reads.",
+      "doc": "The ground the player stands on -- and the layer passability is authored against. A tile here is ART, not a solid: the engine reads solidity from this layer's COMPANION layer (FloorCollision by default, or whatever this layer's pyoneer_passability property names), which the editor's collision mode creates on the first mask stroke. A tile with no mask painted over it blocks nothing.",
       "required": true,
       "collision": true
     },
@@ -51,15 +51,10 @@
       "name": "entity",
       "kind": "object",
       "depth": 50,
-      "doc": "Spawn points, enemies, pickups, hazards and triggers. Class resolves to a depth through OBJECT_CONVERTER.",
+      "doc": "Spawn points, enemies, pickups, hazards and triggers. An object's Type names a class in scripts/core/spawn.py's SPAWN_REGISTRY and resolves to a depth through OBJECT_CONVERTER; a Type that is not registered makes the map RAISE at load, which is why this list is exactly the registry and not a wish list. What the object DOES is its pyoneer_behaviors property -- see docs/BEHAVIORS.md -- so a side-on player and a top-down one are the same GamePlayer with different lists.",
       "required": true,
       "object_types": [
-        "GamePlayer",
-        "GameEntity",
-        "GameFloorEntity",
-        "GameBackgroundEntity",
-        "GameForegroundEntity",
-        "GameUIEntity"
+        "GamePlayer"
       ],
       "unique_types": ["GamePlayer"]
     }
@@ -68,7 +63,7 @@
     {
       "name": "actors",
       "title": "Actors",
-      "doc": "The player and every enemy. Movement numbers live here, not in Python.",
+      "doc": "The player and every enemy. Movement numbers live here, not in Python. These column names are also the parameter keys a behavior declares with source=\"actors\" -- a behavior that wants gravity asks for the column called gravity, and docs/BEHAVIORS.md lists which behavior consumes which column.",
       "required": true,
       "fields": [
         {"name": "display_name", "type": "str", "required": true, "doc": "Shown to the player."},
@@ -78,10 +73,10 @@
         {"name": "jump_velocity", "type": "float", "doc": "Upward pixels per second at the instant of jump. Negative is up in screen space; store it positive and negate at use.", "default": 320.0},
         {"name": "gravity", "type": "float", "doc": "Downward pixels per second squared. Per-actor so a floaty boss is data, not a special case.", "default": 900.0},
         {"name": "max_fall_speed", "type": "float", "doc": "Terminal velocity, so nothing tunnels through a floor.", "default": 600.0},
-        {"name": "air_control", "type": "float", "doc": "Fraction of ground acceleration usable mid-air, 0 to 1.", "default": 0.6},
+        {"name": "air_control", "type": "float", "doc": "Fraction of ground SPEED usable mid-air, 0 to 1. platformer_move multiplies horizontal speed by this while airborne; it is not an acceleration term.", "default": 0.6},
         {"name": "coyote_ms", "type": "int", "doc": "Milliseconds after leaving a ledge during which a jump still counts. Set 0 for strict.", "default": 90},
         {"name": "contact_damage", "type": "int", "doc": "Damage dealt to whatever it touches. 0 for the player.", "default": 0},
-        {"name": "playable", "type": "bool", "doc": "Can the human control this actor?", "default": false}
+        {"name": "playable", "type": "bool", "doc": "Authoring metadata only -- NOTHING reads this at runtime. What actually decides who the human drives is the player_input token in the object's pyoneer_behaviors list; see docs/BEHAVIORS.md. Kept as a designer-facing filter, not as a switch.", "default": false}
       ]
     },
     {

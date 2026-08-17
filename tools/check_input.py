@@ -166,9 +166,22 @@ def after_holding(down):
 
 
 def after_one_frame(down):
+    """A composed player that has processed one input frame with `down` HELD.
+
+    `behaviors=` is not decoration. Polling the keyboard, displacing the
+    entity and naming the animation are three composed behaviors now
+    (`scripts/game/behavior/`), and a GamePlayer that composes none of them is
+    inert BY DESIGN -- the class no longer decides what an entity does, the
+    declaration does. So the fixture has to declare the same list a .tmx
+    object would, and this string is exactly what one carries in its
+    `pyoneer_behaviors` property. Without it the two assertions below measure
+    an entity nothing is driving, which is a true fact about a differently
+    configured player and not the claim this section makes.
+    """
     manager = after_holding(down)
     player = GamePlayer(input_=manager, movement_config=MOVEMENT,
-                        animation_config=ANIMATIONS)
+                        animation_config=ANIMATIONS,
+                        behaviors="player_input,topdown_move")
     player.input_move(PyoneerEvent(GameEventType.UPDATE, data={"delta": 1.0}))
     return player
 

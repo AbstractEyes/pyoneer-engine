@@ -6,5 +6,6 @@
     "action": ["keyboard:space", "gamepad:button_0"],
     "attack": ["keyboard:left_shift", "gamepad:button_1"],
     "sprint": ["keyboard:left_ctrl", "gamepad:button_2"],
+    "jump": ["keyboard:space", "gamepad:button_0"],
     "pause": ["keyboard:escape", "gamepad:button_9"]
 }

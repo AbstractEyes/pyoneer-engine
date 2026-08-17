@@ -19,6 +19,7 @@ from scripts.core.input import InputActionManager
 from scripts.core.scene.scene_manager import SceneManager
 from scripts.core.component import GameComponent
 from scripts.core.ui.widget.containers.window import GameWindow
+from scripts.game.behavior import format_list
 from scripts.game.demo_window import DemoWindow
 
 #from widget.factory.component_factory import ComponentFactory
@@ -38,6 +39,22 @@ from scripts.game.demo_window import DemoWindow
 
 
 """
+
+# The demo's two compositions, written in the SAME vocabulary a .tmx object
+# carries in its `pyoneer_behaviors` property -- these strings could be pasted
+# into Tiled unchanged. `format_list` rather than a literal, so a duplicate or
+# an illegal token fails here at import instead of at attach, and so this file
+# cannot invent a spelling the reader would not accept.
+#
+# The ONE difference between them is `player_input`, and that is the whole
+# marker for "this is the entity the human drives". No flag, no class, no
+# `pyoneer_player` property: the five decoys are inert because nothing polls a
+# keyboard on their behalf, not because a boolean says they may not move --
+# which is what makes "the player" an authoring decision instead of a
+# hardcoded one, on a hand-built entity exactly as on a spawned one.
+PLAYER_BEHAVIORS = format_list(("player_input", "topdown_move",
+                                "animation_drive"))
+SCENERY_BEHAVIORS = format_list(("topdown_move", "animation_drive"))
 
 
 # houses the global game state
@@ -107,18 +124,27 @@ class MainGame:
         A .tmx object carries a type, a position and custom properties. It
         cannot carry an InputActionManager or a parsed animation category, so
         an authored `<object type="GamePlayer">` gets exactly what this file
-        hands a GamePlayer it builds itself -- minus the input manager.
+        hands a GamePlayer it builds itself.
 
-        input_ is None deliberately, and it is the one open question in this
-        path. Nothing in the map format says WHICH object is the one the human
-        drives, and handing the live manager to every spawned player would
-        move all of them at once with one key press. Marking the player is an
-        authoring decision (a `pyoneer_player` property is the obvious shape)
-        and is not guessed here.
+        THE OPEN QUESTION THAT USED TO LIVE HERE IS ANSWERED. It was: nothing
+        in the map format says which object the human drives, and handing the
+        live manager to every spawned player would move all of them at once
+        with one key press. That was true while `core_frame_update` polled the
+        keyboard itself. It is not any more -- polling is the `player_input`
+        behavior's job, and an entity that does not carry it never reads the
+        manager it was handed. So every spawned player may safely have one,
+        and the map decides which of them is the player by listing
+        `player_input` in its `pyoneer_behaviors` property.
+
+        `behaviors` is deliberately NOT among these defaults. A default here
+        would be a per-CLASS list -- every object of a type composed the same
+        way -- which is the subclass shape this system exists to end, and it
+        would collide with an authored list, since attaching a duplicate token
+        raises. The map is the whole truth for what an entity does.
         """
         return {
             "GamePlayer": {
-                "input_": None,
+                "input_": self.input,
                 "movement_config": self.assets.config.get('entity').get('default'),
                 "animation_config": self.assets.animations.get('entity'),
             },
@@ -134,16 +160,25 @@ class MainGame:
     def load_test_objects(self):
         bindable_objects: list[tuple[str | int,
                                      PyoneerGameObject | GameEntity | GamePlayer | GameComponent]] = []
+        # The five decoys and the one player differ by ONE token. They are the
+        # same class, built with the same config, bound into the same scene;
+        # the player composes `player_input` and they do not, so nothing polls
+        # a keyboard on their behalf and they stand still by construction
+        # rather than by a special case. `can_move` below is still set, and is
+        # still read -- by `player_input` -- so a cutscene can freeze a player
+        # without unpicking its composition.
         for i in range(0, 5):
             bindable_objects.append( (40, GamePlayer(input_=None,
                                                 movement_config=self.assets.config.get('entity').get('default'),
-                                                animation_config=self.assets.animations.get('entity'))) )
+                                                animation_config=self.assets.animations.get('entity'),
+                                                behaviors=SCENERY_BEHAVIORS)) )
             bindable_objects[i][1].moveto((200 + i * 5, 200 + i * 5))
             bindable_objects[i][1].state.can_move = False
             #self.renderer.__bind_entity(self.test_players[i], f"ENTITY_2")
         player = GamePlayer(input_=self.input,
                             movement_config=self.assets.config.get('entity').get('default'),
-                            animation_config=self.assets.animations.get('entity'))
+                            animation_config=self.assets.animations.get('entity'),
+                            behaviors=PLAYER_BEHAVIORS)
         player.moveto((200, 200))
         player.state.can_move = True
         bindable_objects.append((41, player))

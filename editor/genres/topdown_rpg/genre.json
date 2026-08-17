@@ -15,8 +15,9 @@
       "name": "Floor",
       "kind": "tile",
       "depth": 10,
-      "doc": "The ground. Opaque in the demo map, which is why the parallax layer beneath it is currently invisible.",
-      "required": true
+      "doc": "The ground, and the layer passability is authored against. Opaque in the demo map, which is why the parallax layer beneath it is currently invisible. A tile here is ART: the engine reads what blocks movement from this layer's COMPANION layer (FloorCollision by default, or whatever this layer's pyoneer_passability property names), which the editor's collision mode creates on the first mask stroke.",
+      "required": true,
+      "collision": true
     },
     {
       "name": "GroundClutter",
@@ -50,15 +51,10 @@
       "name": "entity",
       "kind": "object",
       "depth": 50,
-      "doc": "Where placed things live. An object's class resolves to a depth through OBJECT_CONVERTER in scripts/core/depth.py.",
+      "doc": "Where placed things live. An object's Type names a class in scripts/core/spawn.py's SPAWN_REGISTRY and resolves to a depth through OBJECT_CONVERTER in scripts/core/depth.py; a Type that is not registered makes the map RAISE at load, which is why this list is exactly the registry and not a wish list. What the object DOES is its pyoneer_behaviors property -- see docs/BEHAVIORS.md.",
       "required": true,
       "object_types": [
-        "GamePlayer",
-        "GameEntity",
-        "GameFloorEntity",
-        "GameBackgroundEntity",
-        "GameForegroundEntity",
-        "GameUIEntity"
+        "GamePlayer"
       ],
       "unique_types": ["GamePlayer"]
     }
@@ -67,7 +63,7 @@
     {
       "name": "actors",
       "title": "Actors",
-      "doc": "Every character the game can instantiate: the player, NPCs, enemies.",
+      "doc": "Every character the game can instantiate: the player, NPCs, enemies. These column names are also the parameter keys a behavior declares with source=\"actors\" -- docs/BEHAVIORS.md lists which behavior consumes which column.",
       "required": true,
       "fields": [
         {"name": "display_name", "type": "str", "required": true, "doc": "Shown to the player."},
@@ -75,9 +71,9 @@
         {"name": "hp", "type": "int", "required": true, "doc": "Starting and maximum hit points.", "default": 10},
         {"name": "attack", "type": "int", "doc": "Base damage before equipment.", "default": 1},
         {"name": "defence", "type": "int", "doc": "Damage subtracted before hp is reduced.", "default": 0},
-        {"name": "speed", "type": "int", "doc": "Pixels per second. The engine default is 20 (config/entities.json).", "default": 20},
+        {"name": "speed", "type": "int", "doc": "Movement rate. The engine's own field is GameEntity.move_speed and its config key is move_speed (config/entity.json, default 20) -- this column is spelled differently, and the platformer pack spells it move_speed, so a movement behavior declaring a source=\"actors\" parameter cannot satisfy both packs under one key until they agree. Renaming this column is a change to tools/check_editor.py as well; do it there, not here alone.", "default": 20},
         {"name": "level", "type": "int", "doc": "Starting level.", "default": 1},
-        {"name": "playable", "type": "bool", "doc": "Can the human control this actor?", "default": false}
+        {"name": "playable", "type": "bool", "doc": "Authoring metadata only -- NOTHING reads this at runtime. What actually decides who the human drives is the player_input token in the object's pyoneer_behaviors list; see docs/BEHAVIORS.md. Kept as a designer-facing filter, not as a switch.", "default": false}
       ]
     },
     {
