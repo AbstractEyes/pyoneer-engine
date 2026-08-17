@@ -7,6 +7,27 @@ importers. This file covers the seam those two cannot see: that a real
 `MapCanvas` mounts the overlay, that the mode changes where a drag lands,
 and that a collision stroke is one transaction with an exact inverse.
 
+CLICKING A COLLISION TILE PAINTS A MASK. That is the whole requirement, and
+the second half of this file is about the three ways it used not to be:
+
+  * a 191-word modal dialog on the first press, which also consumed the
+    stroke that raised it ("paint again"), also fired on right-click erase,
+    also fired before the cheaper "select a tile layer" refusal, and whose
+    Yes button left behind a map that raises FileNotFoundError at load;
+  * the sufficiency guard, which protected only the ADD path -- so a map
+    already declaring a five-tile `collision` tileset painted gids past the
+    end of its own sheet, silently. That is the law-5 shape: an invariant
+    proved in the permissive direction only;
+  * `QImage.save` returning False and raising nothing, which would have
+    turned an unwritable target into a declaration pointing at no file.
+
+NO MODAL CAN REACH THE PAINT PATH, and this file proves it three ways
+rather than trusting it: every `QMessageBox` entry point raises for the
+whole run (so a dialog is a red check, not a 40-minute hang -- law 13, and
+this exact file is where that cost was paid), `MapCanvas` is asserted to
+carry no `confirm` seam, and `editor/ui/canvas.py`'s import graph is walked
+with `ast` to assert `QMessageBox` is not imported at all.
+
 Against its OWN fixture map, never `data/maps/test.tmx`. The author paints
 in that file constantly, and four red suites have come from a check that
 pinned its contents. The fixture here declares exactly what the feature
@@ -29,7 +50,9 @@ from __future__ import annotations
 
 import _bootstrap  # noqa: F401
 
+import ast
 import importlib.util
+import inspect
 import json
 import os
 import shutil
@@ -44,11 +67,12 @@ if importlib.util.find_spec("PySide6") is None:
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEvent, QPointF, Qt                          # noqa: E402
-from PySide6.QtGui import QMouseEvent                                   # noqa: E402
+from PySide6.QtGui import QImage, QMouseEvent                           # noqa: E402
 from PySide6.QtWidgets import (                                         # noqa: E402
     QApplication,
     QGraphicsPixmapItem,
     QMainWindow,
+    QMessageBox,
 )
 
 from editor.core.collision import NO_DATA, gid_to_opinion               # noqa: E402
@@ -61,10 +85,42 @@ from editor.core.layers import (                                        # noqa: 
 from editor.core.paint import EditMode, Stamp, Tool                     # noqa: E402
 from editor.core.scope import Scope                                     # noqa: E402
 from editor.core.session import Session                                 # noqa: E402
-from editor.ui.canvas import COLLISION_TILESET, MapCanvas               # noqa: E402
-from editor.ui.collision_view import CollisionOverlay                   # noqa: E402
+from editor.ui import canvas as canvas_module                           # noqa: E402
+from editor.ui.canvas import (                                          # noqa: E402
+    COLLISION_IMAGE,
+    COLLISION_TILESET,
+    MapCanvas,
+    write_mask_sheet,
+)
+from editor.ui.collision_view import MASK_DOMAIN, CollisionOverlay      # noqa: E402
 
 failures: list[str] = []
+
+
+# --------------------------------------------------------------------------
+# No modal may reach anything below
+# --------------------------------------------------------------------------
+# Armed for the WHOLE run, not around one block. Law 13's cost was measured
+# in this very file: `QMessageBox.question` blocked check_all.py for 40+
+# minutes with zero output, indistinguishable from a slow machine, which is
+# why there is now a 600s timeout and a HANG verdict. A stub that RAISES
+# turns that hang into a red line naming the caller, and -- unlike the
+# `confirm`-seam stub this replaces -- it covers dialogs nobody thought to
+# leave a seam for.
+
+modals: list[str] = []
+
+
+def _no_modal(*_args, **_kwargs):
+    modals.append("a modal was raised")
+    raise AssertionError(
+        "a QMessageBox was raised on a routine editor path (law 13)")
+
+
+for _entry in ("question", "warning", "critical", "information", "about",
+               "aboutQt", "exec", "exec_", "open", "show"):
+    if hasattr(QMessageBox, _entry):
+        setattr(QMessageBox, _entry, staticmethod(_no_modal))
 
 
 def expect(label, got, want):
@@ -93,7 +149,13 @@ def _csv(cells: dict[tuple[int, int], int]) -> str:
     return ",\n".join(rows)
 
 
-FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
+_COLLISION_TILESET = """ <tileset firstgid="{first}" name="collision" \
+tilewidth="16" tileheight="16" tilecount="{count}" columns="{count}">
+  <image source="{image}" width="{width}" height="16"/>
+ </tileset>
+"""
+
+_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 <map version="1.2" tiledversion="1.3.1" orientation="orthogonal" \
 renderorder="right-down" compressionlevel="-1" width="{w}" height="{h}" \
 tilewidth="16" tileheight="16" infinite="0" nextlayerid="4" nextobjectid="1">
@@ -101,10 +163,7 @@ tilewidth="16" tileheight="16" infinite="0" nextlayerid="4" nextobjectid="1">
 tilecount="256" columns="16">
   <image source="art.png" width="256" height="256"/>
  </tileset>
- <tileset firstgid="{first}" name="collision" tilewidth="16" tileheight="16" \
-tilecount="17" columns="17">
-  <image source="collision.png" width="272" height="16"/>
- </tileset>
+{collision}\
  <layer id="1" name="Floor" width="{w}" height="{h}">
   <data encoding="csv">
 {empty}
@@ -127,9 +186,38 @@ tilecount="17" columns="17">
 </data>
  </layer>
 </map>
-""".format(w=WIDTH, h=HEIGHT, first=COLLISION_FIRST_GID,
-           empty=_csv({}),
-           roof=_csv({CONFLICT_CELL: COLLISION_FIRST_GID + BLOCK_UP}))
+"""
+
+
+def fixture(collision_tiles: int | None = len(MASK_DOMAIN)) -> str:
+    """The map, declaring a `collision` tileset of N tiles -- or none.
+
+    Three shapes from one template, because all three are states a real map
+    reaches. SEVENTEEN is a map somebody already painted collision on.
+    NONE is what every map starts as, and is the state the provisioning
+    path exists for. FEWER THAN SEVENTEEN is the state nothing guarded: the
+    map declares the tileset, the canvas finds a firstgid, and masks are
+    written as gids the declared sheet does not own -- silently, because
+    `CollisionTilesetOffer.sufficient` was consulted only on the way IN.
+
+    The conflict cell is authored only when the tileset can actually hold
+    the mask it stores, so the smaller fixtures do not smuggle in the very
+    out-of-range gid they exist to catch.
+    """
+    declares = collision_tiles is not None
+    collision = _COLLISION_TILESET.format(
+        first=COLLISION_FIRST_GID, count=collision_tiles,
+        image="collision.png" if collision_tiles == len(MASK_DOMAIN)
+        else "small_collision.png",
+        width=16 * (collision_tiles or 0)) if declares else ""
+    holds_conflict = declares and collision_tiles > BLOCK_UP
+    return _TEMPLATE.format(
+        w=WIDTH, h=HEIGHT, collision=collision, empty=_csv({}),
+        roof=_csv({CONFLICT_CELL: COLLISION_FIRST_GID + BLOCK_UP}
+                  if holds_conflict else {}))
+
+
+FIXTURE = fixture()
 
 
 # --------------------------------------------------------------------------
@@ -200,6 +288,10 @@ class Harness(QMainWindow):
         self.session.undo()
         self.canvas.rebuild()
 
+    def redo(self) -> None:
+        self.session.redo()
+        self.canvas.rebuild()
+
 
 def mouse(canvas, kind, cell, button=Qt.LeftButton, buttons=None):
     """Drive the canvas the way a real mouse would, in CELL coordinates."""
@@ -225,21 +317,84 @@ def last_commands(session):
     return session.history()[-1].commands if session.history() else []
 
 
-workspace = tempfile.mkdtemp(prefix="pyoneer_collision_mount_")
-application = QApplication.instance() or QApplication([])
+workspaces: list[str] = []
 
-try:
+
+def open_workspace(text: str):
+    """A throwaway project holding one map, and a session over it.
+
+    Each of the states below is a different MAP, so each gets its own
+    directory -- including its own `data/graphics/`, which is where the
+    provisioned sheet lands. Sharing one would make "the sheet was written
+    by this stroke" and "the sheet was already there" the same assertion.
+    """
+    workspace = tempfile.mkdtemp(prefix="pyoneer_collision_mount_")
+    workspaces.append(workspace)
     os.makedirs(os.path.join(workspace, "config"))
     os.makedirs(os.path.join(workspace, "data", "maps"))
-    fixture_path = os.path.join(workspace, "data", "maps", "fixture.tmx")
-    with open(fixture_path, "w", encoding="utf-8", newline="") as handle:
-        handle.write(FIXTURE)
+    path = os.path.join(workspace, "data", "maps", "fixture.tmx")
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
     with open(os.path.join(workspace, "config", "maps.json"), "w",
               encoding="utf-8") as handle:
         json.dump({"data": [{"name": "fixture", "identifier": "fixture",
                              "file": "data/maps/fixture.tmx"}]}, handle)
+    return workspace, path, Session.open(workspace, genre_id="topdown_rpg")
 
-    session = Session.open(workspace, genre_id="topdown_rpg")
+
+def sheet_path(fixture_path: str) -> str:
+    """Where the offer's relative image resolves for this map -- the same
+    join `collision_tileset_offer` does, so a change to COLLISION_IMAGE
+    moves the check with it instead of leaving it asserting an old path."""
+    return os.path.normpath(
+        os.path.join(os.path.dirname(fixture_path), COLLISION_IMAGE))
+
+
+def among(needle: str, lines: list[str]) -> bool:
+    """Was this said at all, anywhere in the gesture?
+
+    NOT `lines[-1]`. A refused press starts no stroke, so the mouse moves
+    that follow it fall through to the collision-mode cell readout and that
+    is what ends up last -- which is true of every refusal on this path and
+    always has been. What is under test is that the editor SAID why, in the
+    channel the author is looking at, rather than doing nothing.
+    """
+    return any(needle in line for line in lines)
+
+
+def refuses_to_write(path: str) -> bool:
+    """Does `write_mask_sheet` RAISE rather than report success?
+
+    Law 7, and the half a permissive check skips. The failure mode this
+    guards is not an exception escaping -- it is an exception NEVER
+    happening: `QImage.save` returns False and raises nothing, so an
+    unchecked call leaves the caller declaring a tileset whose image is not
+    on disk.
+    """
+    try:
+        write_mask_sheet(path, 16, 16)
+    except OSError:
+        return True
+    return False
+
+
+def collision_canvas(session, *, layer: str | None = "Floor",
+                     mask: int = BLOCK_ALL):
+    window = Harness(session, "fixture")
+    window.show()
+    application.processEvents()
+    window.canvas.set_active_layer(layer)
+    window.canvas.set_mode(EditMode.COLLISION)
+    window.canvas.tool = Tool.BRUSH
+    window.canvas.set_mask(mask)
+    application.processEvents()
+    return window
+
+
+application = QApplication.instance() or QApplication([])
+
+try:
+    workspace, fixture_path, session = open_workspace(FIXTURE)
     document = session.project.map("fixture")
     ORIGINAL = document.to_bytes()
 
@@ -473,53 +628,385 @@ try:
     expect("leaving collision mode hides the readout",
            canvas.overlay.isVisible(), False)
 
-    # ----------------------------------------------------------------
-    print()
-    print("a map with no collision tileset refuses instead of inventing one")
-    # ----------------------------------------------------------------
-    messages.clear()
-    canvas.status.connect(messages.append)
-    canvas.set_mode(EditMode.COLLISION)
-    real_tilesets = type(document).tilesets
-    type(document).tilesets = lambda self: []
-    # The canvas now OFFERS to declare the tileset instead of only complaining,
-    # and the offer is a modal dialog. Without this stub the drag below blocks
-    # on QMessageBox.question forever -- measured at 40+ minutes with no
-    # output, which made check_all.py never return at all. `confirm` is an
-    # instance attribute precisely so a check can answer it.
-    real_confirm = canvas.confirm
-    asked: list[str] = []
-
-    def decline(_parent, title, _body):
-        asked.append(title)
-        return False
-
-    canvas.confirm = decline
-    try:
-        before = len(session.history())
-        drag(application, canvas, [(0, 0), (2, 0)])
-        expect("nothing was written", len(session.history()) - before, 0)
-        # NOT `COLLISION_TILESET in message`. That string is "collision" and
-        # the fixture's own art is named collision.png, so the missing-art
-        # status line satisfied it -- the assertion passed on an unrelated
-        # message and could not fail. What is actually under test is that the
-        # canvas ASKS rather than inventing a tileset silently, so assert the
-        # question was put.
-        expect("the author was asked, not silently ignored", len(asked), 1)
-        expect("and the question names what it is about",
-               "collision" in asked[0].lower() if asked else "", True)
-    finally:
-        type(document).tilesets = real_tilesets
-        canvas.confirm = real_confirm
-    canvas.status.disconnect(messages.append)
-
     window.close()
+
+    # ==================================================================
+    print()
+    print("THE SEAM IS GONE: no consent step exists to answer")
+    # ==================================================================
+    # Structural, not behavioural, and deliberately so. "No modal fired on
+    # the paths I happened to drive" is a claim about coverage; "there is
+    # no QMessageBox in this module and no seam on this class" is a claim
+    # about the module. The second one stops the dialog growing back in a
+    # branch nobody thought to drag through.
+    expect("no modal was raised by anything above", modals, [])
+    expect("MapCanvas carries no `confirm` attribute",
+           hasattr(canvas, "confirm"), False)
+    expect("...and none is set on the class either",
+           hasattr(MapCanvas, "confirm"), False)
+    expect("canvas.py exposes no QMessageBox in its namespace",
+           hasattr(canvas_module, "QMessageBox"), False)
+
+    imported: list[str] = []
+    for node in ast.walk(ast.parse(inspect.getsource(canvas_module))):
+        if isinstance(node, ast.ImportFrom):
+            imported += [alias.name for alias in node.names]
+        elif isinstance(node, ast.Import):
+            imported += [alias.name for alias in node.names]
+    expect("...and does not import one, by AST rather than by grep",
+           [name for name in imported if "MessageBox" in name], [])
+    expect("the writer that replaced it is importable and public",
+           callable(write_mask_sheet), True)
+
+    # ==================================================================
+    print()
+    print("A MAP WITH NO COLLISION TILESET: the cheap refusals come first")
+    # ==================================================================
+    # Nothing may be provisioned for a gesture that was going to be refused
+    # anyway. Before this pass the tileset gate ran FIRST, so clicking with
+    # no layer selected produced a 191-word dialog, and the "select a tile
+    # layer" message five lines below it was unreachable until the tileset
+    # existed.
+    _ws, bare_path, bare = open_workspace(fixture(None))
+    BARE_ORIGINAL = bare.project.map("fixture").to_bytes()
+    SHEET = sheet_path(bare_path)
+    window = collision_canvas(bare, layer=None)
+    canvas = window.canvas
+    said: list[str] = []
+    canvas.status.connect(said.append)
+
+    expect("this map declares no collision tileset",
+           canvas.collision_first_gid, None)
+    expect("and the sheet it would declare is not on disk",
+           os.path.exists(SHEET), False)
+
+    def refusal(label, *, tool=Tool.BRUSH, layer=None, button=Qt.LeftButton,
+                cells=((1, 3), (3, 3))):
+        """Drive one gesture that must be refused, and report what it cost."""
+        canvas.tool = tool
+        canvas.set_active_layer(layer)
+        said.clear()
+        before = len(bare.history())
+        drag(application, canvas, list(cells), button=button)
+        expect(f"{label}: no command",
+               len(bare.history()) - before, 0)
+        expect(f"{label}: no sheet written", os.path.exists(SHEET), False)
+        expect(f"{label}: the document is untouched",
+               bare.project.map("fixture").to_bytes() == BARE_ORIGINAL, True)
+        return said
+
+    told = refusal("no layer selected", layer=None)
+    expect("...and it says which one to select",
+           any("select a tile layer" in m for m in told), True)
+
+    told = refusal("terrain in collision mode", tool=Tool.AUTOTILE,
+                   layer="Floor")
+    expect("...and it says why terrain cannot mean anything here",
+           any("collision mode" in m for m in told), True)
+
+    told = refusal("picker with nothing to pick", tool=Tool.PICKER,
+                   layer="Floor")
+    expect("...and it says there is no mask there",
+           any("no mask here to pick" in m for m in told), True)
+
+    told = refusal("right-drag erase on a map with no collision",
+                   layer="Floor", button=Qt.RightButton)
+    expect("...and it says there is nothing to erase",
+           any("nothing to erase" in m for m in told), True)
+
+    # ==================================================================
+    print()
+    print("...and then the stroke PAINTS, in one transaction, tileset first")
+    # ==================================================================
+    canvas.tool = Tool.BRUSH
+    canvas.set_active_layer("Floor")
+    said.clear()
+    before = len(bare.history())
+    drag(application, canvas, [(1, 3), (2, 3), (3, 3)])
+    expect("one transaction, not two and not none",
+           len(bare.history()) - before, 1)
+    transaction = bare.history()[-1]
+    expect("the tileset is declared IN FRONT OF the tiles it is for",
+           [c.verb for c in transaction.commands],
+           ["map.tileset.add", "map.layer.add", "map.layer.set",
+            "map.layer.set", "map.tile.set_many"])
+    # Inverse i belongs to command i, and undo walks them in REVERSE -- so
+    # the tileset's remove runs LAST, after `map.tile.set_many`'s inverse has
+    # already zeroed every gid pointing into the range. That is the one
+    # situation `force=False` is safe in, and it stays False here on purpose:
+    # a forced remove outside that ordering silently repaints orphaned tiles.
+    expect("...and its inverse is the GUARDED remove, unwound last",
+           (transaction.inverses[0].verb,
+            transaction.inverses[0].args["force"]),
+           ("map.tileset.remove", False))
+    expect("the undo entry reads as the stroke, not as the plumbing",
+           transaction.label, "Brush collision (3 cells)")
+    painted = bare.project.map("fixture")
+    expect("the map now has a gid range for masks",
+           canvas.collision_first_gid, 257)
+    expect("THE GESTURE THAT ASKED IS THE GESTURE THAT PAINTED",
+           painted.tile_layer("FloorCollision").get_tile(2, 3),
+           257 + BLOCK_ALL)
+    expect("all three cells of it, not 'paint again'",
+           len(transaction.commands[-1].args["tiles"]), 3)
+    expect("no modal was raised getting there", modals, [])
+
+    # ==================================================================
+    print()
+    print("the sheet is on disk, and the author is told in one line")
+    # ==================================================================
+    expect("the PNG the declaration points at exists",
+           os.path.isfile(SHEET), True)
+    written = QImage(SHEET)
+    expect("...at the size the tileset declares, one row of seventeen",
+           (written.width(), written.height()),
+           (16 * len(MASK_DOMAIN), 16))
+    expect("the last thing said names the tileset and the file",
+           bool(said) and COLLISION_TILESET in said[-1]
+           and SHEET in said[-1], True)
+    expect("...and says it in words, not in gid arithmetic",
+           any(term in said[-1] for term in ("firstgid", "gid ", "pytmx")),
+           False)
+
+    # ==================================================================
+    print()
+    print("EVERY layer is paintable after that, with no ceremony at all")
+    # ==================================================================
+    # The author's actual complaint, restated: clicking a collision tile
+    # paints a mask. Roof already declares its companion, so there is
+    # nothing left for this stroke to arrange -- and in particular it must
+    # not carry the previous stroke's `map.tileset.add` along with it.
+    AFTER = bare.project.map("fixture").to_bytes()
+    canvas.set_active_layer("Roof")
+    before = len(bare.history())
+    drag(application, canvas, [(4, 4)])
+    expect("a second layer paints", len(bare.history()) - before, 1)
+    expect("...as ONE command, because everything it needs already exists",
+           [c.verb for c in bare.history()[-1].commands], ["map.tile.set_many"])
+    expect("...into the companion IT declares, not the first layer's",
+           str(bare.history()[-1].commands[0].scope),
+           "map:fixture/layer:RoofCollision")
+    expect("...and no second sheet was written for it",
+           QImage(SHEET).height(), 16)
+    window.undo()
+    canvas.set_active_layer("Floor")
+    application.processEvents()
+    expect("...and taking it back out is byte-exact",
+           bare.project.map("fixture").to_bytes() == AFTER, True)
+
+    # ==================================================================
+    print()
+    print("undo is exact, and leaves the file it did not write")
+    # ==================================================================
+    for turn in range(2):
+        window.undo()
+        application.processEvents()
+        expect(f"undo {turn + 1}: byte-identical to before the stroke",
+               bare.project.map("fixture").to_bytes() == BARE_ORIGINAL, True)
+        expect(f"undo {turn + 1}: the declaration is gone",
+               canvas.collision_first_gid, None)
+        expect(f"undo {turn + 1}: the PNG is still there",
+               os.path.isfile(SHEET), True)
+        window.redo()
+        application.processEvents()
+        expect(f"redo {turn + 1}: byte-identical to after the stroke",
+               bare.project.map("fixture").to_bytes() == AFTER, True)
+        expect(f"redo {turn + 1}: and it did not rewrite the file",
+               os.path.isfile(SHEET), True)
+    window.undo()
+    application.processEvents()
+
+    # ==================================================================
+    print()
+    print("an author's own sheet is measured, never overwritten")
+    # ==================================================================
+    # The deleted dialog's stated fear -- "undo must not delete a file you
+    # may have since painted" -- is answered by create-only-if-absent, and
+    # this is the half of that invariant that a permissive check skips.
+    sentinel = QImage(16 * len(MASK_DOMAIN), 32, QImage.Format_ARGB32)
+    sentinel.fill(Qt.magenta)
+    expect("a two-row sheet of the author's own is put in place",
+           sentinel.save(SHEET, "PNG"), True)
+    offer = canvas.collision_tileset_offer()
+    expect("the offer measures it rather than assuming the canonical size",
+           (offer.exists, offer.image_height, offer.tile_count),
+           (True, 32, 2 * len(MASK_DOMAIN)))
+    before = len(bare.history())
+    drag(application, canvas, [(0, 0)])
+    expect("the stroke still lands", len(bare.history()) - before, 1)
+    surviving = QImage(SHEET)
+    expect("AND THE AUTHOR'S FILE IS UNTOUCHED",
+           (surviving.height(), surviving.pixelColor(0, 0).name()),
+           (32, "#ff00ff"))
+    expect("...and the tileset declared matches what is actually on disk",
+           [c.args["image_height"] for c in bare.history()[-1].commands
+            if c.verb == "map.tileset.add"], [32])
+    window.undo()
+    application.processEvents()
+    os.remove(SHEET)
+    window.close()
+
+    # ==================================================================
+    print()
+    print("AN UNWRITABLE TARGET REFUSES, and runs no command")
+    # ==================================================================
+    # Two arms, because there are two ways to fail and only one of them
+    # raises on its own. `QImage.save` returns False and raises NOTHING --
+    # measured over a read-only target -- so an unchecked call reports
+    # success and declares a tileset pointing at no file, which is the
+    # unbootable map the whole change exists to stop producing.
+    _ws, blocked_path, blocked = open_workspace(fixture(None))
+    BLOCKED_ORIGINAL = blocked.project.map("fixture").to_bytes()
+    BLOCKED_SHEET = sheet_path(blocked_path)
+    os.makedirs(os.path.dirname(os.path.dirname(BLOCKED_SHEET)),
+                exist_ok=True)
+    # A FILE where the directory has to go: os.makedirs(exist_ok=True) still
+    # raises FileExistsError, because the path exists and is not a directory.
+    with open(os.path.dirname(BLOCKED_SHEET), "w", encoding="utf-8") as handle:
+        handle.write("not a directory")
+    window = collision_canvas(blocked)
+    canvas = window.canvas
+    said = []
+    canvas.status.connect(said.append)
+    before = len(blocked.history())
+    drag(application, canvas, [(1, 1), (2, 1)])
+    expect("the makedirs failure runs no command",
+           len(blocked.history()) - before, 0)
+    expect("...leaves the document byte-identical",
+           blocked.project.map("fixture").to_bytes() == BLOCKED_ORIGINAL, True)
+    expect("...names the path it could not write",
+           among(BLOCKED_SHEET, said), True)
+    expect("...and says so as a status line, not a dialog",
+           (among("could not write", said), modals), (True, []))
+
+    # The second arm. The directory is unblocked, so `makedirs` succeeds and
+    # the ONLY thing left to fail is the save -- which fails the way Qt
+    # actually fails, by returning False and raising nothing. Patched on the
+    # module rather than on the C++ type, because `write_mask_sheet` reads
+    # `QImage` out of its own module globals.
+    os.remove(os.path.dirname(BLOCKED_SHEET))
+
+    class _SilentlyFailingImage(QImage):
+        def save(self, *_args, **_kwargs) -> bool:
+            return False
+
+    canvas_module.QImage = _SilentlyFailingImage
+    try:
+        expect("a save() that returns False RAISES rather than reporting "
+               "success", refuses_to_write(BLOCKED_SHEET), True)
+        expect("...and left no file behind to be believed",
+               os.path.exists(BLOCKED_SHEET), False)
+        said.clear()
+        before = len(blocked.history())
+        drag(application, canvas, [(1, 1), (2, 1)])
+        expect("the stroke above it runs no command either",
+               len(blocked.history()) - before, 0)
+        expect("...leaving the document byte-identical",
+               blocked.project.map("fixture").to_bytes() == BLOCKED_ORIGINAL,
+               True)
+        expect("...and no tileset declared for an image that is not there",
+               blocked.project.map("fixture").tileset_names(), ["Art"])
+        expect("...and saying so where the author will see it",
+               among("could not write", said), True)
+    finally:
+        canvas_module.QImage = QImage
+    window.close()
+
+    # ==================================================================
+    print()
+    print("A DECLARED TILESET TOO SMALL FOR THE MASKS REFUSES THE STROKE")
+    # ==================================================================
+    # The bug this pass found, and the half of the invariant that did not
+    # exist. `sufficient` guarded only the ADD path, so a map that already
+    # declared a five-tile `collision` tileset painted masks as gids past
+    # the end of its own sheet -- BLOCK_ALL is firstgid+15 against a range
+    # that stops at firstgid+4 -- with no status line from anywhere.
+    _ws, small_path, small = open_workspace(fixture(5))
+    SMALL_ORIGINAL = small.project.map("fixture").to_bytes()
+    window = collision_canvas(small)
+    canvas = window.canvas
+    said = []
+    canvas.status.connect(said.append)
+    expect("the map DOES resolve a firstgid, which is why nothing caught it",
+           canvas.collision_first_gid, COLLISION_FIRST_GID)
+    declared = canvas.collision_tileset_ref()
+    expect("and the tileset it resolves to holds five tiles",
+           (declared.name, declared.tile_count, declared.last_gid),
+           ("collision", 5, COLLISION_FIRST_GID + 4))
+    expect("...while the mask the brush holds needs one past its end",
+           COLLISION_FIRST_GID + BLOCK_ALL > declared.last_gid, True)
+
+    before = len(small.history())
+    drag(application, canvas, [(1, 1), (3, 1)])
+    expect("the stroke is refused", len(small.history()) - before, 0)
+    expect("...the document is byte-identical",
+           small.project.map("fixture").to_bytes() == SMALL_ORIGINAL, True)
+    expect("...no companion layer was created for it",
+           "FloorCollision" in small.project.map("fixture").tile_layer_names(),
+           False)
+    expect("...the refusal names what is declared and what will not fit",
+           (among(f"{declared.tile_count} tiles", said),
+            among(f"{len(MASK_DOMAIN)} masks", said)), (True, True))
+    expect("...and the gid range, so the author can find it in Tiled",
+           among(f"{declared.first_gid}", said), True)
+    expect("...and it is a status line, not a dialog", modals, [])
+    expect("...and the tileset was NOT auto-repaired behind the author",
+           canvas.collision_tileset_ref().tile_count, 5)
+    window.close()
+
+    # ==================================================================
+    print()
+    print("THE SAVED MAP STILL BOOTS -- the assertion the old design failed")
+    # ==================================================================
+    # This is the one that matters. The deleted dialog's Yes button wrote a
+    # <tileset> pointing at a PNG it refused to create, and `pygame.image
+    # .load` raises FileNotFoundError inside pytmx's image loader, so the
+    # editor drove the project into a state the engine cannot open --
+    # through its own command stream, to protect an inverse. Both halves
+    # here: WITH the provisioned sheet the map loads, and WITHOUT it the
+    # same map raises. The second half is what says the file is load-bearing
+    # rather than decorative.
+    if (importlib.util.find_spec("pygame") is None
+            or importlib.util.find_spec("pytmx") is None):
+        print("  ....  skipped: pygame/pytmx not installed")
+    else:
+        import pygame                                          # noqa: E402
+        from pytmx.util_pygame import load_pygame              # noqa: E402
+
+        _ws, boot_path, boot = open_workspace(fixture(None))
+        BOOT_SHEET = sheet_path(boot_path)
+        art = QImage(256, 256, QImage.Format_ARGB32)
+        art.fill(Qt.transparent)
+        art.save(os.path.join(os.path.dirname(boot_path), "art.png"), "PNG")
+        window = collision_canvas(boot)
+        drag(application, window.canvas, [(2, 2), (3, 2)])
+        expect("the stroke landed", len(boot.history()), 1)
+        with open(boot_path, "wb") as handle:
+            handle.write(boot.project.map("fixture").to_bytes())
+
+        pygame.init()
+        pygame.display.set_mode((32, 32))
+
+        def loads(path: str) -> str:
+            try:
+                load_pygame(path)
+            except Exception as exc:                            # noqa: BLE001
+                return type(exc).__name__
+            return "loaded"
+
+        expect("pytmx opens the map the editor just wrote",
+               loads(boot_path), "loaded")
+        os.remove(BOOT_SHEET)
+        expect("...and would NOT have, without the sheet it provisioned",
+               loads(boot_path), "FileNotFoundError")
+        window.close()
 
 finally:
     CollisionOverlay.bake = _real_bake
     CollisionOverlay.bake_resolved = _real_resolved
     CollisionOverlay.set_cell = _real_set_cell
-    shutil.rmtree(workspace, ignore_errors=True)
+    for _directory in workspaces:
+        shutil.rmtree(_directory, ignore_errors=True)
 
 print()
 if failures:

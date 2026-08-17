@@ -46,7 +46,6 @@ from typing import Any, Iterable
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -312,8 +311,25 @@ class ActionsDock(ScopedDock):
         self.view.show_inspection(describe_actions(self.session, self._scope))
         _layer, obj = object_at(self.session, self._scope)
         keys = declared_keys(obj)
-        self.add_trigger.setEnabled(obj is not None and "trigger" not in keys)
-        self.add_blocks.setEnabled(obj is not None and "blocks" not in keys)
+        # A disabled control must say what would enable it. These two were
+        # greyed with their enabled-state tooltip still on them, which reads
+        # as a description of something that is refusing to happen.
+        for button, key, enabled_tip in (
+                (self.add_trigger, "trigger",
+                 "Declare this region as firing when an entity enters it. "
+                 "Change the kind, and who may fire it, above."),
+                (self.add_blocks, "blocks",
+                 "Declare this region solid. Independent of the trigger "
+                 "kind: a wall is solid and never fires, a tripwire fires "
+                 "and is not solid, a locked door is both.")):
+            live = obj is not None and key not in keys
+            button.setEnabled(live)
+            button.setToolTip(
+                enabled_tip if live else
+                (f"this object already declares {key!r} — edit it above"
+                 if obj is not None else
+                 "select an object on an object layer first"))
+
         self.remove.setEnabled(bool(keys))
         self.remove.setToolTip(
             f"remove {len(keys)} declared field"
@@ -337,17 +353,22 @@ class ActionsDock(ScopedDock):
                                   {"key": "blocks", "value": True}))
 
     def __on_remove(self) -> None:
+        """Act, and put the reassurance where it can be read afterwards.
+
+        The confirmation this replaces asked "Remove trigger, blocks from
+        this object?" and then answered itself: "One undo brings the whole
+        declaration back." A dialog whose body argues that the dialog is
+        unnecessary is a dialog that is unnecessary -- and the button is
+        already disabled unless there is something to remove, so the click
+        cannot be an accident of aim.
+        """
         _layer, obj = object_at(self.session, self._scope)
         keys = declared_keys(obj)
         if not keys:
             return
-        answer = QMessageBox.question(
-            self, "Remove declaration",
-            f"Remove {', '.join(keys)} from this object?\n\n"
-            f"It stays an ordinary object; nothing else about it changes. "
-            f"One undo brings the whole declaration back.")
-        if answer != QMessageBox.Yes:
-            return
-        self.window().run(removal_commands(self._scope, keys),
-                          label="Remove the trigger declaration")
+        if self.window().run(removal_commands(self._scope, keys),
+                             label="Remove the trigger declaration"):
+            self.notify(
+                f"removed {', '.join(keys)} — it is an ordinary object again, "
+                f"and Ctrl+Z brings the whole declaration back", seconds=10)
         self.refresh()

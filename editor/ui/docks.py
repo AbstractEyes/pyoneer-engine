@@ -4,6 +4,12 @@ Every one of them is a `ScopedDock`: some content, a prompt strip beneath
 it, and a scope that both of them agree on. Changing the selection in a
 panel re-aims its prompt strip, so a note typed after clicking the `Floor`
 layer is a note about `map:test/layer:Floor` without anyone saying so.
+
+Every one of them also carries `self.ask` and `self.confirm`, the two
+dialog seams from `editor/ui/ask.py`. A panel never calls `QMessageBox`
+directly: a check has to be able to assert, per panel, that the routine
+path opened nothing at all, and a hard static call cannot be watched
+without patching the class for the whole process.
 """
 from __future__ import annotations
 
@@ -14,7 +20,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QMessageBox,
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
@@ -25,7 +30,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from editor.core.genre import RuleViolation
 from editor.core.scope import Scope
+from editor.ui.ask import ask_form, confirm
 from editor.ui.prompt import PromptStrip
 
 
@@ -47,6 +54,12 @@ class ScopedDock(QDockWidget):
         self.base_title = title
         self._scope = scope
         self.setObjectName(title.replace(" ", "_"))
+        # The dialog seams. Replaceable per instance so a check can drive a
+        # panel without a window ever opening, and so "this path asked
+        # nothing" is an assertion rather than a hope. See editor/ui/ask.py.
+        self.ask = ask_form
+        self.confirm = confirm
+        self.last_notice = ""
 
         self.content = self.build_content()
         self.strip = PromptStrip(session, scope)
@@ -60,6 +73,23 @@ class ScopedDock(QDockWidget):
         layout.addWidget(self.strip)
         self.setWidget(holder)
         self.__retitle()
+
+    # -- saying things -----------------------------------------------------
+
+    def notify(self, message: str, *, seconds: float = 6.0) -> None:
+        """Say something to the author, wherever this panel is mounted.
+
+        Forwards to the window's status bar when there is one, and always
+        remembers the last message: panels are driven by check harnesses
+        that are deliberately not `EditorWindow`, and "the click reported
+        something" has to stay assertable there. A panel that reached for
+        `self.window().notify` directly would raise inside those harnesses
+        and would make reporting the risky option.
+        """
+        self.last_notice = message
+        report = getattr(self.window(), "notify", None)
+        if callable(report):
+            report(message, seconds=seconds)
 
     # -- subclasses implement these ----------------------------------------
 
@@ -98,26 +128,78 @@ class ScopedDock(QDockWidget):
 # --------------------------------------------------------------------------
 
 class ProblemsDock(ScopedDock):
-    """Soft rule violations. Nothing here blocks anything."""
+    """Soft rule violations, and anything else the author needs to have SEEN.
+
+    Two sources, one list. The genre's validator answers "is this project
+    coherent", which is re-derived on every refresh and owns no state. The
+    notices answer "something happened while you were not looking" -- a
+    rejected command, a response file arriving on disk -- and they are the
+    reason this dock exists as a surface rather than a report.
+
+    They were modal dialogs, every one of them. A rejection is a NORMAL
+    outcome here (`map.tileset.remove` refusing while gids still point into
+    its range is a designed refusal with a long, useful message), and a
+    dialog for a normal outcome is a decision with no choice in it. It also
+    made the suite hangable: `EditorWindow.run` popped a box on the ordinary
+    edit path, so the only check that builds a real window survived solely
+    by stubbing `QMessageBox` globally.
+
+    A notice is a `RuleViolation` -- the same record the validator emits, so
+    the row renders, colours and double-click-to-scope identically and there
+    is no second shape of problem. `key` makes posting idempotent: the same
+    key replaces its predecessor rather than stacking ten copies of one
+    rejection, and it is what the window clears when the situation is over.
+    """
 
     def build_content(self) -> QWidget:
+        self.notices: list[tuple[str, RuleViolation, str]] = []
         self.list = QListWidget()
         self.list.itemDoubleClicked.connect(self.__on_activate)
         return self.list
 
+    # -- notices -----------------------------------------------------------
+
+    def post(self, violation: RuleViolation, *, key: str,
+             detail: str = "") -> None:
+        """Show something that happened. `detail` goes in the tooltip.
+
+        The tooltip is where the debugging vocabulary lives -- verb names,
+        scope syntax, the args dict, the exception class. Useful, and not
+        what the author asked for when they clicked something.
+        """
+        self.notices = [n for n in self.notices if n[0] != key]
+        self.notices.append((key, violation, detail))
+        del self.notices[:-8]
+        self.refresh()
+
+    def clear_notices(self, key: str | None = None) -> None:
+        """Retire a notice whose situation is over. No key clears them all."""
+        before = len(self.notices)
+        self.notices = ([] if key is None
+                        else [n for n in self.notices if n[0] != key])
+        if len(self.notices) != before:
+            self.refresh()
+
+    def notice_keys(self) -> list[str]:
+        return [key for key, _violation, _detail in self.notices]
+
+    # -- rendering ---------------------------------------------------------
+
     def refresh(self) -> None:
         self.list.clear()
         try:
-            problems = self.session.problems()
+            problems = list(self.session.problems())
         except Exception as exc:                                # noqa: BLE001
-            self.list.addItem(f"(validation failed: {exc})")
-            return
-        if not problems:
+            problems = [RuleViolation("hard", self._scope,
+                                      f"validation failed: {exc}")]
+        rows = [(violation, detail) for _key, violation, detail in self.notices]
+        rows += [(violation, "") for violation in problems]
+        if not rows:
             item = QListWidgetItem("No rule violations.")
             item.setForeground(Qt.darkGreen)
             self.list.addItem(item)
             return
-        for violation in problems:
+        for violation, detail in rows:
             text = f"{violation.scope}  —  {violation.message}"
             if violation.fix:
                 text += f"   ({violation.fix})"
@@ -125,6 +207,8 @@ class ProblemsDock(ScopedDock):
             item.setData(Qt.UserRole, str(violation.scope))
             item.setForeground(Qt.red if violation.severity == "hard"
                                else Qt.darkYellow)
+            if detail:
+                item.setToolTip(detail)
             self.list.addItem(item)
 
     def __on_activate(self, item) -> None:
@@ -231,12 +315,18 @@ class ManifestDock(ScopedDock):
         count = len(self.session.manifest.notes)
         if not count:
             return
-        answer = QMessageBox.question(
-            self, "Unstage all",
-            f"Discard {count} staged note{'' if count == 1 else 's'}?\n\n"
-            f"Notes are not undoable -- they have not been applied to "
-            f"anything yet.")
-        if answer != QMessageBox.Yes:
+        # The one surviving confirmation in the whole editor, and the reason
+        # the seam is worth having: a staged note has never entered the
+        # command stream, so there is no inverse to fall back on and this is
+        # the only click here that undo cannot reach. Everything else that
+        # used to ask -- removing a layer, deleting a row, dropping a
+        # trigger declaration -- says "Ctrl+Z restores it" in its own dialog
+        # body, which is an argument that the dialog is unnecessary.
+        if not self.confirm(
+                self, "Unstage all",
+                f"Discard {count} staged note{'' if count == 1 else 's'}?\n\n"
+                f"Notes are not undoable -- they have not been applied to "
+                f"anything yet."):
             return
         self.session.manifest.clear()
         self.window().refresh_manifest()

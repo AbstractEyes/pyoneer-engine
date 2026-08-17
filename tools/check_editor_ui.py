@@ -12,6 +12,28 @@ actually break:
   * a rejected edit reaches the user as a message, not a traceback
   * a response comes back through the same door a click does
 
+AND WHAT THE AUTHOR ACTUALLY COMPLAINED ABOUT
+---------------------------------------------
+"By clicking a debug tile it should have triggered debug ... Make the
+interaction reasonable." The modal he hit was one of eleven of the same
+shape: a box with an OK button, opened on a routine path, to tell him that
+nothing had happened. Four properties are asserted here, each in BOTH
+directions, because the dominant failure in this tree is proving one half
+of an invariant:
+
+  * a routine outcome opens NO dialog -- and every dialog is recorded
+    rather than silenced, so "nothing opened" is a measurement. A modal on
+    a routine path is also how this suite once hung for 40+ minutes with
+    zero output (law 13), so this is the check protecting itself.
+  * the ONE confirmation that survives is the one undo cannot reach, and
+    it is asserted to still be asked AND to be obeyed when refused.
+  * a control that cannot act is disabled WITH a reason -- asserted live
+    and greyed, since only asserting the greyed half is how the same bug
+    survived in the Database the first time.
+  * nothing silently does nothing: a refusal that the author cannot see is
+    the defect, so the refusals are read back off the status bar and out of
+    the Problems dock.
+
 Skips cleanly when PySide6 is not installed; the engine does not depend on
 it and a bare clone should not fail here.
 """
@@ -19,9 +41,11 @@ from __future__ import annotations
 
 import _bootstrap  # noqa: F401
 
+import dataclasses
 import importlib.util
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -42,6 +66,8 @@ from editor.core.commands import Command                                # noqa: 
 from editor.core.paint import Stamp, Tool                               # noqa: E402
 from editor.core.scope import Scope                                     # noqa: E402
 from editor.core.session import Session                                 # noqa: E402
+from editor.ui import ask as ask_module                                 # noqa: E402
+from editor.ui.actions_panel import NOT_WIRED                           # noqa: E402
 from editor.ui.main_window import EditorWindow                          # noqa: E402
 
 REPO = _bootstrap.REPO_ROOT
@@ -55,14 +81,68 @@ def expect(label, got, want):
         failures.append(label)
 
 
-# Silence modal dialogs and record that the user was told.
+# RECORD every modal, do not merely silence it.
+#
+# Silencing was the old shape and it proved nothing in either direction: a
+# box that opened was invisible to the suite, and a box that stopped opening
+# was invisible too. These four lists are the instrument for "this path
+# asked nothing", which is the assertion that would have caught the modal
+# the author reported -- stronger than "the author was asked", because being
+# asked was never the point.
 warned: list[str] = []
-QMessageBox.warning = staticmethod(
-    lambda *a, **k: warned.append(str(a[2]) if len(a) > 2 else ""))
-QMessageBox.critical = staticmethod(
-    lambda *a, **k: warned.append(str(a[2]) if len(a) > 2 else ""))
-QMessageBox.information = staticmethod(lambda *a, **k: None)
-QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
+asked: list[str] = []
+informed: list[str] = []
+
+
+def _body(args) -> str:
+    return str(args[2]) if len(args) > 2 else ""
+
+
+def _record(bucket, answer=None):
+    def stub(*a, **k):
+        bucket.append(_body(a))
+        return answer
+    return staticmethod(stub)
+
+
+QMessageBox.warning = _record(warned)
+QMessageBox.critical = _record(warned)
+QMessageBox.information = _record(informed)
+QMessageBox.question = _record(asked, QMessageBox.Yes)
+
+
+def modals() -> list[str]:
+    """Every dialog opened since the last clear, of any kind."""
+    return warned + asked + informed
+
+
+def no_modals() -> None:
+    for bucket in (warned, asked, informed):
+        bucket.clear()
+
+
+class FakeStore:
+    """Stands in for QSettings, and returns everything as TEXT the way the
+    ini backend does -- which is exactly how a boolean preference silently
+    stops working if nothing coerces it.
+
+    Also used to keep this check away from the REAL preferences: the window
+    reads `confirm_response` now, and a check that wrote the developer's
+    actual QSettings to exercise it would be editing the machine it runs on.
+    """
+
+    def __init__(self):
+        self.data = {}
+
+    def value(self, key, default=None):
+        return self.data.get(key, default)
+
+    def setValue(self, key, value):
+        self.data[key] = str(value)
+
+    def remove(self, key):
+        self.data.pop(key, None)
+
 
 workspace = tempfile.mkdtemp(prefix="pyoneer_editor_ui_")
 application = QApplication.instance() or QApplication([])
@@ -140,6 +220,10 @@ try:
     print("the window and every panel build")
     # ----------------------------------------------------------------
     window = EditorWindow(session)
+    # Before anything reads a preference: `confirm_response` is live now, and
+    # a check that toggled the real QSettings would be editing the machine.
+    from editor.core.settings import EditorSettings as _Settings   # noqa: E402
+    window.settings = _Settings(FakeStore())
     window.show()
     application.processEvents()
     expect("it opened the map", window.map_name, "test")
@@ -311,6 +395,27 @@ try:
     window.selection.select(Scope.of(("map", "test"), ("layer", "entity"),
                                      ("object", str(objects[0].id))))
     application.processEvents()
+
+    # The Actions panel: 353 lines and a passing check in the roster, mounted
+    # NOWHERE -- `window.docks` was Hierarchy, Inspector, Behaviors,
+    # Problems, Manifest, History and no click could open it. Proving a
+    # surface the author cannot reach is the failure its own docstring is
+    # about.
+    from PySide6.QtWidgets import QLabel                          # noqa: E402
+    expect("the Actions panel is mounted", window.actions in window.docks, True)
+    expect("in the window, not floating free",
+           window.actions.parent() is window, True)
+    view_menu = next(a.menu() for a in window.menuBar().actions()
+                     if a.text() == "&View")
+    expect("and reachable from the View menu",
+           any(a.text().startswith("Actions") for a in view_menu.actions()),
+           True)
+    expect("its banner is on screen, not in a docstring",
+           NOT_WIRED in [label.text()
+                         for label in window.actions.findChildren(QLabel)], True)
+    expect("and it followed the selection like the Inspector",
+           str(window.actions.scope), "map:test/layer:entity/object:1")
+
     inspection = window.inspector.view.inspection
     fields = {f.key: f for section in inspection.sections for f in section.fields}
     expect("the inspector describes it", inspection.heading, "object 1")
@@ -325,6 +430,25 @@ try:
            .find(objects[0].id).x, 128.0)
     window.undo()
 
+    # Adding a property was two QInputDialogs in a row -- name, then type --
+    # and cancelling the second threw away the name typed into the first.
+    property_forms: list = []
+    window.inspector.view.ask = lambda _p, title, rows, **k: (
+        property_forms.append([f.key for f in rows])
+        or {"key": "pyoneer_probe", "kind": "int"})
+    no_modals()
+    window.inspector.view._InspectionView__on_add_property()
+    application.processEvents()
+    expect("one form carries name and type together",
+           property_forms, [["key", "kind"]])
+    expect("and it asked nothing else", modals(), [])
+    expect("the property landed, typed",
+           str(session.project.map("test").object_layer("entity")
+               .find(objects[0].id).properties.as_dict().get("pyoneer_probe")),
+           "0")
+    window.inspector.view.ask = ask_module.ask_form
+    window.undo()
+
     mouse(window, QEvent.Type.MouseButtonPress, (4, 6), Qt.RightButton)
     application.processEvents()
     expect("right-click deleted it",
@@ -336,16 +460,261 @@ try:
 
     # ----------------------------------------------------------------
     print()
-    print("a rejected edit is reported, not raised")
+    print("a rejected edit is reported where it can be read, and asks nothing")
     # ----------------------------------------------------------------
-    warned.clear()
+    # It used to be a QMessageBox.warning titled "Rejected" whose body was
+    # "command 1 of 1 failed: ... via verb=..., scope=..., args={...},
+    # cause=PyoneerConfigError" -- a box to dismiss in order to learn that
+    # nothing had changed -- AND a status line saying the same thing. A
+    # rejection is a designed outcome here, so it is now a report.
+    def problem_rows():
+        widget = window.problems.list
+        return [widget.item(i).text() for i in range(widget.count())]
+
+    no_modals()
     ok = window.run(Command("map.tile.set", Scope.parse("map:test/layer:Floor"),
                             {"x": 99999, "y": 0, "gid": 1}))
     expect("run() reported failure instead of throwing", ok, False)
-    expect("the user was shown why", len(warned), 1)
+    expect("and opened no dialog of any kind", modals(), [])
+    message = window.statusBar().currentMessage()
+    expect("the status bar carries the human clause", bool(message), True)
+    expect("without the verb/scope/args trail on its face",
+           "via verb=" in message, False)
+    expect("Problems has the row", window.problems.notice_keys(), ["rejection"])
+    expect("worded the same as the status line",
+           any(message in row for row in problem_rows()), True)
+    detail = window.problems.notices[0][2]
+    expect("and the debugging trail is on the row, in the tooltip",
+           "via verb=" in detail, True)
     expect("nothing entered the history", len(session.history()), 0)
     expect("and the file is untouched",
            session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    # The other half: a rejection that has been superseded must stop being
+    # reported, or the dock becomes a graveyard nobody reads.
+    window.run(Command("map.tile.set", Scope.parse("map:test/layer:Floor"),
+                       {"x": 1, "y": 1, "gid": 70}))
+    expect("a successful edit retires the rejection",
+           window.problems.notice_keys(), [])
+    window.undo()
+    expect("and that edit undoes byte-identically",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    # ----------------------------------------------------------------
+    print()
+    print("the hierarchy's add buttons are live or greyed, never silent")
+    # ----------------------------------------------------------------
+    # Reported from a real run, twice: '+ tile layer' and '+ object layer'
+    # were enabled, carried no tooltip, and returned silently when the
+    # panel's scope had no map. The Database's three row buttons were fixed
+    # for exactly this a pass earlier; this is the same fix, and both
+    # directions are asserted because only asserting the greyed half is how
+    # it survived the first time.
+    hierarchy = window.hierarchy
+    select_layer(window, "Floor")
+    expect("live on a map, both of them",
+           (hierarchy.add_tile.isEnabled(), hierarchy.add_object.isEnabled()),
+           (True, True))
+    expect("and each says what it will do",
+           ("add a tile layer to map:test" in hierarchy.add_tile.toolTip(),
+            "add an object layer" in hierarchy.add_object.toolTip()),
+           (True, True))
+
+    hierarchy.set_scope(Scope.of("project"))
+    hierarchy.refresh()
+    application.processEvents()
+    expect("greyed when the scope carries no map",
+           (hierarchy.add_tile.isEnabled(), hierarchy.add_object.isEnabled()),
+           (False, False))
+    expect("and both say what would enable them",
+           [b.toolTip() for b in (hierarchy.add_tile, hierarchy.add_object)],
+           ["open a map first", "open a map first"])
+    hierarchy.set_scope(Scope.of(("map", "test")))
+    hierarchy.refresh()
+    application.processEvents()
+
+    # ----------------------------------------------------------------
+    print()
+    print("adding a layer is ONE dialog, and it speaks the author's language")
+    # ----------------------------------------------------------------
+    # It was two QInputDialogs in a row -- name, then group -- and cancelling
+    # the second discarded the name typed into the first. The name prompt
+    # read "the engine resolves this to a draw depth through
+    # scripts/core/depth.py", a repo-relative Python path shown to someone
+    # who asked to name a layer.
+    forms: list = []
+
+    def fake_ask(_parent, title, rows, **_kwargs):
+        forms.append((title, list(rows)))
+        return {"name": "Roof", "group": "(top level)"}
+
+    hierarchy.ask = fake_ask
+    no_modals()
+    hierarchy.add_tile.click()
+    application.processEvents()
+    expect("one form, not two", len(forms), 1)
+    expect("carrying both halves of the decision at once",
+           [field.key for field in forms[0][1]], ["name", "group"])
+    expect("no source file is quoted at the author",
+           [f.key for f in forms[0][1] if ".py" in (f.doc + f.label)], [])
+    expect("it suggests names the engine already draws",
+           "UI_LAYER_1" in forms[0][1][0].choices, True)
+    expect("but never one the map already has",
+           [n for n in forms[0][1][0].choices
+            if n in ("Floor", "Paralax", "Foreground")], [])
+    expect("and no modal was involved", modals(), [])
+    expect("the layer landed",
+           "Roof" in session.project.map("test").layer_names(), True)
+    window.undo()
+    expect("and undoes byte-identically",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+    hierarchy.ask = ask_module.ask_form
+
+    # ----------------------------------------------------------------
+    print()
+    print("removing a layer acts, and says how to take it back")
+    # ----------------------------------------------------------------
+    # The confirmation this replaces asked "Remove 'Roof' and everything on
+    # it?" and then reassured, in the same box, that "undo restores the layer
+    # byte-for-byte" -- a dialog whose body is the argument that the dialog
+    # is unnecessary. Undo reaches this exactly, so by this editor's own
+    # definition it is not destructive.
+    window.run(Command("map.layer.add", Scope.of(("map", "test")),
+                       {"name": "Doomed", "kind": "tile"}))
+    select_layer(window, "Doomed")
+    expect("the remove button is live with a layer selected",
+           hierarchy.remove_layer.isEnabled(), True)
+    no_modals()
+    hierarchy.remove_layer.click()
+    application.processEvents()
+    expect("the layer is gone",
+           "Doomed" in session.project.map("test").layer_names(), False)
+    expect("nobody was asked", modals(), [])
+    expect("and the status bar carries the affordance instead",
+           "Ctrl+Z" in hierarchy.last_notice, True)
+    window.undo()
+    window.undo()
+    expect("both steps unwind byte-identically",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    # ----------------------------------------------------------------
+    print()
+    print("the ONE confirmation that survives is the one undo cannot reach")
+    # ----------------------------------------------------------------
+    # Staged notes have never entered the command stream, so there is no
+    # inverse to fall back on. Every other confirmation in the editor was
+    # about something undo restores exactly, and said so in its own body.
+    expect("the seam is the real dialog, not a stub left in the tree",
+           [window.manifest.confirm is ask_module.confirm,
+            window.hierarchy.confirm is ask_module.confirm,
+            window.hierarchy.ask is ask_module.ask_form,
+            window.inspector.view.ask is ask_module.ask_form,
+            window.ask is ask_module.ask_form], [True] * 5)
+
+    window.hierarchy.strip.field.setText("a note that has gone nowhere yet")
+    window.hierarchy.strip.stage()
+    application.processEvents()
+    staged_before = len(session.manifest.notes)
+    window.manifest.confirm = lambda *a, **k: False
+    window.manifest._ManifestDock__on_unstage_all()
+    expect("refusing it keeps every note",
+           len(session.manifest.notes), staged_before)
+    window.manifest.confirm = lambda *a, **k: True
+    window.manifest._ManifestDock__on_unstage_all()
+    expect("accepting it discards them", len(session.manifest.notes), 0)
+    window.manifest.confirm = ask_module.confirm
+
+    # ----------------------------------------------------------------
+    print()
+    print("no panel opens a modal of its own any more")
+    # ----------------------------------------------------------------
+    # The standing structural proof, and the thing that stops it growing
+    # back: a check can only watch a seam it can replace, and every hard
+    # `QMessageBox.x(...)` in a panel is a dialog no check can see.
+    def modal_calls(relative: str) -> list[str]:
+        # BOTH ways to block, not just the obvious one. `QMessageBox.x(...)`
+        # was the only shape watched, and it is blind to `dialog.exec()` --
+        # so a panel could grow a fully blocking QDialog and the guard that
+        # exists to stop exactly this pattern returning would not see it.
+        # Measured: `.exec()` appears at four sites in editor/ today, and the
+        # old regex matched none of them.
+        with open(os.path.join(REPO, relative), encoding="utf-8") as handle:
+            text = handle.read()
+        return (re.findall(r"QMessageBox\.(\w+)\(", text)
+                + [f"exec:{name}" for name in re.findall(r"(\w+)\.exec_?\(\)", text)])
+
+    # A module may open a modal ONLY if it exposes a seam a check can
+    # replace -- that is the whole property, and it is why the exclusions
+    # below are a short list rather than a convenience. `ask.py` and
+    # `tileset_dialog.py` are DIALOG modules: opening one is their job, and
+    # each is asserted replaceable just below, so excluding them is earned
+    # rather than assumed. `main_window.py` keeps the genuine stops.
+    # `canvas.py` belongs to the collision path, where
+    # `check_collision_mount.py` asserts the same property from the far side.
+    DIALOG_MODULES = ("ask.py", "tileset_dialog.py")
+    panels = sorted(
+        name for name in os.listdir(os.path.join(REPO, "editor", "ui"))
+        if name.endswith(".py")
+        and name not in DIALOG_MODULES + ("main_window.py", "canvas.py"))
+    expect("no panel opens one of its own",
+           {name: modal_calls(f"editor/ui/{name}") for name in panels
+            if modal_calls(f"editor/ui/{name}")}, {})
+    expect("ask.py owns the only question in the tree",
+           modal_calls("editor/ui/ask.py"), ["question", "exec:dialog"])
+    # THE EARNED HALF of the exclusion. A dialog module is exempt from the
+    # census because a check can substitute its opener; that is a claim, so
+    # it is asserted rather than trusted. Without this, "it is a dialog
+    # module" becomes a way to smuggle an unreplaceable modal back in.
+    # Named explicitly, because the two seams have different SHAPES -- ask.py
+    # exposes module-level functions that panels call, tileset_dialog.py a
+    # classmethod that check_editor_ui already patches at :1137. A generic
+    # "has something callable" probe would pass for any module and prove
+    # nothing, which is the toothless shape this suite keeps finding.
+    SEAMS = {"ask.py": ("editor.ui.ask", None, ("ask_form", "confirm")),
+             "tileset_dialog.py": ("editor.ui.tileset_dialog",
+                                   "TilesetImportDialog", ("ask",))}
+    for name in DIALOG_MODULES:
+        dotted, owner, attrs = SEAMS[name]
+        module = importlib.import_module(dotted)
+        holder = getattr(module, owner) if owner else module
+        expect(f"{name} exposes the replaceable opener that exempts it from "
+               f"the census", [a for a in attrs
+                               if callable(getattr(holder, a, None))],
+               list(attrs))
+    # The other half. Three unexpected-exception stops remain deliberately:
+    # a rejection is designed, but these are not, and the alternative is
+    # carrying on with work at risk. The window's own `exec:dialog` is the
+    # settings dialog, which is a decision and opens on an explicit menu pick.
+    expect("and the window keeps exactly its three genuine stops",
+           modal_calls("editor/ui/main_window.py"),
+           ["critical"] * 3 + ["exec:dialog"])
+
+    # ----------------------------------------------------------------
+    print()
+    print("the form dialog itself: one decision, and OK means something")
+    # ----------------------------------------------------------------
+    # Built and inspected rather than exec()'d -- a check must never block
+    # on a modal (law 13), and everything above stubs the seam, so this is
+    # the only place the real widget is measured.
+    from editor.core.inspect import Field                          # noqa: E402
+
+    form = ask_module.QuickForm(
+        "New property", [Field("key", "Name", "str", ""),
+                         Field("kind", "Holds", "choice", "int",
+                               choices=("str", "int", "float", "bool"))],
+        window)
+    ok_button = form.buttons.button(
+        type(form.buttons).StandardButton.Ok)
+    expect("OK is dead while a required text row is blank",
+           ok_button.isEnabled(), False)
+    form.editors["key"].setText("hp")
+    expect("and comes alive as soon as it is not",
+           ok_button.isEnabled(), True)
+    expect("the closed choice is not typeable",
+           form.editors["kind"].isEditable(), False)
+    expect("and both halves of the decision come back together",
+           form.value(), {"key": "hp", "kind": "int"})
+    form.deleteLater()
 
     # ----------------------------------------------------------------
     print()
@@ -399,6 +768,46 @@ try:
     expect("and it undoes",
            session.project.table("actors").rows["hero"]["hp"], 10)
 
+    # A row id is a file-format string -- nothing can infer it and getting it
+    # wrong is expensive -- so ASKING is legitimate here. Asking through the
+    # seam is what makes it drivable.
+    page.ask = lambda *a, **k: {"id": "villain"}
+    no_modals()
+    page.add_button.click()
+    application.processEvents()
+    expect("the new row landed",
+           "villain" in session.project.table("actors").rows, True)
+    expect("and no message box was involved", modals(), [])
+    window.undo()
+
+    # Deleting a row used to ask "Delete 'hero' from actors?" and answer its
+    # own question with "This is undoable." The button is already disabled
+    # unless a row is selected, so the click cannot be a slip.
+    statuses: list[str] = []
+    page.status_requested.connect(statuses.append)
+    window.database.refresh()
+    application.processEvents()
+    no_modals()
+    page.remove_button.click()
+    application.processEvents()
+    expect("the row is gone", "hero" in session.project.table("actors").rows,
+           False)
+    expect("nobody was asked about the row", modals(), [])
+    expect("and the status names the way back",
+           bool(statuses) and "Ctrl+Z" in statuses[0], True)
+
+    # ...and Ctrl+Z has to WORK in this window, or that line is a lie. Qt
+    # shortcuts are per-window and the undo action lives on the editor.
+    database_undo = next(
+        (a for a in window.database.findChildren(QAction)
+         if a.shortcut().toString() == "Ctrl+Z"), None)
+    expect("the Database window carries its own Ctrl+Z",
+           database_undo is not None, True)
+    database_undo.trigger()
+    application.processEvents()
+    expect("and it reaches the one command stream",
+           "hero" in session.project.table("actors").rows, True)
+
     # ----------------------------------------------------------------
     print()
     print("prompt strips carry their own panel's scope")
@@ -422,19 +831,95 @@ try:
     print()
     print("shipping and applying a response use the same door")
     # ----------------------------------------------------------------
-    bundle = session.ship(title="ui smoke")
+    # The menu entry was ALWAYS enabled and answered with a "Nothing staged"
+    # modal, while the Manifest dock's own Ship button correctly disabled
+    # itself in the same state: two doors onto one action, one greyed and
+    # one arguing.
+    session.manifest.clear()
     window.refresh_manifest()
+    expect("Ship is greyed with nothing staged",
+           window.ship_action.isEnabled(), False)
+    expect("and says what to do first",
+           "type a note" in window.ship_action.toolTip(), True)
+    no_modals()
+    window.ship()                       # only reachable by calling it
+    expect("calling it anyway reports rather than popping a box", modals(), [])
+    expect("where the author is looking",
+           "nothing is staged" in window.statusBar().currentMessage(), True)
+
+    window.problems.strip.field.setText("a note to ship")
+    window.problems.strip.stage()
+    window.refresh_manifest()
+    expect("staging one brings Ship back", window.ship_action.isEnabled(), True)
+
+    bundles: list = []
+    real_ship = session.ship
+    session.ship = lambda **k: (bundles.append(real_ship(**k)), bundles[-1])[1]
+    window.ask = lambda *a, **k: {"title": "ui smoke"}
+    no_modals()
+    window.ship()
+    session.ship, window.ask = real_ship, ask_module.ask_form
+    bundle = bundles[-1]
+    expect("shipping asked for a title and opened nothing else", modals(), [])
     expect("the bundle exists", os.path.isdir(bundle.directory), True)
+    expect("and the four-line 'Request written' box is a Problems row now",
+           any("BRIEF.md" in row for row in problem_rows()), True)
+
     with open(bundle.response_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps({
             "verb": "table.row.set", "scope": "table:actors/row:hero",
             "args": {"column": "hp", "value": 55}}) + "\n")
+
+    # A file APPEARING is news, not a question. This was the only modal in
+    # the tree that could open with no gesture from the author at all: a
+    # QFileSystemWatcher fired it, so it could land on top of an
+    # in-progress stroke and take the mouse button with it.
+    no_modals()
+    window._EditorWindow__offer(bundle.response_path)
+    application.processEvents()
+    expect("an arriving response interrupts nothing", modals(), [])
+    expect("it is announced in the Problems dock",
+           any("has a response waiting" in row for row in problem_rows()), True)
+    expect("and remembered, so the menu can find it again",
+           window.pending_response, bundle.response_path)
+    expect("nothing was applied behind the author's back",
+           session.project.table("actors").rows["hero"]["hp"], 10)
+
+    # Applying it IS a decision -- someone else's command list, against the
+    # author's project -- so this one still asks, through the seam.
+    questions: list[str] = []
+    window.confirm = lambda _p, title, _body: questions.append(title) or True
     window.apply_response(bundle.response_path)
     application.processEvents()
+    expect("it asked before applying", questions, ["Apply response"])
     expect("the response applied",
            session.project.table("actors").rows["hero"]["hp"], 55)
     expect("recorded as coming from a response",
            session.history()[-1].source, f"response:{bundle.identifier}")
+    expect("and the waiting notice retired itself",
+           [row for row in problem_rows() if "has a response waiting" in row],
+           [])
+    expect("as did the pending path", window.pending_response, None)
+    window.undo()
+
+    # `confirm_response` was declared in settings.py, rendered in the
+    # settings dialog, documented as "untick to apply a response as soon as
+    # it arrives" -- and read by nothing whatsoever. Both halves, since a
+    # preference that changes nothing is the same disease one layer down.
+    window.settings.set("confirm_response", False)
+    questions.clear()
+    no_modals()
+    with open(bundle.response_path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps({
+            "verb": "table.row.set", "scope": "table:actors/row:hero",
+            "args": {"column": "hp", "value": 77}}) + "\n")
+    window._EditorWindow__offer(bundle.response_path)
+    application.processEvents()
+    expect("unticked, an arriving response applies itself",
+           session.project.table("actors").rows["hero"]["hp"], 77)
+    expect("and asks nobody anything", questions + modals(), [])
+    window.settings.set("confirm_response", True)
+    window.confirm = ask_module.confirm
     window.undo()
 
     # ----------------------------------------------------------------
@@ -480,9 +965,25 @@ try:
                     if w is not window and w.parent() is None])
 
     window.selection.select(Scope.of(("map", "test"), ("layer", "Floor")))
+    application.processEvents()
+    at_rest = top_levels()
     window.run(Command("map.tile.set", Scope.parse("map:test/layer:Floor"),
                        {"x": 1, "y": 1, "gid": 70}))
     application.processEvents()
+    after_edit = top_levels()
+    window.undo()
+    application.processEvents()
+    after_undo = top_levels()
+    window.redo()
+    application.processEvents()
+    # The three measurements the original bug was found with: 59 at rest, 85
+    # after one undo, still 85 afterwards. They have to be the same number,
+    # and printing all three is what makes a regression readable rather than
+    # a bare False.
+    print(f"       top-level widgets: at rest {at_rest}, after an edit "
+          f"{after_edit}, after an undo {after_undo}")
+    expect("an edit orphans nothing", after_edit, at_rest)
+    expect("and neither does an undo", after_undo, at_rest)
     settled = top_levels()
 
     peak = settled
@@ -561,23 +1062,6 @@ try:
     # ----------------------------------------------------------------
     from editor.core.settings import SETTINGS, EditorSettings      # noqa: E402
 
-    class FakeStore:
-        """Stands in for QSettings, and returns everything as TEXT the way
-        the ini backend does -- which is exactly how a boolean preference
-        silently stops working if nothing coerces it."""
-
-        def __init__(self):
-            self.data = {}
-
-        def value(self, key, default=None):
-            return self.data.get(key, default)
-
-        def setValue(self, key, value):
-            self.data[key] = str(value)
-
-        def remove(self, key):
-            self.data.pop(key, None)
-
     store = EditorSettings(FakeStore())
     expect("defaults come back typed",
            [type(store.get(s.key)).__name__ for s in SETTINGS],
@@ -644,6 +1128,113 @@ try:
     expect("every tool still has a non-null icon",
            [t.value for t in Tool
             if icons_module.tool_icon(t.value).isNull()], [])
+
+    # ----------------------------------------------------------------
+    print()
+    print("a menu entry that cannot act is greyed with a reason")
+    # ----------------------------------------------------------------
+    # "Copy the art brief" answered with a modal for a genre that ships no
+    # ART.md. Both directions, because a control asserted only in its
+    # disabled state is how the Database's buttons shipped broken.
+    pack = session.project.genre
+    expect("live for a genre that ships one",
+           window.art_action.isEnabled(), True)
+    session.project.genre = dataclasses.replace(pack, art_brief="")
+    window.refresh_all()
+    expect("greyed for a genre that does not",
+           window.art_action.isEnabled(), False)
+    expect("and it names the genre rather than shrugging",
+           "ships no ART.md" in window.art_action.toolTip(), True)
+    no_modals()
+    window.copy_art_brief()
+    expect("calling it anyway says so without a box", modals(), [])
+    session.project.genre = pack
+    window.refresh_all()
+
+    # ----------------------------------------------------------------
+    print()
+    print("a tileset can be added from the GUI at all")
+    # ----------------------------------------------------------------
+    # `TilesetImportDialog` was finished, had a complete `ask()` whose
+    # docstring says "so the menu action stays two lines", and NO menu
+    # action existed -- so `map.tileset.add` had no door in the whole
+    # editor, which is why the collision path grew its own modal importer.
+    from editor.ui import tileset_dialog                          # noqa: E402
+    import editor.ui.main_window as main_window_module            # noqa: E402
+
+    expect("the action exists and is live with a map open",
+           window.add_tileset_action.isEnabled(), True)
+    request = tileset_dialog.TilesetImport(
+        name="probe", image="../graphics/tilesets/System/Probe.png",
+        tile_width=16, tile_height=16, margin=0, spacing=0,
+        image_width=272, image_height=16, columns=17, rows=1, tile_count=17)
+    real_ask = main_window_module.TilesetImportDialog.ask
+    main_window_module.TilesetImportDialog.ask = staticmethod(
+        lambda *a, **k: request)
+    no_modals()
+    window.add_tileset_action.trigger()
+    application.processEvents()
+    expect("triggering it declared the tileset",
+           "probe" in session.project.map("test").tileset_names(), True)
+    expect("through the command stream, as one transaction",
+           [c.verb for c in session.history()[-1].commands],
+           ["map.tileset.add"])
+    expect("and asked nothing beyond the import dialog itself", modals(), [])
+    window.undo()
+    expect("one undo takes it back byte-identically",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    # The other half: cancelling the dialog runs nothing at all.
+    main_window_module.TilesetImportDialog.ask = staticmethod(
+        lambda *a, **k: None)
+    before_cancel = len(session.history())
+    window.add_tileset_action.trigger()
+    expect("cancelling it changes nothing",
+           len(session.history()), before_cancel)
+    main_window_module.TilesetImportDialog.ask = real_ask
+
+    # ----------------------------------------------------------------
+    print()
+    print("F5 saves and plays; it does not ask the same question every time")
+    # ----------------------------------------------------------------
+    # "The game reads files from disk. Save before playing?" -- no default
+    # button, no remember, on the most repeated action in the loop, and the
+    # answer is the same every time. The editor knows the game reads from
+    # disk and knows the session is dirty, so it saves.
+    launched: list = []
+    real_popen = main_window_module.subprocess.Popen
+    main_window_module.subprocess.Popen = \
+        lambda *a, **k: launched.append(a) or None
+    entry = os.path.join(workspace, "main.py")
+    with open(entry, "w", encoding="utf-8") as handle:
+        handle.write("")
+    try:
+        window.run(Command("map.tile.set", Scope.parse("map:test/layer:Floor"),
+                           {"x": 2, "y": 2, "gid": 70}))
+        expect("the session is dirty before playing", session.dirty, True)
+        no_modals()
+        window.play()
+        expect("F5 asked nothing", modals(), [])
+        expect("it saved first", session.dirty, False)
+        expect("and launched the game", len(launched), 1)
+        expect("saying both in one line",
+               "saved" in window.statusBar().currentMessage()
+               and "launched" in window.statusBar().currentMessage(), True)
+
+        # The other half: no entry point is a REPORT, not a warning box.
+        os.remove(entry)
+        launched.clear()
+        no_modals()
+        window.play()
+        expect("a missing main.py launches nothing", launched, [])
+        expect("and still opens no dialog", modals(), [])
+        expect("it lands in Problems where it can be read later",
+               any("nothing to play" in row for row in problem_rows()), True)
+    finally:
+        main_window_module.subprocess.Popen = real_popen
+    window.undo()
+    expect("and the edit F5 saved still undoes byte-identically",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
 
     # ----------------------------------------------------------------
     print()

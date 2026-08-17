@@ -25,10 +25,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -37,12 +35,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from scripts.core.depth import MAP_DEPTH, OBJECT_DEPTH
+
 from editor.core.commands import Command
+from editor.core.inspect import Field
 from editor.core.project import layer_tree
 from editor.core.scope import Scope
 from editor.ui.docks import ScopedDock
 
 _KIND_MARK = {"tile": "▦", "object": "◈", "image": "▣", "group": "▾"}
+
+_TOP_LEVEL = "(top level)"
 
 
 class HierarchyDock(ScopedDock):
@@ -92,52 +95,105 @@ class HierarchyDock(ScopedDock):
 
     # -- adding and removing layers ----------------------------------------
 
+    def __known_names(self, kind: str, taken: set[str]) -> list[str]:
+        """Layer names that will draw, minus the ones already used.
+
+        Two sources, because two things decide whether a layer renders: the
+        genre pack declares what this KIND of game expects, and the engine
+        keeps its own name-to-depth table for everything else. A name in
+        neither is not refused -- authoring a layer the engine has never
+        heard of is a legitimate thing to do first -- but it is not
+        suggested either, and the row it produces is already coloured with
+        the reason.
+        """
+        declared = [layer.name for layer in self.session.project.genre.layers
+                    if layer.kind == kind]
+        engine = list(MAP_DEPTH if kind == "tile" else OBJECT_DEPTH)
+        seen: list[str] = []
+        for name in declared + engine:
+            if name not in taken and name not in seen:
+                seen.append(name)
+        return seen
+
     def __on_add(self, kind: str) -> None:
         window = self.window()
         map_name = self._scope.get("map")
         if map_name is None:
-            return
-        name, ok = QInputDialog.getText(
-            self, f"New {kind} layer",
-            "Layer name — the engine resolves this to a draw depth through\n"
-            "scripts/core/depth.py, and an unmapped name will not render:")
-        if not ok or not name.strip():
+            # The buttons are disabled without a map, so this is unreachable
+            # by clicking. It stays because a shortcut or a script can still
+            # arrive here, and a call that does nothing must still say so.
+            self.notify("open a map before adding a layer to it")
             return
 
-        group = ""
+        groups: list[str] = []
+        taken: set[str] = set()
         try:
             document = self.session.project.map(map_name)
             groups = [node.name for node in layer_tree(document)
                       if not node.selectable]
+            taken = set(document.layer_names())
         except Exception:                                       # noqa: BLE001
-            groups = []
-        if groups:
-            choice, ok = QInputDialog.getItem(
-                self, "New layer", "Put it inside which group?",
-                groups + ["(top level)"], 0, False)
-            if not ok:
-                return
-            group = "" if choice == "(top level)" else choice
+            pass
 
+        rows = [Field("name", "Name", "str", "",
+                      doc="Names the genre and the engine already know are "
+                          "listed. A name neither of them knows is allowed "
+                          "and will not draw until it is declared — the "
+                          "hierarchy marks such a layer in yellow.",
+                      choices=tuple(self.__known_names(kind, taken)))]
+        if groups:
+            # One dialog, not two. It used to ask for the name, then ask for
+            # the group in a second modal -- and cancelling the second threw
+            # away the name that had just been typed into the first.
+            rows.append(Field("group", "Inside", "choice", _TOP_LEVEL,
+                              doc="A Tiled group is organisation only; it "
+                                  "does not change what draws or when.",
+                              choices=tuple([_TOP_LEVEL] + groups)))
+
+        answer = self.ask(self, f"New {kind} layer", rows,
+                          ok_label=f"Add the {kind} layer")
+        if answer is None:
+            return
+        name = answer["name"].strip()
+        if not name:
+            self.notify("a layer needs a name — nothing was added")
+            return
+        group = answer.get("group", _TOP_LEVEL)
         window.run(Command("map.layer.add", Scope.of(("map", map_name)),
-                           {"name": name.strip(), "kind": kind,
-                            "group": group}))
+                           {"name": name, "kind": kind,
+                            "group": "" if group == _TOP_LEVEL else group}))
 
     def __on_remove(self) -> None:
         layer = self._scope.get("layer")
         if layer is None or self._scope.kind == "object":
             return
-        answer = QMessageBox.question(
-            self, "Remove layer",
-            f"Remove {layer!r} and everything on it?\n\nThis is undoable, "
-            f"and undo restores the layer byte-for-byte.")
-        if answer != QMessageBox.Yes:
-            return
-        self.window().run(Command(
-            "map.layer.remove",
-            Scope.of(("map", self._scope.require("map")), ("layer", layer))))
+        # No confirmation. It used to ask "Remove 'Roof' and everything on
+        # it?" and then reassure, in the same box, that "undo restores the
+        # layer byte-for-byte" -- a dialog whose body is the argument that
+        # the dialog is unnecessary. The reassurance was the only useful
+        # half, so it moved to where it is read AFTER the click.
+        if self.window().run(Command(
+                "map.layer.remove",
+                Scope.of(("map", self._scope.require("map")),
+                         ("layer", layer)))):
+            self.notify(f"removed {layer!r} and everything on it — "
+                        f"Ctrl+Z restores it byte-for-byte", seconds=10)
 
     def __sync_buttons(self) -> None:
+        """Enable only what can actually happen, and say why when it cannot.
+
+        Reported from a real run: both add buttons were enabled, carried no
+        tooltip, and silently returned when the panel's scope had no map --
+        a dead click of exactly the shape the Database's three row buttons
+        were fixed for. `editor/ui/database.py` is the model.
+        """
+        map_name = self._scope.get("map")
+        for button, kind in ((self.add_tile, "a tile"),
+                             (self.add_object, "an object")):
+            button.setEnabled(map_name is not None)
+            button.setToolTip(f"add {kind} layer to map:{map_name}"
+                              if map_name is not None else "open a map first")
+
         removable = (self._scope.get("layer") is not None
                      and self._scope.kind != "object")
         self.remove_layer.setEnabled(removable)
@@ -149,7 +205,16 @@ class HierarchyDock(ScopedDock):
 
     def refresh(self) -> None:
         map_name = self._scope.get("map")
+        # Sync BEFORE the early return, or a scope with no map leaves both
+        # add buttons in the state they were constructed in -- enabled, and
+        # about to do nothing.
+        self.__sync_buttons()
         if map_name is None:
+            self.tree.blockSignals(True)
+            self.tree.clear()
+            self.tree.addTopLevelItem(QTreeWidgetItem(["no map is open"]))
+            self.tree.blockSignals(False)
+            self.count.setText("")
             return
         needle = self.filter.text().strip().lower()
 

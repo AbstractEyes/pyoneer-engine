@@ -5,11 +5,11 @@
 
 > Render an `Inspection` as an editable form.
 
-`editor.ui.fields` · 305 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.fields` · 317 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    editor.core.commands editor.core.inspect
+    editor.core.commands editor.core.inspect editor.ui.ask
 
 ## Module constants
 
@@ -20,21 +20,22 @@
 
 ### `class InspectionView(QScrollArea)` #TAG:InspectionView
 
-`editor/ui/fields.py:47`–`304`
+`editor/ui/fields.py:47`–`316`
 
 > A scrollable, editable rendering of one Inspection.
 
 - `editor/ui/fields.py:53` `__init__(self, parent: QWidget | None=None, *, show_header: bool=True, show_sources: bool=True)` #TAG:InspectionView.__init__
-- `editor/ui/fields.py:70` `show_inspection(self, inspection: Inspection) -> None` #TAG:InspectionView.show_inspection
+- `editor/ui/fields.py:71` `show_inspection(self, inspection: Inspection) -> None` #TAG:InspectionView.show_inspection
   - Rebuild the form.
-- `editor/ui/fields.py:126` `__header(self, inspection: Inspection) -> None` #TAG:InspectionView.__header
-- `editor/ui/fields.py:138` `__note(self, text: str, *, size: int=11) -> None` #TAG:InspectionView.__note
-- `editor/ui/fields.py:144` `__section(self, section, inspection: Inspection) -> None` #TAG:InspectionView.__section
-- `editor/ui/fields.py:170` `__label_for(self, entry: Field) -> QLabel` #TAG:InspectionView.__label_for
-- `editor/ui/fields.py:183` `__editor_for(self, entry: Field) -> QWidget` #TAG:InspectionView.__editor_for
-- `editor/ui/fields.py:198` `__build_editor(self, entry: Field) -> QWidget` #TAG:InspectionView.__build_editor
-- `editor/ui/fields.py:243` `__with_remove(self, entry: Field, widget: QWidget) -> QWidget` #TAG:InspectionView.__with_remove
-- `editor/ui/fields.py:258` `__commit(self, entry: Field, value: Any) -> None` #TAG:InspectionView.__commit
-- `editor/ui/fields.py:265` `__remove(self, entry: Field) -> None` #TAG:InspectionView.__remove
-- `editor/ui/fields.py:272` `__on_add_property(self) -> None` #TAG:InspectionView.__on_add_property
-- `editor/ui/fields.py:289` `__sources(self, inspection: Inspection) -> None` #TAG:InspectionView.__sources
+- `editor/ui/fields.py:127` `__header(self, inspection: Inspection) -> None` #TAG:InspectionView.__header
+- `editor/ui/fields.py:139` `__note(self, text: str, *, size: int=11) -> None` #TAG:InspectionView.__note
+- `editor/ui/fields.py:145` `__section(self, section, inspection: Inspection) -> None` #TAG:InspectionView.__section
+- `editor/ui/fields.py:171` `__label_for(self, entry: Field) -> QLabel` #TAG:InspectionView.__label_for
+- `editor/ui/fields.py:184` `__editor_for(self, entry: Field) -> QWidget` #TAG:InspectionView.__editor_for
+- `editor/ui/fields.py:199` `__build_editor(self, entry: Field) -> QWidget` #TAG:InspectionView.__build_editor
+- `editor/ui/fields.py:244` `__with_remove(self, entry: Field, widget: QWidget) -> QWidget` #TAG:InspectionView.__with_remove
+- `editor/ui/fields.py:259` `__commit(self, entry: Field, value: Any) -> None` #TAG:InspectionView.__commit
+- `editor/ui/fields.py:266` `__remove(self, entry: Field) -> None` #TAG:InspectionView.__remove
+- `editor/ui/fields.py:273` `__on_add_property(self) -> None` #TAG:InspectionView.__on_add_property
+  - Name and type in ONE dialog.
+- `editor/ui/fields.py:301` `__sources(self, inspection: Inspection) -> None` #TAG:InspectionView.__sources

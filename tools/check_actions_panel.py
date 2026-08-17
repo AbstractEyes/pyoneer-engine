@@ -16,9 +16,11 @@ covers the seams those cannot see:
   * `ActionsDock` renders that vocabulary, emits those verbs, and says on
     screen -- in a QLabel, not a docstring and not a tooltip -- that the
     engine cannot execute any of it.
-  * `MapCanvas` OFFERS the collision tileset rather than inventing it,
-    through `map.tileset.add`, with an exact inverse, and the offer names
-    the image file the editor will not write.
+  * `MapCanvas` declares the collision tileset through `map.tileset.add`,
+    with an exact inverse, inside the same transaction as the stroke that
+    needed it -- and provisions the sheet it points at rather than asking.
+    The modal that used to sit on that path is gone;
+    `tools/check_collision_mount.py` owns the teeth for the replacement.
 
 Against its OWN fixture, never `data/maps/test.tmx`. The author repaints
 that file constantly and five red suites have come from a check that pinned
@@ -171,6 +173,17 @@ def press(canvas, cell, button=Qt.LeftButton):
     point = QPointF(canvas.mapFromScene(scene_x, scene_y))
     canvas.mousePressEvent(
         QMouseEvent(QEvent.Type.MouseButtonPress, point, button, button,
+                    Qt.NoModifier))
+
+
+def release(canvas, cell, button=Qt.LeftButton):
+    """The other half of a gesture. A stroke commits on the button coming
+    UP, so a check that only presses proves nothing about what is written."""
+    scene_x = cell[0] * canvas.tile_width + canvas.tile_width / 2
+    scene_y = cell[1] * canvas.tile_height + canvas.tile_height / 2
+    point = QPointF(canvas.mapFromScene(scene_x, scene_y))
+    canvas.mouseReleaseEvent(
+        QMouseEvent(QEvent.Type.MouseButtonRelease, point, button, button,
                     Qt.NoModifier))
 
 
@@ -484,7 +497,7 @@ try:
 
     # ----------------------------------------------------------------
     print()
-    print("the collision tileset is offered, never invented")
+    print("the collision tileset is declared by the stroke that needs it")
     # ----------------------------------------------------------------
     canvas = window.canvas
     canvas.set_active_layer("Floor")
@@ -559,72 +572,62 @@ try:
            os.path.normcase(os.path.normpath(os.path.join(
                os.path.dirname(canvas.document.path), COLLISION_IMAGE))))
 
-    asked: list[str] = []
+    # The offer is no longer a QUESTION. There is no `confirm` seam left on
+    # the canvas to answer, because the modal that used to sit here was
+    # deleted: a 191-word dialog on a paint click, whose stated reason -- "a
+    # written PNG has no inverse" -- guarded a coupling that does not exist,
+    # and whose chosen outcome was a map pytmx refuses to load.
+    # `tools/check_collision_mount.py` owns the teeth for the replacement;
+    # what this file still asserts is the seam it has always covered, that a
+    # press reaches `map.tileset.add` with an exact inverse.
+    expect("the canvas carries no consent seam at all",
+           hasattr(canvas, "confirm"), False)
+    sheet = os.path.normpath(
+        os.path.join(os.path.dirname(fixture_path), COLLISION_IMAGE))
+    expect("and the sheet it will declare is not on disk yet",
+           os.path.exists(sheet), False)
 
-    def decline(_parent, _title, body: str) -> bool:
-        asked.append(body)
-        return False
-
-    canvas.confirm = decline
     before = len(session.history())
     press(canvas, (0, 0))
+    release(canvas, (0, 0))
     application.processEvents()
-    expect("a collision press with no tileset asks", len(asked), 1)
-    expect("and declining changes nothing",
-           (len(session.history()), document.to_bytes() == ORIGINAL),
-           (before, True))
-    expect("the offer names the file the author must supply",
-           COLLISION_IMAGE in asked[0], True)
-    expect("says the editor will not write it",
-           "WILL NOT WRITE" in asked[0], True)
-    expect("and says what happens until it exists",
-           "FileNotFoundError" in asked[0], True)
-
-    def accept(_parent, _title, body: str) -> bool:
-        asked.append(body)
-        return True
-
-    canvas.confirm = accept
-    press(canvas, (0, 0))
-    application.processEvents()
-    expect("accepting applies exactly one command",
-           [c.verb for c in last().commands], ["map.tileset.add"])
+    expect("one stroke, one transaction, tileset first",
+           [c.verb for c in last().commands],
+           ["map.tileset.add", "map.layer.add", "map.layer.set",
+            "map.layer.set", "map.tile.set_many"])
     expect("through the command path, with the guarded inverse",
            (last().inverses[0].verb, last().inverses[0].args["force"]),
            ("map.tileset.remove", False))
     expect("the map now has a gid range for masks",
            canvas.collision_first_gid, 257)
-    expect("no stroke was started on the press that asked",
-           window.canvas.overlay is not None, True)
+    expect("and the file the declaration points at was written",
+           os.path.isfile(sheet), True)
     session.undo()
     canvas.rebuild()
-    expect("and undo takes the whole declaration back out",
+    expect("undo takes the whole declaration back out",
            (canvas.collision_first_gid, document.to_bytes() == ORIGINAL),
            (None, True))
+    expect("...and leaves the PNG alone, which is what undo owes it",
+           os.path.isfile(sheet), True)
 
     # ----------------------------------------------------------------
     print()
     print("a sheet already on disk is measured, and refused when too small")
     # ----------------------------------------------------------------
-    sheet = os.path.normpath(
-        os.path.join(os.path.dirname(fixture_path), COLLISION_IMAGE))
     write_image(sheet, 272, 16)
     offer = canvas.collision_tileset_offer()
     expect("an existing sheet is measured, not assumed",
            (offer.exists, offer.image_width, offer.tile_count), (True, 272, 17))
-    expect("and the prompt stops warning about a file that is there",
-           "WILL NOT WRITE" in offer.prompt(), False)
 
     write_image(sheet, 80, 16)
     offer = canvas.collision_tileset_offer()
     expect("a sheet with five tiles cannot hold seventeen masks",
            (offer.tile_count, offer.sufficient), (5, False))
-    asked.clear()
     before = len(session.history())
-    expect("so the offer refuses before it asks",
-           canvas.offer_collision_tileset(), False)
-    expect("without asking, and without a command",
-           (len(asked), len(session.history())), (0, before))
+    expect("so provisioning refuses rather than overwriting the author's",
+           canvas.provision_collision_tileset(), None)
+    expect("without a command, and without touching the file",
+           (len(session.history()), QImage(sheet).width()), (before, 80))
 
 finally:
     application.processEvents()

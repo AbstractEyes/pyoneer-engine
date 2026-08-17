@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -39,6 +38,7 @@ from PySide6.QtWidgets import (
 
 from editor.core.commands import Command
 from editor.core.inspect import Field, Inspection
+from editor.ui.ask import ask_form
 
 PROPERTY_TYPES = ("str", "int", "float", "bool")
 BLANK: dict[str, Any] = {"str": "", "int": 0, "float": 0.0, "bool": False}
@@ -58,6 +58,7 @@ class InspectionView(QScrollArea):
         self.show_header = show_header
         self.show_sources = show_sources
         self.inspection: Inspection | None = None
+        self.ask = ask_form          # the dialog seam; see editor/ui/ask.py
 
         self.__body = QWidget()
         self.__layout = QVBoxLayout(self.__body)
@@ -270,19 +271,30 @@ class InspectionView(QScrollArea):
             self.command_requested.emit(command)
 
     def __on_add_property(self) -> None:
+        """Name and type in ONE dialog.
+
+        It was two `QInputDialog`s in a row, and cancelling the second threw
+        away the name typed into the first -- the author had made one
+        decision and the editor made them hold half of it across a modal
+        boundary. Adding a property is one act.
+        """
         if self.inspection is None:
             return
-        name, ok = QInputDialog.getText(self, "New property", "Property name:")
-        if not ok or not name.strip():
-            return
-        kind, ok = QInputDialog.getItem(
-            self, "New property", f"Type of {name.strip()!r}:",
-            list(PROPERTY_TYPES), 0, False)
-        if not ok:
+        answer = self.ask(
+            self, "New property",
+            [Field("key", "Name", "str", "",
+                   doc="The property key as it is written into the .tmx. "
+                       "Stable once anything reads it."),
+             Field("kind", "Holds", "choice", PROPERTY_TYPES[0],
+                   doc="What kind of value it starts with. The value itself "
+                       "is edited in the form afterwards.",
+                   choices=PROPERTY_TYPES)],
+            ok_label="Add the property")
+        if answer is None or not answer["key"]:
             return
         self.command_requested.emit(Command(
             "map.object.property.set", self.inspection.scope,
-            {"key": name.strip(), "value": BLANK[kind]}))
+            {"key": answer["key"], "value": BLANK[answer["kind"]]}))
 
     # -- code links --------------------------------------------------------
 

@@ -8,6 +8,25 @@ catches a rejection, and one place that refreshes the views.
 It is also the only place that launches anything -- the game, an IDE -- and
 both are detached subprocesses. Nothing the editor spawns can block its
 event loop or take it down with it.
+
+HOW THIS WINDOW SPEAKS
+----------------------
+Three channels, and which one a message goes down is decided by whether
+there is a decision in it:
+
+    self.notify(...)    something happened. Status bar, and gone.
+    self.report(...)    something happened that must be SEEN even if the
+                        author was looking elsewhere. Status bar plus a
+                        Problems row that stays until its situation ends.
+    self.ask / .confirm a real decision, and only ever the author's to make.
+
+A rejected command used to be a modal titled "Rejected" whose body was verb
+names, scope syntax, an args dict and an exception class -- a box to dismiss
+in order to learn that nothing had changed. It is the second channel now.
+The two dialogs left in this file are the two that carry a choice: which
+genre pack, and whether to apply an AI's command list to the project.
+`QMessageBox.critical` survives in three places, all of them an unexpected
+exception at a point where the alternative is losing work.
 """
 from __future__ import annotations
 
@@ -22,7 +41,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
     QFileDialog,
-    QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -32,10 +50,14 @@ from PySide6.QtWidgets import (
 from editor.core import ide
 from editor.core.commands import Command
 from editor.core.errors import PyoneerEditorError
+from editor.core.genre import RuleViolation
+from editor.core.inspect import Field
 from editor.core.layers import describe_mask
 from editor.core.paint import EditMode, Tool
 from editor.core.request import REQUESTS_DIR, RESPONSE_FILE, read_response
 from editor.core.scope import Scope
+from editor.ui.actions_panel import ActionsDock
+from editor.ui.ask import ask_form, confirm
 from editor.ui.behavior_panel import BehaviorDock
 from editor.ui.canvas import MapCanvas, TilePalette
 from editor.ui.collision_view import MaskPalette, build_mode_actions
@@ -46,6 +68,7 @@ from editor.ui.icons import tool_icon
 from editor.ui.inspector import InspectorDock
 from editor.ui.selection import Selection
 from editor.ui.settings_dialog import SettingsDialog
+from editor.ui.tileset_dialog import TilesetImportDialog
 from editor.ui import theme as theme_module
 from editor.ui.theme import Theme
 from editor.core.settings import EditorSettings
@@ -72,6 +95,12 @@ class EditorWindow(QMainWindow):
         self.settings = EditorSettings()
         self.map_name = (session.project.map_names() or ["<none>"])[0]
         self.database: DatabaseWindow | None = None
+        # The dialog seams, same as every panel's. See editor/ui/ask.py.
+        self.ask = ask_form
+        self.confirm = confirm
+        #: The last response file that arrived on disk and has not been
+        #: applied. It used to interrupt with a modal the moment it landed.
+        self.pending_response: str | None = None
         self.setWindowTitle(self.__title())
         self.resize(1600, 1000)
 
@@ -88,6 +117,7 @@ class EditorWindow(QMainWindow):
         self.hierarchy = HierarchyDock("Hierarchy", session, map_scope, self)
         self.inspector = InspectorDock("Inspector", session, map_scope, self)
         self.behaviors = BehaviorDock("Behaviors", session, map_scope, self)
+        self.actions = ActionsDock("Actions", session, map_scope, self)
         self.problems = ProblemsDock("Problems", session, Scope.of("project"), self)
         self.manifest = ManifestDock("Manifest", session, Scope.of("project"), self)
         self.history = HistoryDock("History", session, Scope.of("project"), self)
@@ -102,6 +132,12 @@ class EditorWindow(QMainWindow):
         # -- the same argument, and the same fix, as the collision palette.
         self.addDockWidget(Qt.RightDockWidgetArea, self.behaviors)
         self.tabifyDockWidget(self.inspector, self.behaviors)
+        # Actions was written, checked by the suite, and mounted NOWHERE: 353
+        # lines and a passing check for a surface no click could reach, which
+        # is the exact failure its own docstring is about. It answers "what is
+        # this selected thing", so it tabs with the Inspector like Behaviors.
+        self.addDockWidget(Qt.RightDockWidgetArea, self.actions)
+        self.tabifyDockWidget(self.inspector, self.actions)
         self.inspector.raise_()
         self.addDockWidget(Qt.BottomDockWidgetArea, self.problems)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.manifest)
@@ -117,7 +153,7 @@ class EditorWindow(QMainWindow):
         self.selection.changed.connect(self.__on_selection)
 
         self.docks = (self.hierarchy, self.inspector, self.behaviors,
-                      self.problems, self.manifest, self.history)
+                      self.actions, self.problems, self.manifest, self.history)
 
         self.__build_actions()
         self.__build_toolbar()
@@ -191,9 +227,10 @@ class EditorWindow(QMainWindow):
         self.__act(edit_menu, "&Back", "Alt+Left", self.selection.back)
 
         view_menu = self.menuBar().addMenu("&View")
-        for dock in (self.hierarchy, self.inspector, self.behaviors,
-                     self.problems, self.manifest, self.history,
-                     self.palette_dock, self.mask_dock):
+        # Driven off `self.docks` rather than a second hand-written list:
+        # the previous copy went stale silently, and a dock missing from
+        # here is a panel the author cannot get back once it is closed.
+        for dock in self.docks + (self.palette_dock, self.mask_dock):
             view_menu.addAction(dock.toggleViewAction())
         view_menu.addSeparator()
         self.__act(view_menu, "Zoom &in", QKeySequence.ZoomIn,
@@ -206,14 +243,26 @@ class EditorWindow(QMainWindow):
         self.__act(data_menu, "&Open the database…", "Ctrl+D", self.open_database)
 
         ai_menu = self.menuBar().addMenu("&AI")
-        self.__act(ai_menu, "&Ship staged notes as a request…", "Ctrl+Return", self.ship)
+        # Held, not fired and forgotten: all three refused with a modal when
+        # they could not act, while the Manifest dock's own Ship button
+        # already disabled itself in the same state. Two doors onto one
+        # action, one greyed and one arguing.
+        self.ship_action = self.__act(
+            ai_menu, "&Ship staged notes as a request…", "Ctrl+Return", self.ship)
+        # Not held: browsing for a response is always possible, so there is
+        # no state to grey it for, and an attribute nothing reads is the
+        # `confirm_response` disease one layer up.
         self.__act(ai_menu, "&Apply a response…", "Ctrl+Shift+Return",
                    self.apply_response_dialog)
         ai_menu.addSeparator()
-        self.__act(ai_menu, "Copy the &art brief", None, self.copy_art_brief)
+        self.art_action = self.__act(ai_menu, "Copy the &art brief", None,
+                                     self.copy_art_brief)
 
         project_menu = self.menuBar().addMenu("&Project")
+        self.add_tileset_action = self.__act(
+            project_menu, "Add a &tileset…", None, self.add_tileset)
         self.__act(project_menu, "Switch &genre…", None, self.switch_genre)
+        self.__sync_actions()
 
     def __act(self, menu, text, shortcut, slot) -> QAction:
         action = QAction(text, self)
@@ -295,6 +344,36 @@ class EditorWindow(QMainWindow):
             self.selection.select(
                 Scope.of(("map", self.map_name), ("layer", names[0])))
 
+    # -- saying things -----------------------------------------------------
+
+    def notify(self, message: str, *, seconds: float = 6.0) -> None:
+        """Something happened. Read it or don't."""
+        self.statusBar().showMessage(message, int(seconds * 1000))
+
+    def report(self, message: str, *, key: str, scope: Scope | None = None,
+               detail: str = "", severity: str = "hard", fix: str = "",
+               seconds: float = 12.0) -> None:
+        """Something happened that must be SEEN, even later.
+
+        Status bar for the moment, Problems row for afterwards. `key` makes
+        the row idempotent -- one rejection replaces the previous rejection
+        rather than stacking -- and is what `clear` names when the situation
+        it described is over.
+
+        This is what the "Rejected" modal became. A rejection is a normal
+        outcome (a verb refusing an edit that would corrupt gids is the
+        system working), and a normal outcome that stops the hand and takes
+        the keyboard is the defect the author reported on a paint click.
+        """
+        self.notify(message, seconds=seconds)
+        self.problems.post(
+            RuleViolation(severity, scope or Scope.of("project"), message, fix),
+            key=key, detail=detail)
+
+    def clear(self, key: str) -> None:
+        """Retire a reported situation."""
+        self.problems.clear_notices(key)
+
     # -- the single mutation point -----------------------------------------
 
     def run(self, commands, *, label: str | None = None,
@@ -304,12 +383,21 @@ class EditorWindow(QMainWindow):
         try:
             transaction = self.session.run(commands, label=label, source=source)
         except PyoneerEditorError as exc:
-            QMessageBox.warning(self, "Rejected", str(exc))
-            self.statusBar().showMessage("rejected — nothing changed", 6000)
+            # `exc.message` is the human clause; `str(exc)` appends the
+            # context trail -- verb, scope, args, exception class -- which is
+            # debugging vocabulary the author did not ask for. It goes in the
+            # row's tooltip, where it is available and not in the way.
+            self.report(getattr(exc, "message", None) or str(exc),
+                        key="rejection", detail=str(exc),
+                        fix="nothing changed")
             return False
         except Exception as exc:                                # noqa: BLE001
+            # Kept modal. A rejection is a designed outcome; this is not one,
+            # and it means the mutation point itself is in a state nothing
+            # here can reason about.
             QMessageBox.critical(self, type(exc).__name__, str(exc))
             return False
+        self.clear("rejection")
         self.statusBar().showMessage(str(transaction), 4000)
         self.refresh_all()
         return True
@@ -326,7 +414,35 @@ class EditorWindow(QMainWindow):
             self.__safely(self.database.refresh, "Database")
         self.undo_action.setEnabled(self.session.stream.can_undo)
         self.redo_action.setEnabled(self.session.stream.can_redo)
+        self.__sync_actions()
         self.setWindowTitle(self.__title())
+
+    def __sync_actions(self) -> None:
+        """A menu entry that cannot act is greyed and says why.
+
+        Every one of these used to be permanently enabled and to answer with
+        a modal: "Nothing staged", "No art brief", "No response". A control
+        that is present and refusing is worse than one that is greyed with a
+        reason -- the click has already been spent by the time the refusal
+        arrives.
+        """
+        staged = not self.session.manifest.empty
+        self.ship_action.setEnabled(staged)
+        self.ship_action.setToolTip(
+            "hand the staged notes to an AI as a request" if staged
+            else "type a note under any panel first")
+
+        brief = bool(self.session.project.genre.art_brief)
+        self.art_action.setEnabled(brief)
+        self.art_action.setToolTip(
+            "copy the genre's art brief for an image model" if brief
+            else f"genre {self.session.project.genre.id!r} ships no ART.md")
+
+        maps = bool(self.session.project.map_names())
+        self.add_tileset_action.setEnabled(maps)
+        self.add_tileset_action.setToolTip(
+            f"declare a sheet on map:{self.map_name}" if maps
+            else "this project has no maps")
 
     def __safely(self, call, what: str) -> None:
         """One panel failing must not take the window down.
@@ -346,6 +462,7 @@ class EditorWindow(QMainWindow):
         self.manifest.refresh()
         for dock in self.docks:
             dock.strip.refresh()
+        self.__sync_actions()
 
     # -- selection ---------------------------------------------------------
 
@@ -424,35 +541,54 @@ class EditorWindow(QMainWindow):
             self.selection.reselect()
             self.refresh_all()
 
-    def save(self) -> None:
+    def save(self) -> int | None:
+        """Write every dirty document. Returns how many, or None on failure.
+
+        The one modal that stays a modal on a routine action: a failed save
+        is the only outcome here where carrying on quietly loses work.
+        """
         try:
             written = self.session.save()
         except Exception as exc:                                # noqa: BLE001
             QMessageBox.critical(self, "Save failed", str(exc))
-            return
-        self.statusBar().showMessage(
-            f"wrote {len(written)} file{'' if len(written) == 1 else 's'}", 5000)
+            return None
+        self.notify(f"wrote {len(written)} "
+                    f"file{'' if len(written) == 1 else 's'}", seconds=5)
         self.setWindowTitle(self.__title())
+        return len(written)
 
     def play(self) -> None:
-        """Launch the game as a subprocess. The editor is not the runtime."""
+        """Save, then launch the game as a subprocess. Not the runtime.
+
+        It used to ask "The game reads files from disk. Save before
+        playing?" on the most repeated action in the loop -- an unanchored
+        question, no default button, and the same answer every single time.
+        The editor knows the game reads from disk and knows the session is
+        dirty, so it saves: if the editor can do the thing, it does the
+        thing. Nothing is lost by it, because a save writes what undo can
+        still take back byte-for-byte, and the status line says it happened.
+        """
+        saved = 0
         if self.session.dirty:
-            answer = QMessageBox.question(
-                self, "Unsaved changes",
-                "The game reads files from disk. Save before playing?")
-            if answer == QMessageBox.Yes:
-                self.save()
+            saved = self.save()
+            if saved is None:
+                return                  # the save failed and said so
         main = os.path.join(self.session.project.root, "main.py")
         if not os.path.isfile(main):
-            QMessageBox.warning(self, "No entry point", f"{main} does not exist.")
+            self.report(f"there is no main.py in {self.session.project.root} — "
+                        f"nothing to play", key="play",
+                        fix="the game's entry point is main.py at the project root")
             return
         try:
             subprocess.Popen([sys.executable, main],
                              cwd=self.session.project.root)
         except OSError as exc:
-            QMessageBox.warning(self, "Could not launch", str(exc))
+            self.report(f"could not launch main.py: {exc}", key="play",
+                        detail=f"{type(exc).__name__}: {exc}")
             return
-        self.statusBar().showMessage("launched main.py", 4000)
+        self.clear("play")
+        self.notify(f"saved {saved} file{'' if saved == 1 else 's'} and "
+                    f"launched main.py" if saved else "launched main.py")
 
     def open_database(self) -> None:
         if self.database is None:
@@ -464,32 +600,63 @@ class EditorWindow(QMainWindow):
         self.database.raise_()
         self.database.activateWindow()
 
+    def add_tileset(self) -> None:
+        """Declare a sheet on the open map.
+
+        `TilesetImportDialog` was finished, had a complete `ask()` whose own
+        docstring says "so the menu action stays two lines", and no menu
+        action existed -- so no tileset could be added from the GUI at all.
+        That absence is why the collision path grew its own 191-word modal
+        tileset importer: it was the only door onto `map.tileset.add`.
+        """
+        try:
+            document = self.session.project.map(self.map_name)
+        except Exception as exc:                                # noqa: BLE001
+            self.report(f"cannot read map:{self.map_name}: {exc}",
+                        key="add_tileset")
+            return
+        request = TilesetImportDialog.ask(
+            os.path.dirname(document.path),
+            tile_width=document.tile_width, tile_height=document.tile_height,
+            existing_names=document.tileset_names(), parent=self)
+        if request is None:
+            return
+        if self.run(Command("map.tileset.add", Scope.of(("map", self.map_name)),
+                            request.command_args())):
+            self.notify(f"declared {request.name!r} — {request.tile_count} "
+                        f"tiles are now in the palette", seconds=8)
+
     def switch_genre(self) -> None:
         from editor.core import genre as genre_module
 
         options = genre_module.available()
         current = self.session.project.genre.id
-        index = options.index(current) if current in options else 0
-        chosen, ok = QInputDialog.getItem(self, "Genre",
-                                          "Genre pack for this project:",
-                                          options, index, False)
-        if ok and chosen != current:
-            if self.run(Command("project.genre.set", Scope.of("project"),
-                                {"genre": chosen})) and self.database is not None:
-                self.database.rebuild()
+        answer = self.ask(
+            self, "Genre",
+            [Field("genre", "Genre pack", "choice", current,
+                   doc="Reshapes the Database window and what the Problems "
+                       "panel considers a violation. It changes no map data.",
+                   choices=tuple(options))],
+            ok_label="Switch")
+        if answer is None or answer["genre"] == current:
+            return
+        if self.run(Command("project.genre.set", Scope.of("project"),
+                            {"genre": answer["genre"]})) \
+                and self.database is not None:
+            self.database.rebuild()
 
     def copy_art_brief(self) -> None:
         from PySide6.QtWidgets import QApplication
 
         brief = self.session.project.genre.art_brief
         if not brief:
-            QMessageBox.information(
-                self, "No art brief",
-                f"Genre {self.session.project.genre.id!r} ships no ART.md.")
+            # Unreachable by clicking -- the action is greyed with this
+            # reason on it -- and still said rather than swallowed.
+            self.notify(f"genre {self.session.project.genre.id!r} ships no "
+                        f"ART.md, so there is no brief to copy")
             return
         QApplication.clipboard().setText(brief)
-        self.statusBar().showMessage(
-            "art brief copied — paste it into an image model", 6000)
+        self.notify("art brief copied — paste it into an image model")
 
     # -- code ---------------------------------------------------------------
 
@@ -509,8 +676,11 @@ class EditorWindow(QMainWindow):
         elif key == "show_grid":
             self.canvas.show_grid = bool(value)
             self.canvas.rebuild()
-        # `ide` and `confirm_response` are read where they are used, so
-        # nothing has to happen here for them.
+        # `ide` is read in `reveal`, and `confirm_response` in
+        # `apply_response` and `__offer` -- both at the moment they matter,
+        # so nothing has to happen here for them. (`confirm_response` was
+        # read NOWHERE for as long as it existed: a preference the author
+        # could tick that changed nothing at all.)
 
     def apply_theme(self, theme: Theme) -> None:
         """Repaint the whole application, icons included."""
@@ -540,43 +710,59 @@ class EditorWindow(QMainWindow):
             line = ide.find_symbol_line(absolute, symbol)
         result = ide.open_at(absolute, line,
                              configured=self.settings.get("ide") or None)
-        self.statusBar().showMessage(result.message, 8000)
         if not result.ok and not ide.detect():
-            QMessageBox.information(
-                self, "No IDE found",
-                "Could not find PyCharm, VS Code, IntelliJ, Sublime or "
-                "Notepad++ on this machine.\n\n" + result.message)
+            # Was a modal AND the status line below it -- the same fact
+            # twice, once with a button on it.
+            self.report("no IDE found: PyCharm, VS Code, IntelliJ, Sublime "
+                        "and Notepad++ are all absent from this machine",
+                        key="ide", severity="soft", detail=result.message,
+                        fix="File ▸ Settings names one explicitly")
+            return
+        self.clear("ide")
+        self.notify(result.message, seconds=8)
 
     # -- the AI loop -------------------------------------------------------
 
     def ship(self) -> None:
         if self.session.manifest.empty:
-            QMessageBox.information(
-                self, "Nothing staged",
-                "Type a note under any panel first. The panel's scope is "
-                "attached automatically, so the request knows where it lands.")
+            # The menu entry is greyed and the dock's Ship button disables
+            # itself, so this is only reachable by calling it. It used to be
+            # a modal on an always-enabled action, next to a button that was
+            # already doing the right thing.
+            self.notify("nothing is staged — type a note under any panel "
+                        "first, and its scope comes with it")
             return
-        title, ok = QInputDialog.getText(
-            self, "Ship request", "Title for this request:",
-            text=self.session.manifest.suggested_title())
-        if not ok:
+        answer = self.ask(
+            self, "Ship request",
+            [Field("title", "Title", "str",
+                   self.session.manifest.suggested_title(),
+                   doc="What this request is about. It names the folder and "
+                       "heads the brief.")],
+            ok_label="Write the request")
+        if answer is None:
             return
         try:
-            bundle = self.session.ship(title=title)
+            bundle = self.session.ship(title=answer["title"])
         except Exception as exc:                                # noqa: BLE001
             QMessageBox.critical(self, "Could not write the request", str(exc))
             return
         self.refresh_manifest()
         self.__watch_requests()
         relative = os.path.relpath(bundle.directory, self.session.project.root)
-        QMessageBox.information(
-            self, "Request written",
-            f"Wrote {relative}\n\nHand it to Claude Code:\n\n"
-            f"    Read {relative}/BRIEF.md and do the work\n\n"
-            f"The editor is watching for {RESPONSE_FILE}.")
+        # A four-line modal to be told a file was written is a report with an
+        # OK button. The row stays until the response lands, which is longer
+        # than any dialog would have.
+        self.report(f"wrote {relative} — hand it over with: Read "
+                    f"{relative}/BRIEF.md and do the work",
+                    key=f"request:{bundle.identifier}", severity="soft",
+                    fix=f"watching for {RESPONSE_FILE}", seconds=15)
 
     def apply_response_dialog(self) -> None:
-        start = os.path.join(self.session.project.root, REQUESTS_DIR)
+        # Starts where the waiting response is, when one is waiting: the
+        # arrival is announced rather than demanded, so the menu entry has
+        # to be able to find it again.
+        start = self.pending_response or os.path.join(
+            self.session.project.root, REQUESTS_DIR)
         path, _ = QFileDialog.getOpenFileName(
             self, "Apply a response", start, "JSON Lines (*.jsonl);;All files (*)")
         if path:
@@ -586,21 +772,34 @@ class EditorWindow(QMainWindow):
         try:
             commands = read_response(path)
         except Exception as exc:                                # noqa: BLE001
-            QMessageBox.warning(self, "Unreadable response", str(exc))
+            self.report(f"{os.path.basename(path)} is not a readable "
+                        f"response: {exc}", key="response",
+                        detail=f"{type(exc).__name__}: {exc}\n{path}")
             return
         identifier = os.path.basename(os.path.dirname(os.path.abspath(path)))
         preview = "\n".join(f"  {c}" for c in commands[:20])
         if len(commands) > 20:
             preview += f"\n  … and {len(commands) - 20} more"
-        answer = QMessageBox.question(
-            self, "Apply response",
-            f"{identifier} contains {len(commands)} command"
-            f"{'' if len(commands) == 1 else 's'}:\n\n{preview}\n\n"
-            f"Apply as one undoable transaction?")
-        if answer != QMessageBox.Yes:
+        # A real decision: this is someone else's command list about to be
+        # applied to the author's project, and the preview is what makes it
+        # a decision rather than a formality. `confirm_response` is the
+        # preference that turns it off -- it was declared, rendered in the
+        # settings dialog, promised "apply as soon as it arrives", and read
+        # by nothing at all until here.
+        if self.settings.get("confirm_response") and not self.confirm(
+                self, "Apply response",
+                f"{identifier} contains {len(commands)} command"
+                f"{'' if len(commands) == 1 else 's'}:\n\n{preview}\n\n"
+                f"Apply as one undoable transaction?"):
             return
-        self.run(commands, label=f"response {identifier}",
-                 source=f"response:{identifier}")
+        if self.run(commands, label=f"response {identifier}",
+                    source=f"response:{identifier}"):
+            self.clear(f"response:{os.path.abspath(path)}")
+            self.clear(f"request:{identifier}")
+            if self.pending_response \
+                    and os.path.abspath(self.pending_response) == \
+                    os.path.abspath(path):
+                self.pending_response = None
 
     def __watch_requests(self) -> None:
         base = os.path.join(self.session.project.root, REQUESTS_DIR)
@@ -624,9 +823,23 @@ class EditorWindow(QMainWindow):
         QTimer.singleShot(400, lambda: self.__offer(candidate))
 
     def __offer(self, path: str) -> None:
+        """A file appeared on disk. That is news, not a question.
+
+        This was the only modal in the tree that could open with NO gesture
+        from the author at all -- a filesystem watcher fired it, so it could
+        land on top of an in-progress stroke and take the mouse button with
+        it. Nothing about focus, drag state or consent was consulted.
+
+        So it announces itself instead. `confirm_response` unticked means
+        the author already said "apply as soon as it arrives", and that is
+        the one case where arriving is enough to act on.
+        """
         name = os.path.basename(os.path.dirname(path))
-        answer = QMessageBox.question(
-            self, "Response arrived",
-            f"{name} has a response. Review and apply it?")
-        if answer == QMessageBox.Yes:
+        self.pending_response = path
+        if not self.settings.get("confirm_response"):
             self.apply_response(path)
+            return
+        self.report(f"{name} has a response waiting — AI ▸ Apply a response… "
+                    f"(Ctrl+Shift+Return) reviews it",
+                    key=f"response:{os.path.abspath(path)}", severity="soft",
+                    detail=path, seconds=15)
