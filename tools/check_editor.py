@@ -40,6 +40,7 @@ from editor.core.project import Project
 from editor.core.request import Manifest, Note, parse_response, write_bundle
 from editor.core.scope import Scope, code_locations
 from editor.core.session import Session
+from scripts.core.collision_runtime import companion_subcell
 
 REPO = _bootstrap.REPO_ROOT
 failures: list[str] = []
@@ -58,6 +59,35 @@ def expect_raises(label, exception_type, fn):
     except exception_type as exc:
         text = str(exc).splitlines()[0]
         print(f"  ok   {label:<56} {type(exc).__name__}: {text[:60]}")
+        return
+    except Exception as exc:                                    # noqa: BLE001
+        print(f"  FAIL {label:<56} raised {type(exc).__name__}, "
+              f"wanted {exception_type.__name__}")
+        failures.append(label)
+        return
+    print(f"  FAIL {label:<56} did not raise {exception_type.__name__}")
+    failures.append(label)
+
+
+def expect_raises_naming(label, exception_type, fn, *needles):
+    """It refuses, AND the refusal carries every one of `needles`.
+
+    A verb that raises without naming the numbers it disagreed about sends
+    the author back to measure the map by hand, and an assertion that only
+    checks the TYPE cannot tell a message that names them from one that says
+    "invalid". That is the same half-an-invariant shape as a gate proved to
+    refuse and never proved to allow.
+    """
+    try:
+        fn()
+    except exception_type as exc:
+        missing = [n for n in needles if n not in str(exc)]
+        if missing:
+            print(f"  FAIL {label:<56} message omits {missing}")
+            print(f"       {str(exc).splitlines()[0]}")
+            failures.append(label)
+            return
+        print(f"  ok   {label:<56} names {list(needles)}")
         return
     except Exception as exc:                                    # noqa: BLE001
         print(f"  FAIL {label:<56} raised {type(exc).__name__}, "
@@ -338,6 +368,91 @@ try:
     expect("a fill value lands",
            session.project.map("test").tile_layer("Solid").get_tile(0, 0), 65)
     session.undo()
+
+    print()
+    print("a layer may be created at a size that is NOT the map's")
+    # THE GAP THIS CLOSES. `map.layer.add` carried no dimensions, so every
+    # layer any editor action could create was map-sized -- and a passability
+    # companion at pyoneer_subcell=4 is FOUR TIMES the map on each axis. The
+    # format the engine reads was unreachable by any command in the stream.
+    #
+    # Read off the map rather than written as 100: this asserts the
+    # arithmetic, not the fixture, so repainting test.tmx cannot make it red.
+    map_document = session.project.map("test")
+    columns, rows = map_document.width, map_document.height
+    session.run(Command("map.layer.add", MAP,
+                        {"name": "FineProbe", "kind": "tile", "subcell": 4}))
+    fine = session.project.map("test").tile_layer("FineProbe")
+    expect("the layer is subcell x the map",
+           (fine.width, fine.height), (columns * 4, rows * 4))
+    expect("its csv holds one gid per sub-cell", len(fine), columns * rows * 16)
+    expect("and it DECLARES the factor, in the same command as the size",
+           fine.properties.get("pyoneer_subcell"), 4)
+    expect("so the engine reads it back as a 4x companion",
+           companion_subcell(session.project.map("test"), "FineProbe"), 4)
+    expect("one command, one history entry", len(session.history()), 1)
+
+    session.undo()
+    expect("undo of a 4x layer restores the BYTES",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+    session.redo()
+    expect("redo brings back the size AND the declaration",
+           (session.project.map("test").tile_layer("FineProbe").width,
+            session.project.map("test").tile_layer("FineProbe")
+            .properties.get("pyoneer_subcell")),
+           (columns * 4, 4))
+    session.undo()
+    expect("and undo is still exact the second time",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    session.run(Command("map.layer.add", MAP,
+                        {"name": "OddProbe", "kind": "tile",
+                         "width": 7, "height": 3}))
+    odd = session.project.map("test").tile_layer("OddProbe")
+    expect("explicit dimensions with no factor are honoured",
+           (odd.width, odd.height, len(odd)), (7, 3, 21))
+    expect("and declare nothing that was not asked for",
+           odd.properties.as_dict(), {})
+    session.undo()
+    expect("that undoes byte-identically too",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    print()
+    print("a factor the dimensions do not support is refused, by both numbers")
+    # The other half. A gate proved to let a 4x layer through and never
+    # proved to stop a mismatched one is the failure shape this repo keeps
+    # measuring, and the previous pass measured exactly this case surviving:
+    # a 32x32 field baked from an 8x8 layer's worth of data, no complaint.
+    expect_raises_naming(
+        "explicit dimensions contradicting the factor",
+        PyoneerCommandApplyError,
+        lambda: session.run(Command("map.layer.add", MAP,
+                                    {"name": "BadProbe", "kind": "tile",
+                                     "subcell": 4, "width": columns * 2,
+                                     "height": rows * 2})),
+        "pyoneer_subcell=4", f"{columns * 2}x{rows * 2}",
+        f"{columns * 4}x{rows * 4}")
+    expect("the refused transaction left no layer and no bytes",
+           ("BadProbe" in session.project.map("test").layer_names(),
+            session.project.map("test").to_bytes() == ORIGINAL),
+           (False, True))
+    expect_raises_naming(
+        "a factor the map's tile size does not divide",
+        PyoneerCommandApplyError,
+        lambda: session.run(Command("map.layer.add", MAP,
+                                    {"name": "BadProbe", "kind": "tile",
+                                     "subcell": 3})),
+        "pyoneer_subcell=3",
+        f"{map_document.tile_width}x{map_document.tile_height}px")
+    expect_raises_naming(
+        "a sub-cell factor on an OBJECT layer", PyoneerCommandApplyError,
+        lambda: session.run(Command("map.layer.add", MAP,
+                                    {"name": "BadProbe", "kind": "object",
+                                     "subcell": 4})),
+        "object layer", "pyoneer_subcell")
+    expect("the map is byte-identical after all three refusals",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+    expect("and no refusal cost a history entry", session.history(), [])
 
     print()
     print("removing an EXISTING layer restores it exactly -- every one of them")

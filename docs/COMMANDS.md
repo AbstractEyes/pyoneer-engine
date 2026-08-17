@@ -20,7 +20,7 @@ Rules that are enforced, not suggested:
 
 ### `map.layer.add`
 
-Add a tile or object layer. A tile layer is created at the map's size. Note that a layer only RENDERS if its name has a depth in scripts/core/depth.py.
+Add a tile or object layer. A tile layer is created at the map's size unless width/height or subcell say otherwise. Note that a layer only RENDERS if its name has a depth in scripts/core/depth.py.
 
 *Scopes:* `map:*`
 
@@ -31,6 +31,9 @@ Add a tile or object layer. A tile layer is created at the map's size. Note that
 | `group` | str | no (default `''`) | name of a Tiled <group> to put it in; empty means beside the existing layers of its kind |
 | `fill` | int | no (default `0`) | gid to fill a new tile layer with; 0 is empty |
 | `index` | int | no (default `None`) | position among its siblings; omit to append |
+| `width` | int | no (default `None`) | columns in a new tile layer; omit for the map's own width. A passability companion is wider than the map when it is finer than it |
+| `height` | int | no (default `None`) | rows in a new tile layer; omit for the map's own height |
+| `subcell` | int | no (default `None`) | sub-cells per map tile along each axis. Sizes the layer at subcell x the map AND declares pyoneer_subcell on it, in one command, because a layer that is one without the other is a map that does not load |
 
 ```json
 {"verb": "map.layer.add", "scope": "map:test", "args": {"name": "Hazard", "kind": "tile"}}

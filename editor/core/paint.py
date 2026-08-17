@@ -169,6 +169,27 @@ class EditMode(Enum):
         }[self]
 
     @property
+    def subdivides(self) -> bool:
+        """Does a companion layer's declared resolution change what one
+        addressable cell IS in this mode?
+
+        The mode's half of the sub-cell answer, and the reason it is here
+        rather than as an `is COLLISION` test inside the canvas: this enum
+        already claims to be the fact about what a drag MEANS, and "how big
+        is the thing I am about to change" is precisely that fact. The other
+        half -- the NUMBER -- cannot live here, because it is read off a
+        specific companion layer of a specific map (`pyoneer_subcell`), and
+        this module holds no document by design.
+
+        False for TILES on purpose, and it is not an oversight waiting to be
+        generalised. A tile layer's cell is a tile; if a passability
+        companion's resolution moved the art grid, declaring collision at 4x
+        would silently quarter the grid the author paints floor on, and the
+        two things have nothing to do with each other.
+        """
+        return self is EditMode.COLLISION
+
+    @property
     def disabled_tools(self) -> frozenset[Tool]:
         """Tools with no meaning in this mode.
 

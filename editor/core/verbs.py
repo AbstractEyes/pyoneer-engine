@@ -192,8 +192,9 @@ def _tile_fill(project: Project, cmd: Command) -> Command | None:
 @command(
     "map.layer.add",  # #TAG:map.layer.add
     summary="Add a tile or object layer. A tile layer is created at the "
-            "map's size. Note that a layer only RENDERS if its name has a "
-            "depth in scripts/core/depth.py.",
+            "map's size unless width/height or subcell say otherwise. Note "
+            "that a layer only RENDERS if its name has a depth in "
+            "scripts/core/depth.py.",
     scopes=["map:*"],
     params=[
         Param("name", str, "layer name; it is also the key the engine "
@@ -207,17 +208,47 @@ def _tile_fill(project: Project, cmd: Command) -> Command | None:
               required=False, default=0),
         Param("index", int, "position among its siblings; omit to append",
               required=False, default=None),
+        Param("width", int, "columns in a new tile layer; omit for the "
+                            "map's own width. A passability companion is "
+                            "wider than the map when it is finer than it",
+              required=False, default=None),
+        Param("height", int, "rows in a new tile layer; omit for the map's "
+                             "own height",
+              required=False, default=None),
+        Param("subcell", int, "sub-cells per map tile along each axis. "
+                              "Sizes the layer at subcell x the map AND "
+                              "declares pyoneer_subcell on it, in one "
+                              "command, because a layer that is one without "
+                              "the other is a map that does not load",
+              required=False, default=None),
     ],
     example='{"verb": "map.layer.add", "scope": "map:test",'
             ' "args": {"name": "Hazard", "kind": "tile"}}',
 )
 def _layer_add(project: Project, cmd: Command) -> Command:
+    """Create a layer, at a size the caller may choose.
+
+    `subcell` is the whole reason width and height are arguments at all: a
+    4x passability companion is four times the map on each axis, so before
+    this verb carried a size, nothing in the editor could CREATE the format
+    the engine already reads.
+
+    The inverse is unchanged and needs no new argument. `map.layer.remove`
+    serializes the element it takes out -- its `width=`, its `height=`, its
+    `<properties>` and its csv -- and restores that XML verbatim, so undo is
+    byte-exact for a 4x companion for exactly the reason it already was for
+    a map-sized one. An inverse that re-stated the dimensions would be a
+    second place for them to be wrong.
+    """
     document = project.map(cmd.scope.require("map"))
     before = document.root.get("nextlayerid", "1")
     document.add_layer(cmd.args["name"], cmd.args["kind"],
                        group=cmd.args["group"] or None,
                        index=cmd.args["index"],
-                       fill=cmd.args["fill"])
+                       fill=cmd.args["fill"],
+                       width=cmd.args["width"],
+                       height=cmd.args["height"],
+                       subcell=cmd.args["subcell"])
     return Command("map.layer.remove",
                    cmd.scope.child("layer", cmd.args["name"]),
                    {"next_layer_id": before})

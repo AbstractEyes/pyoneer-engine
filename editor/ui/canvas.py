@@ -88,7 +88,10 @@ from scripts.loaders.map_document import tileset_geometry
 from editor.core import autotile
 from editor.core.collision import (
     NO_DATA,
+    SUBCELL,
     CollisionLayer,
+    companion_subcell,
+    field_subcell,
     gid_to_opinion,
     opinion_to_gid,
     resolve,
@@ -292,6 +295,41 @@ def _EMPTY_READER(_x: int, _y: int) -> int:                       # noqa: N802
     return 0
 
 
+@dataclass(frozen=True)
+class PaintUnit:
+    """What ONE addressable cell is, right now, and where the number came
+    from.
+
+    Resolved in one place -- `MapCanvas.paint_unit` -- so that the displayed
+    grid, the cell a click snaps to, the ghost, the bounds a stroke clips to
+    and the mask that gets written cannot be reading five different numbers.
+    Before this it was five reads of `document.tile_width`, and on a map whose
+    companion declares `pyoneer_subcell="4"` all five were wrong the same way:
+    the canvas addressed whole tiles and the file stored quarter-tiles, so a
+    click wrote a mask up to 1,188px from the cursor on a 100x100 map and 20px
+    from it on the 4x4 fixture below.
+
+    `refusal` is the one thing this cannot resolve: a companion whose
+    declaration cannot be read at all. It is carried rather than raised
+    because this is consulted on every mouse move and every grid line, and an
+    exception on that path takes the editor down over a property an author
+    can fix in Tiled. The stroke is refused instead -- see
+    `MapCanvas.collision_stroke_refusal`, which is where law 7 is actually
+    paid: nothing is written, and the reason is said out loud.
+    """
+
+    #: How many addressable cells one map TILE divides into, per axis.
+    subcell: int
+    #: Pixels per addressable cell. `tile size // subcell`, both axes.
+    width: int
+    height: int
+    #: The companion the number was read off. None in tile mode, where a
+    #: companion's resolution is none of a tile stroke's business.
+    layer: str | None = None
+    #: Why the declaration could not be read, if it could not be.
+    refusal: str | None = None
+
+
 class MapCanvas(QGraphicsView):
     """A depth-ordered, paintable view of one map."""
 
@@ -393,29 +431,114 @@ class MapCanvas(QGraphicsView):
     # separate reads -- so nothing coupled them and nothing could move one
     # without the others.
     #
-    # Everything that means "an addressable CELL" now reads `paint_width` /
+    # Everything that means "an addressable CELL" reads `paint_width` /
     # `paint_height`, and everything that means "the size of a tile's ART"
     # -- the atlas, the tile ghost, the terrain ghost, an object's default
-    # box -- still reads `tile_width` / `tile_height`. Today the two are
-    # equal, which is precisely why the split is worth making now: it is a
-    # rename with no behaviour in it, and it is the single seam a sub-cell
-    # collision resolution divides.
+    # box -- still reads `tile_width` / `tile_height`.
+    #
+    # THE SEAM IS NOW LOAD-BEARING. The split shipped as a rename with no
+    # behaviour in it, against the day a companion layer would divide a tile.
+    # That day is here: a companion declaring `pyoneer_subcell="4"` stores
+    # four masks per tile per axis, and until this funnel subdivided, the
+    # canvas still reported 16 on such a map -- the click snapped to a whole
+    # tile, the mask went into the sub-cell of the same index, and the wall
+    # landed a long way from the cursor. Measured on the 4x4 fixture in
+    # `tools/check_collision_mount.py`: a click at scene pixel (26, 26)
+    # wrote sub-cell (1, 1), which is pixels 4..7 -- 20px up and 20px left of
+    # where the author clicked, and 1,188px on a 100x100 map.
+
+    def paint_unit(self) -> PaintUnit:
+        """One addressable cell, resolved from the MODE and the companion.
+
+        WHICH mode subdivides is the mode's own business -- `EditMode
+        .subdivides` -- and is asked here rather than tested against
+        `EditMode.COLLISION`, so the enum that declares what a drag means
+        also declares whether the thing being dragged can be smaller than a
+        tile. In tile mode a cell is a tile: nothing about a passability
+        layer's resolution should move the grid the author paints art on.
+
+        HOW FINELY is the map's business, and cannot live on the enum: it is
+        `pyoneer_subcell` on the companion this stroke would write into, a
+        FILE FORMAT string read through the engine's own `companion_subcell`
+        rather than re-spelled here, so the cell the editor addresses is the
+        cell the runtime bakes.
+
+        A companion that does not exist yet resolves to 1 -- the documented
+        default of an absent `pyoneer_subcell`, not a guess.
+
+        THE MODE IS NOT THE WHOLE ANSWER, and assuming it was cost 1,200px.
+        `mode.subdivides` says WHICH LAYER a stroke goes to, and the sentence
+        above -- "in tile mode a cell is a tile" -- quietly assumed the active
+        layer is an ART layer. A companion is a selectable row in the Layers
+        panel, so an author can click it and paint on it in TILE mode. Then
+        the assumption is false: measured, a click at px(1599,1599) on a
+        100x100 map wrote companion cell (99,99), which owns x396..399 --
+        1,200 pixels away -- and only 6% of the companion (10,000 of 160,000
+        cells) was addressable at all. The collision tileset lives in the same
+        palette, so this wrote REAL masks: a wall baked at sub-cell (1,1) for
+        a click on (6,6). That is the original defect verbatim, on a surface
+        none of the five named gaps covered.
+
+        So the resolution comes from the LAYER BEING PAINTED, whichever that
+        is. In collision mode that is the companion this stroke would write
+        into; in tile mode it is the active layer itself. A layer with no
+        declaration answers 1, so an art layer is unaffected and this stays
+        one read.
+        """
+        document = self.document
+        tile_w, tile_h = document.tile_width, document.tile_height
+        name = (self.companion_name() if self.mode.subdivides
+                else self.active_layer)
+        subcell, refusal = self.__declared_subcell(name)
+        return PaintUnit(subcell, tile_w // subcell, tile_h // subcell,
+                         layer=name, refusal=refusal)
+
+    def __declared_subcell(self, name: str | None) -> tuple[int, str | None]:
+        """(resolution, why it could not be read) for one companion layer.
+
+        The ONE read of `pyoneer_subcell` on this class. `paint_unit` and
+        `overlay_subcell` both come through here, so the cell a click lands
+        in and the cell the readout draws are the same cell by construction
+        rather than by two functions agreeing.
+
+        1 for a layer that does not exist yet, which is the answer for the
+        companion this stroke is about to create: `map.layer.add` builds it
+        at the map's size and takes no resolution. An absent property also
+        means 1 -- that is the file format's documented default, decided at
+        `SUBCELL` in `scripts/core/collision_runtime.py`, not a guess made
+        here.
+
+        The error is RETURNED rather than raised because this is consulted on
+        every mouse move and every grid line; see `PaintUnit.refusal`.
+        """
+        document = self.document
+        if name is None or name not in document.tile_layer_names():
+            return 1, None
+        try:
+            return companion_subcell(document, name), None
+        except PyoneerError as exc:
+            return 1, str(exc)
+
+    @property
+    def paint_subcell(self) -> int:
+        """How many addressable cells one map tile divides into, per axis."""
+        return self.paint_unit().subcell
 
     @property
     def paint_width(self) -> int:
         """Pixels per addressable cell, horizontally."""
-        return self.document.tile_width
+        return self.paint_unit().width
 
     @property
     def paint_height(self) -> int:
         """Pixels per addressable cell, vertically."""
-        return self.document.tile_height
+        return self.paint_unit().height
 
     def cell_at(self, scene_x: float, scene_y: float) -> tuple[int, int]:
         # Floor division, not int(): int(-0.5) is 0, which puts the cell one
         # to the right of where the cursor actually is on the left edge.
-        return (int(scene_x // self.paint_width),
-                int(scene_y // self.paint_height))
+        unit = self.paint_unit()
+        return (int(scene_x // unit.width), int(scene_y // unit.height))
 
     def __footprint(self, stamp: Stamp | None = None):
         """The stamp this press should place, and where it sits.
@@ -578,28 +701,158 @@ class MapCanvas(QGraphicsView):
             return None
         return document.tile_layer(name)
 
-    def collision_stack(self) -> list[CollisionLayer]:
+    def collision_stroke_refusal(self) -> str | None:
+        """Why a collision stroke cannot be PLACED right now, or None.
+
+        THE GUARD. A mask is only meaningful at the resolution its companion
+        declares, and the cell a click resolved to came from `paint_unit`.
+        If those two numbers disagree, every cell of the stroke is written at
+        the right index into the wrong grid -- which does not look like a
+        bug, it looks like collision that is slightly off, and the author
+        finds it by walking into a wall that is not there.
+
+        So this reads the declaration a SECOND time, straight off the
+        document, and compares. Two independent reads is normally the shape
+        this file spends its docstrings arguing against; here it is the whole
+        point. `paint_unit` is the funnel, and a guard that consulted the
+        funnel would be asserting `x == x`. Close gap 2 correctly and this is
+        unreachable -- which is the right outcome, and is why it is a status
+        line rather than an exception: the next person to touch `paint_width`
+        gets a refusal naming both numbers instead of a misplaced wall.
+
+        Law 7, stated in the negative: never write a mask you cannot place.
+        Law 13 decides the shape -- a STATUS LINE, never a dialog, because
+        this sits on the paint path and `editor/ui/ask.py` is the only seam
+        in this editor that is allowed to be modal.
+        """
+        unit = self.paint_unit()
+        if unit.refusal is not None:
+            return (f"{unit.refusal} — refusing the stroke rather than "
+                    f"writing a mask at a resolution nobody agrees on")
+        name = self.companion_name()
+        document = self.document
+        if name is None or name not in document.tile_layer_names():
+            # There is nothing to disagree with yet. The companion this
+            # stroke creates is created at the map's size, which is 1x, and
+            # `paint_unit` says 1 for exactly the same reason.
+            return None
+        declared = companion_subcell(document, name)      # cannot raise: see above
+        if declared == unit.subcell:
+            return None
+        # The worst cell on THIS map, so the number is about the map in front
+        # of the author rather than about a hypothetical one. Cell i is
+        # written at i x the companion's cell size and was clicked at i x the
+        # paint unit, so the two diverge by i x the difference; the largest i
+        # that both addresses and lands is bounded by whichever grid runs out
+        # first. Both cells are square by construction -- `companion_subcell`
+        # refuses a subcell the tile size does not divide -- so one axis tells
+        # the whole story. Measured: 1,188px on a 100x100 map at 16px.
+        cell_px = document.tile_width // declared
+        last = min(document.width * unit.subcell,
+                   document.width * declared) - 1
+        drift = last * abs(unit.width - cell_px)
+        return (f"refusing this collision stroke: a click here addresses a "
+                f"{unit.width}x{unit.height}px cell ({unit.subcell} per tile) "
+                f"but {name!r} declares {SUBCELL}={declared}, which is "
+                f"{cell_px}x{document.tile_height // declared}px — a mask "
+                f"would land up to {drift}px from the cursor")
+
+    def collision_stack(self, subcell: int | None = None) -> list[CollisionLayer]:
         """Every layer that declares a companion, TOPMOST FIRST.
 
         Topmost first is `collision.resolve`'s contract and the reverse of a
-        tmx layer list, so the sort is by draw depth and then reversed. The
-        members are lazy readers over the live document, which is why this is
-        cheap enough to rebuild whenever the stack is consulted rather than
-        cached and invalidated.
+        tmx layer list, so the sort is by draw depth and then reversed.
+
+        Rebuilt whenever the stack is consulted rather than cached and
+        invalidated, which is affordable rather than free: each member costs
+        one flat snapshot of its companion's gids -- see
+        `layer_from_companion`, which explains why a snapshot and not the
+        closure it used to be. Measured on a 400x400 companion, the largest
+        this repository can currently produce: 0.78 ms for the whole stack,
+        against the 6.9 ms rebuild every command already pays and the
+        160,000-cell resolve a bake does with it. A cache keyed on nothing
+        reliable is how the readout comes to disagree with the map, which is
+        the worst failure an instrument has.
+
+        `subcell` is the resolution the STACK is read at, defaulting to the
+        finest any of its members declares -- `field_subcell`, the same
+        function the engine's `field_from_map` calls, so a stack resolved here
+        and a field baked there index the same cells.
+
+        Every member is handed `scale`, the field's resolution divided by its
+        own, and that argument is the difference between a mixed stack being
+        readable and being wrong: asking a 1x companion for a sub-cell
+        coordinate does not lose that layer, it MOVES it. Measured on the
+        engine side before `companion_reader` took a scale -- a 1x wall on map
+        row 7, read at 4x, answered at pixel row 28 instead of 112. This
+        overlay is what an author reads to find out where a wall IS, so
+        dropping the scale here draws that same wall 84px from the truth.
         """
         first_gid = self.collision_first_gid
         if first_gid is None:
             return []
         document = self.document
+        if subcell is None:
+            subcell = self.stack_subcell()
         names = document.tile_layer_names()
         stack: list[CollisionLayer] = []
         for name in sorted(names, key=self.__depth_of):
             companion = self.companion_name(name)
-            if companion and companion in names and companion != name:
-                stack.append(layer_from_companion(
-                    document.tile_layer(companion), first_gid, name=name))
+            if not companion or companion not in names or companion == name:
+                continue
+            try:
+                own = companion_subcell(document, companion)
+            except PyoneerError:
+                # `field_subcell` already refused this map and said why; a
+                # second raise here would only replace that message with this
+                # one. Reading it at its declared 1x is what every map written
+                # before `pyoneer_subcell` existed means.
+                own = 1
+            stack.append(layer_from_companion(
+                document.tile_layer(companion), first_gid, name=name,
+                scale=max(1, subcell // own)))
         stack.reverse()
         return stack
+
+    def stack_subcell(self) -> int:
+        """The finest resolution any companion on this map declares.
+
+        `field_subcell`, the engine's own function, so the overlay's
+        all-layers view is drawn at exactly the resolution `field_from_map`
+        bakes at. Named differently from the function it calls because the
+        canvas has two resolutions and they are not the same question: this
+        one is about the whole STACK, `paint_unit` is about the one companion
+        a stroke writes into.
+
+        It raises on a stack whose declarations do not nest; that raise is
+        swallowed here for `paint_unit`'s reason -- this is consulted from
+        `rebuild`, and a map the editor cannot draw is a map the author
+        cannot fix.
+        """
+        try:
+            return field_subcell(self.document)
+        except PyoneerError:
+            return 1
+
+    def overlay_subcell(self) -> int:
+        """The resolution the READOUT is drawn at.
+
+        Not always `paint_unit`'s, and deliberately: the all-layers view
+        resolves every collision layer into the one answer the player will
+        feel, and that answer only exists at the finest resolution in the
+        stack. An author painting a 1x layer on a map that also carries a 4x
+        one paints whole tiles and READS quarter-tiles, which is exactly what
+        the game will do with the same two layers.
+
+        Otherwise it is the active companion's own resolution -- read through
+        `__declared_subcell`, the same call `paint_unit` makes, because
+        `paint_unit` answers 1 in TILE mode and re-sizing a scene-sized pixmap
+        on a mode switch would be paying a bake for a change in what is being
+        painted rather than in what is being shown.
+        """
+        if self.all_layers:
+            return self.stack_subcell()
+        return self.__declared_subcell(self.companion_name())[0]
 
     # -- building ----------------------------------------------------------
 
@@ -671,7 +924,7 @@ class MapCanvas(QGraphicsView):
                                 depth_of(name) + 0.5, name)
 
         self.__draw_grid(scene, document, width, height)
-        self.__mount_overlay(document)
+        self.__mount_overlay()
 
         if self.atlas.missing:
             self.status.emit(
@@ -714,6 +967,11 @@ class MapCanvas(QGraphicsView):
         coarser grid hides lines and can never invent them. That is the
         difference between a grid setting and a lie: at any step, every
         line the author sees is somewhere a click can actually land.
+
+        Which is why the unit is read ONCE, into a local, rather than per
+        line: `paint_unit` reaches the document, and a 100x100 map at 4x is
+        401 lines per axis. Same number for every line of one grid is also
+        the only way the promise above can hold.
         """
         if not self.show_grid:
             return
@@ -725,13 +983,14 @@ class MapCanvas(QGraphicsView):
         # step arriving at the canvas means a CALLER set it, and
         # `grid_lines` raising is the right way to find that out.
         step = self.grid_step
-        columns = width // self.paint_width
-        rows = height // self.paint_height
+        unit = self.paint_unit()
+        columns = width // unit.width
+        rows = height // unit.height
         for column in grid_lines(columns, step):
-            x = column * self.paint_width
+            x = column * unit.width
             scene.addLine(x, 0, x, height, pen).setZValue(1000)
         for row in grid_lines(rows, step):
-            y = row * self.paint_height
+            y = row * unit.height
             scene.addLine(0, y, width, y, pen).setZValue(1000)
 
     def set_layer_visible(self, name: str, visible: bool) -> None:
@@ -780,11 +1039,23 @@ class MapCanvas(QGraphicsView):
         self.status.emit(mode.tip)
 
     def set_all_layers(self, on: bool) -> None:
-        """Resolve the whole stack instead of showing one layer's opinion."""
+        """Resolve the whole stack instead of showing one layer's opinion.
+
+        A re-bake is normally enough -- the same cells, a different answer in
+        each. It is not enough when the two views are drawn at different
+        RESOLUTIONS: a 1x active layer on a map that also carries a 4x one
+        resolves at 4x, which is a different number of cells and a different
+        pixmap, so the item has to be rebuilt rather than repainted. Asked as
+        a geometry comparison rather than as "is this map mixed", because
+        that is the question `__mount_overlay` will ask anyway.
+        """
         if bool(on) == self.all_layers:
             return
         self.all_layers = bool(on)
         self.__collision_stale = True
+        if self.overlay_geometry() != self.__overlay_geometry:
+            self.rebuild()
+            return
         if self.mode is EditMode.COLLISION:
             self.__bake_overlay()
 
@@ -796,7 +1067,52 @@ class MapCanvas(QGraphicsView):
         if self.__overlay is not None and self.__overlay.scene() is not None:
             self.__overlay.scene().removeItem(self.__overlay)
 
-    def __mount_overlay(self, document) -> None:
+    def overlay_geometry(self) -> tuple[int, int, int, int]:
+        """The readout's size, in cells and in pixels per cell.
+
+        FROM THE COMPANION, NOT FROM THE MAP. The overlay draws what is in
+        the file, so its cells have to BE the file's cells: a companion
+        declaring `pyoneer_subcell="4"` holds sixteen masks per map tile, and
+        an overlay sized from the map drew one 16px glyph where the file has
+        sixteen 4px ones -- a readout that disagreed with the layer it was
+        reading, in the instrument whose only job is to agree with it.
+
+        Taking the companion's OWN width and height, rather than
+        `map * subcell`, closes a second one for free: a companion smaller
+        than the map is legal (`file_gid_reader` answers 0 past its edge on
+        purpose), and `bake` fits a flat row-major list by index, so a
+        narrower layer baked into a map-wide overlay skewed by one row per
+        row. Now the two grids are the same grid.
+
+        The all-layers view is the exception and sizes from the MAP, because
+        a resolved field is not any one layer -- it is every layer, at the
+        finest resolution any of them declares, which is what the engine
+        bakes and therefore what the player will feel.
+        """
+        document = self.document
+        subcell = self.overlay_subcell()
+        cell_w = max(1, document.tile_width // subcell)
+        cell_h = max(1, document.tile_height // subcell)
+        if not self.all_layers:
+            companion = self.companion_layer()
+            if companion is not None:
+                return companion.width, companion.height, cell_w, cell_h
+        return (document.width * subcell, document.height * subcell,
+                cell_w, cell_h)
+
+    def overlay_cell_at(self, scene_x: float, scene_y: float) -> tuple[int, int]:
+        """Which READOUT cell a scene point is in.
+
+        `cell_at`'s sibling, and separate from it because the two grids are
+        allowed to differ: painting a 1x layer under the all-layers view is
+        a 16px brush over a 4px readout, and the status line has to name the
+        cell the cursor is actually over rather than the top-left corner of
+        the cell the brush would fill.
+        """
+        _width, _height, cell_w, cell_h = self.overlay_geometry()
+        return int(scene_x // cell_w), int(scene_y // cell_h)
+
+    def __mount_overlay(self) -> None:
         """Put the readout back into the freshly cleared scene.
 
         Built once per map GEOMETRY and re-added, never rebuilt: the item
@@ -804,8 +1120,7 @@ class MapCanvas(QGraphicsView):
         expensive enough that doing either on every command -- and a command
         is every click -- would be felt.
         """
-        geometry = (document.width, document.height,
-                    document.tile_width, document.tile_height)
+        geometry = self.overlay_geometry()
         if self.__overlay is None or self.__overlay_geometry != geometry:
             self.__overlay = CollisionOverlay(*geometry)
             self.__overlay_geometry = geometry
@@ -832,11 +1147,27 @@ class MapCanvas(QGraphicsView):
             overlay.bake([])                  # pads with NO_DATA: draws nothing
             return
         if self.all_layers:
-            overlay.bake_resolved(self.collision_stack())
+            # At the overlay's OWN resolution, and every member scaled into
+            # it -- see `collision_stack`. The overlay was sized from the
+            # same number, so cell (x, y) here and cell (x, y) there are the
+            # same square of the map.
+            overlay.bake_resolved(self.collision_stack(self.overlay_subcell()))
             return
         companion = self.companion_layer()
         overlay.bake(masks_from_layer(companion, first_gid)
                      if companion is not None else [])
+
+    def __overlay_scale(self) -> int:
+        """How many overlay cells one PAINT cell covers, per axis.
+
+        1 whenever the readout and the brush are at the same resolution,
+        which is every single-layer view and every unmixed map. It is not 1
+        for an author painting a 1x layer while the all-layers view resolves
+        the map at 4x: one click changes sixteen cells of that readout, and
+        writing only the first of them leaves fifteen showing the answer from
+        before the stroke.
+        """
+        return max(1, self.overlay_subcell() // max(1, self.paint_subcell))
 
     def __sync_overlay(self, cells) -> None:
         """Repaint only the cells a stroke just changed.
@@ -846,16 +1177,24 @@ class MapCanvas(QGraphicsView):
         rebuild already pays. The resolved view re-resolves the same cells
         rather than falling back to a bake, because changing one cell of one
         layer can only change that cell's answer.
+
+        `cells` are PAINT cells -- what the stroke wrote -- and the overlay is
+        indexed in overlay cells, so each one expands by `__overlay_scale`.
         """
         overlay = self.__overlay
         if overlay is None or self.collision_first_gid is None:
             return
+        scale = self.__overlay_scale()
         if self.all_layers:
-            stack = self.collision_stack()
+            stack = self.collision_stack(self.overlay_subcell())
             for x, y in cells:
-                answer = resolve(stack, x, y, undecided=NO_DATA)
-                overlay.set_cell(x, y, answer.mask, owner=answer.layer,
-                                 conflicted=answer.conflicted)
+                for offset_y in range(scale):
+                    for offset_x in range(scale):
+                        cx, cy = x * scale + offset_x, y * scale + offset_y
+                        answer = resolve(stack, cx, cy, undecided=NO_DATA)
+                        overlay.set_cell(cx, cy, answer.mask,
+                                         owner=answer.layer,
+                                         conflicted=answer.conflicted)
             return
         companion = self.companion_layer()
         if companion is None:
@@ -1071,9 +1410,12 @@ class MapCanvas(QGraphicsView):
         if self.mode is EditMode.COLLISION and self.__overlay is not None:
             # What the overlay is already showing, said in words -- including
             # which layer decided and whether one below it disagrees, neither
-            # of which survives being reduced to a colour.
-            self.status.emit(f"cell ({column}, {row})   "
-                             f"{self.__overlay.describe(column, row)}")
+            # of which survives being reduced to a colour. Read at the
+            # OVERLAY's cell, which is the brush's cell on every unmixed map
+            # and finer than it under the all-layers view.
+            self.status.emit(
+                f"cell ({column}, {row})   "
+                f"{self.__overlay.describe(*self.overlay_cell_at(point.x(), point.y()))}")
             super().mouseMoveEvent(event)
             return
 
@@ -1148,6 +1490,15 @@ class MapCanvas(QGraphicsView):
         if self.__active_tile_layer() is None:
             self.status.emit("select a tile layer to give collision to")
             return
+        # THE GUARD, above the picker on purpose: a resolution the canvas and
+        # the file disagree about makes a PICK read the wrong cell just as
+        # surely as it makes a stroke write one, and neither is worth
+        # provisioning a tileset for. Cheap and local like the refusal above
+        # it -- it reads the document and writes nothing.
+        misplaced = self.collision_stroke_refusal()
+        if misplaced is not None:
+            self.status.emit(misplaced)
+            return
         if self.tool is Tool.PICKER:
             self.__pick_mask(column, row)
             return
@@ -1202,11 +1553,22 @@ class MapCanvas(QGraphicsView):
         document = self.document
         # Before the companion exists there is nothing to read, and every
         # cell of it is empty -- which is exactly what a reader that answers 0
-        # says. The layer itself is created by the commit, at the map's size,
-        # which is why the bounds come from the map and not from the reader.
+        # says.
+        #
+        # THE BOUNDS ARE THE LAYER'S, NOT THE MAP'S. When the companion is
+        # there, they are literally its own width and height, which is how a
+        # companion finer than the map -- or smaller than it, which was
+        # always legal -- gets clipped to what actually exists. When it is
+        # not, the commit creates it at the map's size in PAINT cells, so
+        # that is what the stroke may write into; spelled through the paint
+        # unit rather than as `document.width` so it stays true the day
+        # `map.layer.add` learns to create a finer one.
+        subcell = self.paint_subcell
         read = companion.get_tile if companion is not None else _EMPTY_READER
-        bounds = (Bounds(companion.width, companion.height) if companion
-                  is not None else Bounds(document.width, document.height))
+        bounds = (Bounds(companion.width, companion.height)
+                  if companion is not None
+                  else Bounds(document.width * subcell,
+                              document.height * subcell))
         stamp, anchor = self.__footprint(
             Stamp.single(opinion_to_gid(self.mask, first_gid)))
         self.__stroke = Stroke(

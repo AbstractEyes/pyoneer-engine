@@ -5,7 +5,7 @@
 
 > Runtime collision: read the masks the editor authors, and refuse a step.
 
-`scripts.core.collision_runtime` · 1346 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.collision_runtime` · 1385 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -77,25 +77,25 @@
   - Which layer holds `layer_name`'s masks. Declared wins over convention.
 - `scripts/core/collision_runtime.py:960` `companion_subcell(document, companion: str) -> int` #TAG:companion_subcell
   - How finely `companion` divides a map tile, validated against the map.
-- `scripts/core/collision_runtime.py:1026` `field_subcell(document, pairs: Sequence[tuple[str, str]] | None=None) -> int` #TAG:field_subcell
+- `scripts/core/collision_runtime.py:1065` `field_subcell(document, pairs: Sequence[tuple[str, str]] | None=None) -> int` #TAG:field_subcell
   - The resolution the whole stack has to bake at: the FINEST declared.
-- `scripts/core/collision_runtime.py:1061` `layer_depth(document, layer_name: str) -> int` #TAG:layer_depth
+- `scripts/core/collision_runtime.py:1100` `layer_depth(document, layer_name: str) -> int` #TAG:layer_depth
   - Where a layer sits in the draw order, by the renderer's own rules.
-- `scripts/core/collision_runtime.py:1084` `companion_pairs(document) -> list[tuple[str, str]]` #TAG:companion_pairs
+- `scripts/core/collision_runtime.py:1123` `companion_pairs(document) -> list[tuple[str, str]]` #TAG:companion_pairs
   - (art layer, companion layer) for every layer that has masks, TOPMOST
-- `scripts/core/collision_runtime.py:1120` `gid_inverse(tmx_data) -> dict[int, int]` #TAG:gid_inverse
+- `scripts/core/collision_runtime.py:1159` `gid_inverse(tmx_data) -> dict[int, int]` #TAG:gid_inverse
   - pytmx's internal gid -> the FILE gid, flip flags included.
-- `scripts/core/collision_runtime.py:1152` `_flag_bits(flags: Any) -> int` #TAG:_flag_bits
+- `scripts/core/collision_runtime.py:1191` `_flag_bits(flags: Any) -> int` #TAG:_flag_bits
   - A pytmx `TileFlags` triple as tmx flip bits.
-- `scripts/core/collision_runtime.py:1169` `parsed_layer(tmx_data, name: str)` #TAG:parsed_layer
+- `scripts/core/collision_runtime.py:1208` `parsed_layer(tmx_data, name: str)` #TAG:parsed_layer
   - The named tile layer of a parsed map, or None.
-- `scripts/core/collision_runtime.py:1188` `file_gid_reader(tmx_data, layer) -> Reader` #TAG:file_gid_reader
+- `scripts/core/collision_runtime.py:1227` `file_gid_reader(tmx_data, layer) -> Reader` #TAG:file_gid_reader
   - A parsed tile layer as a reader of FILE gids.
-- `scripts/core/collision_runtime.py:1214` `document_gid_reader(tile_layer) -> Reader` #TAG:document_gid_reader
+- `scripts/core/collision_runtime.py:1253` `document_gid_reader(tile_layer) -> Reader` #TAG:document_gid_reader
   - A `MapDocument` tile layer as a reader of FILE gids.
-- `scripts/core/collision_runtime.py:1234` `collision_layers(document, tmx_data=None, *, subcell: int | None=None, pairs: Sequence[tuple[str, str]] | None=None) -> list[CollisionLayer]` #TAG:collision_layers
+- `scripts/core/collision_runtime.py:1273` `collision_layers(document, tmx_data=None, *, subcell: int | None=None, pairs: Sequence[tuple[str, str]] | None=None) -> list[CollisionLayer]` #TAG:collision_layers
   - The map's collision stack, TOPMOST FIRST, as lazy readers.
-- `scripts/core/collision_runtime.py:1279` `field_from_map(source, *, document=None, undecided: int=PASS_ALL, outside: int=BLOCK_ALL) -> CollisionField | None` #TAG:field_from_map
+- `scripts/core/collision_runtime.py:1318` `field_from_map(source, *, document=None, undecided: int=PASS_ALL, outside: int=BLOCK_ALL) -> CollisionField | None` #TAG:field_from_map
   - The map's passability, baked, or None when it declares none.
 
 ## Classes

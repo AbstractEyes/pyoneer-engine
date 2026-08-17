@@ -30,7 +30,14 @@ pygame.display.set_mode((64, 64))
 import pytmx
 
 from config.managers.map_data import AssetMapManager, MapData, resolve_map_path
-from scripts.loaders.map_document import MapDocument, format_property, parse_property
+from scripts.core.collision_runtime import SUBCELL, companion_subcell
+from scripts.core.errors import PyoneerConfigError
+from scripts.loaders.map_document import (
+    MapDocument,
+    format_property,
+    parse_property,
+    subcell_property,
+)
 
 MAP_PATH = os.path.join(_bootstrap.REPO_ROOT, "data", "maps", "test.tmx")
 
@@ -64,6 +71,32 @@ def raises(label, exc_type, fn):
         fn()
     except exc_type as exc:
         print(f"  ok   {label:<54} {type(exc).__name__}")
+        return
+    except Exception as exc:  # noqa: BLE001 - reporting tool
+        print(f"  FAIL {label:<54} raised {type(exc).__name__}: {exc}")
+        failures.append(label)
+        return
+    print(f"  FAIL {label:<54} did not raise")
+    failures.append(label)
+
+
+def raises_naming(label, exc_type, fn, *needles):
+    """It raises, AND the message carries every one of `needles`.
+
+    A refusal that does not name the numbers is a refusal the author has to
+    go and measure. `raises` above proves only that something went wrong,
+    which is the half of this invariant that was already covered.
+    """
+    try:
+        fn()
+    except exc_type as exc:
+        missing = [n for n in needles if n not in str(exc)]
+        if missing:
+            print(f"  FAIL {label:<54} message omits {missing}")
+            print(f"        {str(exc).splitlines()[0]}")
+            failures.append(label)
+            return
+        print(f"  ok   {label:<54} {type(exc).__name__}, names {list(needles)}")
         return
     except Exception as exc:  # noqa: BLE001 - reporting tool
         print(f"  FAIL {label:<54} raised {type(exc).__name__}: {exc}")
@@ -244,6 +277,176 @@ try:
     expect("the round trip is byte identical again", document.to_bytes(), ORIGINAL)
     expect("removing it twice is False, not an exception",
            entity.remove_object(spawned.id), False)
+
+    # --------------------------------------------------------------------
+    print()
+    print("a 4x sub-cell companion is CREATABLE, and undoes byte-exactly")
+    # --------------------------------------------------------------------
+    # The dimensions are the point. Before add_layer took them, every layer
+    # the editor could create was the map's size, so the format the engine
+    # reads -- a companion `subcell` times finer -- could not be written by
+    # any editor action at all.
+    #
+    # Nothing here pins what the map CONTAINS. It reads width, height and
+    # tile size off whatever the file is and asserts the arithmetic against
+    # those, so repainting test.tmx cannot make this red.
+    map_width, map_height = document.width, document.height
+
+    def added(*args, **kwargs):
+        """add_layer with the has-no-depth warning silenced. Every probe name
+        below is deliberately absent from MAP_DEPTH, that warning is the
+        subject of its own assertion elsewhere, and printing it three times
+        here would bury the lines that are being measured."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return document.add_layer(*args, **kwargs)
+
+    fine = added("SubcellProbe", "tile", subcell=4)
+    expect("the layer is subcell x the map on both axes",
+           (fine.width, fine.height), (map_width * 4, map_height * 4))
+    expect("its csv holds one gid per cell, not one per map tile",
+           len(fine), map_width * 4 * map_height * 4)
+    expect("and every one of them is empty", set(fine.gids()), {0})
+    expect("the declaration went on the layer, in one command with the size",
+           fine.properties.get(SUBCELL), 4)
+    expect("written as the file-format string, not a second spelling",
+           (SUBCELL, subcell_property()), ("pyoneer_subcell", "pyoneer_subcell"))
+
+    with_fine = document.to_bytes()
+    expect("the element declares the same size its csv holds",
+           b'name="SubcellProbe" width="%d" height="%d"'
+           % (map_width * 4, map_height * 4) in with_fine, True)
+    expect("the property serializes as a typed int Tiled will show",
+           b'<property name="pyoneer_subcell" type="int" value="4"/>'
+           in with_fine, True)
+    expect("no lone LF was introduced by a 160,000-cell payload",
+           with_fine.count(b"\r\n"), with_fine.count(b"\n"))
+
+    # The ENGINE's own reader, on the document the WRITER just produced.
+    # This is the half that a check asserting only "width == 400" cannot
+    # reach: the two sides agreeing is the whole feature.
+    expect("the engine reads the factor back off it",
+           companion_subcell(document, "SubcellProbe"), 4)
+
+    expect("remove_layer takes it out", document.remove_layer("SubcellProbe"), True)
+    expect("and a 4x layer round trips to the original bytes",
+           document.to_bytes(), ORIGINAL)
+
+    print()
+    print("...and every way of asking for one that cannot load is refused")
+    # BOTH HALVES. The three above prove it lets a good one through; these
+    # prove it stops the bad ones, and that the document is untouched after
+    # each refusal -- a half-written companion is a map that raises at load,
+    # with nothing for the author to undo.
+    raises_naming(
+        "explicit dimensions that contradict the factor", PyoneerConfigError,
+        lambda: added("Bad", "tile", subcell=4,
+                                   width=map_width * 2, height=map_height * 2),
+        "pyoneer_subcell=4", f"{map_width * 2}x{map_height * 2}",
+        f"{map_width * 4}x{map_height * 4}")
+    expect("the refused layer left no trace",
+           ("Bad" in document.layer_names(), document.to_bytes() == ORIGINAL),
+           (False, True))
+    raises_naming(
+        "a factor the tile size does not divide", PyoneerConfigError,
+        lambda: added("Bad", "tile", subcell=3),
+        "pyoneer_subcell=3", f"{document.tile_width}x{document.tile_height}px")
+    expect("that one rolled the layer back out too",
+           ("Bad" in document.layer_names(), document.to_bytes() == ORIGINAL),
+           (False, True))
+    raises_naming("a factor below 1", PyoneerConfigError,
+                  lambda: added("Bad", "tile", subcell=0),
+                  "pyoneer_subcell=0")
+    raises_naming("a zero-width layer", PyoneerConfigError,
+                  lambda: added("Bad", "tile", width=0),
+                  "0x%d" % map_height)
+    raises_naming("dimensions on an object layer", PyoneerConfigError,
+                  lambda: added("Bad", "object", width=8),
+                  "pyoneer_subcell", "object layer")
+    expect("the document is still byte-identical after all five refusals",
+           document.to_bytes(), ORIGINAL)
+
+    print()
+    print("explicit dimensions, with no factor declared at all")
+    plain = added("PlainProbe", "tile", width=7, height=3)
+    expect("a layer may be any size the caller names",
+           (plain.width, plain.height, len(plain)), (7, 3, 21))
+    expect("and declares nothing it was not asked to",
+           plain.properties.as_dict(), {})
+    document.remove_layer("PlainProbe")
+    expect("it also comes back byte-identically", document.to_bytes(), ORIGINAL)
+
+    default = added("DefaultProbe", "tile")
+    expect("omitting them is still exactly the map's size",
+           (default.width, default.height), (map_width, map_height))
+    document.remove_layer("DefaultProbe")
+    expect("unchanged behaviour for every caller that predates this",
+           document.to_bytes(), ORIGINAL)
+
+    # --------------------------------------------------------------------
+    print()
+    print("a shrunken companion is caught at LOAD, not walked through")
+    # --------------------------------------------------------------------
+    # A synthetic map, not test.tmx: this is about a shape the author's tmx
+    # does not have and must never silently acquire. A finite map's layer
+    # width/height are spec'd to equal the map's, so Tiled MAY rewrite a 4x
+    # companion back to map size on the next save. Nobody has been able to
+    # run Tiled to find out. So the case is detected rather than resolved.
+    def tiny_map(layer_width: int, layer_height: int,
+                 declare: str | None) -> bytes:
+        """A 4x4 map at 16px whose one layer is `layer_width` x
+        `layer_height` and declares `declare`, or nothing.
+
+        Hand-built rather than produced by `add_layer`, on purpose: this
+        section is about a file the ENGINE meets, and generating it with the
+        writer under test would only prove the writer agrees with itself.
+        """
+        rows = ",\n".join(
+            ",".join("0" for _ in range(layer_width))
+            + ("," if y < layer_height - 1 else "")
+            for y in range(layer_height))
+        declaration = (
+            b'  <properties>\n'
+            b'   <property name="pyoneer_subcell" type="int" value="%s"/>\n'
+            b'  </properties>\n' % declare.encode()) if declare else b""
+        return (
+            b'<?xml version="1.0" encoding="UTF-8"?>\n'
+            b'<map version="1.10" width="4" height="4" tilewidth="16"'
+            b' tileheight="16" infinite="0" nextlayerid="3" nextobjectid="1">\n'
+            b' <layer id="1" name="FloorCollision" width="%d" height="%d">\n'
+            b'%s'
+            b'  <data encoding="csv">\n%s\n</data>\n'
+            b' </layer>\n'
+            b'</map>\n' % (layer_width, layer_height, declaration,
+                           rows.encode()))
+
+    shrunken = MapDocument.from_bytes(tiny_map(4, 4, "4"))
+    raises_naming(
+        "a 4x companion resized to the map's size raises", PyoneerConfigError,
+        lambda: companion_subcell(shrunken, "FloorCollision"),
+        "pyoneer_subcell=4", "4x4", "16x16", "240", "TILED")
+
+    # The other half, and the reason this warns instead of raising for every
+    # small companion: part of a map authored at 4x is a real shape, already
+    # supported, and reads NO_DATA past its edge.
+    partial = MapDocument.from_bytes(tiny_map(8, 8, "4"))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        expect("a companion smaller than 4x the map is still legal",
+               companion_subcell(partial, "FloorCollision"), 4)
+    expect("but it says how many sub-cells have no mask",
+           [w for w in caught if "192 of 256" in str(w.message)] != [], True)
+
+    exact = MapDocument.from_bytes(tiny_map(16, 16, "4"))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        expect("a correctly sized 4x companion loads",
+               companion_subcell(exact, "FloorCollision"), 4)
+    expect("and says nothing at all about it", list(caught), [])
+
+    undeclared = MapDocument.from_bytes(tiny_map(4, 4, None))
+    expect("a map-sized companion declaring nothing is still 1x, silently",
+           companion_subcell(undeclared, "FloorCollision"), 1)
 
     # --------------------------------------------------------------------
     print()

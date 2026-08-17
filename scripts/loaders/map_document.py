@@ -95,6 +95,21 @@ from typing import Any, Iterator
 from scripts.core.errors import PyoneerAssetMissingError, PyoneerConfigError, warn_content
 from scripts.core.log import trace_assets
 
+
+def subcell_property() -> str:
+    """The tmx layer property that declares a companion's sub-cell factor.
+
+    A LOOKUP, never a second spelling. `scripts/core/collision_runtime.py`
+    owns that string -- it is file format, so law 8 makes it stable once
+    referenced and a retype here would be a rename waiting to disarm every
+    companion carrying it. This module only needs the name to write it and to
+    name it in a refusal, and it imports it late because collision is the one
+    thing a map WRITER has no business dragging in at import time.
+    """
+    from scripts.core.collision_runtime import SUBCELL
+    return SUBCELL
+
+
 # ---------------------------------------------------------------------------
 # Serialization primitives
 #
@@ -1131,12 +1146,35 @@ class MapDocument:
                   group: str | None = None,
                   index: int | None = None,
                   fill: int = 0,
-                  layer_id: int | None = None) -> "TileLayer | ObjectLayer":
+                  layer_id: int | None = None,
+                  width: int | None = None,
+                  height: int | None = None,
+                  subcell: int | None = None) -> "TileLayer | ObjectLayer":
         """Add a `<layer>` or `<objectgroup>` and return its wrapper.
 
-        `kind` is "tile" or "object". A tile layer is created at the map's
-        own size, filled with `fill` (0 = empty), and written in the same csv
-        shape the file already uses.
+        `kind` is "tile" or "object". A tile layer is created at `width` x
+        `height` -- the MAP's size when they are omitted, which is what every
+        caller wanted before sub-cell collision existed -- filled with `fill`
+        (0 = empty), and written in the same csv shape the file already uses.
+
+        WHY THE DIMENSIONS ARE AN ARGUMENT.                #TAG:add_layer_dimensions
+        A passability companion at `pyoneer_subcell="4"` is FOUR TIMES the
+        map's width and height, and this function hardcoded `self.width` /
+        `self.height`. So the format the engine reads was unreachable by any
+        editor action: every layer the editor could create was map-sized, and
+        a map-sized layer cannot carry a 4x mask.
+
+        WHY `subcell` SIZES AND DECLARES IN ONE CALL. The two halves are one
+        fact. A layer that is 4x the map and does NOT say so is a layer
+        `companion_subcell` reads as 1x and refuses (it is larger than a 1x
+        companion may be); a layer that says 4 and is map-sized is the
+        shrunken case below. Either half alone is a map that does not load,
+        so making them separable would only be offering a way to write one.
+        The validation itself is `companion_subcell`'s -- the ENGINE's own
+        reader, called rather than mirrored, so what the editor may write is
+        by construction what the engine will read. A factor it refuses takes
+        the layer back out again and raises, rather than leaving a companion
+        behind that makes the map unloadable.
 
         Adding a layer does NOT make it render: the engine resolves a layer
         name to a depth through `scripts/core/depth.py`, and an unmapped name
@@ -1152,6 +1190,20 @@ class MapDocument:
             raise PyoneerConfigError(
                 "this map already has a layer named %r" % name,
                 source=self.path)
+        if kind == "object" and (width is not None or height is not None
+                                 or subcell is not None):
+            # An <objectgroup> in a finite map carries no width/height and no
+            # sub-cell grid at all -- objects are placed in PIXELS. Accepting
+            # the arguments and dropping them is how `transform=` became a
+            # known gap; refusing says which argument was meaningless.
+            raise PyoneerConfigError(
+                "layer %r is an object layer, which has no width, height or "
+                "%s: objects are positioned in pixels, not in cells"
+                % (name, subcell_property()),
+                source=self.path)
+
+        layer_width, layer_height = self.__layer_size(
+            name, width, height, subcell)
 
         tag = "layer" if kind == "tile" else "objectgroup"
         if group is not None:
@@ -1169,20 +1221,30 @@ class MapDocument:
         element.set("id", str(assigned))
         element.set("name", str(name))
 
+        # Bound out here because `__declare_subcell` needs the sibling's
+        # inner whitespace and runs after the block. An object layer with a
+        # factor was refused above, so the None is unreachable rather than a
+        # fallback -- but a NameError one reorder away is not worth saving
+        # two lines.
+        inner: str | None = None
         if kind == "tile":
-            element.set("width", str(self.width))
-            element.set("height", str(self.height))
+            element.set("width", str(layer_width))
+            element.set("height", str(layer_height))
             inner, closing = self.__sibling_shape(parent, "layer")
             data = self._append_child(element, "data")
             data.set("encoding", "csv")
-            data.text = "\n" + self.__csv_payload(fill) + "\n"
+            data.text = "\n" + self.__csv_payload(
+                fill, layer_width, layer_height) + "\n"
             if inner is not None:
                 element.text = inner
             if closing is not None:
                 data.tail = closing
 
         self._touch()
-        trace_assets("add_layer name=%s kind=%s id=%s", name, kind, assigned)
+        if subcell is not None:
+            self.__declare_subcell(name, element, int(subcell), inner)
+        trace_assets("add_layer name=%s kind=%s id=%s %sx%s subcell=%s",
+                     name, kind, assigned, layer_width, layer_height, subcell)
         from scripts.core.depth import resolve_layer_depth
         if resolve_layer_depth(name) is None:
             warn_content(
@@ -1191,20 +1253,96 @@ class MapDocument:
         return (self.tile_layer(name) if kind == "tile"
                 else self.object_layer(name))
 
-    def __csv_payload(self, fill: int) -> str:
+    def __layer_size(self, name: str, width: int | None, height: int | None,
+                     subcell: int | None) -> tuple[int, int]:
+        """The dimensions a new tile layer is written at, checked.
+
+        A declared sub-cell factor and an explicit size are each allowed on
+        their own and are only allowed TOGETHER when they agree, because a
+        companion that declares a factor its dimensions do not support is an
+        authoring error rather than a rounding question. Measured before this
+        existed: a 32x32 field baked from an 8x8 layer's worth of data, no
+        exception and no warning -- fifteen sixteenths of the author's
+        collision simply absent from the map they were walking.
+        """
+        wanted_width = self.width if width is None else int(width)
+        wanted_height = self.height if height is None else int(height)
+        if wanted_width <= 0 or wanted_height <= 0:
+            raise PyoneerConfigError(
+                "layer %r would be %dx%d; a tile layer is at least 1x1"
+                % (name, wanted_width, wanted_height), source=self.path)
+        if subcell is None:
+            return wanted_width, wanted_height
+
+        factor = int(subcell)
+        if factor < 1:
+            raise PyoneerConfigError(
+                "layer %r would declare %s=%d; it is 1 or more (1 means one "
+                "mask per map tile)" % (name, subcell_property(), factor),
+                source=self.path)
+        exact_width, exact_height = self.width * factor, self.height * factor
+        if width is None and height is None:
+            return exact_width, exact_height
+        if (wanted_width, wanted_height) != (exact_width, exact_height):
+            raise PyoneerConfigError(
+                "layer %r declares %s=%d but is %dx%d; on a %dx%d map that "
+                "factor is exactly %dx%d, and any other size means %d - %d = "
+                "%d of its cells are read by nothing"
+                % (name, subcell_property(), factor,
+                   wanted_width, wanted_height, self.width, self.height,
+                   exact_width, exact_height,
+                   exact_width * exact_height, wanted_width * wanted_height,
+                   exact_width * exact_height - wanted_width * wanted_height),
+                source=self.path)
+        return wanted_width, wanted_height
+
+    def __declare_subcell(self, name: str, element: ElementTree.Element,
+                          subcell: int, inner: str | None) -> None:
+        """Write `pyoneer_subcell` on a layer just created, and prove the
+        engine will accept it.
+
+        `companion_subcell` is the reader that decides whether a map loads,
+        so it is also what decides whether this write is allowed -- one
+        validator, called, never a second copy of its rules. A factor it
+        refuses (a value the tile size does not divide, say) rolls the whole
+        layer back out before re-raising, because a half-written companion is
+        a map that raises at load and the author would have nothing to undo.
+        """
+        from scripts.core.collision_runtime import companion_subcell
+        self.tile_layer(name).properties[subcell_property()] = int(subcell)
+        # `_append_child` computes the indent for a <properties> inserted in
+        # front of <data>; the layer's own first-child whitespace was copied
+        # from a sibling and is the shape the rest of the file uses.
+        properties = element.find("properties")
+        if properties is not None and inner is not None:
+            element.text = inner
+            properties.tail = inner
+        try:
+            companion_subcell(self, name)
+        except Exception:
+            self._tile_layers.pop(name, None)
+            self.remove_layer(name)
+            raise
+
+    def __csv_payload(self, fill: int, width: int, height: int) -> str:
         """The csv body, in the shape this file already writes.
 
         Every row ends with a comma except the last, which is what Tiled
         emits and what `_CsvGrid` reproduces when it round-trips an existing
         layer. Producing a different shape would make the first human save
         in Tiled a whole-file diff.
+
+        The size is passed rather than read off the map: a companion layer is
+        `subcell` times the map on each axis, so the grid this renders and
+        the `width=`/`height=` the element declares have to come from one
+        number or `TileLayer` warns that the csv does not match its header.
         """
         if fill < 0:
             raise PyoneerConfigError(
                 "gid %d is negative; tmx gids are unsigned (0 means empty)" % fill,
                 source=self.path)
-        row = ",".join(str(int(fill)) for _ in range(self.width))
-        return ",\n".join(row for _ in range(self.height))
+        row = ",".join(str(int(fill)) for _ in range(width))
+        return ",\n".join(row for _ in range(height))
 
     def remove_layer(self, name: str) -> bool:
         """Remove a layer by name. Returns False if it was not there."""

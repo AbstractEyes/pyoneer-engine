@@ -52,9 +52,11 @@ CHECKS = [
     ("paint", "strokes, stamps, flood fill, one drag is one transaction"),
     ("autotile", "corner masks, terrain recovery, diagonal policy"),
     ("collision", "three-level resolution, .blitmask round trip, mask encoding"),
-    ("collision_view", "collision overlay builds, glyphs distinguish direction bits"),
+    ("collision_view", "collision overlay builds, glyphs distinguish direction "
+                       "bits, a read past a companion's edge abstains"),
     ("map_events", "trigger vocabulary, collision filters, tmx round trip"),
-    ("collision_mount", "the overlay, the mode, one stroke one transaction"),
+    ("collision_mount", "the overlay, the mode, one stroke one transaction, and "
+                        "a 4x map whose mask lands under the cursor"),
     ("collision_runtime", "the engine reads a mask and gates movement"),
     ("collision_field", "map load bakes passability and every body is handed it"),
     ("actions_panel", "trigger authoring, action verbs, exact inverses"),

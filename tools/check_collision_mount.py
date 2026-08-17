@@ -28,6 +28,25 @@ this exact file is where that cost was paid), `MapCanvas` is asserted to
 carry no `confirm` seam, and `editor/ui/canvas.py`'s import graph is walked
 with `ast` to assert `QMessageBox` is not imported at all.
 
+AND IT LANDS WHERE THE AUTHOR CLICKED. The engine learned to read a
+companion four times finer than the map -- `pyoneer_subcell="4"`, sixteen
+masks per tile -- and every check that existed still passed while the editor
+addressed whole tiles over such a map. Measured at the commit before this
+one, on the 4x fixture below: a click at scene pixel (26, 26) wrote sub-cell
+(1, 1), which is pixels 4..7, so the mask landed 20px up and 20px left of
+the cursor and 1,188px away on a 100x100 map. Nothing was red, because no
+check had ever opened a 4x map in a MapCanvas.
+
+So the last third of this file does exactly that, and asserts the thing the
+author can see rather than the thing the code returns: the painted sub-cell
+must CONTAIN the clicked pixel. Then the 1x case in the same shape, because
+a resolution change breaks the map that did not change far more often than
+the one that did; then that the overlay's cells are the COMPANION's cells;
+then that a 1x layer read into a 4x field lands over its own map tile rather
+than four times too close to the origin; and finally the guard, which
+refuses a stroke whose paint unit and companion disagree instead of writing
+a mask it cannot place.
+
 Against its OWN fixture map, never `data/maps/test.tmx`. The author paints
 in that file constantly, and four red suites have come from a check that
 pinned its contents. The fixture here declares exactly what the feature
@@ -75,7 +94,7 @@ from PySide6.QtWidgets import (                                         # noqa: 
     QMessageBox,
 )
 
-from editor.core.collision import NO_DATA, gid_to_opinion               # noqa: E402
+from editor.core.collision import SUBCELL, NO_DATA, gid_to_opinion      # noqa: E402
 from editor.core.layers import (                                        # noqa: E402
     BLOCK_ALL,
     BLOCK_UP,
@@ -90,6 +109,7 @@ from editor.ui.canvas import (                                          # noqa: 
     COLLISION_IMAGE,
     COLLISION_TILESET,
     MapCanvas,
+    PaintUnit,
     write_mask_sheet,
 )
 from editor.ui.collision_view import MASK_DOMAIN, CollisionOverlay      # noqa: E402
@@ -221,6 +241,103 @@ FIXTURE = fixture()
 
 
 # --------------------------------------------------------------------------
+# The sub-cell fixture
+# --------------------------------------------------------------------------
+# A SECOND map, deliberately, and not a parameter on the first: everything
+# above is about a 1x map and has to keep being about a 1x map. This one is
+# small enough that every cell can be named -- 4x4 tiles at 16px, so 64x64
+# scene pixels, and a `pyoneer_subcell="4"` companion divides that into
+# 16x16 cells of 4px each.
+
+FINE_TILES = 4                        # map tiles per axis
+FINE_SUB = 4                          # sub-cells per tile per axis
+FINE_SIDE = FINE_TILES * FINE_SUB     # 16 companion cells per axis
+TILE = 16                             # pixels per map tile
+FINE_CELL = TILE // FINE_SUB          # 4 pixels per sub-cell
+
+
+def grid_csv(cells: dict[tuple[int, int], int], side: int) -> str:
+    """A csv payload for a `side` x `side` layer, one text row per map row."""
+    return ",\n".join(",".join(str(cells.get((x, y), 0)) for x in range(side))
+                      for y in range(side))
+
+
+_FINE_ART = """ <layer id="{id}" name="{name}" width="4" height="4">
+  <properties>
+   <property name="pyoneer_passability" value="{companion}"/>
+  </properties>
+  <data encoding="csv">
+{empty}
+</data>
+ </layer>
+"""
+
+_FINE_DATA = """ <layer id="{id}" name="{name}" width="{w}" height="{h}">
+  <properties>
+   <property name="pyoneer_renders" type="bool" value="false"/>
+{subcell}  </properties>
+  <data encoding="csv">
+{cells}
+</data>
+ </layer>
+"""
+
+_FINE_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.2" tiledversion="1.3.1" orientation="orthogonal" \
+renderorder="right-down" compressionlevel="-1" width="4" height="4" \
+tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="1">
+ <tileset firstgid="1" name="Art" tilewidth="16" tileheight="16" \
+tilecount="256" columns="16">
+  <image source="art.png" width="256" height="256"/>
+ </tileset>
+ <tileset firstgid="{first}" name="collision" tilewidth="16" tileheight="16" \
+tilecount="17" columns="17">
+  <image source="collision.png" width="272" height="16"/>
+ </tileset>
+{layers}</map>
+"""
+
+
+def fine_fixture(*, declare: str | None = "4", side: int = FINE_SIDE,
+                 roof: dict[tuple[int, int], int] | None = None) -> str:
+    """A 4x4 map at 16px whose Floor companion is `declare` times finer.
+
+    `declare=None` omits the property, which is the shape of every map
+    written before `pyoneer_subcell` existed and is the migration case the
+    1x half of this section drives.
+
+    `side` is the companion's own size in cells, so it can be made SMALLER
+    than `4 x` the map -- which is legal, is what a partly-authored map looks
+    like, and is the only way to tell a bound taken from the layer apart from
+    one taken from `map x subcell`.
+
+    `roof` adds a second art layer with a 1x companion holding the masks it
+    names, keyed by MAP cell. That is a mixed stack, and it is the only shape
+    in which dropping `collision_stack`'s scale is visible: read unscaled, a
+    1x wall on map cell (2, 0) answers at sub-cell (2, 0), which is a
+    different square of the map entirely.
+    """
+    prop = ""
+    if declare is not None:
+        prop = ('   <property name="%s" type="int" value="%s"/>\n'
+                % (SUBCELL, declare))
+    layers = _FINE_ART.format(id=1, name="Floor", companion="FloorCollision",
+                              empty=grid_csv({}, FINE_TILES))
+    layers += _FINE_DATA.format(id=2, name="FloorCollision", w=side, h=side,
+                                subcell=prop, cells=grid_csv({}, side))
+    if roof is not None:
+        layers += _FINE_ART.format(id=3, name="Roof",
+                                   companion="RoofCollision",
+                                   empty=grid_csv({}, FINE_TILES))
+        layers += _FINE_DATA.format(
+            id=4, name="RoofCollision", w=FINE_TILES, h=FINE_TILES,
+            subcell="",
+            cells=grid_csv({cell: COLLISION_FIRST_GID + mask
+                            for cell, mask in roof.items()}, FINE_TILES))
+    return _FINE_TEMPLATE.format(first=COLLISION_FIRST_GID, layers=layers)
+
+
+# --------------------------------------------------------------------------
 # Counting instrumentation
 # --------------------------------------------------------------------------
 # Patched for the whole run rather than around one block: "the overlay is
@@ -303,6 +420,45 @@ def mouse(canvas, kind, cell, button=Qt.LeftButton, buttons=None):
     {QEvent.Type.MouseButtonPress: canvas.mousePressEvent,
      QEvent.Type.MouseMove: canvas.mouseMoveEvent,
      QEvent.Type.MouseButtonRelease: canvas.mouseReleaseEvent}[kind](event)
+
+
+def click_px(application, canvas, px: float, py: float,
+             button=Qt.LeftButton) -> None:
+    """Press and release at one SCENE PIXEL, which is what a mouse gives you.
+
+    The `mouse`/`drag` pair above speaks in cells, which is the right unit
+    for asserting that a drag covers three of them and the wrong one for
+    asserting where a cell IS: a check that clicks 'cell (6, 6)' and finds a
+    mask in cell (6, 6) passes whatever `paint_width` says, because both
+    halves went through the same broken number. A pixel is the only
+    coordinate the canvas does not get to choose.
+    """
+    point = QPointF(canvas.mapFromScene(px, py))
+    for kind, handler in ((QEvent.Type.MouseButtonPress,
+                           canvas.mousePressEvent),
+                          (QEvent.Type.MouseButtonRelease,
+                           canvas.mouseReleaseEvent)):
+        handler(QMouseEvent(kind, point, button, button, Qt.NoModifier))
+    application.processEvents()
+
+
+def painted_cells(layer) -> list[tuple[int, int]]:
+    """Every cell of a layer holding a gid, in reading order."""
+    return [(x, y) for y in range(layer.height) for x in range(layer.width)
+            if layer.get_tile(x, y)]
+
+
+def covers(cell: tuple[int, int], size: int,
+           point: tuple[float, float]) -> bool:
+    """Does `cell`, at `size` pixels per side, contain that scene pixel?
+
+    The assertion that cannot be satisfied by agreeing with yourself: it
+    turns a cell INDEX back into the pixels it owns and asks whether the
+    author's click is among them.
+    """
+    left, top = cell[0] * size, cell[1] * size
+    return (left <= point[0] < left + size
+            and top <= point[1] < top + size)
 
 
 def drag(application, canvas, cells, button=Qt.LeftButton):
@@ -1000,6 +1156,387 @@ try:
         expect("...and would NOT have, without the sheet it provisioned",
                loads(boot_path), "FileNotFoundError")
         window.close()
+
+    # ==================================================================
+    print()
+    print("A 4x MAP IN A REAL CANVAS: the mask lands UNDER THE CURSOR")
+    # ==================================================================
+    # The check whose absence let a whole pass ship green. Everything here
+    # is driven in scene PIXELS and asserted in pixels, because the failure
+    # was that the canvas and the file disagreed about what a cell is -- and
+    # any assertion phrased in cells is phrased in the very unit under test.
+    _ws, fine_path, fine = open_workspace(fine_fixture())
+    FINE_ORIGINAL = fine.project.map("fixture").to_bytes()
+    window = collision_canvas(fine)
+    canvas = window.canvas
+    said = []
+    canvas.status.connect(said.append)
+
+    expect("the map is 4 tiles of 16px, so 64 scene pixels across",
+           (fine.project.map("fixture").width,
+            fine.project.map("fixture").tile_width), (FINE_TILES, TILE))
+    expect("its companion declares four sub-cells per tile",
+           canvas.paint_subcell, FINE_SUB)
+    expect("so ONE addressable cell is a quarter-tile, not a tile",
+           (canvas.paint_width, canvas.paint_height), (FINE_CELL, FINE_CELL))
+
+    # A pixel chosen to be unambiguous: 26 is inside sub-cell 6 (24..27) and
+    # inside map tile 1 (16..31), so a canvas addressing tiles and a canvas
+    # addressing sub-cells give visibly different answers for it.
+    CLICK = (26.0, 26.0)
+    expect("the cell under that pixel is the sub-cell, not the tile",
+           canvas.cell_at(*CLICK), (6, 6))
+
+    before = len(fine.history())
+    click_px(application, canvas, *CLICK)
+    companion = fine.project.map("fixture").tile_layer("FloorCollision")
+    marks = painted_cells(companion)
+    expect("one click, one transaction", len(fine.history()) - before, 1)
+    expect("...writing exactly one cell of the companion", len(marks), 1)
+    expect("THE MASK LANDED IN THE SUB-CELL UNDER THE CURSOR",
+           bool(marks) and covers(marks[0], FINE_CELL, CLICK), True)
+    expect("...which is that sub-cell and no other", marks, [(6, 6)])
+    expect("...and it is the mask the brush held",
+           companion.get_tile(6, 6), COLLISION_FIRST_GID + BLOCK_ALL)
+    # The bug, named as a number rather than as a memory. Cell (1, 1) is
+    # where a canvas addressing whole tiles would have put this, and it owns
+    # pixels 4..7 -- so the wall would have been 20px up and 20px left.
+    expect("...NOT the whole-tile cell, which owns pixels 4..7",
+           covers((1, 1), FINE_CELL, CLICK), False)
+    expect("...and that cell is empty, so nothing was written twice",
+           companion.get_tile(1, 1), 0)
+
+    # ----------------------------------------------------------------
+    print()
+    print("the overlay's cells are the COMPANION's cells")
+    # ----------------------------------------------------------------
+    overlay = canvas.overlay
+    expect("sized from the companion: 16x16 cells of 4px",
+           (overlay.width, overlay.height,
+            overlay.tile_width, overlay.tile_height),
+           (FINE_SIDE, FINE_SIDE, FINE_CELL, FINE_CELL))
+    expect("...which still covers exactly the map's pixels",
+           (overlay.boundingRect().width(), overlay.boundingRect().height()),
+           (float(FINE_TILES * TILE), float(FINE_TILES * TILE)))
+    expect("and the readout agrees with the file, cell for cell",
+           (overlay.mask_at(6, 6), overlay.mask_at(1, 1)),
+           (BLOCK_ALL, NO_DATA))
+
+    # ----------------------------------------------------------------
+    print()
+    print("the far corner is reachable: bounds come from the LAYER")
+    # ----------------------------------------------------------------
+    # Sub-cell (15, 15) owns pixels 60..63. A stroke bounded by the MAP's
+    # 4x4 would clip every cell past 3 and write nothing at all here.
+    FAR = (62.0, 62.0)
+    click_px(application, canvas, *FAR)
+    companion = fine.project.map("fixture").tile_layer("FloorCollision")
+    expect("the last sub-cell of the map takes a mask",
+           companion.get_tile(FINE_SIDE - 1, FINE_SIDE - 1),
+           COLLISION_FIRST_GID + BLOCK_ALL)
+    expect("...and it is the cell that owns the clicked pixel",
+           covers((FINE_SIDE - 1, FINE_SIDE - 1), FINE_CELL, FAR), True)
+    window.close()
+
+    # The other half of that bound, and the only shape that separates "the
+    # layer's own size" from "map x subcell": a companion authored over just
+    # the top-left quarter of the map. Cells past its edge are not merely
+    # unpainted, they do not exist, and `file_gid_reader` answering 0 past
+    # them is what makes that legal.
+    _ws, small_fine_path, small_fine = open_workspace(fine_fixture(side=8))
+    SMALL_FINE_ORIGINAL = small_fine.project.map("fixture").to_bytes()
+    window = collision_canvas(small_fine)
+    canvas = window.canvas
+    expect("a companion may cover part of the map and still be read",
+           (canvas.paint_subcell,
+            small_fine.project.map("fixture").tile_layer(
+                "FloorCollision").width), (FINE_SUB, 8))
+    click_px(application, canvas, 30.0, 30.0)          # sub-cell (7, 7)
+    inside = small_fine.project.map("fixture").tile_layer("FloorCollision")
+    expect("a cell inside it is painted", inside.get_tile(7, 7),
+           COLLISION_FIRST_GID + BLOCK_ALL)
+    before = len(small_fine.history())
+    click_px(application, canvas, 42.0, 42.0)          # sub-cell (10, 10)
+    expect("a cell past its edge writes nothing at all",
+           len(small_fine.history()) - before, 0)
+    expect("...and leaves the map exactly as the first stroke left it",
+           painted_cells(small_fine.project.map("fixture").tile_layer(
+               "FloorCollision")), [(7, 7)])
+    expect("...which is not the same as being outside the MAP: it is not",
+           covers((10, 10), FINE_CELL, (42.0, 42.0)), True)
+
+    # And the resolved view over that same partial map. The field is as big
+    # as the FINEST layer, so every cell past this companion's edge is a read
+    # it cannot answer -- 192 of the 256. `MapDocument.get_tile` raises on
+    # those, so before `layer_from_companion` went through the engine's
+    # `document_gid_reader` this turned All layers into a PyoneerConfigError
+    # mid-rebuild, on a map shape the runtime supports on purpose.
+    bakes.clear()
+    resolved = "built"
+    try:
+        canvas.set_all_layers(True)
+        application.processEvents()
+    except Exception as exc:                                    # noqa: BLE001
+        resolved = type(exc).__name__
+    expect("All layers over a partly-authored companion still builds",
+           resolved, "built")
+    expect("...covering the whole map, at the finest declared resolution",
+           (canvas.overlay.width, canvas.overlay.height,
+            canvas.overlay.tile_width),
+           (FINE_SIDE, FINE_SIDE, FINE_CELL))
+    expect("...showing the wall that is authored",
+           canvas.overlay.mask_at(7, 7), BLOCK_ALL)
+    expect("...and abstaining past the companion's edge, not erroring",
+           (canvas.overlay.mask_at(8, 8), canvas.overlay.mask_at(15, 15)),
+           (NO_DATA, NO_DATA))
+    window.close()
+
+    # ==================================================================
+    print()
+    print("THE 1x CASE, IN THE SAME SHAPE -- the migration guarantee")
+    # ==================================================================
+    # The half that breaks. A map with no `pyoneer_subcell` anywhere is
+    # every map this editor has ever written, and it has to keep addressing
+    # whole tiles: the property's absence MEANS 1, which is the file
+    # format's documented default and not a fallback anybody guessed at.
+    _ws, plain_path, plain = open_workspace(fine_fixture(declare=None,
+                                                         side=FINE_TILES))
+    window = collision_canvas(plain)
+    canvas = window.canvas
+    expect("an absent property still means one mask per tile",
+           canvas.paint_subcell, 1)
+    expect("so a cell is a whole tile again",
+           (canvas.paint_width, canvas.paint_height), (TILE, TILE))
+    expect("and the same pixel resolves to the tile that owns it",
+           canvas.cell_at(*CLICK), (1, 1))
+    click_px(application, canvas, *CLICK)
+    plain_companion = plain.project.map("fixture").tile_layer("FloorCollision")
+    plain_marks = painted_cells(plain_companion)
+    expect("THE MASK LANDED IN THE TILE UNDER THE CURSOR",
+           bool(plain_marks) and covers(plain_marks[0], TILE, CLICK), True)
+    expect("...which is one cell, and that cell", plain_marks, [(1, 1)])
+    expect("the overlay is the map's own grid, as it always was",
+           (canvas.overlay.width, canvas.overlay.height,
+            canvas.overlay.tile_width, canvas.overlay.tile_height),
+           (FINE_TILES, FINE_TILES, TILE, TILE))
+    # A 1x map must not acquire a finer grid from the mode either: switching
+    # to tiles and back is the gesture an author makes constantly.
+    canvas.set_mode(EditMode.TILES)
+    application.processEvents()
+    expect("tile mode addresses tiles on a 1x map",
+           (canvas.paint_width, canvas.paint_height), (TILE, TILE))
+    window.close()
+
+    # And the same for TILE mode on the 4x map: a companion's resolution is
+    # none of an art stroke's business, and a grid that quartered itself
+    # when the author went back to painting floor would be unusable.
+    window = collision_canvas(fine, layer="Floor")
+    canvas = window.canvas
+    canvas.set_mode(EditMode.TILES)
+    application.processEvents()
+    expect("tile mode on a 4x map STILL addresses tiles",
+           (canvas.paint_subcell, canvas.paint_width), (1, TILE))
+    canvas.stamp = Stamp.single(9)
+    before = len(fine.history())
+    click_px(application, canvas, *CLICK)
+    art = fine.project.map("fixture").tile_layer("Floor")
+    expect("...so an art stroke writes the tile under the cursor",
+           painted_cells(art), [(1, 1)])
+    expect("...as its own transaction", len(fine.history()) - before, 1)
+    window.undo()
+    application.processEvents()
+    window.close()
+
+    # THE HALF THAT WAS MISSING, and it is the whole reason the 1,200px bug
+    # survived a pass that was chartered to kill exactly it. The block above
+    # selects the ART layer and proves a tile-mode cell is a tile. Nobody
+    # selected the DATA layer -- and a companion is a selectable row in the
+    # Layers panel, so an author reaches it with one click. Proved for the art
+    # layer, never proved for the data layer: the repo's dominant shape.
+    # A FRESH fixture, because the blocks above have painted this one and an
+    # absolute assertion would be measuring their residue rather than this
+    # stroke -- which is how a placement bug hides inside a passing check.
+    _ws2, _fine2_path, fine2 = open_workspace(fine_fixture())
+    window = collision_canvas(fine2, layer="FloorCollision")
+    canvas = window.canvas
+    canvas.set_mode(EditMode.TILES)
+    application.processEvents()
+    expect("tile mode ON THE COMPANION addresses SUB-cells, because the "
+           "resolution is the layer's and not the mode's",
+           (canvas.paint_subcell, canvas.paint_width), (FINE_SUB, FINE_CELL))
+    canvas.stamp = Stamp.single(COLLISION_FIRST_GID + BLOCK_ALL)
+    companion = fine2.project.map("fixture").tile_layer("FloorCollision")
+    was = set(painted_cells(companion))
+    before = len(fine2.history())
+    click_px(application, canvas, *CLICK)
+    companion = fine2.project.map("fixture").tile_layer("FloorCollision")
+    # CLICK is (26, 26); at 4px sub-cells that is (6, 6). Before the fix this
+    # wrote (1, 1) -- 20px away on a 4x4 map, and 1,200px away on a 100x100.
+    expect("...so the mask lands under the cursor here too",
+           sorted(set(painted_cells(companion)) - was),
+           [(int(CLICK[0]) // FINE_CELL, int(CLICK[1]) // FINE_CELL)])
+    expect("...in one transaction", len(fine2.history()) - before, 1)
+    window.undo()
+    application.processEvents()
+    window.close()
+
+    # ==================================================================
+    print()
+    print("A MIXED STACK: a 1x layer read at 4x stays where it was painted")
+    # ==================================================================
+    # Gap 4. `collision_stack` builds one `CollisionLayer` per companion and
+    # the resolved view reads them all at the FINEST resolution in the map.
+    # Without a scale, a 1x companion asked for sub-cell (8, 0) answers with
+    # its own cell (8, 0) -- which does not exist -- and its wall on map cell
+    # (2, 0) surfaces at sub-cell (2, 0) instead, a different square of the
+    # map. Not a lost layer: a MOVED one, which still looks like collision.
+    ROOF_CELL = (2, 0)
+    _ws, mixed_path, mixed = open_workspace(
+        fine_fixture(roof={ROOF_CELL: BLOCK_UP}))
+    window = collision_canvas(mixed, layer="Floor")
+    canvas = window.canvas
+    expect("the stack has both layers, topmost first",
+           [layer.name for layer in canvas.collision_stack()],
+           ["Roof", "Floor"])
+    expect("and the map's finest declared resolution is the 4x one",
+           canvas.stack_subcell(), FINE_SUB)
+    click_px(application, canvas, *CLICK)               # Floor sub-cell (6, 6)
+
+    canvas.set_all_layers(True)
+    application.processEvents()
+    overlay = canvas.overlay
+    expect("the resolved view is drawn at the field's resolution",
+           (overlay.width, overlay.height, overlay.tile_width),
+           (FINE_SIDE, FINE_SIDE, FINE_CELL))
+    # Map cell (2, 0) owns sub-cells x 8..11, y 0..3 -- all sixteen of them.
+    expect("THE 1x WALL COVERS ITS WHOLE MAP TILE",
+           [overlay.mask_at(x, y) for x, y in
+            ((8, 0), (11, 0), (8, 3), (11, 3))],
+           [BLOCK_UP] * 4)
+    expect("...and stops at that tile's edge",
+           (overlay.mask_at(7, 0), overlay.mask_at(12, 0)),
+           (NO_DATA, NO_DATA))
+    expect("...and is NOT at sub-cell (2, 0), where an unscaled read puts it",
+           overlay.mask_at(*ROOF_CELL), NO_DATA)
+    expect("the 4x layer keeps its own sub-cell under the same resolve",
+           overlay.mask_at(6, 6), BLOCK_ALL)
+
+    # Painting the 1x layer while the 4x view is up: one click changes one
+    # cell of the FILE and sixteen cells of the READOUT, and writing only
+    # the first of them leaves fifteen showing the answer from before.
+    canvas.set_active_layer("Roof")
+    application.processEvents()
+    expect("the brush follows the layer being painted, not the readout",
+           (canvas.paint_subcell, canvas.paint_width), (1, TILE))
+    touched.clear()
+    bakes.clear()
+    click_px(application, canvas, *CLICK)               # map cell (1, 1)
+    expect("one map cell of the 1x companion took the mask",
+           mixed.project.map("fixture").tile_layer(
+               "RoofCollision").get_tile(1, 1),
+           COLLISION_FIRST_GID + BLOCK_ALL)
+    expect("...and all sixteen readout cells it covers were repainted",
+           len(touched), FINE_SUB * FINE_SUB)
+    expect("...incrementally, without re-resolving the whole field",
+           bakes, [])
+    expect("...so the readout shows the wall across the whole tile",
+           [canvas.overlay.mask_at(x, y) for x, y in
+            ((4, 4), (7, 7))], [BLOCK_ALL, BLOCK_ALL])
+    window.close()
+
+    # ==================================================================
+    print()
+    print("THE GUARD: a stroke it cannot place is refused, not misplaced")
+    # ==================================================================
+    # Unreachable while `paint_unit` is the only thing that resolves a cell
+    # -- which is the point of closing gap 2, and is why the guard reads the
+    # declaration a SECOND time straight off the document instead of asking
+    # the funnel whether it agrees with itself. Reached here by breaking the
+    # funnel the way the next change will break it: reporting whole tiles on
+    # a map whose companion stores quarter-tiles.
+    window = collision_canvas(fine, layer="Floor")
+    canvas = window.canvas
+    said = []
+    canvas.status.connect(said.append)
+    expect("correctly wired, there is nothing to refuse",
+           canvas.collision_stroke_refusal(), None)
+
+    _real_paint_unit = MapCanvas.paint_unit
+    MapCanvas.paint_unit = lambda self: PaintUnit(1, TILE, TILE,
+                                                  layer="FloorCollision")
+    try:
+        BEFORE_GUARD = fine.project.map("fixture").to_bytes()
+        expect("a broken paint unit is caught rather than believed",
+               canvas.collision_stroke_refusal() is not None, True)
+        said.clear()
+        before = len(fine.history())
+        drag(application, canvas, [(1, 1), (2, 2)])
+        expect("the stroke writes nothing", len(fine.history()) - before, 0)
+        expect("...and the document is byte-identical",
+               fine.project.map("fixture").to_bytes() == BEFORE_GUARD, True)
+        expect("...the refusal names the unit the click resolved to",
+               among(f"{TILE}x{TILE}px cell (1 per tile)", said), True)
+        expect("...and the resolution the file actually declares",
+               among(f"{SUBCELL}={FINE_SUB}", said), True)
+        expect("...and how far the mask would have gone",
+               among("from the cursor", said), True)
+        expect("...as a status line, with no dialog anywhere near it",
+               modals, [])
+        # An unreadable declaration is the other way in, and it must not
+        # take the editor down on a mouse move: the unit degrades to 1x for
+        # DRAWING and the stroke is refused for WRITING.
+        expect("...and the picker is refused on the same terms, not silently "
+               "reading the wrong cell",
+               canvas.collision_stroke_refusal() is not None, True)
+    finally:
+        MapCanvas.paint_unit = _real_paint_unit
+    # The permissive half, and it has to be a cell nothing has painted yet:
+    # a stroke that changes no gid commits nothing, so re-clicking (6, 6)
+    # would answer "refused" and "already correct" with the same zero.
+    # Pixel 10 owns sub-cell 2 (8..11).
+    UNPAINTED = (10.0, 10.0)
+    expect("with the funnel restored the refusal is gone",
+           canvas.collision_stroke_refusal(), None)
+    expect("...and a fresh cell really is fresh",
+           fine.project.map("fixture").tile_layer(
+               "FloorCollision").get_tile(2, 2), 0)
+    before = len(fine.history())
+    click_px(application, canvas, *UNPAINTED)
+    expect("...AND THE SAME GESTURE PAINTS", len(fine.history()) - before, 1)
+    expect("...into the sub-cell under the cursor, as before",
+           (fine.project.map("fixture").tile_layer(
+               "FloorCollision").get_tile(2, 2),
+            covers((2, 2), FINE_CELL, UNPAINTED)),
+           (COLLISION_FIRST_GID + BLOCK_ALL, True))
+    window.close()
+
+    # ==================================================================
+    print()
+    print("a companion nobody can read refuses the stroke and says why")
+    # ==================================================================
+    # Law 7 from the other end. `companion_subcell` raises on a declaration
+    # that is not a positive integer; the canvas may not turn that into a
+    # plausible 1 and paint, and it may not raise on every mouse move
+    # either. It draws at 1x and refuses to WRITE, naming the property.
+    _ws, bad_path, bad = open_workspace(fine_fixture(declare="banana"))
+    BAD_ORIGINAL = bad.project.map("fixture").to_bytes()
+    window = collision_canvas(bad)
+    canvas = window.canvas
+    said = []
+    canvas.status.connect(said.append)
+    expect("the canvas still draws, at the only resolution it can trust",
+           canvas.paint_width, TILE)
+    expect("...and a mouse move over it does not raise",
+           canvas.cell_at(*CLICK), (1, 1))
+    before = len(bad.history())
+    drag(application, canvas, [(1, 1), (2, 2)])
+    expect("but the stroke is refused", len(bad.history()) - before, 0)
+    expect("...the document untouched",
+           bad.project.map("fixture").to_bytes() == BAD_ORIGINAL, True)
+    expect("...and the message names the property and the value",
+           (among(SUBCELL, said), among("banana", said)), (True, True))
+    expect("...still with no dialog", modals, [])
+    window.close()
 
 finally:
     CollisionOverlay.bake = _real_bake

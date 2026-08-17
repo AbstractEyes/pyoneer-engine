@@ -76,6 +76,12 @@ from editor.core.collision import (
     gid_to_opinion,
     resolve,
 )
+# Straight from the engine, the way `editor/ui/canvas.py` takes
+# `collision_first_gid` and `companion_name`: this is a reader ADAPTER, not
+# part of the model `editor/core/collision.py` re-exports, and the rule it
+# carries -- a read past a companion's edge answers 0 -- has to be the engine's
+# own or the overlay and the runtime disagree about a partly-authored map.
+from scripts.core.collision_runtime import document_gid_reader
 from editor.core.layers import (
     BLOCK_ALL,
     BLOCK_DOWN,
@@ -622,11 +628,7 @@ def masks_from_layer(layer, first_gid: int) -> list[int]:
 
 def layer_from_companion(layer, first_gid: int, name: str = "", *,
                          scale: int = 1) -> CollisionLayer:
-    """A document tile layer as a stack member, without copying its cells.
-
-    A `CollisionLayer` is three lazy readers, so this costs one closure --
-    which matters, because the all-layers view holds one of these per
-    collision layer and rebuilds them whenever the document changes.
+    """A document tile layer as a stack member.
 
     `scale` is the field's resolution divided by this layer's own -- see
     `companion_reader`, which is where the arithmetic and the measurement
@@ -634,10 +636,28 @@ def layer_from_companion(layer, first_gid: int, name: str = "", *,
     for a worse-looking reason: the all-layers overlay is what an author reads
     to find out where a wall IS, so a stack that mixes a 1x and a 4x companion
     and drops the scale draws the 1x layer's walls in the wrong place.
+
+    READS PAST THE EDGE ANSWER NOTHING, WHICH IS WHY THIS GOES THROUGH
+    `document_gid_reader`. A companion may legitimately be smaller than the
+    field -- half a map authored, or a 4x layer covering the top-left
+    quarter -- and `resolve` treats "nothing here" as abstention, which is
+    exactly right past its edge. `MapDocument`'s own `get_tile` RAISES
+    instead, so reading a stack member directly took the editor down with a
+    `PyoneerConfigError` mid-rebuild the moment the field was larger than one
+    of its layers, which mixing resolutions makes ordinary rather than
+    exotic. The engine's `file_gid_reader` has answered 0 there since it was
+    written; this is that same rule, taken from the same module rather than
+    spelled a second time here.
+
+    It costs one flat copy of the layer's gids where the old closure copied
+    nothing. Measured on the 100x100 layer in `data/maps/test.tmx`: 0.032 ms
+    against 4.3 ms for the per-cell sweep a single bake already pays, so the
+    snapshot is 1% of the work it feeds.
     """
     return CollisionLayer(
         name=name or getattr(layer, "name", ""),
-        companion=companion_reader(layer.get_tile, first_gid, scale=scale))
+        companion=companion_reader(document_gid_reader(layer), first_gid,
+                                   scale=scale))
 
 
 def layer_from_masks(masks: Sequence[int], width: int,

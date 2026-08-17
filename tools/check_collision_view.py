@@ -411,6 +411,17 @@ expect("and back", (switch.mode, switch.all_layers_on),
 expect("every mode has an icon",
        [m for m in EditMode if view.mode_icon(m).isNull()], [])
 
+# Which mode may address something smaller than a tile. Both halves, because
+# the interesting failure is not "collision forgot to subdivide" -- that is
+# loud -- but "tiles started to", which quietly quarters the grid an author
+# paints floor on the moment a companion declares `pyoneer_subcell="4"`.
+expect("collision mode addresses whatever the companion declares",
+       EditMode.COLLISION.subdivides, True)
+expect("...and tile mode never does, whatever the map declares",
+       EditMode.TILES.subdivides, False)
+expect("...so exactly one mode subdivides, not zero and not both",
+       [m for m in EditMode if m.subdivides], [EditMode.COLLISION])
+
 
 # --------------------------------------------------------------------------
 print()
@@ -543,23 +554,68 @@ FIRST_GID = 5
 
 
 class _Cells:
-    """The smallest thing `layer_from_companion` accepts."""
+    """A stand-in for `MapDocument`'s TileLayer, INCLUDING the part that bites.
+
+    The previous version of this fixture answered 0 for any coordinate,
+    which made every read past its edge look harmless -- and that is exactly
+    why the crash below shipped: the real layer RAISES out of range, so the
+    check proved the scale arithmetic against a reader that behaves like
+    nothing in production. `get_tile` raises here for the same reason, and
+    `layer_from_companion` is now asserted never to call it out of range.
+    """
 
     name = "ForegroundCollision"
     width = height = 4
 
+    def gids(self):
+        return [FIRST_GID + BLOCK_ALL if (x, y) == (0, 3) else 0
+                for y in range(self.height) for x in range(self.width)]
+
     def get_tile(self, x, y):
+        if not (0 <= x < self.width and 0 <= y < self.height):
+            raise AssertionError(
+                f"tile ({x}, {y}) is outside layer {self.name!r} "
+                f"({self.width}x{self.height})")
         return FIRST_GID + BLOCK_ALL if (x, y) == (0, 3) else 0
+
+
+def answers(layer, x, y):
+    """The opinion, or the name of the exception that escaped instead.
+
+    Every read below goes through this. A field is as large as its FINEST
+    layer, so a stack that mixes resolutions asks every coarser or partial
+    companion for coordinates it does not have -- routinely, not
+    exceptionally -- and an escaping exception here would be reported as a
+    traceback rather than as the assertion that actually failed.
+    """
+    try:
+        return layer.opinion_at(x, y)
+    except Exception as exc:                                    # noqa: BLE001
+        return type(exc).__name__
 
 
 scaled = view.layer_from_companion(_Cells(), FIRST_GID, scale=SUB)
 plain_layer = view.layer_from_companion(_Cells(), FIRST_GID)
 expect("a 1x companion read at 4x answers over its whole map tile",
-       [scaled.opinion_at(0, y) for y in (11, 12, 15, 16)],
+       [answers(scaled, 0, y) for y in (11, 12, 15, 16)],
        [NO_DATA, BLOCK_ALL, BLOCK_ALL, NO_DATA])
 expect("...where the unscaled read puts the same wall four times higher",
-       (plain_layer.opinion_at(0, 3), plain_layer.opinion_at(0, 12)),
+       (answers(plain_layer, 0, 3), answers(plain_layer, 0, 12)),
        (BLOCK_ALL, NO_DATA))
+
+# The other half, and the one that used to take the editor down: `resolve`
+# reads a coordinate past a layer as abstention, and `MapDocument` reads it
+# as an error.
+expect("a read past a companion's own edge abstains rather than raising",
+       [answers(plain_layer, x, y) for x, y in ((4, 0), (0, 4), (99, 99))],
+       [NO_DATA] * 3)
+expect("...and the scaled reader is bounded by the LAYER, not by the field",
+       [answers(scaled, 0, y) for y in (15, 16, 400)],
+       [BLOCK_ALL, NO_DATA, NO_DATA])
+expect("...which is the fixture being strict, not lenient: a direct read "
+       "past the edge really does raise",
+       answers(view.CollisionLayer(companion=lambda x, y: _Cells().get_tile(x, y)),
+               4, 0), "AssertionError")
 
 print()
 if failures:

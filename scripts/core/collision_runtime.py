@@ -977,11 +977,28 @@ def companion_subcell(document, companion: str) -> int:
         where the cells exist, the reader can see them, and the bake throws
         them away -- measured at HEAD before this function: 256 painted
         sub-cells in, 0 blocking cells out, no exception and no warning.
+      * a companion that declares `subcell > 1` and is EXACTLY THE MAP'S
+        SIZE. See below; that one is not an authoring choice at all.
 
-    A companion SMALLER than that is NOT an error and deliberately so. Reads
-    past its edge answer 0, `gid_to_opinion` reads 0 as NO_DATA, and "this
-    layer has masks for part of the map" is a real authoring shape that both
-    `file_gid_reader` and `document_gid_reader` already support.
+    A companion smaller than `subcell x` the map but larger than the map is
+    NOT an error and deliberately so. Reads past its edge answer 0,
+    `gid_to_opinion` reads 0 as NO_DATA, and "this layer has masks for part
+    of the map" is a real authoring shape that both `file_gid_reader` and
+    `document_gid_reader` already support -- it WARNS, naming how many cells
+    are unauthored, because at 4x that is easy to reach by accident.
+
+    THE SHRUNKEN COMPANION.                          #TAG:tiled_shrinks_companion
+    A finite map's layer width/height are SPEC'D to equal the map's, so Tiled
+    may rewrite a 4x companion back to map size on the author's next save --
+    and this author does round-trip through Tiled. Nobody here has been able
+    to run Tiled to find out whether it actually does. So the case is
+    DETECTED rather than resolved: a layer that says it is four times finer
+    and is not finer at all is the one shape no author writes on purpose,
+    and reading it as authored means silently walking a map with fifteen
+    sixteenths of its collision gone. It raises, naming the declared factor,
+    the size on disk and the size that factor requires -- so if Tiled ever
+    does this, the author is told on the next load instead of discovering it
+    as walls that are no longer there.
     """
     layer = document.tile_layer(companion)
     raw = layer.properties.get(SUBCELL, 1)
@@ -1020,6 +1037,28 @@ def companion_subcell(document, companion: str) -> int:
             f"either declare {SUBCELL}={wants} or resize the layer, because "
             f"the cells past that edge would be read by nothing",
             source=getattr(document, "path", None))
+    if subcell > 1 and (layer.width, layer.height) == (document.width,
+                                                       document.height):
+        raise PyoneerConfigError(
+            f"collision layer {companion!r} declares {SUBCELL}={subcell} but "
+            f"is {layer.width}x{layer.height}, which is exactly the map's "
+            f"size -- so it claims to be {subcell}x finer and is not finer at "
+            f"all. That factor needs {wide}x{tall}, and reading it as it "
+            f"stands would drop {wide * tall - layer.width * layer.height} of "
+            f"its {wide * tall} cells. A tile layer in a finite map is spec'd "
+            f"to be the map's size, so TILED MAY HAVE RESIZED IT on the last "
+            f"save; recover the layer or drop the {SUBCELL} declaration, but "
+            f"do not let this load quietly",
+            source=getattr(document, "path", None))
+    if subcell > 1 and (layer.width < wide or layer.height < tall):
+        warn_content(
+            f"collision layer {companion!r} declares {SUBCELL}={subcell} and "
+            f"is {layer.width}x{layer.height}, where that factor allows "
+            f"{wide}x{tall}: {wide * tall - layer.width * layer.height} of "
+            f"{wide * tall} sub-cells have no mask and read as NO_DATA. That "
+            f"is legal -- part of a map authored at {subcell}x -- and it is "
+            f"said out loud because at {subcell}x it is easy to reach by "
+            f"resizing rather than by deciding")
     return subcell
 
 
