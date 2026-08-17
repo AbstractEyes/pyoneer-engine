@@ -27,9 +27,9 @@ sequence on the frame the movement state changes.
 registry the engine binds from, so it cannot list a behavior that does not
 exist or omit one that does — and prose about which behaviors exist is
 exactly what drifts. It also carries the integration status, measured rather
-than asserted: at the time of writing a tmx object's `pyoneer_behaviors`
-property is **not yet read at spawn**, so the list above is the format and a
-Python caller is still what attaches it.
+than asserted -- the table there is produced by constructing a real entity and
+running frames, so a row saying *no* is a wire that does not exist rather than
+one that is merely undocumented. Check it before assuming a capability.
 
 The point of the design, in one sentence: a top-down character and a side-on
 one are **the same `GamePlayer` class carrying different behavior lists**, so

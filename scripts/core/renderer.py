@@ -21,6 +21,7 @@ from scripts.core.viewclip import clip_to_view, containment, Containment
 from scripts.core.log import trace_lifecycle, trace_render
 from scripts.core.errors import (PyoneerBindTargetError, PyoneerCameraMissingError,
                                  PyoneerLayerError, warn_content)
+from scripts.game.behavior import build as build_behaviors
 from scripts.loaders.map_loader import SpawnedEntity, spawn_objects
 
 
@@ -730,6 +731,14 @@ class LayerRenderer:
         self.spawned_entities = spawned
         regroup = False
         for record in spawned:
+            # Compose BEFORE bind, so an entity is never bound in a
+            # half-composed state. attach_all raises on a duplicated token, a
+            # declared conflict, or two behaviors that share an order and both
+            # write the same field -- all of which are authoring errors that
+            # must surface at load rather than as a physics bug later.
+            if record.behaviors:
+                record.entity.behaviors.attach_all(
+                    build_behaviors(record.behaviors))
             layer, created = self.__entity_layer(record.depth, record.layer_name)
             layer.bind(record.entity)
             regroup = regroup or (created and self.__inside_map_span(record.depth))

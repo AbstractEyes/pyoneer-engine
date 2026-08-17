@@ -249,8 +249,8 @@ Every row below is measured, not declared: the drive row is produced by construc
 | `GameEntity.behaviors` exists on a constructed entity | **yes** | one attribute in `GameEntity.__init__` |
 | `GameEntity.core_frame_update` runs the drive | **yes** | one line replacing the `pass` in `game_entity.py` |
 | a behavior is registered | **yes** | one `register(BehaviorSpec(...))` in `scripts/game/behavior/registry.py` |
-| a declaration is turned into attached behaviors somewhere | **yes** | done in `scripts/game/entity/game_player.py` |
-| a **tmx object's** `pyoneer_behaviors` property is read when it spawns | no | `read_requests(obj.properties)` in `scripts/loaders/map_loader.py`, carried on `SpawnedEntity` and attached by the binder. Until then a list authored in Tiled does nothing and only a Python caller can compose one. |
+| a declaration is turned into attached behaviors somewhere | **yes** | done in `scripts/game/entity/game_player.py`, `scripts/loaders/map_loader.py` |
+| a **tmx object's** `pyoneer_behaviors` property is read when it spawns | **yes** | read in `scripts/loaders/map_loader.py` |
 | `GameEntity.collision_field` is assigned in production | no | `field_from_map` at map load, handed to each spawned entity. Until then every body is UNGATED -- a platformer body accelerates downward forever and never lands. |
 | a `jump` input action exists | **yes** | `config/inputs.json` binds `action`, `attack`, `down`, `jump`, `left`, `pause`, `right`, `sprint`, `up` |
 

@@ -12,7 +12,7 @@ control, tile collision and a spawn system all exist now.
 |---|---|
 | deferred depth-sorted rendering | a one-way platform (the mask vocabulary is symmetric) |
 | tile map loading and compositing | a swept or box collider; the test is one anchor point |
-| a spawn path that turns object-layer objects into live entities | a tmx object's `pyoneer_behaviors` list being read when it spawns |
+| a spawn path that reads each object's `pyoneer_behaviors` and composes it | a genre pack's default list being applied for you -- the object carries its own |
 | gravity, terminal velocity, air control and a jump with coyote time -- the `platformer_move` behavior | jump *buffering* (pressing early, before landing) |
 | a runtime tile-passability gate that clamps a move | any production code that assigns `GameEntity.collision_field`, so every body is currently **ungated** |
 | behavior composition: swap what an entity does by editing a list | a class-free way to mark which object the human drives; that is `player_input` in the list |
@@ -86,10 +86,12 @@ player are one class and one spawn entry, distinguished by one token.
    production code sets it. An ungated `platformer_move` accelerates downward
    forever and never lands. That looks exactly like a physics bug and is not
    one — check the integration table in `docs/BEHAVIORS.md` first.
-2. **A tmx object's behavior list is not read at spawn yet.** A list authored
-   in Tiled currently does nothing; only a Python caller composing the list
-   (as `main.py` does) gets behaviors attached. The XML above is the format,
-   and the wire that reads it is named in `docs/BEHAVIORS.md`.
+2. **An authoring error in the list raises at LOAD, not at play.** An unknown
+   token, a duplicate, or two behaviors that conflict all stop the map from
+   spawning and name the `<object>` that carried them. That is deliberate: a
+   token silently skipped would disarm every object carrying it and look
+   exactly like the behavior working. Rename a token and you break maps, which
+   is why a token is stable once referenced.
 3. **`delta` is milliseconds ÷ 60, not seconds.** `main.py` divides elapsed
    milliseconds by the target tick rate. The columns above are documented in
    pixels per second, so a number used raw is about 16.7× wrong in a way that

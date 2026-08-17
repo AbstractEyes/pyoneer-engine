@@ -71,6 +71,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 from scripts.core.errors import PyoneerConfigError, warn_content
 from scripts.core.log import trace_assets
 from scripts.core.spawn import SPAWN_REGISTRY, resolve_depth, spawn
+from scripts.game.behavior import BehaviorRequest, read_requests
 from scripts.loaders.map_document import MapDocument, MapObject
 
 
@@ -92,6 +93,13 @@ class SpawnedEntity:
     layer_name: str
     object_id: int
     type_name: str
+    behaviors: tuple[BehaviorRequest, ...] = ()
+    """What the <object> declared in `pyoneer_behaviors`, resolved not built.
+
+    Records rather than live behaviors, for the same reason this module
+    returns entities and binds nothing: the caller acts. `()` for an object
+    that declares none, which is every object on every shipped map.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -248,10 +256,17 @@ def spawn_objects(document_or_tmx: Any,
                                   layer_name=layer_name,
                                   class_name=type(entity).__name__,
                                   where=where)
+            # Raises on an unknown, duplicated or conflicting token, naming
+            # the object. No fallback, for the same reason resolve_factory
+            # has none: a token that resolved to nothing would silently
+            # disarm every object carrying it, and unlike a missing behavior
+            # it looks like it worked.
+            behaviors = read_requests(obj.properties, where=where)
             spawned.append(SpawnedEntity(entity=entity, depth=depth,
                                          layer_name=layer_name,
                                          object_id=obj.id,
-                                         type_name=type_name))
+                                         type_name=type_name,
+                                         behaviors=behaviors))
         if untyped:
             warn_content(
                 "object layer %r has %d object(s) with no Type and spawned "

@@ -1041,7 +1041,105 @@ expect_true("...and clearing it lets the same player move",
 
 
 # ===========================================================================
-print("\n11. summary")
+print("\n12. the wire: a map object's list reaches a live entity")
+# ===========================================================================
+# The tmx property is the DECLARATION SITE the design chose, and a declaration
+# site nothing reads is a format, not a feature. This drives the real
+# `spawn_objects` over a fixture map written here -- `data/maps/test.tmx` is
+# the author's canvas, and a check that pinned its content would go red the
+# next time he paints while the code it guards works perfectly.
+
+import os
+import tempfile
+
+from scripts.loaders.map_loader import spawn_objects
+
+_SPAWN_FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" \
+renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="3" nextobjectid="4">
+ <objectgroup id="2" name="entity">
+  <object id="1" name="hero" type="Probe" x="0" y="0" width="16" height="16">
+   <properties>
+    <property name="pyoneer_behaviors" value="player_input,topdown_move"/>
+   </properties>
+  </object>
+  <object id="2" name="decoy" type="Probe" x="32" y="0" width="16" height="16">
+   <properties>
+    <property name="pyoneer_behaviors" value="topdown_move"/>
+   </properties>
+  </object>
+  <object id="3" name="scenery" type="Probe" x="64" y="0" width="16" height="16"/>
+ </objectgroup>
+</map>
+"""
+
+_workspace = tempfile.mkdtemp(prefix="pyoneer_behavior_")
+
+
+def _fixture(name, text):
+    path = os.path.join(_workspace, name)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    return path
+
+
+_spawned = spawn_objects(_fixture("behaviors.tmx", _SPAWN_FIXTURE),
+                         {"Probe": _Body})
+expect("every object spawns, whether or not it declares behaviors",
+       len(_spawned), 3)
+expect("the declared list is carried off the map, in authored order",
+       tuple(r.spec.name for r in _spawned[0].behaviors),
+       ("player_input", "topdown_move"))
+expect("an object declaring nothing carries nothing, not a default",
+       _spawned[2].behaviors, ())
+
+# ...and those records become live behaviors that actually drive the entity.
+# All three are handed the SAME manager, so what separates them is composition
+# alone -- which is the claim the whole design rests on.
+for _record in _spawned:
+    _record.entity.action_manager = _Keys(*ALL_VERBS).hold("right")
+    if _record.behaviors:
+        _record.entity.behaviors.attach_all(build(_record.behaviors))
+# Measured as a DELTA from where the map put each one, not against a literal:
+# the fixture spawns them at three different x, and pinning the absolute value
+# would make this assert the fixture's coordinates rather than the movement.
+_before = [r.entity.transform.position.x for r in _spawned]
+for _record in _spawned:
+    frame(_record.entity)
+_moved = [r.entity.transform.position.x - x
+          for r, x in zip(_spawned, _before)]
+expect("the object carrying player_input is the one that moves", _moved[0],
+       10.0)
+expect("...one with a body but no input holds a manager and stays put",
+       _moved[1], 0.0)
+expect("...and one carrying nothing composes nothing",
+       len(_spawned[2].entity.behaviors), 0)
+
+# An authoring error on the map raises AT LOAD, naming the object, rather than
+# arriving later as something indistinguishable from a physics bug.
+expect_raises("two conflicting bodies on one object raise at spawn, named",
+              PyoneerConfigError,
+              lambda: spawn_objects(
+                  _fixture("conflict.tmx",
+                           _SPAWN_FIXTURE.replace(
+                               "player_input,topdown_move",
+                               "topdown_move,platformer_move")),
+                  {"Probe": _Body}),
+              "topdown_move", "platformer_move", "id=1")
+expect_raises("a mistyped token raises at spawn rather than doing nothing",
+              PyoneerAssetMissingError,
+              lambda: spawn_objects(
+                  _fixture("typo.tmx",
+                           _SPAWN_FIXTURE.replace(
+                               "player_input,topdown_move",
+                               "player_input,topdown_mvoe")),
+                  {"Probe": _Body}),
+              "topdown_mvoe")
+
+
+# ===========================================================================
+print("\n13. summary")
 # ===========================================================================
 print(f"assertions             : {len(asserted)}")
 print(f"registry               : {sorted(BEHAVIOR_REGISTRY)}")
