@@ -852,6 +852,52 @@ class LayerRenderer:
                 supported=("GameEntity", "GameMap", "GameComponent"),
             )
 
+    def unbind(self, game_object: PyoneerGameObject) -> bool:
+        """Stop drawing `game_object`. The inverse of `bind`, and it was absent.
+
+        `EntityLayer.unbind` and `GameComponentLayer.unbind` have both been
+        written since the layers existed and neither was reachable from this
+        class's public surface -- `hasattr(renderer, 'unbind')` was False --
+        so there was no despawn path at all. Measured before this method:
+        `scene.unbind(50, entity)` emptied the scene bucket while the renderer
+        still held the entity, and `EntityLayer.core_render_blits` went on
+        queueing a blit token for it every single frame, forever. That is why
+        `GameWindow.close()` hides rather than unbinding, and its docstring
+        says so.
+
+        Returns whether anything was removed, so a caller can tell "taken out"
+        from "was never in" -- `SceneManager.despawn` needs exactly that to be
+        idempotent. Silent on a miss rather than raising, for the reason
+        `EntityBehaviors.detach` gives: removing something that is already
+        absent is a request that is already satisfied.
+
+        Identity, never equality. `list.remove` uses `==`, and while no entity
+        or component in this tree defines `__eq__` today, one that did would
+        make this method remove a DIFFERENT object that merely compares equal
+        -- and the symptom would be the wrong sprite vanishing.
+
+        The layer itself is kept even when it empties. An `EntityLayer` that
+        is removed and later recreated calls `__invalidate_if_inside_map_span`
+        again, and a regroup costs ~350ms; an empty layer costs one loop
+        iteration that queues nothing.
+        """
+        for layers in self.layers.values():
+            for layer in layers:
+                if isinstance(layer, EntityLayer):
+                    held = layer.entities
+                elif isinstance(layer, GameComponentLayer):
+                    held = layer.components
+                else:
+                    continue
+                for index, candidate in enumerate(held):
+                    if candidate is game_object:
+                        del held[index]
+                        trace_lifecycle("unbound %s from layer %s at depth %s",
+                                        type(game_object).__name__,
+                                        layer.layer_name, layer.layer_depth)
+                        return True
+        return False
+
     def __entity_layer(self, depth: int, layer_name: int | str) -> tuple[EntityLayer, bool]:
         """The EntityLayer at `depth`, creating one if that depth has none.
 

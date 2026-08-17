@@ -36,6 +36,7 @@ from editor.core.layers import describe_mask
 from editor.core.paint import EditMode, Tool
 from editor.core.request import REQUESTS_DIR, RESPONSE_FILE, read_response
 from editor.core.scope import Scope
+from editor.ui.behavior_panel import BehaviorDock
 from editor.ui.canvas import MapCanvas, TilePalette
 from editor.ui.collision_view import MaskPalette, build_mode_actions
 from editor.ui.database import DatabaseWindow
@@ -86,12 +87,22 @@ class EditorWindow(QMainWindow):
 
         self.hierarchy = HierarchyDock("Hierarchy", session, map_scope, self)
         self.inspector = InspectorDock("Inspector", session, map_scope, self)
+        self.behaviors = BehaviorDock("Behaviors", session, map_scope, self)
         self.problems = ProblemsDock("Problems", session, Scope.of("project"), self)
         self.manifest = ManifestDock("Manifest", session, Scope.of("project"), self)
         self.history = HistoryDock("History", session, Scope.of("project"), self)
 
         self.addDockWidget(Qt.LeftDockWidgetArea, self.hierarchy)
         self.addDockWidget(Qt.RightDockWidgetArea, self.inspector)
+        # Tabbed onto the Inspector rather than stacked beside it: both answer
+        # "what is this selected thing", only one of them at a time, and two
+        # right-hand columns would spend half the width saying nothing. The
+        # Inspector is raised again because tabifyDockWidget leaves the
+        # newcomer on top and the Inspector is what a selection usually wants
+        # -- the same argument, and the same fix, as the collision palette.
+        self.addDockWidget(Qt.RightDockWidgetArea, self.behaviors)
+        self.tabifyDockWidget(self.inspector, self.behaviors)
+        self.inspector.raise_()
         self.addDockWidget(Qt.BottomDockWidgetArea, self.problems)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.manifest)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.history)
@@ -105,8 +116,8 @@ class EditorWindow(QMainWindow):
         self.manifest.ship_requested.connect(self.ship)
         self.selection.changed.connect(self.__on_selection)
 
-        self.docks = (self.hierarchy, self.inspector, self.problems,
-                      self.manifest, self.history)
+        self.docks = (self.hierarchy, self.inspector, self.behaviors,
+                      self.problems, self.manifest, self.history)
 
         self.__build_actions()
         self.__build_toolbar()
@@ -180,9 +191,9 @@ class EditorWindow(QMainWindow):
         self.__act(edit_menu, "&Back", "Alt+Left", self.selection.back)
 
         view_menu = self.menuBar().addMenu("&View")
-        for dock in (self.hierarchy, self.inspector, self.problems,
-                     self.manifest, self.history, self.palette_dock,
-                     self.mask_dock):
+        for dock in (self.hierarchy, self.inspector, self.behaviors,
+                     self.problems, self.manifest, self.history,
+                     self.palette_dock, self.mask_dock):
             view_menu.addAction(dock.toggleViewAction())
         view_menu.addSeparator()
         self.__act(view_menu, "Zoom &in", QKeySequence.ZoomIn,

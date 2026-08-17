@@ -13,6 +13,9 @@ import os
 import subprocess
 import sys
 
+# Adding a row here is half the change. `docs/CHECKS.md` is GENERATED from this
+# list, so regenerate it in the same commit or `check_docs` goes red:
+#     .venv/Scripts/python.exe tools/check_docs.py --write
 CHECKS = [
     ("imports", "one dotted name per module; LayerRenderer.bind accepts subclasses"),
     ("errors", "exception hierarchy, naming schema, single image slot"),
@@ -36,9 +39,12 @@ CHECKS = [
     ("spawn", "object layer -> entity registry, depth resolution, y-origin"),
     ("spawn_runtime", "map objects become bound entities at the right depths"),
     ("behavior", "behavior contract, registry, declared order, ordered drive"),
+    ("state", "the shared body-state axes, and the two bodies translated onto them"),
     ("movement", "top-down and platformer bodies, the intent, the animator"),
     ("behavior_docs", "BEHAVIORS.md is generated, and every column is backed"),
     ("action", "discrete verbs, cooldowns, the per-entity record, no bus"),
+    ("lifecycle", "a body declares itself gone, and is really unbound and undrawn"),
+    ("flow", "action routing, the step sequencer, and the agency it gives back"),
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
     ("window_events", "os window events translate, route, and still fan out"),
@@ -52,8 +58,11 @@ CHECKS = [
     ("collision_runtime", "the engine reads a mask and gates movement"),
     ("collision_field", "map load bakes passability and every body is handed it"),
     ("actions_panel", "trigger authoring, action verbs, exact inverses"),
+    ("behavior_ui", "behavior checklist from the registry, refusals at "
+                    "authoring time, exact undo"),
     ("editor_ui", "panels build, canvas edits are commands, responses apply"),
     ("demos", "three prototype games boot headless and answer injected input"),
+    ("docs", "the doc spine: navigation, anchors, generated files, fact drift"),
 ]
 
 ROOT = _bootstrap.REPO_ROOT

@@ -13,6 +13,11 @@ WHAT IS HERE
                   (`BehaviorSpec`, `BehaviorParam`, `BehaviorRequest`), the
                   tmx vocabulary, and the ordered per-frame drive
                   (`EntityBehaviors`)
+    state.py      `BodyState` -- what a body IS: phase, facing, support and
+                  agency. The third record beside `MoveIntent` (what it was
+                  ASKED to do) and `ActionIntent` (what it DID), and the one
+                  a behavior declares in `writes` as `state.<axis>` so two
+                  writers of one axis are refused at attach.
     registry.py   the hand-written token table, the map read path, and the
                   generator for docs/BEHAVIORS.md
     input.py      `player_input` -- polls the bound InputActionManager and
@@ -22,6 +27,14 @@ WHAT IS HERE
                   `GamePlayer.input_move` unchanged), `platformer_move`
                   (gravity, jump, coyote time, air control) and
                   `animation_drive` (sequence naming as parameters).
+    action.py     `attack_action`, `interact_action`, `pause_action` and
+                  `action_relay` -- an occurrence rather than a value, with
+                  the relay as the one behavior that reaches outward, by
+                  CALLING `entity.action_sink`.
+    lifecycle.py  `lifecycle_mark` -- writes `state.life = gone` and nothing
+                  else. `SceneManager.reap()` is what removes; a behavior
+                  that unbound its own entity would make the scene fan-out
+                  skip the next sibling.
 
 WHAT IS DELIBERATELY NOT HERE
 -----------------------------
@@ -67,6 +80,11 @@ from scripts.game.behavior.registry import (BEHAVIOR_REGISTRY, build,
                                             parse_list, read_requests,
                                             register, register_all, resolve,
                                             resolve_params, validate_list)
+from scripts.game.behavior.state import (FACING_DEFAULT, LIFE_ALIVE, LIFE_GONE,
+                                         LIVES, PHASES, PHASE_IDLE,
+                                         PHASE_MOVING, SUPPORTS,
+                                         SUPPORT_AIRBORNE, SUPPORT_GROUNDED,
+                                         BodyState, ensure_state, state_of)
 from scripts.game.behavior.input import (NO_INTENT, GamePlayerInputBehavior,
                                          MoveIntent, intent_of)
 from scripts.game.behavior.movement import (MS_PER_DELTA, SECONDS_PER_DELTA,
@@ -74,6 +92,7 @@ from scripts.game.behavior.movement import (MS_PER_DELTA, SECONDS_PER_DELTA,
                                             GameAnimationDriveBehavior,
                                             GamePlatformerMoveBehavior,
                                             GameTopDownMoveBehavior)
+from scripts.game.behavior.lifecycle import GameLifecycleMarkBehavior
 
 __all__ = [
     # vocabulary
@@ -87,9 +106,14 @@ __all__ = [
     "BEHAVIOR_REGISTRY", "build", "describe_all", "format_list", "parse_list",
     "read_requests", "register", "register_all", "resolve", "resolve_params",
     "validate_list",
+    # the shared state vocabulary: what a body IS, as opposed to what it was
+    # asked to do (MoveIntent) or what it did (ActionIntent)
+    "FACING_DEFAULT", "LIFE_ALIVE", "LIFE_GONE", "LIVES", "PHASES",
+    "PHASE_IDLE", "PHASE_MOVING", "SUPPORTS", "SUPPORT_AIRBORNE",
+    "SUPPORT_GROUNDED", "BodyState", "ensure_state", "state_of",
     # the concrete behaviors and the intent they pass between them
     "MS_PER_DELTA", "NO_INTENT", "SECONDS_PER_DELTA", "TOPDOWN_VERBS",
-    "GameAnimationDriveBehavior", "GamePlatformerMoveBehavior",
-    "GamePlayerInputBehavior", "GameTopDownMoveBehavior", "MoveIntent",
-    "intent_of",
+    "GameAnimationDriveBehavior", "GameLifecycleMarkBehavior",
+    "GamePlatformerMoveBehavior", "GamePlayerInputBehavior",
+    "GameTopDownMoveBehavior", "MoveIntent", "intent_of",
 ]

@@ -465,6 +465,13 @@ class GameActionRelayBehavior(EntityBehavior):
     `action_sink` is REPORTED and never enforced, the same contract
     `action_manager` has: an entity with no sink is quiet, not broken, and
     `EntityBehaviors.missing_requirements()` says so.
+
+    THE SINK NOW HAS AN ENGINE-SIDE HOST. `SceneManager.__sink` assigns the
+    scene's `ActionRouter` (`scripts/game/flow/router.py`) to every entity it
+    binds, by both routes, so an entity carrying this token in a bound scene
+    reaches a real sink with no game code at all. A game that wants its own
+    sink assigns one after the bind, exactly as it would for
+    `collision_field`.
     """
 
     def update(self, entity: Any, event: Any) -> None:
@@ -584,15 +591,23 @@ ACTION_RELAY = BehaviorSpec(
     name="action_relay",
     summary="Calls entity.action_sink(entity, fired) for every action that "
             "fired this frame. The only behavior that reaches outward, and it "
-            "calls rather than dispatches.",
+            "calls rather than dispatches. SceneManager assigns the sink: it "
+            "is the scene's ActionRouter (scripts/game/flow/router.py).",
     factory=GameActionRelayBehavior,
     writes=(),
     requires=("action_sink",),
-    # Not "live": it runs, but `action_sink` is the GAME's to assign and no
-    # part of the engine does. `requires` is reported and never enforced, so
-    # an entity carrying this with no sink is silently inert -- which is why
-    # the generated recommended-list column must not offer it.
-    status="needs-host",
+    # WAS "needs-host", and the condition that status describes has been met:
+    # `SceneManager` now constructs an `ActionRouter` and assigns it as
+    # `entity.action_sink` on BOTH binding routes -- `bind()` for a hand-built
+    # entity and `__bind_spawned_entities` for a map-placed one -- exactly as
+    # `LayerRenderer.__gate` hands out the collision field. So the engine does
+    # assign it, an entity bound into a scene reaches a real sink, and the
+    # generated recommended-list column may offer this token.
+    #
+    # `requires=("action_sink",)` stays and is still REPORTED, never enforced:
+    # an entity built in a check and never bound legitimately has none, which
+    # is the same contract `action_manager` and `collision_field` have.
+    status="live",
     order=RELAY_ORDER,
     example='<property name="pyoneer_behaviors" '
             'value="player_input,interact_action,action_relay"/>',

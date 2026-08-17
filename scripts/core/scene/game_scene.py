@@ -62,8 +62,55 @@ class GameScene(PyoneerGameObject):
             self.__game_objects[object_type] = [game_object]
 
     def unbind(self, object_type: str, game_object: PyoneerGameObject):
-        if object_type in self.__game_objects:
-            self.__game_objects[object_type].remove(game_object)
+        """Remove one object from one bucket. Tolerant of a miss, by identity.
+
+        This used to be `list.remove(game_object)`, which raises `ValueError`
+        for an object the bucket does not hold. That made the inverse of
+        `bind` unusable as a despawn: a body removed by one route and reaped
+        by another is a normal shape, and the second removal is a request that
+        is already satisfied -- the same argument `EntityBehaviors.detach`
+        makes for being silent on a miss.
+
+        Identity rather than `==`, for the reason `LayerRenderer.unbind` gives:
+        `list.remove` compares with `==`, and an object that defined `__eq__`
+        would take a DIFFERENT bound object out of the scene.
+        """
+        objects = self.__game_objects.get(object_type)
+        if not objects:
+            return
+        for index, candidate in enumerate(objects):
+            if candidate is game_object:
+                del objects[index]
+                return
+
+    def discard(self, game_object: PyoneerGameObject) -> str | int | None:
+        """Remove `game_object` from whichever bucket holds it. Returns the key.
+
+        None when nothing held it. `unbind` needs the caller to remember which
+        depth an object was bound at; a despawn that arrives from a state axis
+        -- "this body declared itself gone" -- has the object and not the key,
+        and making every caller carry the depth is how a body ends up removed
+        from the renderer and left in the scene.
+        """
+        for object_type, objects in self.__game_objects.items():
+            for index, candidate in enumerate(objects):
+                if candidate is game_object:
+                    del objects[index]
+                    return object_type
+        return None
+
+    def contents(self) -> tuple[tuple[str | int, PyoneerGameObject], ...]:
+        """A SNAPSHOT of every bound object, with the bucket key it is under.
+
+        A snapshot, flattened, because the one caller is `SceneManager.reap`,
+        which removes what it finds. Walking the live buckets and deleting
+        from them is the failure this whole lifecycle design is arranged
+        around: measured on this engine, three objects a, b, c with `a`
+        removing itself mid-loop ran ['a', 'c'] and b never updated.
+        """
+        return tuple((object_type, game_object)
+                     for object_type, objects in self.__game_objects.items()
+                     for game_object in tuple(objects))
 
     def begin(self, event: Optional[PyoneerEvent] = None):
         if not self.flags.get("active"):

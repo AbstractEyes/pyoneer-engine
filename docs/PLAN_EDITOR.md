@@ -1,3 +1,6 @@
+<!-- pyoneer-doc: L2 -->
+<!-- pyoneer-stamp: hand-written architecture; counts re-checked at 5dd012d on 2026-08-16 -->
+
 # The editor
 
 An authoring environment where a human and an AI build a game together, and
@@ -298,10 +301,13 @@ construction and cannot affect the project, the game, or the editor.
 ## Status
 
 Asserted by `tools/check_editor.py`, `check_paint.py`, `check_autotile.py`
-and `check_editor_ui.py` — 20 checks in the suite:
+and `check_editor_ui.py`. The suite's size is generated into
+[`CHECKS.md`](CHECKS.md) and the verb vocabulary into [`COMMANDS.md`](COMMANDS.md);
+both numbers were stale in this paragraph before those files existed. What
+those four checks cover:
 
 - scopes, command stream, transactions, exact undo/redo, atomic rollback
-- 22 verbs across tiles, objects, tables and project settings
+- every registered verb, across tiles, objects, tables and project settings
 - genre packs, hard and soft rule validation
 - notes, manifests, bundle writing, strict response parsing
 - painting: strokes, stamps, flood fill, clipping, drag semantics

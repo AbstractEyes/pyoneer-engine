@@ -47,6 +47,7 @@ from typing import Any, Optional
 from scripts.core.errors import PyoneerConfigError
 from scripts.game.behavior.base import (BehaviorParam, BehaviorSpec,
                                         EntityBehavior)
+from scripts.game.behavior.state import state_of
 
 
 class MoveIntent:
@@ -234,13 +235,26 @@ class GamePlayerInputBehavior(EntityBehavior):
         manager = getattr(entity, "action_manager", None)
         if manager is None:
             return
-        state = getattr(entity, "state", None)
-        if state is not None and not (state.enabled_inputs and state.can_move):
+        state = state_of(entity)
+        if state is not None and not (state.input_bound and state.enabled_inputs
+                                      and state.steerable):
             # The gate `GamePlayer.core_frame_update` used to apply around the
             # whole of input_move. It belongs HERE and not around the movement
             # behavior: an entity that may not be steered should stop being
             # steered, not stop being simulated -- a platformer body still has
-            # to fall while the player is in a menu.
+            # to fall while the player is in a menu. Measured: a side-on body
+            # with `steerable=False` still fell 13.772px in 10 frames.
+            #
+            # THREE terms where there were two, and the third is the
+            # de-conflation rather than a new gate. `enabled_inputs` used to
+            # carry two questions at once -- `GamePlayer.__init__` cleared it
+            # whenever `input_` was None -- so a narrative system could not
+            # tell "restore this body's input" from "grant input to a body
+            # that never had any". `input_bound` is now the wiring question
+            # and `enabled_inputs` is the authored one. Note this is the
+            # BEHAVIOR-NEUTRAL split: an entity with no manager already
+            # returned two lines above, so the entities whose `input_bound` is
+            # False for wiring reasons never reach this line at all.
             return
         if self.up_verb:
             intent.up = manager.held(self.up_verb)

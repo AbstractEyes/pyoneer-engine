@@ -163,12 +163,19 @@ surface rather than letting a reader assume.
 
 `needs-host` is the third honest state, and it is NOT the same as either. The
 behavior runs, and runs correctly -- but it requires something no part of the
-ENGINE assigns, so it does nothing until the GAME provides it. `action_relay`
-is the case: it calls `entity.action_sink`, and a sink is by definition the
-game's. Such a behavior is excluded from the generated "a complete, legal
-list" column, because that column is read as a recommendation and recommending
-one silently does nothing -- `requires` is REPORTED, never enforced, so there
-is no crash to reveal the mistake.
+ENGINE assigns, so it does nothing until the GAME provides it. Such a behavior
+is excluded from the generated "a complete, legal list" column, because that
+column is read as a recommendation and recommending one silently does nothing
+-- `requires` is REPORTED, never enforced, so there is no crash to reveal the
+mistake.
+
+NOTHING IS `needs-host` TODAY, and that is worth saying rather than leaving to
+be inferred. `action_relay` was the standing case -- it calls
+`entity.action_sink` and no part of the engine assigned one -- and
+`SceneManager` now does, on both binding routes, so it is `live`. The status
+stays in the vocabulary because the state is real and will recur; a behavior
+whose host is genuinely the game's declares it and is kept out of the
+recommendation column until the day something in `scripts/` supplies one.
 """
 
 

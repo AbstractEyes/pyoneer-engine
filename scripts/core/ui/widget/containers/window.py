@@ -320,9 +320,16 @@ class GameWindow(GameComponent):
         exact behaviour that is correct for a hidden-but-live window and
         wrong for a closed one.
 
-        Deliberately hides rather than unbinding: LayerRenderer has no unbind
-        path yet, so removing the component here would leave its layer
-        blitting it every frame.
+        Deliberately hides rather than unbinding, and that is now a CHOICE
+        rather than the absence of an alternative: `LayerRenderer.unbind` and
+        `SceneManager.despawn` exist and would take this window out of its
+        `GameComponentLayer` entirely. A closed window is meant to be
+        re-openable -- `open()` is its exact inverse and `SceneFlow` reopens
+        the same widget on every replay of a dialogue -- and unbinding would
+        make reopening a rebind, which allocates a new layer at
+        `depth + len(layers[depth])` and can cost a ~350ms regroup. Destroy a
+        window with `SceneManager.despawn(window)` when it is genuinely
+        finished with.
         """
         self.visible = False
         self.active = False

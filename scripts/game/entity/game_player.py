@@ -28,12 +28,22 @@ the one the map marked responds to a key.
 
 WHAT DID NOT MOVE
 -----------------
-`PlayerState` and its three gates. `active` still short-circuits the whole
-frame here; `enabled_inputs` and `can_move` are read by `player_input`, which
-is the behavior they were always about. Deliberate consequence worth knowing:
-clearing `can_move` mid-walk now returns the sprite to idle, where it used to
-freeze mid-stride playing the walk cycle forever, because the movement
-behavior keeps running and simply receives an empty intent.
+The three gates. `simulated` (was `active`) still short-circuits the whole
+frame here; `enabled_inputs` and `steerable` (was `can_move`) are read by
+`player_input`, which is the behavior they were always about. Deliberate
+consequence worth knowing: clearing `steerable` mid-walk now returns the
+sprite to idle, where it used to freeze mid-stride playing the walk cycle
+forever, because the movement behavior keeps running and simply receives an
+empty intent.
+
+WHAT DID MOVE: THE STATE RECORD, TO WHERE THE BEHAVIORS ARE
+------------------------------------------------------------
+`PlayerState` is now the name of `scripts.game.behavior.state.BodyState`,
+which is the shared vocabulary the movement behaviors, the animator, the
+action gates and anything narrative read. Every old field name survives as a
+property over an axis, so no caller in this file, in `main.py`, in `demos/`
+or in the eight checks that name them had to move. The one addition visible
+here is `input_bound`; see `__init__`.
 
 THE ONE THING THAT DID CHANGE, MEASURED
 ---------------------------------------
@@ -70,22 +80,34 @@ from scripts.core.event_types import GameEventType
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.input import InputActionManager
 from scripts.game.behavior import BEHAVIORS, build, read_requests
+from scripts.game.behavior.state import BodyState
 from scripts.game.entity.game_animation import GameAnimation, GameAnimationHandler
 from scripts.game.entity.game_entity import GameEntity, GameAnimatedEntity
 from scripts.game.entity.game_transform import Transform
 from scripts.core.blitpool import BlitPool
 
 
-class PlayerState:
-    def __init__(self):
-        self.can_move: bool = True
-        self.enabled_inputs: bool = True
-        self.active: bool = True
+PlayerState = BodyState
+"""What this class used to be, kept as the name eight files already import.
 
-        self.moving: bool = False
-        self.sprinting: bool = False
-        self.move_direction: str = "none"
-        self.last_direction: str = "none"
+`PlayerState` was seven fields on the player, four of which had exactly one
+reader -- `animation_drive` -- so it was never a shared record: it was a
+private channel between two movement behaviors and the animator, spelled as
+an entity attribute. `BodyState`
+(`scripts/game/behavior/state.py`) is the same record designed for a reader
+that has not been written yet, and it keeps every one of those seven names as
+a property over an axis, so nothing that says `state.can_move` or
+`state.last_direction` had to move.
+
+It is an ALIAS and not a subclass, deliberately: a subclass would be a second
+type that `isinstance` checks could disagree about, and `state_of` decides
+what counts as a body state in one place.
+
+The record lives under `scripts/game/behavior/` rather than here for the same
+reason `MoveIntent` and `ActionIntent` do -- it is the vocabulary behaviors
+pass between themselves, and a player is only one of the things that carries
+one.
+"""
 
 
 class GamePlayer(GameAnimatedEntity):
@@ -137,9 +159,22 @@ class GamePlayer(GameAnimatedEntity):
                          movement_config=movement_config,
                          animation_config=animation_config)
         self.action_manager: InputActionManager = input_
-        self.state: PlayerState = PlayerState()
-        if not self.action_manager:
-            self.state.enabled_inputs = False
+        self.state: BodyState = BodyState()
+        self.state.input_bound = input_ is not None
+        # This line used to read `if not self.action_manager:
+        # self.state.enabled_inputs = False`, and that conflated two different
+        # questions in one bit: "this entity has no input manager" and "a
+        # dialogue box has taken input away". A narrative system toggling the
+        # flag could not tell whether it was RESTORING input or GRANTING it to
+        # an entity that never had any, and `demos/behaviors.py` carries a
+        # written workaround for exactly that ambiguity. `input_bound` is the
+        # wiring answer, set once here; `enabled_inputs` is left alone and is
+        # now only ever the authored gate.
+        #
+        # Behavior-neutral, and the reason is worth having in writing:
+        # `player_input.update` and every action behavior return on
+        # `manager is None` BEFORE they reach the state gate, so no entity
+        # that was affected by the old clearing ever consulted the flag.
         # After action_manager and state exist: `player_input.attach` reads
         # the manager to prove every verb it polls is bound, and reporting
         # "no manager" for a player that has one would be a lie about boot
@@ -177,11 +212,18 @@ class GamePlayer(GameAnimatedEntity):
         self.behaviors.update(event)
 
     def core_frame_update(self, event: Optional[PyoneerEvent] = None):
-        if not self.state.active:
-            # Still the whole-entity switch: an inactive player neither moves
-            # nor animates. The two finer gates -- enabled_inputs, can_move --
-            # live in the `player_input` behavior, because they are about
-            # being steered rather than about being simulated.
+        if not self.state.simulated:
+            # Still the whole-entity switch, under the name that says what it
+            # does: an unsimulated player neither moves nor animates -- it
+            # returns before `super()`, so the animation clock stops too
+            # (measured: five frames left `current_time` at 0.000). The finer
+            # gates -- `input_bound`, `enabled_inputs`, `steerable` -- live in
+            # the `player_input` behavior, because they are about being
+            # steered rather than about being simulated.
+            #
+            # It is NOT a world pause and must not be reached for as one: it
+            # is per-entity, there is no scene-level equivalent in this engine,
+            # and nothing in production writes it.
             return
         # -> GameAnimatedEntity.core_frame_update -> GameEntity.core_frame_update
         #    -> self.behaviors.update(event), then the animation tick.

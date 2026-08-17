@@ -1,20 +1,27 @@
+<!-- pyoneer-doc: L2 -->
+<!-- pyoneer-stamp: hand-written; the ranked list is NOT re-measured -- see the box below -->
+
 # What to do next — one ranked list
 
 **State this describes:** commit `ce66ce5` — *Mount collision, tileset verbs,
 .blitmap format, entity spawn* — read on 2026-08-14. 49 commits.
 
-> **STALE BELOW — read this box first.** Written against `ce66ce5`; HEAD is
-> now `3a8eeb4`. Items **1**, **2**, **6** and part of **7** have landed, and
-> the roster is **37** checks rather than 29. The ranked list below has not
-> been re-measured against the tree since, so treat every entry in it as a
-> claim to verify rather than a fact — which is the same instruction the
-> paragraph under it already gives, for the same reason.
+> **STALE BELOW — read this box first.** Written against `ce66ce5`-era state;
+> HEAD is now `5dd012d`. Items **1**, **2**, **6** and part of **7** have
+> landed, and the roster has grown — [`CHECKS.md`](CHECKS.md) is generated from
+> it, so read the size there rather than from any sentence here. The ranked
+> list below has not been re-measured against the tree since, so treat every
+> entry in it as a claim to verify rather than a fact — which is the same
+> instruction the paragraph under it already gives, for the same reason.
+>
+> Route from [`../CLAUDE.md`](../CLAUDE.md), not from this file.
 
 ## What the behavior work left open (2026-08-16, `3a8eeb4`)
 
 An entity's behaviour is now composed from a `pyoneer_behaviors` list on the
-tmx object: `player_input`, `topdown_move`, `platformer_move`,
-`animation_drive`. `docs/BEHAVIORS.md` is generated from the registry, and its
+tmx object. The registered tokens are not enumerated here on purpose — that
+list has already grown twice since this section was written.
+`docs/BEHAVIORS.md` is generated from the registry, and its
 integration table is *measured* by constructing a real entity and running
 frames — so **read that table, not this list**, for what is wired. These are
 the things it currently reports as `no`, plus what the review found and left:
@@ -75,7 +82,8 @@ to stop.
 above, **items 1 and 5 are being built right now** — the file names line up
 with them exactly. If they landed, this list starts at item 2.
 
-- `tools/check_all.py`'s roster names **29** checks. `ce66ce5`'s own commit
+- At `ce66ce5`, the roster named **29** checks. <!-- fact: historical, the roster size AT ce66ce5, not at HEAD -->
+  That commit's own
   message says `ALL 29 CHECKS PASS, NO DRIFT`. Counted at each commit, the
   roster has gone 18 (`de13389`) → 20 (`4537598`) → 24 (`e01d06f`) → 25
   (`701bbb5`) → 29 (`ce66ce5`).

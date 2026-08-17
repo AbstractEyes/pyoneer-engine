@@ -50,6 +50,36 @@ SCREEN SPACE IS Y-DOWN
 Up is negative y. `jump_velocity` is stored POSITIVE in the actors table and
 negated at the instant of use, exactly as platformer/RULES.md specifies, so a
 designer reading the table is not doing sign arithmetic in their head.
+
+FACING WAS SEPARATED FROM DISPLACEMENT, AND IT IS FRAME-NEUTRAL
+---------------------------------------------------------------
+These three behaviors used to pass THREE fields between them -- `moving`,
+`move_direction` and `last_direction` -- of which the last two were one fact
+stored twice. `move_direction` held the direction while walking and the
+string `"none"` while stopped; `last_direction` existed only because
+`"none"` is not a sprite row and `idle_none` RAISES. So the animator read two
+fields to reconstruct one, and the second read was a workaround for the first
+field having no legal resting value.
+
+They are now `state.phase` and `state.facing`, and `animation_drive` names
+BOTH sequences from `facing`. Measured before landing it, over a real body
+driven through four scripted runs -- 32 frames and 8 verb phases top-down,
+15 frames against a wall with sprint, 47 frames of side-on fall/run/jump/turn
+and 30 frames walking off a ledge -- every position is byte-identical and the
+animation `start()` sequences are identical:
+
+    ['idle_down', 'walk_right', 'idle_right', 'walk_right', 'walk_left',
+     'walk_right', 'idle_right', 'walk_down', 'idle_down']
+
+The identity is a measurement and not a tautology: `tools/check_state.py`
+carries the negative control, an animator naming both branches from
+`move_direction` instead, and it raises `PyoneerAssetMissingError` for
+`idle_none` on the first stop.
+
+The gate did NOT move with it. `facing` is an open token and
+`GameEntity.move_direction` still takes one of four; the two are separate
+vocabularies now, and `state.py` says at length why the separation must not
+be sold as unwelding the collision gate.
 """
 from __future__ import annotations
 
@@ -60,6 +90,10 @@ from pygame import Vector2
 from scripts.game.behavior.base import (BehaviorParam, BehaviorSpec,
                                         EntityBehavior)
 from scripts.game.behavior.input import intent_of
+from scripts.game.behavior.state import (FACING_DEFAULT, PHASE_IDLE,
+                                         PHASE_MOVING, SUPPORT_AIRBORNE,
+                                         SUPPORT_GROUNDED, ensure_state,
+                                         state_of)
 
 MS_PER_DELTA: float = 60.0
 """Milliseconds in one unit of `event.data["delta"]`.
@@ -78,11 +112,19 @@ TOPDOWN_VERBS: tuple[str, ...] = ("up", "down", "left", "right")
 """The four verbs, in the order `GamePlayer.input_move` polled them.
 
 THE ORDER IS LOAD-BEARING, in exactly one way: every held verb produces its
-own move, but the LAST one held decides `state.move_direction`, and therefore
-which walk animation plays. Holding up and right walks diagonally and faces
-right. Reversing this tuple would leave every displacement identical and
-change which sprite the player sees, which is the kind of difference that
-gets attributed to the art.
+own move, but the LAST one held decides `state.facing`, and therefore which
+walk animation plays. Holding up and right walks diagonally and faces right.
+Reversing this tuple would leave every displacement identical and change
+which sprite the player sees, which is the kind of difference that gets
+attributed to the art.
+
+These four are also the DISPLACEMENT vocabulary -- the keys of
+`collision_runtime.DIRECTION_BITS` and the only strings
+`GameEntity.move_direction` acts on. `state.facing` is written FROM one of
+them here and is not the same axis: a game may widen facing to eight tokens
+without widening this tuple, and it must not widen this tuple without
+widening `DIRECTION_BITS`, because `allowed_move` passes a key it does not
+know straight through the collision gate unclamped.
 """
 
 
@@ -101,6 +143,16 @@ class GameTopDownMoveBehavior(EntityBehavior):
     them.
     """
 
+    def attach(self, entity: Any) -> None:
+        """Allocate the state record this behavior publishes into.
+
+        The contract `player_input.attach` has with `MoveIntent`: whoever
+        writes a record allocates it, so no entity class has to know which
+        behaviors it might one day carry. `GamePlayer` already has one; a
+        bare `GameEntity` pushed around as a crate gets one here.
+        """
+        ensure_state(entity)
+
     def update(self, entity: Any, event: Any) -> None:
         if event is None:
             return
@@ -108,34 +160,52 @@ class GameTopDownMoveBehavior(EntityBehavior):
         intent = intent_of(entity)
         sprint = intent.sprint
         moving = False
-        direction = "none"
+        direction = ""
         for verb in TOPDOWN_VERBS:
             if not getattr(intent, verb):
                 continue
             moving = True
             direction = verb
             entity.move_direction(delta, verb, sprint=sprint)
-        state = getattr(entity, "state", None)
+        state = state_of(entity)
         if state is None:
-            # A bare GameEntity has no PlayerState. It still moves; it simply
-            # has nowhere to record what it did, and the animation behavior
-            # has nothing to read. Both are honest for a pushed crate.
+            # `attach` allocates one, so this is the hand-constructed path --
+            # an entity whose `state` slot was cleared, or a behavior driven
+            # without attaching. It still moves; it simply has nowhere to
+            # record what it did, and the animator has nothing to read. Both
+            # are honest for a pushed crate.
             return
-        state.moving = moving
-        state.move_direction = direction
+        state.phase = PHASE_MOVING if moving else PHASE_IDLE
         if moving:
-            state.last_direction = direction
+            # ONE write where there were three. `facing` persists through the
+            # stop, which is what `last_direction` was for; `move_direction`
+            # reads back as "none" while idle without anything storing it.
+            state.facing = direction
 
 
 class GamePlatformerMoveBehavior(EntityBehavior):
     """A side-on body: gravity, a jump with coyote time, and air control.
 
-    Velocity, grounded and the coyote clock live on the ENTITY, not on this
-    object, so a sibling behavior (an animator wanting an airborne sequence, a
-    damage behavior wanting fall speed) can read them without reaching into
-    another behavior's internals. They are allocated in `attach`, which runs
-    exactly once -- unlike `core_lifecycle_prepare`, which `GameScene.begin`
-    calls a second time on every bound object.
+    Support and the coyote clock are DECLARED STATE -- `state.support` and
+    `state.support_grace` on the shared `BodyState` -- rather than two ad-hoc
+    attributes this behavior invents on the entity. The old arrangement had
+    the right instinct and the wrong home: the docstring here argued that a
+    sibling (an animator wanting an airborne sequence, a damage behavior
+    wanting fall speed) should be able to read them, and then nothing ever
+    did, because a bare `entity.grounded` bool is a spelling only a platformer
+    knows and the animator's vocabulary had no room for a third fact. An axis
+    on the record is what makes that reader writable. `entity.grounded` and
+    `entity.coyote_left` are still exactly where they were, as aliases over
+    the axis; there is one home and two spellings, not two homes.
+
+    Velocity stays on the entity, and deliberately: it is a side-on
+    INTEGRATION variable, not a state a second format can read. A grid-tactics
+    unit interpolating between cells would keep sliding after its move
+    resolved, and a visual novel has no use for it at all.
+
+    The record is allocated in `attach`, which runs exactly once -- unlike
+    `core_lifecycle_prepare`, which `GameScene.begin` calls a second time on
+    every bound object.
 
     Resolution is axis by axis, horizontal first, as platformer/RULES.md
     prescribes, and each axis goes through `GameEntity.allowed_move` -- the
@@ -168,9 +238,17 @@ class GamePlatformerMoveBehavior(EntityBehavior):
         self.coyote_ms = coyote_ms
 
     def attach(self, entity: Any) -> None:
+        state = ensure_state(entity)
         entity.velocity = Vector2(0.0, 0.0)
-        entity.grounded = False
-        entity.coyote_left = 0.0
+        # Was `entity.grounded = False` / `entity.coyote_left = 0.0`, through
+        # the aliases that now stand over these two axes. Written explicitly
+        # rather than left to the record's defaults: `BodyState` starts
+        # SUPPORT_GROUNDED, because a body with no gravity model IS supported
+        # and top-down is the majority case -- and a side-on body has to
+        # declare itself unsupported until the field says otherwise, exactly
+        # as it did when this line read False.
+        state.support = SUPPORT_AIRBORNE
+        state.support_grace = 0.0
 
     def update(self, entity: Any, event: Any) -> None:
         if event is None:
@@ -180,27 +258,34 @@ class GamePlatformerMoveBehavior(EntityBehavior):
         milliseconds = delta * MS_PER_DELTA
         intent = intent_of(entity)
         velocity = entity.velocity
+        # Total, not optional: this body's physics cannot run without somewhere
+        # to keep its support, which is why `entity.grounded` was allocated
+        # unconditionally in attach. `ensure_state` is the same guarantee with
+        # the axis as its home.
+        state = ensure_state(entity)
+        grounded = state.support == SUPPORT_GROUNDED
 
         # 1. The coyote window. It is REFILLED while standing, and only counts
         #    down while airborne, so "how long since I left the ground" needs
-        #    no separate timestamp and cannot drift out of step with grounded.
-        if entity.grounded:
-            entity.coyote_left = float(self.coyote_ms)
+        #    no separate timestamp and cannot drift out of step with support.
+        if grounded:
+            state.support_grace = float(self.coyote_ms)
         else:
-            entity.coyote_left = max(0.0, entity.coyote_left - milliseconds)
+            state.support_grace = max(0.0, state.support_grace - milliseconds)
 
         # 2. The jump, read BEFORE gravity so a jump on the landing frame is
         #    not cancelled by the same frame's downward acceleration.
         #    Spending the window is what makes a second jump impossible: after
-        #    this, grounded is False and coyote_left is 0 until something
+        #    this, support is airborne and the grace is 0 until something
         #    lands, and both of those are the only two ways in.
-        if intent.jump and (entity.grounded or entity.coyote_left > 0.0):
+        if intent.jump and (grounded or state.support_grace > 0.0):
             velocity.y = -self.jump_velocity      # y-down: negate at use
-            entity.grounded = False
-            entity.coyote_left = 0.0
+            grounded = False
+            state.support = SUPPORT_AIRBORNE
+            state.support_grace = 0.0
 
         # 3. Horizontal, resolved first.
-        control = 1.0 if entity.grounded else self.air_control
+        control = 1.0 if grounded else self.air_control
         velocity.x = intent.x * self.move_speed * control
         step_x = velocity.x * seconds
         if step_x:
@@ -210,14 +295,14 @@ class GamePlatformerMoveBehavior(EntityBehavior):
             if abs(allowed.x) < abs(step_x):
                 velocity.x = 0.0
 
-        # 4. Gravity, then the vertical resolve. `grounded` is recomputed from
+        # 4. Gravity, then the vertical resolve. Support is recomputed from
         #    scratch every frame rather than remembered: an entity standing on
         #    a tile that was repainted mid-session must fall, and a flag that
         #    is only ever cleared by an event is a flag that eventually sticks.
         velocity.y = min(velocity.y + self.gravity * seconds,
                          self.max_fall_speed)
         step_y = velocity.y * seconds
-        entity.grounded = False
+        state.support = SUPPORT_AIRBORNE
         if step_y:
             direction = "down" if step_y > 0.0 else "up"
             allowed = entity.allowed_move(Vector2(0.0, step_y), direction)
@@ -226,22 +311,22 @@ class GamePlatformerMoveBehavior(EntityBehavior):
                 # Something refused the step. Downward that is a floor and the
                 # body has landed; upward it is a ceiling and the jump ends.
                 velocity.y = 0.0
-                entity.grounded = step_y > 0.0
+                state.support = (SUPPORT_GROUNDED if step_y > 0.0
+                                 else SUPPORT_AIRBORNE)
 
         # 5. What the animator reads. A side-on body faces left or right and
         #    nothing else, so `walk_up` is never named -- which matters,
         #    because GameAnimationHandler.start RAISES for a sequence a sheet
         #    does not have, unlike move_direction which silently moves zero.
-        state = getattr(entity, "state", None)
-        if state is None:
-            return
+        #
+        #    Facing is written only while moving, so a body that stops keeps
+        #    the way it was pointed. That used to take a second field
+        #    (`last_direction`) because the first one had to hold the string
+        #    "none" while stopped, and "none" is not a sprite row.
         horizontal = intent.x
-        direction = "right" if horizontal > 0 else ("left" if horizontal < 0
-                                                    else "none")
-        state.moving = horizontal != 0
-        state.move_direction = direction
-        if state.moving:
-            state.last_direction = direction
+        state.phase = PHASE_MOVING if horizontal else PHASE_IDLE
+        if horizontal:
+            state.facing = "right" if horizontal > 0 else "left"
 
 
 class GameAnimationDriveBehavior(EntityBehavior):
@@ -263,23 +348,38 @@ class GameAnimationDriveBehavior(EntityBehavior):
     for a direction it does not know -- so a behavior list that changes the
     direction vocabulary MUST change the naming with it, and this is the
     parameter that does it.
+
+    WHY IT READS ONE DIRECTION FIELD AND NOT TWO
+    --------------------------------------------
+    It used to name the walk from `state.move_direction` and the idle from
+    `state.last_direction`. That asymmetry was not a design: `move_direction`
+    held the string `"none"` while stopped, `idle_none` is not a sequence any
+    sheet has, and `GameAnimationHandler.start` RAISES for one it does not
+    know -- so a second field existed purely to hold a value the first could
+    not. `state.facing` has a legal resting value, so both branches name it
+    and the second read is gone. Measured frame-identical; see the module
+    docstring, and `tools/check_state.py` for the negative control that
+    proves the identity is a measurement.
     """
 
+    IDLE_FORMAT: str = "idle_{}"
+    WALK_FORMAT: str = "walk_{}"
+
     def __init__(self,
-                 walk_format: str = "walk_{}",
-                 idle_format: str = "idle_{}",
-                 initial_sequence: str = "idle_down"):
+                 walk_format: str = WALK_FORMAT,
+                 idle_format: str = IDLE_FORMAT,
+                 initial_sequence: str = IDLE_FORMAT.format(FACING_DEFAULT)):
         self.walk_format = walk_format
         self.idle_format = idle_format
         self.initial_sequence = initial_sequence
-        self._last_moving = False
-        self._last_direction = "none"
+        self._last_phase = PHASE_IDLE
+        self._last_facing = FACING_DEFAULT
 
     def attach(self, entity: Any) -> None:
         """Start the opening sequence, which used to be hardcoded in GamePlayer.
 
-        `PlayerState` starts at moving=False, move_direction="none", so the
-        remembered pair below matches a fresh entity exactly and the first
+        `BodyState` starts at `phase=idle`, `facing=FACING_DEFAULT`, so the
+        remembered pair above matches a fresh entity exactly and the first
         frame is a no-change -- the same no-change `input_move` produced on
         its first frame, which is what keeps this swap frame-neutral.
         """
@@ -288,20 +388,19 @@ class GameAnimationDriveBehavior(EntityBehavior):
             animation.start(self.initial_sequence)
 
     def update(self, entity: Any, event: Any) -> None:
-        state = getattr(entity, "state", None)
+        state = state_of(entity)
         animation = getattr(entity, "animation", None)
         if state is None or animation is None:
             return
-        moving = state.moving
-        direction = state.move_direction
-        if moving == self._last_moving and direction == self._last_direction:
+        phase = state.phase
+        facing = state.facing
+        if phase == self._last_phase and facing == self._last_facing:
             return
-        self._last_moving = moving
-        self._last_direction = direction
-        if moving:
-            animation.start(self.walk_format.format(direction))
-        else:
-            animation.start(self.idle_format.format(state.last_direction))
+        self._last_phase = phase
+        self._last_facing = facing
+        template = (self.walk_format if phase == PHASE_MOVING
+                    else self.idle_format)
+        animation.start(template.format(facing))
 
 
 # ---------------------------------------------------------------------------
@@ -320,8 +419,13 @@ TOPDOWN_MOVE = BehaviorSpec(
     summary="Eight-direction axis-aligned movement, each held verb gated "
             "separately. The demo's controller.",
     factory=GameTopDownMoveBehavior,
-    writes=("transform.position", "state.moving", "state.move_direction",
-            "state.last_direction"),
+    # Three state writes became two, because `move_direction` and
+    # `last_direction` were one fact. Declaring the AXES rather than the old
+    # aliases is what makes the refusal work: `EntityBehaviors.attach` rejects
+    # two behaviors at one order whose `writes` intersect, so a second body
+    # behavior writing `state.facing` at order 20 is refused whether or not
+    # anyone remembered to declare a `conflicts` pair.
+    writes=("transform.position", "state.phase", "state.facing"),
     requires=("move_direction", "transform"),
     conflicts=("platformer_move",),
     order=20,
@@ -357,8 +461,8 @@ PLATFORMER_MOVE = BehaviorSpec(
                       "Milliseconds after leaving a ledge during which a jump "
                       "still counts. 0 for strict.", source="actors"),
     ),
-    writes=("transform.position", "velocity", "grounded", "coyote_left",
-            "state.moving", "state.move_direction", "state.last_direction"),
+    writes=("transform.position", "velocity", "state.support",
+            "state.support_grace", "state.phase", "state.facing"),
     requires=("allowed_move", "transform"),
     conflicts=("topdown_move",),
     order=20,
@@ -375,21 +479,28 @@ ANIMATION_DRIVE = BehaviorSpec(
             "changes. The sequence naming is parameters, not code.",
     factory=GameAnimationDriveBehavior,
     params=(
-        BehaviorParam("walk_format", "walk sequence", "str", "walk_{}",
+        BehaviorParam("walk_format", "walk sequence", "str",
+                      GameAnimationDriveBehavior.WALK_FORMAT,
                       "Format string for the moving sequence; {} is the "
                       "direction. A platformer sheet may want 'run_{}'.",
                       source="object"),
-        BehaviorParam("idle_format", "idle sequence", "str", "idle_{}",
-                      "Format string for the stopped sequence; {} is the last "
-                      "direction moved.", source="object"),
+        BehaviorParam("idle_format", "idle sequence", "str",
+                      GameAnimationDriveBehavior.IDLE_FORMAT,
+                      "Format string for the stopped sequence; {} is the "
+                      "direction the body is facing.", source="object"),
         BehaviorParam("initial_sequence", "opening sequence", "str",
-                      "idle_down",
+                      GameAnimationDriveBehavior.IDLE_FORMAT.format(
+                          FACING_DEFAULT),
                       "Played once at attach. A side-on body wants "
                       "'idle_right'; empty leaves whatever the handler "
                       "started.", source="object"),
     ),
     writes=("animation",),
-    requires=("animation", "state"),
+    # The state axes it READS, named rather than the bare record. `requires`
+    # is reported and never enforced, so this is the declaration that tells an
+    # author which axes have to be produced for this behavior to say anything
+    # -- and `missing_requirements()` names the axis, not just "state".
+    requires=("animation", "state.phase", "state.facing"),
     order=80,
     example='<property name="pyoneer_param_walk_format" value="run_{}"/>',
 )

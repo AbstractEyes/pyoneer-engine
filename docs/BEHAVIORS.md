@@ -136,6 +136,23 @@ design.
     status     whether anything in the engine runs it
 
 
+## The state axes
+
+`BodyState` (`scripts/game/behavior/state.py`) is what a body IS, beside `MoveIntent` (what it was ASKED to do) and `ActionIntent` (what it DID). A behavior declares the axes it writes as `state.<axis>`, and two behaviors at one `order` writing one axis are REFUSED at attach -- which is the whole reason the declaration is spelled per axis rather than as `state`.
+
+| axis | meaning |
+| --- | --- |
+| `state.enabled_inputs` | Whether input is currently permitted. The authored gate. Read by `player_input` WITH `steerable` and by the action behaviors WITHOUT it -- a body frozen for a cutscene may not walk and must still press continue. |
+| `state.facing` | Which way the body is pointed. OPEN -- any non-empty string, because isometric wants eight tokens and twin-stick wants an angle. Defaults to `down`. It is the `{}` in `walk_{}` and it is NOT the argument to `move_direction`. |
+| `state.input_bound` | Whether the body is wired to a human's input at all. Set once from the wiring, so a narrative gate can tell restoring input from granting it. |
+| `state.life` | Whether the body is still part of the world. CLOSED: `alive`, `gone`. Written by `lifecycle_mark` (and by any game code that wants a body gone); READ by `SceneManager.reap()`, which is what actually removes it from its scene bucket and its EntityLayer. Marking is a DECLARATION -- a behavior that unbound its own entity would make the scene fan-out skip the next sibling. |
+| `state.phase` | What the body is doing. CLOSED: `idle`, `moving`. A branch reads it, so an unrecognised value would silently take the idle path. |
+| `state.simulated` | Whether the entity is stepped at all. `GamePlayer` returns before `super()` when this is false, so the animation clock stops too. Per-entity; it is NOT a world pause. |
+| `state.sprinting` | A mirror of `MoveIntent.sprint`. Not an axis and has no production reader; the real home is the intent. |
+| `state.steerable` | Whether the body may be STEERED. Gates the input poll, not the simulation -- a side-on body still falls while the player is in a menu. |
+| `state.support` | Whether something is holding the body up. CLOSED: `grounded`, `airborne`. Written by `platformer_move`; `entity.grounded` is an alias over it. |
+| `state.support_grace` | Milliseconds a body that has left its support is still treated as supported -- the coyote clock. `entity.coyote_left` is an alias over it. |
+
 ## The registry
 
 | token | order | status | writes | summary |
@@ -144,10 +161,11 @@ design.
 | `attack_action` | 15 | live | `action_intent.attack_action` | Fires on the rising edge of the 'attack' verb, with a cooldown. Records an ActionFired; reaches no event bus. |
 | `interact_action` | 15 | live | `action_intent.interact_action` | Fires on the rising edge of the 'action' verb -- talk, use, open. The explicit interaction a `use` map trigger is waiting for. |
 | `pause_action` | 15 | live | `action_intent.pause_action` | Fires on the rising edge of the 'pause' verb. The entity-side half of a pause; what it MEANS is the sink's business. |
-| `platformer_move` | 20 | live | `transform.position`, `velocity`, `grounded`, `coyote_left`, `state.moving`, `state.move_direction`, `state.last_direction` | A side-on body: gravity, terminal velocity, air control and a jump with coyote time. Reads the actors table's own columns. |
-| `topdown_move` | 20 | live | `transform.position`, `state.moving`, `state.move_direction`, `state.last_direction` | Eight-direction axis-aligned movement, each held verb gated separately. The demo's controller. |
+| `platformer_move` | 20 | live | `transform.position`, `velocity`, `state.support`, `state.support_grace`, `state.phase`, `state.facing` | A side-on body: gravity, terminal velocity, air control and a jump with coyote time. Reads the actors table's own columns. |
+| `topdown_move` | 20 | live | `transform.position`, `state.phase`, `state.facing` | Eight-direction axis-aligned movement, each held verb gated separately. The demo's controller. |
 | `animation_drive` | 80 | live | `animation` | Names the animation from the movement state, on the frame it changes. The sequence naming is parameters, not code. |
-| `action_relay` | 90 | needs-host | -- | Calls entity.action_sink(entity, fired) for every action that fired this frame. The only behavior that reaches outward, and it calls rather than dispatches. |
+| `action_relay` | 90 | live | -- | Calls entity.action_sink(entity, fired) for every action that fired this frame. The only behavior that reaches outward, and it calls rather than dispatches. SceneManager assigns the sink: it is the scene's ActionRouter (scripts/game/flow/router.py). |
+| `lifecycle_mark` | 95 | live | `state.life` | Declares this body GONE -- when a named action fires, or after a declared lifetime. It marks and never removes; SceneManager.reap() is what takes a marked body out of the scene and the renderer. |
 
 ### `player_input`
 
@@ -257,7 +275,7 @@ A side-on body: gravity, terminal velocity, air control and a jump with coyote t
 - **order** 20
 - **hooks** `attach`, `update`
 - **binds** nothing (not on the event bus)
-- **writes** `transform.position`, `velocity`, `grounded`, `coyote_left`, `state.moving`, `state.move_direction`, `state.last_direction`
+- **writes** `transform.position`, `velocity`, `state.support`, `state.support_grace`, `state.phase`, `state.facing`
 - **requires** `allowed_move`, `transform`
 - **conflicts with** `topdown_move`
 - **genres** platformer
@@ -283,9 +301,9 @@ Eight-direction axis-aligned movement, each held verb gated separately. The demo
 
 - **class** `GameTopDownMoveBehavior`
 - **order** 20
-- **hooks** `update`
+- **hooks** `attach`, `update`
 - **binds** nothing (not on the event bus)
-- **writes** `transform.position`, `state.moving`, `state.move_direction`, `state.last_direction`
+- **writes** `transform.position`, `state.phase`, `state.facing`
 - **requires** `move_direction`, `transform`
 - **conflicts with** `platformer_move`
 - **genres** topdown_rpg
@@ -305,14 +323,14 @@ Names the animation from the movement state, on the frame it changes. The sequen
 - **hooks** `attach`, `update`
 - **binds** nothing (not on the event bus)
 - **writes** `animation`
-- **requires** `animation`, `state`
+- **requires** `animation`, `state.phase`, `state.facing`
 - **conflicts with** --
 - **genres** any
 
 | parameter | type | default | source | required | meaning |
 | --- | --- | --- | --- | --- | --- |
 | `walk_format` | str | `'walk_{}'` | object | no | Format string for the moving sequence; {} is the direction. A platformer sheet may want 'run_{}'. |
-| `idle_format` | str | `'idle_{}'` | object | no | Format string for the stopped sequence; {} is the last direction moved. |
+| `idle_format` | str | `'idle_{}'` | object | no | Format string for the stopped sequence; {} is the direction the body is facing. |
 | `initial_sequence` | str | `'idle_down'` | object | no | Played once at attach. A side-on body wants 'idle_right'; empty leaves whatever the handler started. |
 
 ```
@@ -321,9 +339,7 @@ Names the animation from the movement state, on the frame it changes. The sequen
 
 ### `action_relay`
 
-Calls entity.action_sink(entity, fired) for every action that fired this frame. The only behavior that reaches outward, and it calls rather than dispatches.
-
-> **Status: needs-host.** Nothing in the engine runs this yet.
+Calls entity.action_sink(entity, fired) for every action that fired this frame. The only behavior that reaches outward, and it calls rather than dispatches. SceneManager assigns the sink: it is the scene's ActionRouter (scripts/game/flow/router.py).
 
 - **class** `GameActionRelayBehavior`
 - **order** 90
@@ -340,6 +356,29 @@ Takes no parameters.
 <property name="pyoneer_behaviors" value="player_input,interact_action,action_relay"/>
 ```
 
+### `lifecycle_mark`
+
+Declares this body GONE -- when a named action fires, or after a declared lifetime. It marks and never removes; SceneManager.reap() is what takes a marked body out of the scene and the renderer.
+
+- **class** `GameLifecycleMarkBehavior`
+- **order** 95
+- **hooks** `attach`, `update`
+- **binds** nothing (not on the event bus)
+- **writes** `state.life`
+- **requires** --
+- **conflicts with** --
+- **genres** any
+
+| parameter | type | default | source | required | meaning |
+| --- | --- | --- | --- | --- | --- |
+| `despawn_on` | str | `''` | object | no | The ACTION TOKEN whose firing declares this body gone -- 'interact_action' for a pickup, 'attack_action' for a one-shot. Not an input verb: the verb is rebindable and the token is the stable name. Empty means no action ends this body. |
+| `lifetime_ms` | int | `0` | object | no | Milliseconds this body exists for before it is declared gone. 0 means no lifetime. Milliseconds, not delta units -- delta is ms/60 and this converts. |
+
+```
+<property name="pyoneer_behaviors" value="player_input,interact_action,action_relay,lifecycle_mark"/>
+<property name="pyoneer_param_despawn_on" value="interact_action"/>
+```
+
 <!-- Everything above this line is `describe_all()` in scripts/game/behavior/registry.py. Everything below is derived from the engine and the genre packs by tools/check_behavior_docs.py. Regenerate the whole file with:  .venv/Scripts/python.exe tools/check_behavior_docs.py --write  -->
 
 ## Integration status
@@ -353,8 +392,8 @@ Every row below is measured, not declared: the drive row is produced by construc
 | `GameEntity.behaviors` exists on a constructed entity | **yes** | one attribute in `GameEntity.__init__` |
 | `GameEntity.core_frame_update` runs the drive | **yes** | one line replacing the `pass` in `game_entity.py` |
 | a behavior is registered | **yes** | one `register(BehaviorSpec(...))` in `scripts/game/behavior/registry.py` |
-| a declaration is turned into attached behaviors somewhere | **yes** | done in `scripts/game/entity/game_player.py`, `scripts/loaders/map_loader.py` |
-| a **tmx object's** `pyoneer_behaviors` property is read when it spawns | **yes** | read in `scripts/loaders/map_loader.py` |
+| a declaration is turned into attached behaviors somewhere | **yes** | done in `scripts/core/scene/scene_manager.py`, `scripts/game/entity/game_player.py`, `scripts/loaders/map_loader.py` |
+| a **tmx object's** `pyoneer_behaviors` property is read when it spawns | **yes** | read in `scripts/core/scene/scene_manager.py`, `scripts/loaders/map_loader.py` |
 | `GameEntity.collision_field` is assigned in production | **yes** | assigned in `scripts/core/renderer.py` |
 | a `jump` input action exists | **yes** | `config/inputs.json` binds `action`, `attack`, `down`, `jump`, `left`, `pause`, `right`, `sprint`, `up` |
 
@@ -382,7 +421,7 @@ This is the whole point of the design: the same class, the same spawn entry, a d
 
 | genre | a complete, legal list |
 | --- | --- |
-| `platformer` | `player_input,attack_action,interact_action,pause_action,platformer_move,animation_drive` |
-| `topdown_rpg` | `player_input,attack_action,interact_action,pause_action,topdown_move,animation_drive` |
+| `platformer` | `player_input,attack_action,interact_action,pause_action,platformer_move,animation_drive,action_relay,lifecycle_mark` |
+| `topdown_rpg` | `player_input,attack_action,interact_action,pause_action,topdown_move,animation_drive,action_relay,lifecycle_mark` |
 
-Set the object's `pyoneer_behaviors` property to one of those values. Same `type`, same `SPAWN_REGISTRY` entry, same depth, same class -- only the list changes. `player_input`, `attack_action`, `interact_action`, `pause_action`, `animation_drive`, `action_relay` declare no genre and so belong in any list.
+Set the object's `pyoneer_behaviors` property to one of those values. Same `type`, same `SPAWN_REGISTRY` entry, same depth, same class -- only the list changes. `player_input`, `attack_action`, `interact_action`, `pause_action`, `animation_drive`, `action_relay`, `lifecycle_mark` declare no genre and so belong in any list.

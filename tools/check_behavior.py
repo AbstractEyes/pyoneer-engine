@@ -549,7 +549,8 @@ _shipped = sorted(BEHAVIOR_REGISTRY)
 # here, because it is a game's behavior and not the engine's.
 expect("the shipped table is exactly the engine's own behaviors", _shipped,
        ["action_relay", "animation_drive", "attack_action", "interact_action",
-        "pause_action", "platformer_move", "player_input", "topdown_move"])
+        "lifecycle_mark", "pause_action", "platformer_move", "player_input",
+        "topdown_move"])
 expect_raises("an unknown token names itself and lists the SHIPPED table",
               PyoneerAssetMissingError, lambda: resolve("topdown_mvoe"),
               "topdown_mvoe", "entity behavior", "topdown_move",

@@ -16,6 +16,7 @@ from scripts.core.collision_runtime import (CollisionField, DIRECTION_BITS,
 from scripts.game.entity.game_animation import GameAnimationHandler
 from scripts.core.game_object import PyoneerGameObject
 from scripts.game.behavior import EntityBehaviors
+from scripts.game.behavior import state as behavior_state
 from scripts.game.entity.game_transform import Transform
 from pygame import Vector2
 
@@ -156,6 +157,55 @@ class GameEntity(GameEntitySimple, ABC):
         offset_x, offset_y = self.collision_offset
         return (self.transform.position.x + offset_x,
                 self.transform.position.y + offset_y)
+
+    # -- support, which is one fact with two spellings -----------------------
+    #
+    # `grounded` and `coyote_left` were plain attributes `platformer_move`
+    # allocated in its own `attach`, and its docstring argued for putting them
+    # on the entity so a sibling could read them. Nothing ever did, because
+    # the animator's vocabulary (a boolean and a direction token) had no room
+    # for a third fact. They now live on `BodyState` as the `support` axis, so
+    # that reader is finally writable -- and these two properties are what
+    # keeps every existing caller in place. They are ALIASES over one home,
+    # never a second copy: `entity.grounded = True` and
+    # `state.support = SUPPORT_GROUNDED` are the same write.
+
+    @property
+    def grounded(self) -> bool:
+        """Whether something is holding this body up. `state.support`.
+
+        Raises `AttributeError` for an entity carrying no `BodyState`, so
+        `getattr(entity, "grounded", default)` still answers `default` for a
+        body that was never given one -- which is what it did when this was an
+        attribute only `platformer_move.attach` created.
+        """
+        found = behavior_state.state_of(self)
+        if found is None:
+            raise AttributeError(
+                "%s carries no BodyState, so it has no support to report. A "
+                "movement behavior allocates one in attach()."
+                % type(self).__name__)
+        return found.support == behavior_state.SUPPORT_GROUNDED
+
+    @grounded.setter
+    def grounded(self, value: bool) -> None:
+        behavior_state.ensure_state(self).support = (
+            behavior_state.SUPPORT_GROUNDED if value
+            else behavior_state.SUPPORT_AIRBORNE)
+
+    @property
+    def coyote_left(self) -> float:
+        """Milliseconds of remaining support grace. `state.support_grace`."""
+        found = behavior_state.state_of(self)
+        if found is None:
+            raise AttributeError(
+                "%s carries no BodyState, so it has no support grace."
+                % type(self).__name__)
+        return found.support_grace
+
+    @coyote_left.setter
+    def coyote_left(self, value: float) -> None:
+        behavior_state.ensure_state(self).support_grace = float(value)
 
     def allowed_move(self, wanted: Vector2, direction: str) -> Vector2:
         """`wanted` as far as the map allows, which is `wanted` when ungated.

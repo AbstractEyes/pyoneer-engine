@@ -63,6 +63,8 @@ from scripts.game.behavior.base import (ACTOR, BEHAVIORS, KNOWN, PARAM_PREFIX,
                                         PREFIX, TOKEN, BehaviorParam,
                                         BehaviorRequest, BehaviorSpec,
                                         EntityBehavior)
+from scripts.game.behavior.state import (FACING_DEFAULT, LIVES, PHASES,
+                                         SUPPORTS, BodyState)
 
 BEHAVIOR_REGISTRY: dict[str, BehaviorSpec] = {}
 """Token -> the spec that describes and builds it. Populated at the bottom."""
@@ -474,6 +476,84 @@ design.
 """
 
 
+_AXIS_DOC: dict[str, str] = {
+    "phase": "What the body is doing. CLOSED: %s. A branch reads it, so an "
+             "unrecognised value would silently take the idle path."
+             % ", ".join("`%s`" % p for p in PHASES),
+    "facing": "Which way the body is pointed. OPEN -- any non-empty string, "
+              "because isometric wants eight tokens and twin-stick wants an "
+              "angle. Defaults to `%s`. It is the `{}` in `walk_{}` and it is "
+              "NOT the argument to `move_direction`." % FACING_DEFAULT,
+    "support": "Whether something is holding the body up. CLOSED: %s. Written "
+               "by `platformer_move`; `entity.grounded` is an alias over it."
+               % ", ".join("`%s`" % s for s in SUPPORTS),
+    "life": "Whether the body is still part of the world. CLOSED: %s. Written "
+            "by `lifecycle_mark` (and by any game code that wants a body "
+            "gone); READ by `SceneManager.reap()`, which is what actually "
+            "removes it from its scene bucket and its EntityLayer. Marking is "
+            "a DECLARATION -- a behavior that unbound its own entity would "
+            "make the scene fan-out skip the next sibling."
+            % ", ".join("`%s`" % v for v in LIVES),
+    "support_grace": "Milliseconds a body that has left its support is still "
+                     "treated as supported -- the coyote clock. "
+                     "`entity.coyote_left` is an alias over it.",
+    "simulated": "Whether the entity is stepped at all. `GamePlayer` returns "
+                 "before `super()` when this is false, so the animation clock "
+                 "stops too. Per-entity; it is NOT a world pause.",
+    "steerable": "Whether the body may be STEERED. Gates the input poll, not "
+                 "the simulation -- a side-on body still falls while the "
+                 "player is in a menu.",
+    "input_bound": "Whether the body is wired to a human's input at all. Set "
+                   "once from the wiring, so a narrative gate can tell "
+                   "restoring input from granting it.",
+    "enabled_inputs": "Whether input is currently permitted. The authored "
+                      "gate. Read by `player_input` WITH `steerable` and by "
+                      "the action behaviors WITHOUT it -- a body frozen for a "
+                      "cutscene may not walk and must still press continue.",
+    "sprinting": "A mirror of `MoveIntent.sprint`. Not an axis and has no "
+                 "production reader; the real home is the intent.",
+}
+"""One sentence per axis, keyed by the field name `BodyState` actually has.
+
+Not a docstring scrape: a scrape would silently produce an empty row the day
+someone reflows a comment. `describe_all` cross-checks these keys against
+`BodyState().axes` and says so in the document when the two disagree, so an
+axis added without a sentence is visible in the generated file rather than
+absent from it.
+"""
+
+
+def _state_axes() -> list[str]:
+    """The `state.<axis>` vocabulary the writes column above is spelled in.
+
+    Generated from `BodyState` itself. Without this table the writes column
+    names `state.support` and `state.facing` to a reader who has no way to
+    learn what either means, which is the breadcrumb this whole document
+    exists to lay.
+    """
+    lines = ["", "## The state axes", "",
+             "`BodyState` (`scripts/game/behavior/state.py`) is what a body "
+             "IS, beside `MoveIntent` (what it was ASKED to do) and "
+             "`ActionIntent` (what it DID). A behavior declares the axes it "
+             "writes as `state.<axis>`, and two behaviors at one `order` "
+             "writing one axis are REFUSED at attach -- which is the whole "
+             "reason the declaration is spelled per axis rather than as "
+             "`state`.", "",
+             "| axis | meaning |", "| --- | --- |"]
+    known = BodyState().axes
+    for axis in sorted(known):
+        lines.append("| `state.%s` | %s |"
+                     % (axis, _AXIS_DOC.get(axis, "**undocumented** -- add a "
+                                                  "sentence to `_AXIS_DOC` in "
+                                                  "registry.py")))
+    strays = sorted(set(_AXIS_DOC) - set(known))
+    if strays:
+        lines.append("")
+        lines.append("> **%s described here and not on the record.** The "
+                     "sentence outlived its axis." % ", ".join(strays))
+    return lines
+
+
 def describe_all(registry: Mapping[str, BehaviorSpec] | None = None) -> str:
     """Render BEHAVIORS.md from the same table the engine binds from.
 
@@ -484,6 +564,7 @@ def describe_all(registry: Mapping[str, BehaviorSpec] | None = None) -> str:
     table = BEHAVIOR_REGISTRY if registry is None else registry
     lines = [_PREAMBLE.format(behaviors=BEHAVIORS, param=PARAM_PREFIX,
                               actor=ACTOR)]
+    lines.extend(_state_axes())
     lines.append("")
     lines.append("## The registry")
     lines.append("")
@@ -575,9 +656,10 @@ from scripts.game.behavior.movement import (ANIMATION_DRIVE,   # noqa: E402
 # stamped per instance, which is what keys each action's slot in the record.
 from scripts.game.behavior.action import (ACTION_RELAY,        # noqa: E402
                                           ACTION_SPECS)
+from scripts.game.behavior.lifecycle import LIFECYCLE_MARK      # noqa: E402
 
 register_all((PLAYER_INPUT, TOPDOWN_MOVE, PLATFORMER_MOVE, ANIMATION_DRIVE))
-register_all(ACTION_SPECS + (ACTION_RELAY,))
+register_all(ACTION_SPECS + (ACTION_RELAY, LIFECYCLE_MARK))
 
 __all__ = [
     "ACTOR", "BEHAVIORS", "BEHAVIOR_REGISTRY", "KNOWN", "PARAM_PREFIX",

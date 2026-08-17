@@ -1,3 +1,13 @@
+<!-- pyoneer-doc: L3 -->
+<!-- pyoneer-archive: dated snapshot; deliberately EXEMPT from the fact
+     checks in tools/check_docs.py, because its numbers are history and
+     re-measuring them would erase what it recorded. -->
+
+> **ARCHIVE — do not navigate by this file.** the map object-layer plan; its spawn half has landed. Its counts,
+> line numbers and status claims describe the commit it was written at and
+> are not re-measured. Route from [`../CLAUDE.md`](../CLAUDE.md); come here
+> only for "what did the review find" or "why was it built this way".
+
 All probes run and deleted. Draft verified against live code; 23 defects found. Corrected plan below.
 
 ---

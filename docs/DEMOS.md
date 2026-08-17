@@ -1,3 +1,6 @@
+<!-- pyoneer-doc: L2 -->
+<!-- pyoneer-stamp: hand-written; every number in it is re-measured by tools/check_demos.py on every run -->
+
 # Demos -- three prototype games, and what each one proves
 
 **This file is hand-written.** `docs/BEHAVIORS.md` is generated from the
