@@ -3,6 +3,60 @@
 **State this describes:** commit `ce66ce5` — *Mount collision, tileset verbs,
 .blitmap format, entity spawn* — read on 2026-08-14. 49 commits.
 
+> **STALE BELOW — read this box first.** Written against `ce66ce5`; HEAD is
+> now `3a8eeb4`. Items **1**, **2**, **6** and part of **7** have landed, and
+> the roster is **37** checks rather than 29. The ranked list below has not
+> been re-measured against the tree since, so treat every entry in it as a
+> claim to verify rather than a fact — which is the same instruction the
+> paragraph under it already gives, for the same reason.
+
+## What the behavior work left open (2026-08-16, `3a8eeb4`)
+
+An entity's behaviour is now composed from a `pyoneer_behaviors` list on the
+tmx object: `player_input`, `topdown_move`, `platformer_move`,
+`animation_drive`. `docs/BEHAVIORS.md` is generated from the registry, and its
+integration table is *measured* by constructing a real entity and running
+frames — so **read that table, not this list**, for what is wired. These are
+the things it currently reports as `no`, plus what the review found and left:
+
+1. **Nothing assigns `GameEntity.collision_field`, so every body is ungated.**
+   *M.* This is the single biggest gap. The gate is written, shared and
+   checked; the field defaults to `None`, which means *ungated*, and no
+   production code sets it. An ungated `platformer_move` accelerates downward
+   forever and never lands — it looks exactly like a physics bug and is not
+   one. Wants `field_from_map` at map load, handed to each spawned entity.
+2. **`GamePlayer.input_move` has zero production callers.** *XS.* Kept alive
+   only by `tools/check_input.py`. Any future caller invoking both it and
+   `core_frame_update` gets exactly double movement speed. Its docstring warns;
+   nothing enforces it. Either delete it and rewrite that check against the
+   behaviours, or make the double-drive impossible.
+3. **A genre pack cannot declare a default behaviour list.** *S.* The shape is
+   already named in the generated doc (`layers[].object_classes[].behaviors`),
+   and the editor is meant to MATERIALISE such a default into the object at add
+   time rather than the runtime resolving it — because `scripts/` may not
+   import `editor/`, and because the `.tmx` staying the whole truth is what
+   makes a map play the same whether or not the editor has ever opened it.
+4. **The editor has no surface for editing a behaviour list.** *M.* Today it
+   is a raw string property. It wants the same treatment the layer
+   capabilities got: a checklist of registered tokens with their declared
+   parameters, refusing a conflict at authoring time instead of at load.
+5. **One column means two things across two packs.** *S.* `topdown_rpg` calls
+   it `speed`, `platformer` calls it `move_speed`, and the engine's own field
+   and `config/entity.json` both say `move_speed`. `topdown_move` sidesteps it
+   by taking no parameter at all, so the first behaviour here that wants a
+   `source="actors"` speed hits it. Renaming also touches
+   `tools/check_editor.py`, which pins the column count and that column's
+   default — one change across three files.
+6. **The animation phase moved one frame** in the extraction, and that is
+   visible during motion (~16% of frames). Measured and written into
+   `game_player.py`'s docstring. Smoke cannot see it because smoke injects no
+   input. Fixing it means driving behaviours after the animation tick, which
+   moves what the camera sees; left deliberately.
+7. **One-way platforms are not expressible.** *M.* Blocking is per-cell and
+   symmetric — one bit governs both crossings of an edge — so a jump-through
+   ledge cannot be authored. That is a vocabulary change in
+   `scripts/core/collision_runtime.py`, not something to fake in a behaviour.
+
 ## How this was measured, and why it matters here
 
 Every number below was taken from a clean `git archive HEAD` unpacked to a
