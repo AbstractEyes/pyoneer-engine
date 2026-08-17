@@ -60,7 +60,7 @@ class GameEntity(GameEntitySimple, ABC):
         self.collision_field: CollisionField | None = None
         """The baked passability this entity's movement is gated by.
 
-        None means ungated, and it is the default because it has to be: the
+        None means ungated, and it is the default because it has to be: the  #TAG:collision_field_ungated
         maps in this repository declare no companion layer, so
         `field_from_map` returns None for all of them and `move_direction`
         keeps arithmetic identical to the day before this field existed.

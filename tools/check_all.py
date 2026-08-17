@@ -62,7 +62,10 @@ CHECKS = [
                     "authoring time, exact undo"),
     ("editor_ui", "panels build, canvas edits are commands, responses apply"),
     ("demos", "three prototype games boot headless and answer injected input"),
-    ("docs", "the doc spine: navigation, anchors, generated files, fact drift"),
+    ("prototype", "the design form resolves against the registries, and its "
+                  "worked example boots"),
+    ("docs", "the doc spine: navigation, #TAG anchors, the generated code map, "
+             "fact drift"),
 ]
 
 ROOT = _bootstrap.REPO_ROOT

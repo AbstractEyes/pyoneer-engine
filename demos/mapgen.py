@@ -229,12 +229,24 @@ def build_tmx(width: int, height: int,
 TOPDOWN_SIZE = (40, 30)
 SIDESTEP_SIZE = (40, 24)
 PATROL_SIZE = (40, 30)
+STORY_SIZE = (30, 20)
 
 TOPDOWN_BEHAVIORS = "player_input,topdown_move,animation_drive"
 SCENERY_BEHAVIORS = "topdown_move,animation_drive"
 SIDESTEP_BEHAVIORS = "player_input,platformer_move,animation_drive"
 FALLER_BEHAVIORS = "platformer_move,animation_drive"
 PATROL_BEHAVIORS = "patrol_input,topdown_move,animation_drive"
+STORY_BEHAVIORS = ("player_input,topdown_move,animation_drive,"
+                   "interact_action,action_relay")
+"""The narrative composition, and every token in it is already registered.
+
+`interact_action` produces the firing and `action_relay` is what carries it
+outward to `entity.action_sink`. Without the relay the action fires, is
+recorded on the entity, and reaches nothing -- which looks exactly like a
+flow that will not advance, so the pair is spelled together here rather than
+left to a reader to notice.
+"""
+STORY_KEEPER_BEHAVIORS = "topdown_move,animation_drive"
 
 SPRITE = (44, 64)
 """The shipped `~Garet.png` frame size, from config/animations.json.
@@ -294,6 +306,21 @@ PATROL_PATROLLER_SPAWN = (320.0, 320.0)
 PATROL_HERO_SPAWN = (320.0, 640.0)
 PATROL_ROUTE = "right,down,left,up"
 PATROL_LEG_MS = 600
+
+STORY_HERO_ID = 1
+STORY_KEEPER_ID = 2
+STORY_HERO_SPAWN = (320.0, 384.0)
+STORY_KEEPER_SPAWN = (512.0, 384.0)
+STORY_PAYLOAD = "keeper"
+"""Which conversation the hero's interaction opens.
+
+`pyoneer_param_payload` on the object, `ActionFired.payload` at runtime, and
+the second half of the `ActionRouter` key. A route registered for
+(`interact_action`, `keeper`) is reached by this firing and a route registered
+for the token with ANY payload is not -- which is how one body's one action
+verb opens different conversations in different rooms without a second token,
+a second verb or a second behavior.
+"""
 
 
 def _topdown_source() -> str:
@@ -395,10 +422,44 @@ def _patrol_source() -> str:
     return build_tmx(width, height, art, None, objects)
 
 
+def _story_source() -> str:
+    """One driven body that can also TALK, and one that cannot.
+
+    The hero's list is the top-down one plus two tokens: `interact_action`,
+    which fires on the rising edge of the `action` verb, and `action_relay`,
+    which hands that firing to `entity.action_sink`. `SceneManager` assigns
+    the sink -- it is the scene's `ActionRouter` -- so the map is the whole
+    declaration of "this body can advance a conversation" and the game only
+    has to say what the conversation IS.
+
+    The keeper carries neither, so it is the negative control: it stands in
+    the same room, on the same class, at the same depth, and pressing the
+    action verb next to it does nothing at all.
+    """
+    width, height = STORY_SIZE
+    art = _grid(width, height, GRASS)
+    for x in range(6, 24):                       # a rug, so the room has a floor
+        art[height // 2][x] = STONE
+    for x in range(6, 24):                       # a lintel, so it reads as a room
+        art[height // 2 - 4][x] = MARK
+    objects = [
+        _object(STORY_HERO_ID, "hero", "GamePlayer",
+                STORY_HERO_SPAWN[0], STORY_HERO_SPAWN[1], SPRITE[0], SPRITE[1],
+                {"pyoneer_behaviors": ("", STORY_BEHAVIORS),
+                 "pyoneer_param_payload": ("", STORY_PAYLOAD)}),
+        _object(STORY_KEEPER_ID, "keeper", "GamePlayer",
+                STORY_KEEPER_SPAWN[0], STORY_KEEPER_SPAWN[1],
+                SPRITE[0], SPRITE[1],
+                {"pyoneer_behaviors": ("", STORY_KEEPER_BEHAVIORS)}),
+    ]
+    return build_tmx(width, height, art, None, objects)
+
+
 SOURCES = {
     "demo_topdown": _topdown_source,
     "demo_sidestep": _sidestep_source,
     "demo_patrol": _patrol_source,
+    "demo_story": _story_source,
 }
 
 

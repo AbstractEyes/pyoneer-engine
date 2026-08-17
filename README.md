@@ -290,7 +290,9 @@ the half-cell trap that follows from corner lattices.
 **The engine cannot read these masks yet.** The editor authors them, the tmx
 carries them, `check_collision.py` proves the round trip — and nothing in
 `scripts/` decodes one. That is the largest gap in this repository and it is
-[`docs/NEXT.md`](docs/NEXT.md) item 2.
+[`docs/history/NEXT_ce66ce5.md`](docs/history/NEXT_ce66ce5.md) item 2 -- the
+ranked list as it stood at `ce66ce5`. `docs/NEXT.md` is a DIFFERENT document
+now; citing it here would silently point at the wrong list.
 
 Genre packs in `editor/genres/` declare what a genre's maps and data look
 like, so "make me a platformer with guns and aliens" costs a page of
@@ -397,7 +399,7 @@ Stated plainly, because most of them are recorded with measurements in
   a live grid preview, but no menu constructs it — so adding the `collision`
   tileset that collision mode needs still means a trip through Tiled.
 - **`GameComponent` is a god class.** ~9 responsibilities in one file. Being
-  split incrementally; `docs/IMPROVEMENT_PLAN.md` segment 8.
+  split incrementally; `docs/history/IMPROVEMENT_PLAN.md` segment 8.
 - **Boot costs ~350 ms**, most of it map compositing proving its merges are
   lossless with `pygame.mask` work at startup. Measured headless on the demo
   map: five fresh processes, 330–446 ms to construct the game, of which one
@@ -408,7 +410,7 @@ Stated plainly, because most of them are recorded with measurements in
   selection (it declares three selection fields and assigns none), keyboard
   navigation and a row template.
 - **The scroll bar builds from the wrong formula** and shifts 14 px on its
-  first scroll event — measured live, `docs/IMPROVEMENT_PLAN.md:358`. The
+  first scroll event — measured live, `docs/history/IMPROVEMENT_PLAN.md`. The
   `Button`'s body surface keeps its construction-time size, so the graphic is
   drawn 14 px taller than its logical bounds as well as offset from them.
 - **No drag-and-drop.** `GridComponent.snap()` places by pixel position and

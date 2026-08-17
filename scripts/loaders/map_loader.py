@@ -285,7 +285,7 @@ def spawn_objects(document_or_tmx: Any,
             # has none: a token that resolved to nothing would silently
             # disarm every object carrying it, and unlike a missing behavior
             # it looks like it worked.
-            behaviors = read_requests(obj.properties, where=where)
+            behaviors = read_requests(obj.properties, where=where)  # #TAG:behaviors_read_at_spawn
             spawned.append(SpawnedEntity(entity=entity, depth=depth,
                                          layer_name=layer_name,
                                          object_id=obj.id,

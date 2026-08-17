@@ -93,7 +93,7 @@ def _table_scope(scope: Scope) -> Scope:
 # --------------------------------------------------------------------------
 
 @command(
-    "map.tile.set",
+    "map.tile.set",  # #TAG:map.tile.set
     summary="Set one tile's gid. gid 0 clears the tile.",
     scopes=["map:*/layer:*"],
     params=[
@@ -114,7 +114,7 @@ def _tile_set(project: Project, cmd: Command) -> Command | None:
 
 
 @command(
-    "map.tile.set_many",
+    "map.tile.set_many",  # #TAG:map.tile.set_many
     summary="Set many tiles at once. Cheaper and more readable than one "
             "command per tile, and it undoes as a single step.",
     scopes=["map:*/layer:*"],
@@ -147,7 +147,7 @@ def _tile_set_many(project: Project, cmd: Command) -> Command | None:
 
 
 @command(
-    "map.tile.fill",
+    "map.tile.fill",  # #TAG:map.tile.fill
     summary="Set every tile in a rectangle. The rectangle is clipped to the "
             "layer, so an over-large brush is a partial fill, not an error.",
     scopes=["map:*/layer:*"],
@@ -190,7 +190,7 @@ def _tile_fill(project: Project, cmd: Command) -> Command | None:
 # --------------------------------------------------------------------------
 
 @command(
-    "map.layer.add",
+    "map.layer.add",  # #TAG:map.layer.add
     summary="Add a tile or object layer. A tile layer is created at the "
             "map's size. Note that a layer only RENDERS if its name has a "
             "depth in scripts/core/depth.py.",
@@ -224,7 +224,7 @@ def _layer_add(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "map.layer.remove",
+    "map.layer.remove",  # #TAG:map.layer.remove
     summary="Remove a layer and everything on it. The inverse restores the "
             "whole element, its tiles included.",
     scopes=["map:*/layer:*"],
@@ -267,7 +267,7 @@ def _layer_element(project: Project, scope: Scope):
 
 
 @command(
-    "map.layer.set",
+    "map.layer.set",  # #TAG:map.layer.set
     summary="Declare a capability on a layer -- depth, motion, parallax, "
             "opacity, occlusion, passability, whether it renders at all. "
             "Stored as a tmx custom property, so Tiled shows it too.",
@@ -301,7 +301,7 @@ def _layer_set(project: Project, cmd: Command) -> Command | None:
 
 
 @command(
-    "map.layer.unset",
+    "map.layer.unset",  # #TAG:map.layer.unset
     summary="Remove a declared capability, returning the layer to the "
             "default. The inverse of setting one that was not there.",
     scopes=["map:*/layer:*"],
@@ -320,7 +320,7 @@ def _layer_unset(project: Project, cmd: Command) -> Command | None:
 
 
 @command(
-    "map.layer.restore",
+    "map.layer.restore",  # #TAG:map.layer.restore
     summary="Put a layer back from a serialised payload, at its original "
             "position and with its original whitespace. The exact inverse "
             "of map.layer.remove; rarely written by hand.",
@@ -369,7 +369,7 @@ def _tileset_key(cmd: Command) -> str | int:
 
 
 @command(
-    "map.tileset.add",
+    "map.tileset.add",  # #TAG:map.tileset.add
     summary="Add an embedded tileset, appended above every gid range the "
             "map already uses. Anything left unset is measured rather than "
             "assumed: tile size defaults to the map's, the image is sized "
@@ -429,7 +429,7 @@ def _tileset_add(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "map.tileset.remove",
+    "map.tileset.remove",  # #TAG:map.tileset.remove
     summary="Remove a tileset by name, or by firstgid for an external one. "
             "REFUSED while any tile or tile-object still points into its "
             "gid range: an orphaned gid raises nowhere, it just paints the "
@@ -481,7 +481,7 @@ def _tileset_remove(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "map.tileset.restore",
+    "map.tileset.restore",  # #TAG:map.tileset.restore
     summary="Put a tileset back from a serialised payload, at its original "
             "position and with its original whitespace. The exact inverse "
             "of map.tileset.remove; rarely written by hand.",
@@ -532,7 +532,7 @@ def _tileset_restore(project: Project, cmd: Command) -> Command:
 # --------------------------------------------------------------------------
 
 @command(
-    "map.object.add",
+    "map.object.add",  # #TAG:map.object.add
     summary="Place an object on an object layer. `type` is the class name "
             "the game resolves to a spawnable entity, so it must be a name "
             "the spawn registry knows.",
@@ -579,7 +579,7 @@ def _object_add(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "map.object.remove",
+    "map.object.remove",  # #TAG:map.object.remove
     summary="Remove an object. Its inverse restores the whole XML element, "
             "so undo brings back shape, rotation and everything else.",
     scopes=["map:*/layer:*/object:*"],
@@ -607,7 +607,7 @@ def _object_remove(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "map.object.restore",
+    "map.object.restore",  # #TAG:map.object.restore
     summary="Put back an object from its serialised XML, at its original "
             "position among its siblings. The exact inverse of "
             "map.object.remove; rarely written by hand.",
@@ -631,7 +631,7 @@ def _object_restore(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "map.object.move",
+    "map.object.move",  # #TAG:map.object.move
     summary="Move an object to new world-pixel coordinates.",
     scopes=["map:*/layer:*/object:*"],
     params=[
@@ -671,7 +671,7 @@ def _object_attribute_name(found, key: str) -> str:
 
 
 @command(
-    "map.object.set",
+    "map.object.set",  # #TAG:map.object.set
     summary="Set a built-in attribute of an object. For anything else use "
             "map.object.property.set.",
     scopes=["map:*/layer:*/object:*"],
@@ -702,7 +702,7 @@ def _object_set(project: Project, cmd: Command) -> Command | None:
 
 
 @command(
-    "map.object.unset",
+    "map.object.unset",  # #TAG:map.object.unset
     summary="Remove a built-in attribute entirely, rather than blanking it. "
             "The inverse of setting an attribute that was previously absent.",
     scopes=["map:*/layer:*/object:*"],
@@ -721,7 +721,7 @@ def _object_unset(project: Project, cmd: Command) -> Command | None:
 
 
 @command(
-    "map.object.property.set",
+    "map.object.property.set",  # #TAG:map.object.property.set
     summary="Set a custom property on an object. The tmx type attribute is "
             "written from the Python type, so an int reads back as an int "
             "rather than the string '50'.",
@@ -751,7 +751,7 @@ def _object_property_set(project: Project, cmd: Command) -> Command | None:
 
 
 @command(
-    "map.object.property.remove",
+    "map.object.property.remove",  # #TAG:map.object.property.remove
     summary="Remove a custom property from an object.",
     scopes=["map:*/layer:*/object:*"],
     params=[Param("key", str, "property name")],
@@ -826,7 +826,7 @@ def _action_inverse(scope: Scope, key: str, existing: dict[str, Any]) -> Command
 
 
 @command(
-    "map.object.action.set",
+    "map.object.action.set",  # #TAG:map.object.action.set
     summary="Declare one field of an object's map-event trigger -- when it "
             "fires, which entities may fire it, whether it also blocks "
             "movement, and what it carries. Stored as a pyoneer_ tmx custom "
@@ -866,7 +866,7 @@ def _action_set(project: Project, cmd: Command) -> Command | None:
 
 
 @command(
-    "map.object.action.unset",
+    "map.object.action.unset",  # #TAG:map.object.action.unset
     summary="Remove one field of a trigger declaration, returning it to its "
             "default. Deleting a whole trigger is one of these per declared "
             "field, emitted together -- so it lands as one transaction and "
@@ -905,7 +905,7 @@ def _action_unset(project: Project, cmd: Command) -> Command | None:
 
 
 @command(
-    "map.object.action.restore",
+    "map.object.action.restore",  # #TAG:map.object.action.restore
     summary="Write one map-event property back VERBATIM, without validating "
             "the value. The exact inverse of map.object.action.set and "
             "map.object.action.unset, and the only reason those two can take "
@@ -943,7 +943,7 @@ def _action_restore(project: Project, cmd: Command) -> Command | None:
 # --------------------------------------------------------------------------
 
 @command(
-    "table.create",
+    "table.create",  # #TAG:table.create
     summary="Create a data table. Prefer taking the genre's declared shape "
             "by leaving `columns` empty -- the pack already describes it.",
     scopes=["table:*"],
@@ -982,7 +982,7 @@ def _table_create(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "table.drop",
+    "table.drop",  # #TAG:table.drop
     summary="Delete a table and its file. Refused for tables the genre "
             "marks required.",
     scopes=["table:*"],
@@ -1008,7 +1008,7 @@ def _table_drop(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "table.restore",
+    "table.restore",  # #TAG:table.restore
     summary="Recreate a table from a full serialised payload. Exists so "
             "table.drop has an exact inverse; rarely written by hand.",
     scopes=["table:*"],
@@ -1022,7 +1022,7 @@ def _table_restore(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "table.row.add",
+    "table.row.add",  # #TAG:table.row.add
     summary="Add a row. Unlisted columns take their declared default.",
     scopes=["table:*"],
     params=[
@@ -1042,7 +1042,7 @@ def _row_add(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "table.row.remove",
+    "table.row.remove",  # #TAG:table.row.remove
     summary="Remove a row. The inverse restores every value it held.",
     scopes=["table:*/row:*"],
     destructive=True,
@@ -1056,7 +1056,7 @@ def _row_remove(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "table.row.set",
+    "table.row.set",  # #TAG:table.row.set
     summary="Set one cell.",
     scopes=["table:*/row:*"],
     params=[
@@ -1077,7 +1077,7 @@ def _row_set(project: Project, cmd: Command) -> Command | None:
 
 
 @command(
-    "table.column.add",
+    "table.column.add",  # #TAG:table.column.add
     summary="Add a column. Existing rows take the default. This is how a "
             "genre grows -- adding 'stat_modifier' to equipment does not "
             "need editor code.",
@@ -1102,7 +1102,7 @@ def _column_add(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "table.column.remove",
+    "table.column.remove",  # #TAG:table.column.remove
     summary="Remove a column and every value in it. Refused for columns the "
             "genre marks required.",
     scopes=["table:*/field:*"],
@@ -1128,7 +1128,7 @@ def _column_remove(project: Project, cmd: Command) -> Command:
 
 
 @command(
-    "table.column.restore",
+    "table.column.restore",  # #TAG:table.column.restore
     summary="Re-add a column and put its values back. The inverse of "
             "table.column.remove; rarely written by hand.",
     scopes=["table:*"],
@@ -1168,7 +1168,7 @@ def _column_from(item: Any, *, verb: str) -> Column:
 # --------------------------------------------------------------------------
 
 @command(
-    "project.genre.set",
+    "project.genre.set",  # #TAG:project.genre.set
     summary="Switch the project's genre pack. Changes which layers and "
             "tables are expected and which panels the editor shows; does "
             "not delete anything.",

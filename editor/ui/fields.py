@@ -116,7 +116,7 @@ class InspectionView(QScrollArea):
         # is exactly when it is safe. Re-parenting to `self` first keeps it
         # from becoming a top-level window in the meantime -- the defect the
         # previous version of this code was written to fix.
-        old = self.takeWidget()
+        old = self.takeWidget()  # #TAG:qt_takewidget_sequence
         if old is not None:
             old.setParent(self)
             old.hide()

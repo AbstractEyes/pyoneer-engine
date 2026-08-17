@@ -3,9 +3,11 @@
      checks in tools/check_docs.py, because its numbers are history and
      re-measuring them would erase what it recorded. -->
 
+> **Filed under `docs/history/` on 2026-08-16 at `d8c303f`. Superseded by [`../../CLAUDE.md`](../../CLAUDE.md) law 3, which is this document's structural conclusion written as a rule with its cost attached. Kept for the measurements behind that rule.**
+>
 > **ARCHIVE — do not navigate by this file.** the event-system plan; its structural half is now law 3. Its counts,
 > line numbers and status claims describe the commit it was written at and
-> are not re-measured. Route from [`../CLAUDE.md`](../CLAUDE.md); come here
+> are not re-measured. Route from [`../CLAUDE.md`](../../CLAUDE.md); come here
 > only for "what did the review find" or "why was it built this way".
 
 Probes cleaned up. Here is the corrected plan.

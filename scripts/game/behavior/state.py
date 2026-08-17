@@ -37,7 +37,7 @@ Cut deliberately, each with the reason:
     ONE format's feature, and each is a token a game can add to `facing` or
     `phase`'s vocabulary the day it ships the behavior that writes it and the
     branch that reads it. The engine shipping them first is the shape
-    docs/ORPHANS.md exists to record.
+    docs/history/ORPHANS.md exists to record.
   * The LIFECYCLE axis (`alive | gone`) was held back one pass, on the rule
     that a two-valued axis whose second value nothing writes is a value that
     lies. It ARRIVED WITH ITS WRITER, which is the condition that was set:

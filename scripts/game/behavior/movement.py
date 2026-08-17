@@ -415,7 +415,7 @@ class GameAnimationDriveBehavior(EntityBehavior):
 # ---------------------------------------------------------------------------
 
 TOPDOWN_MOVE = BehaviorSpec(
-    name="topdown_move",
+    name="topdown_move",  # #TAG:topdown_move
     summary="Eight-direction axis-aligned movement, each held verb gated "
             "separately. The demo's controller.",
     factory=GameTopDownMoveBehavior,
@@ -435,7 +435,7 @@ TOPDOWN_MOVE = BehaviorSpec(
 )
 
 PLATFORMER_MOVE = BehaviorSpec(
-    name="platformer_move",
+    name="platformer_move",  # #TAG:platformer_move
     summary="A side-on body: gravity, terminal velocity, air control and a "
             "jump with coyote time. Reads the actors table's own columns.",
     factory=GamePlatformerMoveBehavior,
@@ -474,7 +474,7 @@ PLATFORMER_MOVE = BehaviorSpec(
 )
 
 ANIMATION_DRIVE = BehaviorSpec(
-    name="animation_drive",
+    name="animation_drive",  # #TAG:animation_drive
     summary="Names the animation from the movement state, on the frame it "
             "changes. The sequence naming is parameters, not code.",
     factory=GameAnimationDriveBehavior,

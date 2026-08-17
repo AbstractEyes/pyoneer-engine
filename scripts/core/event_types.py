@@ -36,7 +36,7 @@ class GameEventType(tuple[str, Optional[pygame.event.Event]], Enum):
     """Preliminary action to a scene being disposed."""
     DISPOSE = ("dispose", None)
     """A scene is being disposed."""
-    POST_DISPOSE = ("post_dispose", None)
+    POST_DISPOSE = ("post_dispose", None)  # #TAG:post_dispose_unwired
     """A scene has been disposed."""
 
     REBUILD = ("rebuild", None)

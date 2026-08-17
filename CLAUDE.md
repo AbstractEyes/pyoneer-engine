@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L0 -->
-<!-- pyoneer-stamp: hand-written; every claim below re-measured against 5dd012d on 2026-08-16 -->
+<!-- pyoneer-stamp: hand-written; every claim below re-measured against d8c303f on 2026-08-16 -->
 
 # Pyoneer — read this first
 
@@ -24,12 +24,109 @@ carries — it exists to make the **second** file you open the right one.
    a readable list of verbs, not a pile of snapshots, and an AI's edit and a
    human's edit are the same kind of thing.
 
+## Grep before guessing
+
+You do not remember this repository. The files do. Before you write a name,
+find out whether it already exists — and find out with one command, not with a
+file read:
+
+```
+grep -rnE "#TAG:GameEntity(\s|$)"          the class alone -- 2 hits
+grep -rn  "#TAG:GameEntity.allowed_move"   one method, wherever it now lives
+grep -rn  "#TAG:topdown_move"              a behavior token's declaration, not its 40 mentions
+grep -rn  "#TAG:map.tile.set"              an editor verb's declaration, same
+grep -rn  "pyoneer_param_"                 a file-format string, everywhere it is spelled
+```
+
+**BOUND THE TAG OR IT IS NOT A LOOKUP.** A tag is a PREFIX of every tag under
+it, so the bare form matches the whole subtree: measured, `#TAG:GameEntity`
+returns **43** lines and `#TAG:GameEntity(\s|$)` returns **2**. Use the bare
+form deliberately, when you want the subtree ("everything about this class");
+use the bounded form when you want the declaration. A dotted tag
+(`#TAG:GameEntity.allowed_move`) is a leaf and needs no bounding. Behavior
+tokens and verbs are leaves too -- `#TAG:topdown_move` is 4 lines.
+
+The third and fourth are the ones worth internalising. A behavior token and a
+verb name are *strings*, spelled in specs, examples, docstrings, generated
+tables and `.tmx` files, so grepping the bare name returns dozens of lines and
+none of them is the declaration. The `#TAG:` form returns exactly one line in
+the source — the line that defines the thing — plus the code map's entry for
+it. Every registered behavior token and every editor verb carries one.
+
+A `#TAG:` is this repository's stable address for a symbol. It replaced
+line-number addressing for a measured reason: a five-line docstring edit once
+turned the documentation check red because a quoted line had *moved down five
+rows*. The anchor was correct, the document was current, and nothing about the
+documented fact had changed. **A line number is not an address. A tag is.**
+
+Nothing at all is written by hand in the map — [`tools/gen_map.py`](tools/gen_map.py)
+walks the AST and emits it — so a tag cannot name something that does not
+exist, and the tag for a symbol you just renamed disappears in the same run.
+
+### The tag vocabulary — four shapes, one rule
+
+**The rule: `#TAG:<value>`, no spaces, on the SAME LINE as the entry it
+describes.** A tag on the line above is a tag `grep` hands you without the
+thing you were looking for. (Angle brackets are the escape for a placeholder:
+`tools/check_docs.py` asserts every *real* tag a document writes resolves, and
+`#TAG:<value>` is a shape rather than a claim.)
+
+| shape | value | example |
+|---|---|---|
+| a class | its bare name | `#TAG:GameEntity` |
+| a function, a method, a module constant | its bare name; a method is `Owner.name` | `#TAG:resolve_layer_depth`, `#TAG:GameEntity.allowed_move` |
+| a module | its repo-relative path | `#TAG:scripts/core/depth.py` |
+| a topic with no Python name | `lower_snake_case`, chosen by hand, written as a trailing comment on the line it describes | `#TAG:delta_is_ms_over_60`, `#TAG:qt_takewidget_sequence` |
+| a behavior token or an editor verb | the token or verb **exactly as authored**, because that string is the file format | `#TAG:topdown_move`, `#TAG:map.object.property.set` |
+
+Two qualifications, and no more. **Bare by default**, because someone looking up
+`GameEntity` knows the class name and does *not* yet know the module, so a
+scheme demanding `game_entity.GameEntity` would demand the answer as the
+question. **Qualified only on collision** — when two things in the tree share a
+name the generator prefixes both with the module stem
+(`#TAG:layer_profile.PREFIX`), and a property's setter takes `.setter`
+(`#TAG:GameComponent.depth.setter`), because a bare `update` is claimed by 18
+classes here and a tag returning 18 lines is not an address.
+
+You do not write tags for symbols: the generator emits them. Write one by hand
+**only** to name a line that is not a definition — a sentence inside a
+docstring, a token inside a spec literal, a step inside a sequence — as a
+trailing comment on that line. `tools/check_docs.py` refuses a hand-placed tag
+that sits outside the symbol it names, and refuses two tags with the same value
+anywhere.
+
+Three families are already sown, and adding to a family is part of the change
+that adds the thing: **every registered behavior token** (on its `name=` line
+in the spec), **every editor verb** (on its name line in the `@command`
+decorator), and **the invariants this file anchors** that live inside a
+docstring or a body rather than at a definition.
+
+## Access escalation — cheapest first, and stop as soon as you can answer
+
+Every level below has been measured. Skipping to level 4 for a question level 1
+answers is the single most expensive habit available here.
+
+| level | read | cost | when |
+|---|---|---|---|
+| 0 | this file | ~6k tokens | always, first, whole |
+| 1 | `grep -rn "#TAG:<name>"` | one command | you know the name and want the address |
+| 2 | [`docs/MAP.md`](docs/MAP.md) — tier 1 | ~13k tokens | starting a task; "what exists and where" |
+| 3 | `docs/map/<dotted.module>.md` — tier 2 | ~0.5k tokens each; the largest is ~5k | you are about to touch ONE module and need real signatures |
+| 4 | the source file | ~1.7k tokens for the median module, ~22k for the largest | you are about to EDIT it, or the map is not enough |
+| 5 | a whole package | tens of thousands | last resort. Say out loud why levels 1–4 failed |
+
+Level 3 is one file per module: `scripts/core/depth.py` maps to
+[`docs/map/scripts.core.depth.md`](docs/map/scripts.core.depth.md). **Never
+load them all** — the set is ~100k tokens, which is more than reading the
+source, and that is the exact failure two tiers exist to prevent.
+
 ## The constants — literal strings, not descriptions
 
 ```
 .venv/Scripts/python.exe            the interpreter. Never bare `python`.
 tools/check_all.py                  the suite. One command, one exit code.
 tools/smoke.py --frames 60          the frame-drift instrument.
+tools/gen_map.py --write            regenerate the code map after a rename.
 
 pyoneer_                            EVERY tmx custom property starts with this
 pyoneer_behaviors                   comma-separated token list, ON THE OBJECT
@@ -62,24 +159,28 @@ topic, different layers, and different files.
 
 | you are asking | go to |
 |---|---|
+| "what exists" · "where does X live" · "is there already a function for this" | [`docs/MAP.md`](docs/MAP.md) — GENERATED tier 1, then one tier-2 file |
 | "what does this behavior do" · "how do I make it move" · "add a behavior" | [`docs/BEHAVIORS.md`](docs/BEHAVIORS.md) — GENERATED; trust its **measured integration table** over any prose, including its own preamble |
 | "my entity does not move" · "nothing happens when I press a key" · "it falls forever" · "it raises at load" | [`docs/DIAGNOSE.md`](docs/DIAGNOSE.md) |
 | "what can I place on an object layer" · "what goes in `type=`" · "why does my layer not draw" · "what key is bound to what" | [`docs/PLACEABLE.md`](docs/PLACEABLE.md) — GENERATED |
 | "make me a platformer" · "make me a top-down RPG" | `editor/genres/<id>/RULES.md`, then `docs/BEHAVIORS.md` |
 | "how do I change project data from a script" · "what verbs exist" | [`docs/COMMANDS.md`](docs/COMMANDS.md) — GENERATED |
 | "show me a game that works" · "start a new demo" | [`docs/DEMOS.md`](docs/DEMOS.md) |
+| "design a small game" · "design me a small game" · "I have an idea, what do I write down" · "write the spec before the code" · "what goes in the behavior list" · "what can I actually build with this today" | [`docs/DESIGN_TEMPLATE.md`](docs/DESIGN_TEMPLATE.md) — a fill-in form, five minutes, every field resolved against a live registry by a check |
+| "how do I get from an idea to a running prototype" · "what is the loop here" · "what does one turn of the loop cost" | [`docs/PROTOTYPE.md`](docs/PROTOTYPE.md) — DESIGN → BUILD → PROVE, each step's cost measured |
 | "how do I run the checks" · "I wrote a check" | [`docs/CHECKS.md`](docs/CHECKS.md) — GENERATED — plus law 6 below |
 | "how does the editor think" · "why is every change a command" | [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md) |
 | "where is the art" · "why does it fail on a fresh clone" | [`docs/ASSETS.md`](docs/ASSETS.md) |
-| "is this already written but unwired" | [`docs/ORPHANS.md`](docs/ORPHANS.md) — dated archive |
-| "what should I do next" | [`docs/NEXT.md`](docs/NEXT.md) — re-measure before trusting |
+| "is this already written but unwired" | [`docs/BEHAVIORS.md`](docs/BEHAVIORS.md)'s measured integration column first; [`docs/history/ORPHANS.md`](docs/history/ORPHANS.md) only for the archaeology |
+| "what should I do next" | [`docs/NEXT.md`](docs/NEXT.md) — every entry carries the command that measured it; run it before acting |
 | "the frame changed" · "smoke drifted" | `tools/smoke.py --frames 60`, then law 11 |
-| "what did the first review find" · "why was it built this way" | `docs/ENGINE_REVIEW.md`, `docs/IMPROVEMENT_PLAN.md`, `docs/PLAN_EVENT_SYSTEM.md`, `docs/PLAN_MAPS.md`, `docs/PLAN_SINGLETONS.md` — dated archives, each banner-gated. **Never navigate by them.** |
+| "what did the first review find" · "why was it built this way" · "was this planned once already" | everything under `docs/history/`: `docs/history/ENGINE_REVIEW.md`, `docs/history/IMPROVEMENT_PLAN.md`, `docs/history/NEXT_ce66ce5.md`, `docs/history/ORPHANS.md`, `docs/history/PLAN_EVENT_SYSTEM.md`, `docs/history/PLAN_MAPS.md`, `docs/history/PLAN_SINGLETONS.md` — each dated, each stamped with what superseded it. **Never navigate by them.** |
 
 ## Generated vs written
 
 | file | produced by | authoritative for |
 |---|---|---|
+| `docs/MAP.md`, `docs/map/*.md` | `tools/gen_map.py --write` | what exists, where it is, and every `#TAG:` |
 | `docs/BEHAVIORS.md` | `tools/check_behavior_docs.py --write` | the behavior table and its **measured** integration status |
 | `docs/PLACEABLE.md` | `tools/check_docs.py --write` | spawnable types, layer→depth, input verbs |
 | `docs/CHECKS.md` | `tools/check_docs.py --write` | the check roster |
@@ -104,7 +205,9 @@ A law with no cost attached gets ignored. Every cost below is in the tree.
    editor re-exports it. A second implementation of the collision model shipped
    with 37 shared symbols, 35 textually identical; **425 duplicate lines** were
    deleted, and the "differential" guard meant to catch it compared 11 of 37
-   symbols and missed the gate itself.
+   symbols and missed the gate itself. Every tier-2 map file prints that
+   module's first-party imports, so this law is now auditable by reading rather
+   than by grepping.
 3. **Do not restructure the event system.** Add types, listeners and components
    freely; do not touch dispatch, consumption or the listener registries. Cost:
    consumption is **not type-gated** — one stray `handle()` in a fan-out
@@ -144,10 +247,9 @@ A law with no cost attached gets ignored. Every cost below is in the tree.
     tab-indented and space-indented blocks and is CRLF throughout, so no
     pretty-printer reproduces it — only whitespace-preserving parsing does,
     which is why `MapDocument` exists and why a hand-edit destroys the
-    byte-exactness contract. (Those line numbers are not quoted here on
-    purpose: law 4 applies to documents too.) And **smoke injects no
-    input**, so "no drift" never means "nothing changed": it cannot see anything
-    that only happens while walking.
+    byte-exactness contract. And **smoke injects no input**, so "no drift" never
+    means "nothing changed": it cannot see anything that only happens while
+    walking.
 12. **In a Qt panel, never `setParent(None)` to clear a layout, and never free
     the old body synchronously.** Cost, both measured: `setParent(None)` promotes
     a widget to a **top-level window** — ~20 orphan windows flashed on every
@@ -160,54 +262,97 @@ A law with no cost attached gets ignored. Every cost below is in the tree.
     hung on `QMessageBox.question` for **40+ minutes with zero output**,
     indistinguishable from a slow machine. `check_all.py` now carries a 600s
     per-check timeout and a `HANG` verdict.
+14. **Address code by `#TAG:`, never by a line number.** Cost: measured this
+    pass — a docstring edit five rows above a pinned line turned `check_docs`
+    red with `no longer contains ... it moved to line 241`, for a document that
+    was entirely correct. `tools/check_docs.py` now refuses a numbered anchor
+    and pins the shrinking inventory of documents that still use one.
+
+## ACTIVE WARNINGS — mistake patterns caught more than once
+
+Append-only, newest last. A law says what the rule is; a warning says **what
+people actually do instead**, so each entry names the move that looked
+reasonable at the time. Add one the second time you catch a shape, not the
+first — and never delete one, because the whole value is that it is a record
+of repetition.
+
+- **You will reach for a sibling file.** The move that looks safe is a new
+  module beside the incumbent — `foo_v2.py`, `new_foo.py`, a "clean"
+  reimplementation to switch over later. Measured here: **five** refactors were
+  attempted that way and all five died; every refactor written *into* the
+  incumbent class landed. Law 2's corollary is the same lesson at package
+  scale — 425 duplicate lines. Counter-move: `grep -rn "#TAG:<TheClass>"`, open
+  the incumbent, edit it.
+- **You will read a finished plan as an instruction.** Caught again on
+  2026-08-16 at `d8c303f`: [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md)'s "not
+  built yet" list named four things that had already shipped — including the
+  object-layer spawn path, whose absence it gave as the reason not to build the
+  action queue. Nothing about that document announced itself as stale, and it
+  sits at the address a reader is routed to for editor architecture.
+  Counter-move: a plan whose work is done goes under `docs/history/` **the day
+  it is done**, and any list of open work carries the command that measured it.
+- **You will forget to regenerate the map.** Observed the same day: two modules
+  landed in `demos/` without `tools/gen_map.py --write`, so `docs/MAP.md` did
+  not know they existed and the next agent's `check_docs` run would have been
+  red for someone else's change. Counter-move: it is one command, it belongs in
+  the same change as the rename, and it names the first differing line.
 
 ## Known gaps — fill on sight
 
 Things that are *missing*, not broken. Each is a real hole someone will hit.
+Each address below is a tag, so it stays true when the code moves.
 
 - **`README.md` is the front door and three of its headline gap claims are
-  false at HEAD.** It says the engine cannot read a collision mask
-  (`README.md:290`, `:385`), that placing an object does not spawn an entity
-  (`:387`), and that `.blitmap` has no reader (`:393`); all three shipped. Its
-  check counts (`:308`, `:333`, `:35`) name 29 against a roster that
-  [`docs/CHECKS.md`](docs/CHECKS.md) generates and is now much larger. Its
+  false at HEAD.** It says the engine cannot read a collision mask, that
+  placing an object does not spawn an entity, and that `.blitmap` has no
+  reader; all three shipped. Its three check counts name 29 against a roster
+  that [`docs/CHECKS.md`](docs/CHECKS.md) generates and is now much larger. Its
   "Known rough edges" section must become generated. **This file's own
   navigation deliberately does not route through `README.md`.**
 - **`docs/BEHAVIORS.md`'s preamble is hand-written prose inside the
-  generator**, so it can lie while the file still matches its generator.
-  It currently shows the token `tile_collision`, which is not registered and
-  makes a map raise at load. Same string in `scripts/game/behavior/base.py:102`
-  and `scripts/game/behavior/registry.py:145`, `:366`.
+  generator**, so it can lie while the file still matches its generator. It
+  currently shows the token `tile_collision`, which is not registered and makes
+  a map raise at load. Same string in `#TAG:scripts/game/behavior/base.py` and
+  `#TAG:scripts/game/behavior/registry.py`.
 - **No `needs_art` flag on the check roster.** `docs/ASSETS.md` names seven
   art-dependent checks measured against an older, smaller roster; nothing
   re-measures it.
 - **No genre-pack default behavior list.** Four documents name the slot
   `layers[].object_classes[].behaviors`; `GenreLayer` has no such field and
   only a check parses it.
-- **`GameEntity.__init__` accepts a `transform` keyword and discards it**
-  (`scripts/game/entity/game_entity.py:34`). Pass position via `moveto`.
+- **The `transform` keyword is accepted and discarded**
+  (`#TAG:GameEntitySimple.__init__`, which is where `GameEntity`'s own
+  `transform=` argument ends up). Pass position via `moveto`.
 - **`allowed_move` swallows an unrecognised direction**
-  (`scripts/game/entity/game_entity.py:241`): a bad bit returns the wanted
-  vector unclamped through cells that block everything. Harmless only while
+  (`#TAG:GameEntity.allowed_move`): a bad bit returns the wanted vector
+  unclamped through cells that block everything. Harmless only while
   `move_direction` is its sole caller.
 - **`GameAnimationHandler` plays `idle_down` unconditionally at construction**
-  (`scripts/game/entity/game_animation.py:128`), before any behavior attaches —
-  the first wall a side-on-only or portrait-only sheet hits.
-- **`GameEventType.POST_DISPOSE` is defined and never dispatched**
-  (`scripts/core/event_types.py:39`). `CUSTOM_EVENT`, `REBUILD`,
-  `PARENT_RESIZED` and `USE` are likewise definition-only — `USE` is emitted
-  once, from a `TextBox` pressing Enter, and bound by nobody. **Do not add an
-  event member before a listener exists**; `USE` is the standing proof of what
-  that costs.
+  (`#TAG:GameAnimationHandler.__init__`), before any behavior attaches — the
+  first wall a side-on-only or portrait-only sheet hits.
+- **`GameEventType.POST_DISPOSE` is defined and never dispatched.**
+  `CUSTOM_EVENT`, `REBUILD`, `PARENT_RESIZED` and `USE` are likewise
+  definition-only — `USE` is emitted once, from a `TextBox` pressing Enter, and
+  bound by nobody. **Do not add an event member before a listener exists**;
+  `USE` is the standing proof of what that costs.
 - **No engine-side reader for `data/project/tables/`.** The behaviour-parameter
   chain's step 2 (the actors row) can therefore never fire, and no `hp` column
   reaches the runtime.
-- **Landed while this file was written, so verify before trusting a doc that
-  says otherwise:** an action router assigned as `entity.action_sink`
-  (`scripts/core/scene/scene_manager.py:118`), `LayerRenderer.unbind`
-  (`scripts/core/renderer.py:855`), and an editor behavior panel. Three of this
-  list's entries died in one afternoon. **Re-measure this section; do not cite
-  it.**
+- **~~Two documents still address code by line number~~ — paid off.** Both are
+  converted: DIAGNOSE's four became `#TAG:` addresses, and NEXT's seven went
+  with the `ce66ce5`-era ranked list into `docs/history/NEXT_ce66ce5.md`, where
+  an archive's numbers are history and exempt by design.
+  `tools/check_docs.py`'s `LINE_ANCHOR_DEBT` is now the empty dict, which is
+  the strongest form the rule can take: **any** bare `file.py:LINE` in a live
+  document is a failure, with no exemption left to argue about.
+- **`tools/` is not in the code map**, deliberately — a check module is read
+  whole or not at all. So `grep -rn "#TAG:"` answers nothing about the check
+  suite; [`docs/CHECKS.md`](docs/CHECKS.md) is the index for that half of the
+  tree, and it is generated too.
+- **Landed recently, so verify before trusting a doc that says otherwise:** an
+  action router assigned as `entity.action_sink`, `LayerRenderer.unbind`, and an
+  editor behavior panel. Three of this list's entries died in one afternoon.
+  **Re-measure this section; do not cite it.**
 
 ## TODO-VERIFY
 
@@ -221,20 +366,35 @@ There is exactly one:
 
 ## Anchors — machine-checked, do not edit by hand
 
-`tools/check_docs.py` asserts that each file's numbered line still contains the
-quoted text. A failure means the doc rotted or the code moved; fix the line
-number, do not delete the anchor.
+Each line says: a `#TAG:`, and text that must still be inside the thing that
+tag names. `tools/check_docs.py` resolves the tag to a file and a line range
+from the AST on every run, then asserts the text is in that range **exactly
+once**. So an edit above an anchor cannot break it, and a fact that moves to a
+different function, gets duplicated, or disappears breaks it loudly.
+
+A failure means the code moved or the fact changed — **fix the anchor's text or
+its tag, never delete the anchor**. If a tag resolves nowhere, run
+`.venv/Scripts/python.exe tools/gen_map.py --write` first: the symbol was
+probably renamed.
 
 ```anchors
-scripts/core/layer_profile.py:24 :: PREFIX = "pyoneer_"
-scripts/core/depth.py:42 :: "Paralax": "Parallax"
-scripts/core/input.py:147 :: return self.actions[action_name].held
-scripts/game/behavior/base.py:50 :: milliseconds divided by 60
-scripts/game/entity/game_entity.py:34 :: self.transform: Transform = Transform(
-scripts/game/entity/game_entity.py:241 :: if field is None or bit is None
-scripts/game/entity/game_animation.py:128 :: self.start(self.DEFAULT_ANIMATION)
-scripts/core/spawn.py:61 :: SPAWN_REGISTRY: dict
-scripts/core/component.py:943 :: def mark_event_handled
-scripts/core/collision_runtime.py:170 :: BLOCK_ALL = BLOCK_DOWN
-editor/ui/fields.py:119 :: old = self.takeWidget()
+#TAG:layer_profile.PREFIX :: PREFIX = "pyoneer_"
+#TAG:LAYER_NAME_ALIASES :: "Paralax": "Parallax"
+#TAG:SPAWN_REGISTRY :: SPAWN_REGISTRY: dict
+#TAG:registry.resolve :: raise PyoneerAssetMissingError
+#TAG:delta_is_ms_over_60 :: milliseconds divided by 60
+#TAG:collision_field_ungated :: None means ungated
+#TAG:pyoneer_prefix_pytmx :: pytmx RAISES and makes the whole map unloadable
+#TAG:InputActionManager.held :: return self.actions[action_name].held
+#TAG:GameComponent.mark_event_handled :: def mark_event_handled
+#TAG:BLOCK_ALL :: BLOCK_ALL = BLOCK_DOWN
+#TAG:GameEntitySimple.__init__ :: self.transform: Transform = Transform(
+#TAG:GameEntity.allowed_move :: if field is None or bit is None
+#TAG:GameAnimationHandler.__init__ :: self.start(self.DEFAULT_ANIMATION)
+#TAG:post_dispose_unwired :: POST_DISPOSE = ("post_dispose", None)
+#TAG:qt_takewidget_sequence :: old = self.takeWidget()
+#TAG:behaviors_read_at_spawn :: read_requests(obj.properties
+#TAG:behaviors_attached_at_construction :: self.behaviors.attach_all
+#TAG:topdown_move :: name="topdown_move"
+#TAG:map.object.property.set :: "map.object.property.set"
 ```

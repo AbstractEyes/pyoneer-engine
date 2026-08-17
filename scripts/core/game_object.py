@@ -51,7 +51,7 @@ class PyoneerGameObject(ABC):
     the event bus, which calls `send_event_advanced`, NOT these methods. An
     override on such a class is dead code that never runs and never errors.
     Those classes bind behaviour with `bind_sync_listener` instead. See
-    docs/PLAN_EVENT_SYSTEM.md.
+    docs/history/PLAN_EVENT_SYSTEM.md.
     """
 
     def __init__(self,

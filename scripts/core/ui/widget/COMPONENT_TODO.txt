@@ -73,13 +73,13 @@ revamps;
         X CoreAssetManager is a real singleton now: __init__ is guarded and
           sealed, so `Config = CoreAssetManager()` at module scope is safe and
           returns the same object with its tmx cache intact. reload() is the
-          only rebuild path. See docs/PLAN_SINGLETONS.md for the accessor
+          only rebuild path. See docs/history/PLAN_SINGLETONS.md for the accessor
           naming scheme that is still open.
 
 widgets;
     X keyboard;
         needs rewrite; currently only keydown/keyup/repeat events
-        still true -- see docs/PLAN_EVENT_SYSTEM.md, the four parallel listener
+        still true -- see docs/history/PLAN_EVENT_SYSTEM.md, the four parallel listener
         registries (callbacks / async_callbacks / mouse_listeners /
         key_callbacks) collapse into one there
     X mouse;

@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; error strings below were produced by running the code at 5dd012d on 2026-08-16 -->
+<!-- pyoneer-stamp: hand-written; error strings below were produced by running the code at 5dd012d on 2026-08-16, and every source address was converted from file:line to #TAG: at d8c303f -->
 
 # Diagnose — "why doesn't my entity do the thing"
 
@@ -96,7 +96,7 @@ Walk this in order. It is the order the frame actually runs.
 - **Worse: an unrecognised direction is also unclamped.**
   `allowed_move` looks the direction up in `DIRECTION_BITS` and returns the
   wanted vector untouched when the lookup misses
-  (`scripts/game/entity/game_entity.py:236`). Measured on a field of
+  (`#TAG:GameEntity.allowed_move`). Measured on a field of
   all-`BLOCK_ALL` cells: `allowed_move(Vector2(10,10), 'down_right')` returns
   `[10, 10]` — straight through walls — while `('down')` clamps to `7.999`. It
   is harmless only while `move_direction` is the sole caller, and it is the
@@ -105,8 +105,9 @@ Walk this in order. It is the order the frame actually runs.
   seconds. A genre table's pixels-per-second figure used raw still *looks* like
   it works, which is what makes it expensive.
 - **`transform=` was ignored.** `GameEntity.__init__` accepts a `transform`
-  keyword and then builds a fresh one from `position`/`rotation`/`scale`
-  (`scripts/game/entity/game_entity.py:34`). Use `moveto()`.
+  keyword and hands it down to `GameEntitySimple.__init__`, which builds a
+  fresh one from `position`/`rotation`/`scale` and never looks at the one it
+  was given (`#TAG:GameEntitySimple.__init__`). Use `moveto()`.
 
 ---
 
@@ -136,7 +137,7 @@ these produce the same symptom:
 unmapped tile layer is silently not drawn. Measured: `resolve_layer_depth
 ("Trees")` is `None`; `resolve_layer_depth("Paralax")` is `1`, because the
 author's map spells it with one L and `LAYER_NAME_ALIASES` carries the typo
-rather than rewriting the `.tmx` (`scripts/core/depth.py:42`). That alias exists
+rather than rewriting the `.tmx` (`#TAG:LAYER_NAME_ALIASES`). That alias exists
 because 39 authored tiles were silently dropped for months. Legal layer names
 are generated into [`PLACEABLE.md`](PLACEABLE.md).
 
@@ -145,7 +146,7 @@ are generated into [`PLACEABLE.md`](PLACEABLE.md).
 ## "The animation is wrong / it raises `idle_none`"
 
 - `GameAnimationHandler` starts `idle_down` **at construction**, before any
-  behavior attaches (`scripts/game/entity/game_animation.py:128`). A sheet with
+  behavior attaches (`#TAG:GameAnimationHandler.__init__`). A sheet with
   no `idle_down` row therefore raises inside the entity constructor, before any
   composition can say what the body faces. This is the first wall a side-on-only
   or portrait-only sheet hits.
@@ -181,5 +182,11 @@ Check [`BEHAVIORS.md`](BEHAVIORS.md)'s integration table before believing any
 prose anywhere, including this file's: that table is produced by constructing a
 real entity and running frames, and a row reading `needs-host` means the
 behavior runs and reaches nothing. If the thing you want appears finished but
-inert, [`ORPHANS.md`](ORPHANS.md) is the archive of finished-and-unattached
-code and is likely to name it.
+inert, [`history/ORPHANS.md`](history/ORPHANS.md) is the dated archive of
+finished-and-unattached code and is likely to name it — re-measure anything it
+says before acting, because most of its findings are spent.
+
+Every address in this file is a `#TAG:`. `grep -rn "#TAG:GameEntity.allowed_move"`
+returns the definition line, this document's citation of it, and the code map's
+entry, in one command — which is the point, and why no line number appears
+above.

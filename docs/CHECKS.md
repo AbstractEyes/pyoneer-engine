@@ -17,7 +17,7 @@ have been written, passed, and never run by the suite. A check that
 did not run has proved nothing, which is why an absent optional
 dependency reports `SKIP` and never `PASS`.
 
-45 checks:
+46 checks:
 
 | check | roster line | module says |
 |---|---|---|
@@ -65,7 +65,8 @@ dependency reports `SKIP` and never `PASS`.
 | `behavior_ui` | behavior checklist from the registry, refusals at authoring time, exact undo | The editor's behavior surface: the checklist, the refusals, the undo. |
 | `editor_ui` | panels build, canvas edits are commands, responses apply | Drive the editor's Qt window offscreen and assert it holds together. |
 | `demos` | three prototype games boot headless and answer injected input | Boot every demo headless, drive it with injected input, and assert what it |
-| `docs` | the doc spine: navigation, anchors, generated files, fact drift | Verify the documentation SPINE, and generate the parts that can be generated. |
+| `prototype` | the design form resolves against the registries, and its worked example boots | Resolve every field the design template names, then boot its worked example. |
+| `docs` | the doc spine: navigation, #TAG anchors, the generated code map, fact drift | Verify the documentation SPINE, and generate the parts that can be generated. |
 
 `tools/smoke.py` runs after the roster and is not a check: it
 reports a frame hash, the component census, the blit-token

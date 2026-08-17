@@ -29,9 +29,11 @@ WHAT IS ASSERTED
         every check file on disk is in the roster -- plus every `check_*` a live
         document names is a real roster entry
      4. every `path.py:LINE` a live document quotes points at a file that is
-        still that long
-     5. the ANCHOR table in CLAUDE.md: each numbered line still contains the
-        quoted text  <- the strongest single assertion here
+        still that long, and the set of documents still quoting one at all is
+        the pinned inventory below and nothing else
+     5. the ANCHOR table in CLAUDE.md: every anchor addresses a `#TAG:`, that
+        tag resolves to exactly one place in the tree, and the quoted text is
+        still there  <- the strongest single assertion here
      6. FACT AGREEMENT: every fact a live document states that the CODE also
         knows is compared against the code -- token lists, roster counts, verb
         counts, spawnable types, input verbs, the property vocabulary
@@ -39,6 +41,28 @@ WHAT IS ASSERTED
      8. ONE HOME: a roster blurb appears only in docs/CHECKS.md
      9. known-stale text in a FOREIGN generated document is pinned, and the pin
         fails when the defect is fixed as loudly as when a new one appears
+    10. the CODE MAP: `docs/MAP.md` and `docs/map/*.md` are byte-for-byte what
+        `tools/gen_map.py` produces, cover the mapped roots in both directions,
+        and really do read signatures rather than merely list names
+    11. the TAG SCHEME: every tag the tree emits resolves to exactly one place,
+        every tag a document cites resolves at all, and a hand-placed `#TAG:`
+        comment sits inside the thing it claims to name
+
+WHY AN ANCHOR IS A #TAG AND NOT A LINE NUMBER
+---------------------------------------------
+Rule 5 used to read `path.py:LINE :: quoted text`, and it was the strongest
+assertion in this file until it started failing for a reason that had nothing
+to do with documentation. Measured one hour before this was written: a
+five-line docstring edit turned this check red with
+
+    game_entity.py:236 no longer contains 'if field is None or bit is None'
+    -- it moved to line 241
+
+The anchor was not wrong, the document was not stale, and the documented fact
+had not changed. A line number is an address invalidated by every edit above
+it. A `#TAG:` is an address that survives one, because the checker re-derives
+the line from the AST on every run. Rule 5 keeps the proving and changes the
+address; rule 4 keeps the old form alive only as a pinned, shrinking debt.
 
 THE ANTI-DRIFT POSITION THIS FILE TAKES
 ---------------------------------------
@@ -65,6 +89,8 @@ import os
 import re
 import sys
 
+import gen_map                      # the code-map generator; NOT a second copy
+
 ROOT = _bootstrap.REPO_ROOT
 DOCS = os.path.join(ROOT, "docs")
 
@@ -87,10 +113,18 @@ def expect_empty(label: str, offenders) -> None:
     expect(label, offenders[:12], [])
 
 
+_READ_CACHE: dict[str, str] = {}
+
+
 def read(relpath: str) -> str:
-    with open(os.path.join(ROOT, relpath.replace("/", os.sep)),
-              encoding="utf-8", newline="") as handle:
-        return handle.read().replace("\r\n", "\n")
+    # Cached because rule 4 now walks several hundred references across the
+    # generated map, and re-reading the same handful of source files once per
+    # reference turned a fast check into a slow one.
+    if relpath not in _READ_CACHE:
+        with open(os.path.join(ROOT, relpath.replace("/", os.sep)),
+                  encoding="utf-8", newline="") as handle:
+            _READ_CACHE[relpath] = handle.read().replace("\r\n", "\n")
+    return _READ_CACHE[relpath]
 
 
 def lines_of(relpath: str) -> list[str]:
@@ -118,7 +152,29 @@ BOOT = "CLAUDE.md"
 # fact-checked and still routed.
 FOREIGN_GENERATED = {
     "docs/BEHAVIORS.md": "tools/check_behavior_docs.py --write",
+    "docs/MAP.md": "tools/gen_map.py --write",
 }
+
+# Documents that still address code by BARE LINE NUMBER, and how many times.
+# The whole point of the tag scheme is that this table shrinks to nothing, so
+# it fails in BOTH directions exactly as PINNED_STALE does: a new bare line
+# reference anywhere is red, and fixing one without lowering the number here is
+# also red. Lower the number in the same change that removes the reference.
+#
+# `docs/MAP.md` and `docs/map/*.md` are exempt by construction, not by
+# indulgence: they are regenerated from the AST on every `--write`, so their
+# line numbers cannot rot -- an address is only fragile when a human has to
+# maintain it.
+#
+# Paid off on 2026-08-16 at `d8c303f`, and the empty dict is the strongest
+# form this rule can take: every bare `file.py:LINE` in a live document is now
+# a failure, with no exceptions to argue about. `docs/DIAGNOSE.md`'s four
+# became `#TAG:GameEntity.allowed_move`, `#TAG:GameEntitySimple.__init__`,
+# `#TAG:LAYER_NAME_ALIASES` and `#TAG:GameAnimationHandler.__init__`;
+# `docs/NEXT.md`'s seven went to `docs/history/NEXT_ce66ce5.md` with the
+# ce66ce5-era ranked list they belonged to, where an L3 archive's numbers are
+# history and exempt on purpose.
+LINE_ANCHOR_DEBT: dict[str, int] = {}
 
 # Text that is KNOWN WRONG in a document this pass may not edit, pinned so it
 # cannot get worse and cannot be forgotten. Each entry fails in BOTH
@@ -134,13 +190,46 @@ PINNED_STALE = [
 ]
 
 
+ARCHIVE_DIR = "docs/history/"
+"""Where an L3 archive lives, and the rule is enforced in BOTH directions.
+
+A banner at the top of a file is a sentence a reader can skip; a directory
+named `history` is one they cannot. The measured cost of getting this wrong is
+in the tree: five refactors were attempted as new sibling files and all five
+died, while every refactor written into the incumbent class landed -- and a
+finished plan sitting beside a live one is how a reader picks the sibling.
+"""
+
+GENERATED_DIRS = {"map"}
+"""Subdirectories of docs/ that another generator owns whole.
+
+`docs/map/` is 135 tier-2 files emitted by `tools/gen_map.py`; classifying
+them would demand a layer marker in each and route each from CLAUDE.md, which
+is a hundred navigation rows for one generated tree. Rule 10 checks that
+directory byte-for-byte instead, which is stronger than a marker.
+"""
+
+
+def doc_files() -> list[str]:
+    """Every markdown file under docs/, recursively, generated dirs aside."""
+    found: list[str] = []
+    for dirpath, dirs, files in os.walk(DOCS):
+        dirs[:] = sorted(d for d in dirs
+                         if os.path.relpath(os.path.join(dirpath, d),
+                                            DOCS).replace(os.sep, "/")
+                         not in GENERATED_DIRS)
+        for name in sorted(files):
+            if not name.endswith(".md"):
+                continue
+            rel = os.path.relpath(os.path.join(dirpath, name), ROOT)
+            found.append(rel.replace(os.sep, "/"))
+    return sorted(found)
+
+
 def classify() -> dict[str, str]:
     """relpath -> layer, for CLAUDE.md and every markdown file under docs/."""
     out = {BOOT: "L0"}
-    for name in sorted(os.listdir(DOCS)):
-        if not name.endswith(".md"):
-            continue
-        rel = "docs/" + name
+    for rel in doc_files():
         if rel in FOREIGN_GENERATED:
             out[rel] = "L1"
             continue
@@ -379,6 +468,27 @@ expect_empty("every L3 archive says it is exempt (carries the archive banner)",
 expect_empty("no L1 document is hand-editable without a named generator",
              [rel for rel, layer in LAYERS.items()
               if layer == "L1" and rel not in GENERATED and rel not in FOREIGN_GENERATED])
+# The archive rule, both halves. Half one alone permits a live plan quietly
+# filed under history/; half two alone permits a superseded plan sitting in
+# docs/ beside the document that replaced it, which is the shape that gets a
+# finished piece of work built a second time.
+expect_empty("every document under docs/history/ is an L3 archive",
+             [rel for rel, layer in LAYERS.items()
+              if rel.startswith(ARCHIVE_DIR) and layer != "L3"])
+expect_empty("every L3 archive lives under docs/history/",
+             [rel for rel in ARCHIVE if not rel.startswith(ARCHIVE_DIR)])
+# ...and the walk really descends into it. Both rules above are satisfied
+# VACUOUSLY by a classifier that never looks inside `docs/history/` -- which is
+# exactly what the old `os.listdir(DOCS)` did, and is how filing a document
+# under history/ could have become a way to exempt it from every rule in this
+# file rather than a way to date it. Enumerated by glob rather than by
+# `doc_files()` on purpose: an assertion that asks the walker whether it walked
+# proves nothing.
+import glob as _glob                                                # noqa: E402
+expect("every markdown file on disk under docs/history/ is classified",
+       sorted("%s%s" % (ARCHIVE_DIR, os.path.basename(p))
+              for p in _glob.glob(os.path.join(DOCS, "history", "*.md"))),
+       sorted(ARCHIVE))
 
 
 # ---------------------------------------------------------------------------
@@ -461,12 +571,22 @@ if in_flight:
 expect("no duplicate roster entries", len(set(ROSTER_NAMES)), len(ROSTER_NAMES))
 
 CHECK_RX = re.compile(r"\bcheck_([a-z0-9_]+)\b")
+# A `check_*` that the code map lists is a FUNCTION, not a check module --
+# `check_property_name` is one, and the map is generated so it will name every
+# future one too. Resolving the name against the tag index rather than
+# exempting the map by filename keeps the rule general: a hand-written document
+# may also cite `check_property_name` and be right.
+TAGS = gen_map.tag_index()
 unknown_named = []
 for rel in LIVE:
     for name in sorted(set(CHECK_RX.findall(read(rel)))):
-        if name not in ROSTER_NAMES and name not in ("all", "docs"):
-            unknown_named.append(f"{rel}: check_{name}")
-expect_empty("every check a LIVE document names is in the roster", unknown_named)
+        if name in ROSTER_NAMES or name in ("all", "docs"):
+            continue
+        if any(tag.rsplit(".", 1)[-1] == "check_" + name for tag in TAGS):
+            continue
+        unknown_named.append(f"{rel}: check_{name}")
+expect_empty("every check a LIVE document names is in the roster "
+             "(or is a function the code map knows)", unknown_named)
 
 
 # ---------------------------------------------------------------------------
@@ -487,41 +607,109 @@ for rel in LIVE:
             stale_refs.append(f"{rel} -> {target}:{number} "
                               f"(only {len(lines_of(target))} lines)")
 expect_empty("no live document quotes a line past the end of its file", stale_refs)
-expect("live documents quote at least a few source lines", ref_count >= 8, True)
+
+# The inventory, both directions. `ref_count >= 8` used to live here and meant
+# "documents still quote source lines" -- which is now the thing being removed,
+# so an assertion that DEMANDED it would be an assertion against the point of
+# the change.
+observed_debt = {}
+for rel in LIVE:
+    if rel in FOREIGN_GENERATED or rel in GENERATED:
+        continue                     # regenerated; its numbers cannot rot
+    count = len(REF_RX.findall(read(rel)))
+    if count:
+        observed_debt[rel] = count
+expect("the bare-line-number inventory is exactly what is pinned "
+       "(a new one is red; fixing one means lowering the pin)",
+       observed_debt, LINE_ANCHOR_DEBT)
+if observed_debt != LINE_ANCHOR_DEBT:
+    for rel in sorted(set(observed_debt) | set(LINE_ANCHOR_DEBT)):
+        was, now = LINE_ANCHOR_DEBT.get(rel, 0), observed_debt.get(rel, 0)
+        if was == now:
+            continue
+        advice = ("address it by #TAG: instead" if now > was
+                  else "lower or delete the pin in tools/check_docs.py")
+        print(f"          {rel}: pinned {was}, found {now} -- {advice}")
+expect("CLAUDE.md addresses no source by bare line number at all",
+       observed_debt.get(BOOT, 0), 0)
 
 
 # ---------------------------------------------------------------------------
-print("\n5. the anchor table: every quoted line still says what it says")
+print("\n5. the anchor table: every #TAG still says what it says")
 # ---------------------------------------------------------------------------
+# `#TAG:GameEntity.allowed_move :: if field is None or bit is None`
+#
+# The tag is resolved to a file and a LINE RANGE on every run -- from the AST
+# for a generated tag, from the comment's own line for a hand-placed one -- and
+# the quoted text must appear inside that range exactly once. So the anchor
+# survives any edit ABOVE it (the failure that made the old form untenable) and
+# still fails when the fact moves to a different symbol, is duplicated, or goes
+# away.
+SOURCE_TAGS: dict[str, tuple[str, int, str]] = {}
+DUPLICATE_SOURCE_TAGS: list[str] = []
+for _tag, _rel, _no, _line in gen_map.source_tags():
+    if _tag in SOURCE_TAGS:
+        DUPLICATE_SOURCE_TAGS.append(f"{_tag} at {_rel}:{_no} and "
+                                     f"{SOURCE_TAGS[_tag][0]}:{SOURCE_TAGS[_tag][1]}")
+    else:
+        SOURCE_TAGS[_tag] = (_rel, _no, _line)
+
+
+def tag_extent(tag: str) -> tuple[str, int, int] | None:
+    """(relpath, first line, last line) a tag speaks for, or None.
+
+    A hand-placed `#TAG:` comment wins over the generated one and speaks for
+    its own single line -- that is the whole reason to place one: it narrows an
+    anchor from "somewhere in this function" to "this line".
+    """
+    if tag in SOURCE_TAGS:
+        rel, number, _ = SOURCE_TAGS[tag]
+        return rel, number, number
+    site = TAGS.get(tag)
+    if site is None:
+        return None
+    return site.relpath, site.lineno, site.end_lineno
+
+
 block = re.search(r"```anchors\n(.*?)```", BOOT_TEXT, re.S)
 expect("CLAUDE.md carries an ```anchors``` block", block is not None, True)
-anchors: list[tuple[str, int, str]] = []
-if block:
-    for raw in block.group(1).strip().split("\n"):
-        if not raw.strip():
-            continue
-        head, _, needle = raw.partition(" :: ")
-        target, _, number = head.rpartition(":")
-        anchors.append((target.strip(), int(number), needle))
+anchors: list[tuple[str, str]] = []
+malformed: list[str] = []
+for raw in (block.group(1) if block else "").strip().split("\n"):
+    if not raw.strip():
+        continue
+    head, sep, needle = raw.partition(" :: ")
+    if not sep or not head.startswith(gen_map.TAG):
+        malformed.append(raw.strip()[:70])
+        continue
+    anchors.append((head[len(gen_map.TAG):].strip(), needle))
+expect_empty("every anchor is `#TAG:<tag> :: quoted text` -- no line numbers, "
+             "which is the whole reason this table changed shape", malformed)
 expect("the anchor table is not empty enough to be decorative",
        len(anchors) >= 8, True)
 
 broken = []
-for target, number, needle in anchors:
-    path = os.path.join(ROOT, target.replace("/", os.sep))
-    if not os.path.isfile(path):
-        broken.append(f"{target}:{number} -- no such file")
+for tag, needle in anchors:
+    extent = tag_extent(tag)
+    if extent is None:
+        broken.append(f"#TAG:{tag} resolves nowhere -- the symbol was renamed "
+                      f"or removed, or the map needs regenerating")
         continue
-    body = lines_of(target)
-    if number > len(body):
-        broken.append(f"{target}:{number} -- file has {len(body)} lines")
-        continue
-    if needle not in body[number - 1]:
-        elsewhere = [i + 1 for i, line in enumerate(body) if needle in line]
-        broken.append(f"{target}:{number} no longer contains {needle!r}"
-                      + (f" -- it moved to line {elsewhere[0]}" if elsewhere
-                         else " -- and it is gone from the file entirely"))
-expect_empty("every anchored line still contains its quoted text", broken)
+    target, first, last = extent
+    body = lines_of(target)[first - 1:last]
+    hits = [first + i for i, line in enumerate(body) if needle in line]
+    if not hits:
+        elsewhere = [i + 1 for i, line in enumerate(lines_of(target))
+                     if needle in line]
+        broken.append(
+            f"#TAG:{tag} ({target}:{first}-{last}) no longer contains {needle!r}"
+            + (f" -- it moved OUT of that symbol, to line {elsewhere[0]}"
+               if elsewhere else " -- and it is gone from the file entirely"))
+    elif len(hits) > 1:
+        broken.append(f"#TAG:{tag} contains {needle!r} on {len(hits)} lines "
+                      f"({hits[:4]}) -- the anchor no longer names one place")
+expect_empty("every anchored tag still contains its quoted text, exactly once",
+             broken)
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +761,54 @@ for rel, lineno, token in bad_tokens:
 expect_empty("every behavior token a live document declares is registered "
              "(unpinned)", unpinned)
 
+# THE SOWN TAGS, BOTH DIRECTIONS.
+#
+# A `#TAG:` comment in a source file is an ADDRESS, and an address nothing
+# validates is the line-number problem wearing a new hat. The whole pass
+# exists because `game_entity.py:236` stopped meaning what it said when five
+# lines were inserted above it; a tag that names a behavior which has since
+# been renamed fails exactly the same way, only silently -- the grep the docs
+# teach returns zero hits and the reader concludes the thing does not exist.
+#
+# So the sown behavior tags and the registry must agree as SETS. Both
+# directions matter and they catch different mistakes:
+#   registry -> tags : a behavior landed and nobody tagged it, so it is
+#                      invisible to the lookup the docs promise.
+#   tags -> registry : a behavior was renamed or deleted and its tag was left
+#                      behind, so the lookup answers with a corpse.
+SOWN_RX = re.compile(r"#TAG:([a-z][a-z0-9_]*)\b")
+sown: set[str] = set()
+for root, dirs, files in os.walk(ROOT):
+    dirs[:] = [d for d in dirs
+               if d not in {".git", "__pycache__", ".venv", "docs", "tools"}]
+    for name in files:
+        if not name.endswith(".py"):
+            continue
+        with open(os.path.join(root, name), encoding="utf-8",
+                  errors="replace") as handle:
+            for match in SOWN_RX.finditer(handle.read()):
+                sown.add(match.group(1))
+sown_tokens = sown & set(TOKENS)
+expect_empty("every registered behavior carries a sown #TAG (registry -> tags)",
+             sorted(set(TOKENS) - sown_tokens))
+# The reverse direction needs the snake_case tags that LOOK like tokens but
+# are not -- `delta_is_ms_over_60` and friends are deliberate topic tags, so
+# the offender set is tags that were once tokens and no longer are. A tag
+# whose name matches nothing and was never a token is a topic tag and legal;
+# what is illegal is a tag citing a token spelling the registry has dropped.
+CITED_TOKEN_RX = re.compile(r"#TAG:(" + "|".join(re.escape(t) for t in TOKENS)
+                            + r")\b")
+orphan_token_tags = []
+for rel in LIVE:
+    for match in re.finditer(r"#TAG:([a-z][a-z0-9_]*)\b", read(rel)):
+        tag = match.group(1)
+        if tag.endswith("_action") or tag.endswith("_move") or tag.endswith("_input"):
+            if tag not in BEHAVIOR_REGISTRY:
+                orphan_token_tags.append(f"{rel} cites #TAG:{tag}, which is "
+                                         f"not a registered behavior")
+expect_empty("no document cites a behavior-shaped #TAG that is not registered "
+             "(tags -> registry)", orphan_token_tags)
+
 # L0 may NAME a token, and may not ENUMERATE the registry: a table that is
 # generated elsewhere must not be copied into the boot document, or the boot
 # document becomes the thing that rots. Both halves -- every token it names
@@ -592,6 +828,49 @@ expect("CLAUDE.md names the spawnable types and no others",
 expect_empty("CLAUDE.md spells the property vocabulary the way the code does",
              [name for name in (PREFIX, BEHAVIORS, PARAM_PREFIX, ACTOR)
               if name not in BOOT_TEXT])
+# The ACCESS ESCALATION ladder states a cost per level, and a ladder whose
+# costs are wrong routes a reader to the wrong rung -- which is the one thing it
+# exists to prevent. Each claim is bound to a real measurement here. The
+# tolerance is a FACTOR, not a percentage: the claim is an order of magnitude
+# ("a page" vs "a book"), so demanding two significant figures would make this
+# rule fire on every commit that adds a class.
+COST_RX = re.compile(r"~([\d.]+)k tokens")
+TOKENS_PER_KB = 4000.0
+
+
+def size_of(*rels: str) -> float:
+    return sum(os.path.getsize(os.path.join(ROOT, r.replace("/", os.sep)))
+               for r in rels) / TOKENS_PER_KB
+
+
+def median_size(rels: list[str]) -> float:
+    """Median BY SIZE, not by name -- the ladder's claim is about volume."""
+    return size_of(sorted(rels, key=size_of)[len(rels) // 2]) if rels else 0.0
+
+
+_tier2 = sorted(gen_map.on_disk_tier2())
+_sources = sorted(gen_map.source_files())
+COST_CLAIMS = [
+    ("| 0 | this file |", "the boot document itself", size_of(BOOT)),
+    ("— tier 1 |", "docs/MAP.md", size_of(gen_map.INDEX_REL)),
+    ("— tier 2 |", "the median tier-2 file", median_size(_tier2)),
+    ("the source file", "the median mapped module", median_size(_sources)),
+    ("the set is ~", "every tier-2 file at once", size_of(*_tier2)),
+]
+cost_lies = []
+for marker, what, real in COST_CLAIMS:
+    row = next((l for l in lines_of(BOOT) if marker in l), None)
+    found = COST_RX.search(row) if row else None
+    if found is None:
+        cost_lies.append(f"CLAUDE.md states no `~Nk tokens` cost for {what}")
+        continue
+    stated = float(found.group(1))
+    if not (real / 1.6 <= stated <= real * 1.6):
+        cost_lies.append(f"CLAUDE.md says {what} costs ~{stated}k tokens; "
+                         f"measured ~{real:.1f}k -- write ~{round(real, 1)}k")
+expect_empty("the access-escalation ladder's costs are the measured ones",
+             cost_lies)
+
 # Catches `GameFoo`, `GameFoo.method`, `GameFoo(` -- the phantom-class trap in
 # scripts/core/depth.py is four names that read as placeable and exist nowhere.
 CLASS_RX = re.compile(r"`(Game[A-Za-z]+)(?=[.`(\s])")
@@ -655,6 +934,198 @@ expect("every pinned defect was actually observed",
 
 
 # ---------------------------------------------------------------------------
+print("\n10. the code map is generated, complete, and really reads signatures")
+# ---------------------------------------------------------------------------
+MODULES = gen_map.load()
+
+expect_empty("docs/MAP.md and docs/map/*.md are byte-identical to their "
+             "generator", gen_map.drift())
+
+# Both halves of coverage. Half one alone passes for a map that has grown a
+# file for every module and never deletes one; half two alone passes for a map
+# of three modules that happen to still exist.
+mapped = {m.relpath for m in MODULES}
+on_disk_py = set(gen_map.source_files())
+expect("every .py under the mapped roots is in the map", mapped, on_disk_py)
+expect("every tier-2 file corresponds to a module that exists",
+       sorted(gen_map.on_disk_tier2()),
+       sorted(gen_map.tier2_rel(m) for m in MODULES))
+expect("the map is not trivially small", len(MODULES) >= 100, True)
+
+# TEETH. Everything above compares the tree against itself: a generator that
+# emitted only names, dropped every default and never printed a return
+# annotation would satisfy all of it. So drive the same renderers over a
+# fixture this file owns, and mutate the fixture in the four ways a signature
+# can silently stop being reported.
+FIXTURE = '''"""Fixture module, first line.
+
+A second paragraph that must never reach either tier.
+"""
+LOUD = 1
+quiet = 2
+
+
+def helper(a, b: int = 3, *rest, key: str = "x") -> str:
+    """Helper gist."""
+    return key
+
+
+def _private_helper():
+    pass
+
+
+class Thing:
+    """Thing gist."""
+
+    def method(self, x=1):
+        pass
+
+    def _hidden(self):
+        pass
+
+    @property
+    def value(self):
+        return 0
+
+    @value.setter
+    def value(self, v):
+        pass
+'''
+
+
+def fixture_module(source: str) -> "gen_map.Module":
+    module = gen_map.parse_text("scripts/fixture/thing.py", source)
+    gen_map.assign_tags([module])
+    return module
+
+
+def render_fixture(source: str) -> str:
+    return gen_map.render_module(fixture_module(source))
+
+
+FIX_DOC = render_fixture(FIXTURE)
+expect("fixture: a default value is rendered, not just the parameter name",
+       "b: int=3" in FIX_DOC, True)
+expect("fixture: ...and mutating that default moves the document",
+       "b: int=4" in render_fixture(FIXTURE.replace("b: int = 3", "b: int = 4")),
+       True)
+expect("fixture: a declared return annotation is rendered",
+       "-> str" in FIX_DOC, True)
+expect("fixture: ...and mutating it moves the document",
+       "-> bytes" in render_fixture(FIXTURE.replace("-> str", "-> bytes")), True)
+expect("fixture: star-args and keyword-only defaults survive",
+       "*rest, key: str='x'" in FIX_DOC, True)
+expect("fixture: the docstring's FIRST line is taken",
+       "Fixture module, first line." in FIX_DOC, True)
+expect("fixture: ...and the rest of the docstring is not",
+       "must never reach" in FIX_DOC, False)
+expect("fixture: an UPPER module constant is listed", "`LOUD`" in FIX_DOC, True)
+expect("fixture: a lower-case module assignment is not called a constant",
+       "`quiet`" in FIX_DOC, False)
+expect("fixture: a private METHOD is still listed -- tier 2 is the whole file",
+       "#TAG:Thing._hidden" in FIX_DOC, True)
+expect("fixture: a property and its setter are both listed",
+       ("#TAG:Thing.value" in FIX_DOC and "#TAG:Thing.value.setter" in FIX_DOC),
+       True)
+
+# Tier 1 is a second renderer over the same facts, and it has its own ways to
+# be wrong: printing a signature (which makes it tier 2 under another name),
+# forgetting the address, or listing a private symbol it promised to omit.
+FIX_INDEX = gen_map.render_index([fixture_module(FIXTURE)])
+expect("fixture: tier 1 gives a class its tag, its kind and its address",
+       "#TAG:Thing class thing.py:18" in FIX_INDEX, True)
+expect("fixture: tier 1 gives a public function the same",
+       "#TAG:helper def thing.py:9  · Helper gist." in FIX_INDEX, True)
+expect("fixture: tier 1 carries no signature -- that is tier 2's whole job",
+       "b: int=3" in FIX_INDEX, False)
+expect("fixture: tier 1 omits a private module-level function",
+       "_private_helper" in FIX_INDEX, False)
+expect("fixture: tier 1 omits methods entirely",
+       "Thing.value" in FIX_INDEX, False)
+LONG = FIXTURE.replace("Fixture module, first line.",
+                       "Fixture module, " + "very " * 40 + "long first line.")
+LONG_INDEX = gen_map.render_index([fixture_module(LONG)])
+expect("fixture: a long gist is cut, not carried -- tier 1 stays a gist",
+       ("very very very" in LONG_INDEX and "…" in LONG_INDEX
+        and "long first line." not in LONG_INDEX), True)
+expect("fixture: ...and a short one is carried whole",
+       "Helper gist." in LONG_INDEX, True)
+
+
+# ---------------------------------------------------------------------------
+print("\n11. the tag scheme: unique to grep, and every cited tag resolves")
+# ---------------------------------------------------------------------------
+# Unique BY CONSTRUCTION is a claim, and this is the measurement of it: the
+# index is a dict, so a collision would silently drop an entry, and the count
+# of tags must therefore equal the count of tagged things.
+tagged_things = len(MODULES) + sum(len(m.entries) for m in MODULES)
+expect("every module, class, method, function and constant has its own tag",
+       len(TAGS), tagged_things)
+expect("the tag index is worth having", len(TAGS) >= 500, True)
+
+# TEETH for the collision rule. The live tree happens to be almost free of
+# duplicate names, so asserting over it proves nothing about the rule that
+# separates them. Two fixture modules that both define `Thing` and both define
+# `Thing.method` must come out with four distinct tags.
+_a = gen_map.parse_text("scripts/fixture/one.py",
+                        "class Thing:\n    def method(self): pass\n")
+_b = gen_map.parse_text("scripts/fixture/two.py",
+                        "class Thing:\n    def method(self): pass\n")
+gen_map.assign_tags([_a, _b])
+expect("fixture: a name defined in two modules gets two distinct tags",
+       sorted(e.tag for m in (_a, _b) for e in m.entries),
+       ["one.Thing", "one.Thing.method", "two.Thing", "two.Thing.method"])
+_c = gen_map.parse_text("scripts/fixture/three.py",
+                        "class Thing:\n"
+                        "    @property\n    def v(self): pass\n"
+                        "    @v.setter\n    def v(self, x): pass\n")
+gen_map.assign_tags([_c])
+expect("fixture: a property and its setter do not share a tag",
+       sorted(e.tag for e in _c.entries if e.kind == "method"),
+       ["Thing.v", "Thing.v.setter"])
+_d = gen_map.parse_text("scripts/fixture/four.py",
+                        "class Thing: pass\n\n\nclass Thing: pass\n")
+gen_map.assign_tags([_d])
+expect("fixture: a name redefined in ONE scope is still separated",
+       len({e.tag for e in _d.entries}), 2)
+
+# Every tag a document cites must resolve. Both halves again: the count is
+# asserted too, because a rule that iterates nothing passes forever.
+cited: list[tuple[str, str]] = []
+for rel in sorted(LIVE):
+    if rel == gen_map.INDEX_REL:
+        continue                     # the index citing itself proves nothing
+    for match in gen_map.TAG_REF.finditer(read(rel)):
+        cited.append((rel, match.group(1)))
+unresolved = [f"{rel} cites {gen_map.TAG}{tag}, which resolves nowhere"
+              for rel, tag in cited
+              if tag not in TAGS and tag not in SOURCE_TAGS]
+expect_empty("every #TAG a document cites resolves in the tree", unresolved)
+expect("documents actually use the scheme", len(cited) >= 10, True)
+
+# A hand-placed `#TAG:` comment is the escape hatch for a line that is not a
+# definition. It must be unique, and it must sit INSIDE the thing it names --
+# otherwise `#TAG:GameEntity` could be dropped on an unrelated line and an
+# anchor would follow it there.
+expect_empty("no hand-placed #TAG: comment is duplicated in the tree",
+             DUPLICATE_SOURCE_TAGS)
+misplaced = []
+for _tag, (_rel, _no, _line) in sorted(SOURCE_TAGS.items()):
+    site = TAGS.get(_tag)
+    if site is None:
+        continue                     # a topic tag: it names no symbol, by design
+    if site.relpath != _rel or not (site.lineno <= _no <= site.end_lineno):
+        misplaced.append(f"{_rel}:{_no} places {gen_map.TAG}{_tag}, but that "
+                         f"tag names {site.kind} at {site.address}")
+expect_empty("a hand-placed #TAG: sits inside the symbol it names", misplaced)
+if SOURCE_TAGS:
+    print(f"    note  {len(SOURCE_TAGS)} hand-placed #TAG: comment(s) in the tree")
+else:
+    print("    note  no hand-placed #TAG: comment in the tree yet; every anchor "
+          "resolves through the generated map")
+
+
+# ---------------------------------------------------------------------------
 print()
 print(f"documents        : {len(LAYERS)}  "
       f"(L0 1, L1 {sum(1 for v in LAYERS.values() if v == 'L1')}, "
@@ -662,8 +1133,11 @@ print(f"documents        : {len(LAYERS)}  "
       f"L3 {len(ARCHIVE)})")
 print(f"roster           : {len(ROSTER)} checks")
 print(f"behavior tokens  : {len(TOKENS)}")
-print(f"anchors verified : {len(anchors)}")
-print(f"file:line refs   : {ref_count}")
+print(f"anchors verified : {len(anchors)} (all by #TAG)")
+print(f"tags cited       : {len(cited)} across {len(set(r for r, _ in cited))} document(s)")
+print(f"mapped modules   : {len(MODULES)}, {len(TAGS)} tags")
+print(f"bare line refs   : {ref_count} left in live documents "
+      f"({', '.join(f'{k} {v}' for k, v in sorted(LINE_ANCHOR_DEBT.items())) or 'none'})")
 print(f"assertions       : {checked}")
 if failures:
     print(f"\nFAIL ({len(failures)}): " + "; ".join(failures[:8]))

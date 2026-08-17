@@ -12,7 +12,7 @@ does nothing, which is exactly the bug this module exists to end.
 
 THE PREFIX IS LOAD-BEARING
 --------------------------
-pytmx RAISES and makes the whole map unloadable if a custom property
+pytmx RAISES and makes the whole map unloadable if a custom property  #TAG:pyoneer_prefix_pytmx
 shadows one of its own attribute names (`opacity`, `visible`, `offsetx`,
 `name`, `data`, ...). `opacity` is both a natural capability name and one of
 those, so everything is prefixed.

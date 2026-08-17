@@ -53,7 +53,7 @@ WHAT IS DELIBERATELY NOT HERE
     package exists without.
   * **`hp`, damage, or death conditions.** There is no damage consumer in this
     engine and no engine-side reader for `data/project/tables/`. A health axis
-    before a damage consumer is the docs/ORPHANS.md pattern verbatim.
+    before a damage consumer is the docs/history/ORPHANS.md pattern verbatim.
   * **A death animation.** `alive` covers "playing its last sequence"; give
     the body a `lifetime_ms` and play whatever it likes during it. That is why
     `LIVES` has two values and not four.
@@ -173,7 +173,7 @@ class GameLifecycleMarkBehavior(EntityBehavior):
 
 
 LIFECYCLE_MARK = BehaviorSpec(
-    name="lifecycle_mark",
+    name="lifecycle_mark",  # #TAG:lifecycle_mark
     summary="Declares this body GONE -- when a named action fires, or after a "
             "declared lifetime. It marks and never removes; SceneManager.reap() "
             "is what takes a marked body out of the scene and the renderer.",

@@ -275,7 +275,7 @@ class GamePlayerInputBehavior(EntityBehavior):
 
 
 PLAYER_INPUT = BehaviorSpec(
-    name="player_input",
+    name="player_input",  # #TAG:player_input
     summary="Polls the bound input manager and publishes a MoveIntent. The "
             "entity carrying this one is the entity the human drives.",
     factory=GamePlayerInputBehavior,

@@ -43,7 +43,7 @@ class Transform2D:
     Second, the dependency points one way: `GameComponent` owns a
     `Transform2D`, and `Transform2D` has never heard of `GameComponent`. The
     five previous refactors that died in this repo all died as new sibling
-    modules that imported the incumbent back (see docs/ORPHANS.md §1A); this
+    modules that imported the incumbent back (see docs/history/ORPHANS.md §1A); this
     one imports pygame and stops.
     """
 
@@ -135,7 +135,7 @@ class Transform2D:
 
         That disagreement is preserved deliberately. The window drag path
         depends on the current behaviour, and correcting it is a separate,
-        testable change. See docs/ORPHANS.md.
+        testable change. See docs/history/ORPHANS.md.
         """
         local = self.local.copy()
         world = self.world.copy()

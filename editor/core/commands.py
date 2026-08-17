@@ -401,7 +401,7 @@ class CommandStream:
 _NOOP = Command("noop", Scope.of("project"))
 
 
-@command("noop", summary="Does nothing. The inverse of a command that changed nothing.",
+@command("noop", summary="Does nothing. The inverse of a command that changed nothing.",  # #TAG:noop
          scopes=["project"])
 def _noop(project: Any, cmd: Command) -> None:
     return None

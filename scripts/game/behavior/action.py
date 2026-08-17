@@ -547,7 +547,7 @@ def _params(default_verb: str) -> tuple[BehaviorParam, ...]:
 
 
 ATTACK_ACTION = BehaviorSpec(
-    name="attack_action",
+    name="attack_action",  # #TAG:attack_action
     summary="Fires on the rising edge of the 'attack' verb, with a cooldown. "
             "Records an ActionFired; reaches no event bus.",
     factory=GameActionInputBehavior,
@@ -561,7 +561,7 @@ ATTACK_ACTION = BehaviorSpec(
 )
 
 INTERACT_ACTION = BehaviorSpec(
-    name="interact_action",
+    name="interact_action",  # #TAG:interact_action
     summary="Fires on the rising edge of the 'action' verb -- talk, use, open. "
             "The explicit interaction a `use` map trigger is waiting for.",
     factory=GameActionInputBehavior,
@@ -575,7 +575,7 @@ INTERACT_ACTION = BehaviorSpec(
 )
 
 PAUSE_ACTION = BehaviorSpec(
-    name="pause_action",
+    name="pause_action",  # #TAG:pause_action
     summary="Fires on the rising edge of the 'pause' verb. The entity-side "
             "half of a pause; what it MEANS is the sink's business.",
     factory=GameActionInputBehavior,
@@ -588,7 +588,7 @@ PAUSE_ACTION = BehaviorSpec(
 )
 
 ACTION_RELAY = BehaviorSpec(
-    name="action_relay",
+    name="action_relay",  # #TAG:action_relay
     summary="Calls entity.action_sink(entity, fired) for every action that "
             "fired this frame. The only behavior that reaches outward, and it "
             "calls rather than dispatches. SceneManager assigns the sink: it "

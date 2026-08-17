@@ -3,9 +3,11 @@
      checks in tools/check_docs.py, because its numbers are history and
      re-measuring them would erase what it recorded. -->
 
+> **Filed under `docs/history/` on 2026-08-16 at `d8c303f`. Superseded as a work list by `tools/check_all.py`'s roster and by [`../../CLAUDE.md`](../../CLAUDE.md)'s laws, each of which carries a cost this review measured. Kept for *why it was built this way*.**
+>
 > **ARCHIVE — do not navigate by this file.** the first full code review, against `cd96542`. Its counts,
 > line numbers and status claims describe the commit it was written at and
-> are not re-measured. Route from [`../CLAUDE.md`](../CLAUDE.md); come here
+> are not re-measured. Route from [`../CLAUDE.md`](../../CLAUDE.md); come here
 > only for "what did the review find" or "why was it built this way".
 
 # Pyoneer Engine — Code Review
@@ -37,7 +39,9 @@
 >   location, and confirm the defect still reproduces, before acting on any
 >   finding.
 >
-> For the current state read [NEXT.md](NEXT.md) and [ORPHANS.md](ORPHANS.md).
+> For the current state read [`../../CLAUDE.md`](../../CLAUDE.md), then
+> [`../MAP.md`](../MAP.md). The two documents this line used to send you to —
+> `NEXT.md` and `ORPHANS.md` — are archives now and sit beside this one.
 > [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) sequences these findings into 12
 > segments and is the same vintage.
 

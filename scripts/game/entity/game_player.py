@@ -182,7 +182,7 @@ class GamePlayer(GameAnimatedEntity):
         if behaviors:
             properties = (behaviors if isinstance(behaviors, Mapping)
                           else {BEHAVIORS: behaviors})
-            self.behaviors.attach_all(build(read_requests(
+            self.behaviors.attach_all(build(read_requests(  # #TAG:behaviors_attached_at_construction
                 properties, where="%s()" % type(self).__name__)))
 
     def core_lifecycle_build(self, event: Optional[PyoneerEvent] = None):

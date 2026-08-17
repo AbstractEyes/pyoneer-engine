@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; art paths re-read at 5dd012d on 2026-08-16 -->
+<!-- pyoneer-stamp: hand-written; art paths re-read at 5dd012d on 2026-08-16, addresses converted to #TAG: at d8c303f, and the art-dependent check list is still [UNVERIFIED] below -->
 
 # Assets
 
@@ -38,11 +38,11 @@ The engine reads exactly **three** image files at runtime. Without them,
    entity, and `data/maps/test.tmx` — which **is** tracked, being the author's
    own map — declares two `<tileset>` elements pointing at
    `../graphics/tilesets/System/TileA2.png` (512×384) and `TileC.png`
-   (512×512). `AssetMapManager.load_assets` raises
+   (512×512). `#TAG:AssetMapManager.load_assets` raises
    `PyoneerAssetMissingError` naming the file and pointing here.
 2. **Then the entity spritesheet.** `config/animations.json` points the default
    entity animation at `data/graphics/tilesets/Characters/~Garet.png` and
-   `GameAnimationHandler.__init__` loads it eagerly, raising
+   `#TAG:GameAnimationHandler.__init__` loads it eagerly, raising
    `PyoneerAssetMissingError` naming the config key that declared it.
 
 The roster is generated into [`CHECKS.md`](CHECKS.md); do not restate its size
@@ -58,9 +58,13 @@ it; it was arithmetic carried forward as the suite grew rather than
 anything anyone had run.
 
 **[UNVERIFIED] — the seven were measured against a much smaller roster and
-nothing re-measures them.** Sixteen checks have been added since. The roster
-carries no `needs_art` flag, so this list cannot be generated; adding that flag
-is the fix, and it is listed as a known gap in [`../CLAUDE.md`](../CLAUDE.md).
+nothing re-measures them.** The roster has roughly doubled since; read its
+current size from [`CHECKS.md`](CHECKS.md), which is generated, and treat the
+seven as a lower bound rather than a list. The roster carries no `needs_art`
+flag, so this list cannot be generated; adding that flag is the fix, and it is
+listed as a known gap in [`../CLAUDE.md`](../CLAUDE.md). Re-measuring it costs
+one move of `data/graphics` aside and one full suite run — which is why nobody
+has, and why the marker above stays until somebody does.
 
 The two editor checks are among those that do not: the editor reads maps
 through `MapDocument`, which is pure XML, and its canvas falls back to
@@ -84,7 +88,7 @@ the required sizes; with it, the whole roster passes.
 Drop replacements at the paths above. Nothing requires the RTP layout — the
 animation frame rectangles are declared in `config/animations.json`
 (`x`, `y`, `width`, `height` per sequence), so any sheet works as long as the
-config describes it. `GameAnimation.slice_frames` clips every frame to the
+config describes it. `#TAG:GameAnimation.slice_frames` clips every frame to the
 sheet and raises `ValueError` naming the sequence and frame if one falls
 outside, rather than silently producing an empty sprite.
 

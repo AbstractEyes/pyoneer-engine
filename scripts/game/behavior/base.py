@@ -47,7 +47,7 @@ indistinguishable from a physics bug for as long as it takes to find.
 
 WHAT A BEHAVIOR MUST NOT ASSUME
 -------------------------------
-  * `event.data["delta"]` is milliseconds divided by 60, NOT seconds
+  * `event.data["delta"]` is milliseconds divided by 60, NOT seconds  #TAG:delta_is_ms_over_60
     (`main.py`'s frame loop). A number taken from a genre table documented in
     pixels/second is ~16.7x wrong here in a way that still looks like it
     works.

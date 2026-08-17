@@ -1,5 +1,6 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written architecture; counts re-checked at 5dd012d on 2026-08-16 -->
+<!-- pyoneer-stamp: hand-written architecture; the "not built yet" list and the action-queue reasons were re-measured against d8c303f on 2026-08-16 and five stale claims were corrected in place -->
+<!-- pyoneer-stamp: earlier: counts re-checked at 5dd012d on 2026-08-16 -->
 
 # The editor
 
@@ -315,21 +316,27 @@ those four checks cover:
 - the Qt window driven offscreen: panels, selection sync, canvas edits as
   commands, the database window, response application
 
-Not built yet:
+Not built yet — **re-measured at `d8c303f`, and four entries came off this
+list because they had shipped.** The removed four are recorded below rather
+than deleted, because a "not built yet" list that quietly loses entries is
+indistinguishable from one that is wrong:
 
-- **`map.layer.add` / `map.layer.remove`.** `MapDocument` can read and write
-  layers but cannot create or delete them. This is the next `MapDocument`
-  feature and the reason "include or remove layers" is not yet a command.
-- **The object layer → entity spawn path.** The editor can *place* objects;
-  the renderer still skips `TiledObjectGroup` entirely.
-- **The event action queue.** Deliberately deferred, not forgotten — see
-  below.
 - **Live reload**, so a command shows up in a running `main.py`.
-- **Layer properties** (opacity, offset, tint). `TileLayer` reads only
-  name/id/width/height, and there is no `map.layer.*` verb.
 - **Shape geometry editing.** Polygons, ellipses and text objects are
   displayed and **preserved byte-exactly**, but their points are not
   editable.
+- **The event action queue.** Deliberately deferred, not forgotten — see
+  below.
+
+Shipped since this section was written, and *no longer work to do*:
+`#TAG:map.layer.add` and `#TAG:map.layer.remove` are registered verbs;
+`#TAG:map.layer.set` declares a layer capability — depth, motion, parallax,
+opacity, occlusion, passability — as a tmx custom property, with
+`#TAG:map.layer.unset` as its inverse; and the object layer → entity spawn
+path runs, `#TAG:spawn_objects` being called from the renderer at bind. Read
+[`COMMANDS.md`](COMMANDS.md) for the current verb vocabulary rather than any
+sentence here: it is generated from the registry that executes the verbs, so
+it cannot say a verb exists that does not.
 
 ## Why the action queue is not built yet
 
@@ -339,19 +346,22 @@ nothing. But investigation found the runtime cannot execute it yet:
 
 - `GameEntity` derives `PyoneerGameObject`, **not** `GameComponent`. It has
   no `callbacks`, no `bind_sync_listener`, no `send_event_advanced` — it is
-  not on the event bus at all, and only receives direct `core_*` calls.
-- Of 54 `GameEventType` members, only about ten are ever dispatched through
-  the bus. Every `MOUSE_*` and `KEY_*` member reaches components through a
-  *separate* registry, so a raw event-type picker would be mostly dead
-  options.
-- There is no collision detection between entities (`BoundingBox` is defined
-  and used nowhere), and `GamePlayer.core_input_receive` is `pass  # todo`.
-- Above all: the object layer is skipped at runtime, so a queue attached to
-  a map object would have nothing to attach *to* when the game runs.
+  not on the event bus at all, and only receives direct `core_*` calls. This
+  is the load-bearing one and it is deliberate: see
+  [`../CLAUDE.md`](../CLAUDE.md) law 3.
+- `GameEventType` has 49 members (re-measured at `d8c303f`; this line said 54)
+  and only about ten are ever dispatched through the bus. Every `MOUSE_*` and
+  `KEY_*` member reaches components through a *separate* registry, so a raw
+  event-type picker would be mostly dead options.
+- There is still no collision detection between entities: `BoundingBox` is
+  defined in `#TAG:scripts/game/entity/game_bounding_box.py` and constructed
+  nowhere.
 
-Building the panel now would produce a feature that looks complete and does
-nothing — the exact failure this project is built to avoid. The order is:
-spawn path first (`docs/NEXT.md` item 1), then a small
+**Corrected at `d8c303f`.** This section used to close with "above all: the
+object layer is skipped at runtime", and it is not — `#TAG:spawn_objects` runs
+at bind, and `#TAG:GamePlayer.core_input_receive` is no longer a `todo` but a
+documented no-op. The two reasons that survive are the first two above, and
+they are about the event bus rather than about spawning. The order is: a small
 `EntityActionComponent` on the bus, then the panel. The design is settled:
 semantic triggers (`on_touch`, `on_interact`, `on_spawn`, `on_frame`) rather
 than raw event types, stored as a JSON string in a tmx custom property,
