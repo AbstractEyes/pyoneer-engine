@@ -5,30 +5,35 @@
 
 > Declaring a body GONE: the one authorable writer of the lifecycle axis.
 
-`scripts.game.behavior.lifecycle` · 210 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.behavior.lifecycle` · 291 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    scripts.core.errors scripts.game.behavior.action scripts.game.behavior.base scripts.game.behavior.movement scripts.game.behavior.state
+    scripts.core.errors scripts.game.behavior.action scripts.game.behavior.base scripts.game.behavior.movement scripts.game.behavior.registry scripts.game.behavior.state
 
 ## Module constants
 
-- `scripts/game/behavior/lifecycle.py:83` `ORDER` #TAG:lifecycle.ORDER
-- `scripts/game/behavior/lifecycle.py:175` `LIFECYCLE_MARK` #TAG:LIFECYCLE_MARK
+- `scripts/game/behavior/lifecycle.py:112` `ORDER` #TAG:lifecycle.ORDER
+- `scripts/game/behavior/lifecycle.py:249` `LIFECYCLE_MARK` #TAG:LIFECYCLE_MARK
+
+## Functions
+
+- `scripts/game/behavior/lifecycle.py:116` `_declared_action_tokens() -> tuple[str, ...]` #TAG:_declared_action_tokens
+  - Every action slot the live registry has a declared writer for, sorted.
 
 ## Classes
 
 ### `class GameLifecycleMarkBehavior(EntityBehavior)` #TAG:GameLifecycleMarkBehavior
 
-`scripts/game/behavior/lifecycle.py:87`–`172`
+`scripts/game/behavior/lifecycle.py:143`–`246`
 
 > Write `state.life = gone` on a named action, or after a lifetime.
 
-- `scripts/game/behavior/lifecycle.py:102` `__init__(self, despawn_on: str='', lifetime_ms: int=0)` #TAG:GameLifecycleMarkBehavior.__init__
-- `scripts/game/behavior/lifecycle.py:124` `@property age_ms(self) -> float` #TAG:GameLifecycleMarkBehavior.age_ms
+- `scripts/game/behavior/lifecycle.py:162` `__init__(self, despawn_on: str='', lifetime_ms: int=0)` #TAG:GameLifecycleMarkBehavior.__init__
+- `scripts/game/behavior/lifecycle.py:198` `@property age_ms(self) -> float` #TAG:GameLifecycleMarkBehavior.age_ms
   - Milliseconds this behavior has been updated for. Stops at the mark.
-- `scripts/game/behavior/lifecycle.py:136` `@property remaining_ms(self) -> float` #TAG:GameLifecycleMarkBehavior.remaining_ms
+- `scripts/game/behavior/lifecycle.py:210` `@property remaining_ms(self) -> float` #TAG:GameLifecycleMarkBehavior.remaining_ms
   - Milliseconds until the lifetime elapses. `inf` when none is declared.
-- `scripts/game/behavior/lifecycle.py:144` `attach(self, entity: Any) -> None` #TAG:GameLifecycleMarkBehavior.attach
+- `scripts/game/behavior/lifecycle.py:218` `attach(self, entity: Any) -> None` #TAG:GameLifecycleMarkBehavior.attach
   - Allocate the record, because this behavior writes an axis of it.
-- `scripts/game/behavior/lifecycle.py:155` `update(self, entity: Any, event: Any) -> None` #TAG:GameLifecycleMarkBehavior.update
+- `scripts/game/behavior/lifecycle.py:229` `update(self, entity: Any, event: Any) -> None` #TAG:GameLifecycleMarkBehavior.update

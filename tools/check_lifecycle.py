@@ -22,9 +22,13 @@ neighbour that skipped a frame:
      7. `LayerRenderer.unbind` answers False for something it never held, and
         removes by IDENTITY rather than by `==`
      8. `SceneManager.spawn` constructs, PLACES, composes and binds through
-        the same reader a map-spawned object goes through
+        the same reader a map-spawned object goes through -- and asks for the
+        scene FIRST, so a manager with none has built nothing when it raises
      9. despawn is idempotent, and a body marked, reaped and asked again says
         it is gone
+    10. despawn is the THIRD removal too: a map-spawned body's row in
+        `renderer.spawned_entities` goes with it, its neighbour's stays, and
+        the resurrection that list could cause is measured to be unreachable
 
 EVERY ASSERTION IS A PAIR
 -------------------------
@@ -37,8 +41,9 @@ what each one turned red for.
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
 `data/maps/test.tmx` is the author's canvas and is never read. The probe
-entity, the probe spawn-registry entry and the whole scene are built here;
-nothing in this file asserts what any shipped map contains.
+entity, the probe spawn-registry entry, the whole scene and the two-object
+map section 10 needs are built here -- the map into a tempdir; nothing in
+this file asserts what any shipped map contains.
 
     .venv/Scripts/python.exe tools/check_lifecycle.py
 """
@@ -47,15 +52,19 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
 import inspect
+import os
 import sys
+import tempfile
 
 import pygame
 
 pygame.init()
 SCREEN = pygame.display.set_mode((128, 128))
 
+import pytmx
+
 from scripts.core import blitpool
-from scripts.core.errors import PyoneerConfigError
+from scripts.core.errors import PyoneerConfigError, PyoneerSceneError
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.event_types import GameEventType
 from scripts.core.renderer import EntityLayer, LayerRenderer
@@ -73,6 +82,7 @@ from scripts.game.behavior.state import (LIFE_ALIVE, LIFE_GONE, LIVES,
                                          BodyState, state_of)
 from scripts.game.entity.game_entity import GameEntity
 from scripts.game.game_camera import GameCamera
+from scripts.game.game_map import GameMap
 
 failures: list[str] = []
 asserted: list[int] = []
@@ -257,6 +267,51 @@ def tokens_for(renderer, entity):
 
 
 register_spawn("LifecycleProbe", Probe)
+
+BUILDS: list[int] = []
+
+
+class Counted(Probe):
+    """A probe that records the fact of its own construction.
+
+    Section 8's scene guard is the only reason this exists. `spawn` and the
+    `bind` at the bottom of it BOTH refuse a manager with no scene and both
+    raise the same `PyoneerSceneError`, so "it raises" passes with the guard
+    at either end. What tells them apart is whether the entity was built on
+    the way to the raise, and only the object itself can report that.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        BUILDS.append(1)
+
+
+register_spawn("CountedProbe", Counted)
+
+
+# The fixture map for section 10, written to a tempdir. Two objects, because
+# the claim under test is that despawning one forgets ONE record; with a
+# single object "the list is empty afterwards" passes for a method that
+# clears it. No tile layers: what is under test is the object path.
+FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" \
+renderorder="right-down" width="8" height="8" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="3" nextobjectid="4">
+ <objectgroup id="1" name="entity">
+  <object id="1" name="first" type="LifecycleProbe" x="16" y="16" width="16" height="16"/>
+  <object id="2" name="second" type="LifecycleProbe" x="48" y="48" width="16" height="16"/>
+ </objectgroup>
+</map>
+"""
+
+FIXTURE_PATH = os.path.join(tempfile.mkdtemp(prefix="pyoneer_lifecycle_"),
+                            "lifecycle.tmx")
+with open(FIXTURE_PATH, "w", encoding="utf-8", newline="\n") as _handle:
+    _handle.write(FIXTURE)
+
+
+def load_fixture_map():
+    return GameMap(pytmx.load_pygame(FIXTURE_PATH))
 
 
 # ===========================================================================
@@ -681,6 +736,46 @@ expect("...and the default is the object depth, not 77",
 expect_raises("an unregistered type raises rather than spawning nothing",
               Exception, lambda: manager.spawn("NotAThing"), "NotAThing")
 
+# THE SCENE IS ASKED FOR FIRST, AND THE COUNTER IS THE TEETH. `bind` carries
+# the same guard and raises the same exception CLASS from the bottom of
+# `spawn`, so asserting only that it raises passes wherever the check sits.
+# Measured with the guard at the bottom: the entity was constructed, moved to
+# (3, 4) and fully composed -- `behaviors.names` was already
+# `('lifecycle_mark',)` -- and only then did the caller hear about the missing
+# scene. Every `attach` hook had run by that point, which is where a behavior
+# audits what it needs. The message is the second half of the teeth: from
+# `bind` it reads `bind Counted into`, naming the class the registry built,
+# and the author typed `CountedProbe`.
+sceneless = SceneManager(game=None)
+expect("no probe has been built through this registry entry yet", len(BUILDS), 0)
+expect_raises("spawn with no scene raises, naming the TYPE and the fix",
+              PyoneerSceneError,
+              lambda: sceneless.spawn("CountedProbe", (3.0, 4.0), properties={
+                  BEHAVIORS: "lifecycle_mark"}),
+              "CountedProbe", "set_scene()")
+expect("...and it constructed NOTHING on the way to that raise", len(BUILDS), 0)
+
+# The other half, and it is what stops the guard being written as an
+# unconditional raise: the identical call on a manager WITH a scene builds.
+counted_manager, _counted_renderer = build_manager()
+_counted = counted_manager.spawn("CountedProbe", (3.0, 4.0), properties={
+    BEHAVIORS: "lifecycle_mark"})
+expect("...while the same call on a manager WITH a scene builds exactly one",
+       len(BUILDS), 1)
+expect("...placed and composed as usual",
+       (_counted.transform.position.x, _counted.behaviors.names),
+       (3.0, ("lifecycle_mark",)))
+
+# `bind`'s own guard is still the general one, and still refuses. BOTH HALVES:
+# a bindable game object needs a scene, and the two objects that are bound
+# INTO the manager rather than into a scene do not.
+expect_raises("bind on a scene-less manager still raises, naming the object",
+              PyoneerSceneError,
+              lambda: SceneManager(game=None).bind(50, Probe()),
+              "Probe", "set_scene()")
+expect_no_raise("...while binding a renderer needs no scene at all",
+                lambda: SceneManager(game=None).bind(0, LayerRenderer(SCREEN)))
+
 # The whole round trip, which is what "dynamic creation/destruction" means:
 # spawn a body with a lifetime, drive frames through the real frame path, and
 # find it gone with no further code.
@@ -734,6 +829,80 @@ expect("a reap that does not touch a body leaves its behaviors attached",
 
 
 # ===========================================================================
+print("\n10. the THIRD removal: the map's own spawn record is forgotten")
+# ===========================================================================
+# `renderer.spawned_entities` is a list the map bind writes and
+# `SceneManager.__bind_spawned_entities` reads. `LayerRenderer.unbind` empties
+# the LAYER and never touches it, so a reaped body used to stay reachable from
+# the renderer for as long as the map was bound. Sections 5 and 6 cannot see
+# that: they bind by hand, and a hand-bound entity has no record.
+map_manager, map_renderer = build_manager()
+map_manager.bind("MAP", load_fixture_map())
+_records = map_renderer.spawned_entities
+expect("the fixture map spawned two bodies, in document order", len(_records), 2)
+first_body, second_body = _records[0].entity, _records[1].entity
+expect("...and both draw", (tokens_for(map_renderer, first_body),
+                            tokens_for(map_renderer, second_body)), (1, 1))
+
+# BOTH HALVES, and the second is the shape this repo keeps finding missing: a
+# removal proved to remove and never proved to leave the neighbours alone. A
+# `spawned_entities.clear()` passes the first assertion and fails the second.
+expect("despawn reports it removed the first", map_manager.despawn(first_body),
+       True)
+expect("...and the renderer no longer holds a RECORD for it",
+       any(r.entity is first_body for r in map_renderer.spawned_entities), False)
+expect("...while the neighbour's record is untouched",
+       any(r.entity is second_body for r in map_renderer.spawned_entities), True)
+expect("...so exactly one row went, and the list is not cleared",
+       len(map_renderer.spawned_entities), 1)
+expect("...and the neighbour is still bound and drawing",
+       (len([obj for _b, obj in map_manager.current_scene.contents()
+             if obj is second_body]), tokens_for(map_renderer, second_body)),
+       (1, 1))
+expect("...and despawning the first again reports nothing to remove",
+       map_manager.despawn(first_body), False)
+
+# The record is its own removal CHANNEL, which is why the forget runs before
+# the early return rather than after it. A caller that unbound a body by hand
+# has left a record with no call that would take it out; despawn is that call,
+# and it reports True for the record alone.
+map_renderer.unbind(second_body)
+map_manager.current_scene.discard(second_body)
+expect("a body unbound by hand still has its spawn record",
+       any(r.entity is second_body for r in map_renderer.spawned_entities), True)
+expect("...and despawn reports True for the record alone",
+       map_manager.despawn(second_body), True)
+expect("...leaving the list empty", map_renderer.spawned_entities, [])
+expect("...and a manager with no renderer at all despawns without raising",
+       SceneManager(game=None).despawn(Probe()), False)
+
+# THE RESURRECTION IS NOT REACHABLE, and this is where that is measured rather
+# than assumed. `__bind_spawned_entities` would re-bind anything in the list,
+# but `LayerRenderer.__prepare_entity_layers` REBINDS `spawned_entities` to a
+# freshly spawned list on every map bind and `SceneManager.bind` only reaches
+# `__bind_spawned_entities` behind `renderer.bind(GameMap)`, which is what
+# runs it. An `extend` written there instead of an assignment is what this
+# pair catches -- and it would resurrect a reaped body on the next map load.
+again_manager, again_renderer = build_manager()
+again_manager.bind("MAP", load_fixture_map())
+ghost = again_renderer.spawned_entities[0].entity
+again_manager.despawn(ghost)
+again_manager.bind("MAP", load_fixture_map())
+expect("re-binding a map REPLACES the record list rather than growing it",
+       len(again_renderer.spawned_entities), 2)
+expect("...so the despawned body is not among the records",
+       any(r.entity is ghost for r in again_renderer.spawned_entities), False)
+expect("...and is not re-bound into the scene either",
+       any(obj is ghost for _b, obj in again_manager.current_scene.contents()),
+       False)
+_fresh_bodies = [r.entity for r in again_renderer.spawned_entities]
+_bound = [obj for _b, obj in again_manager.current_scene.contents()]
+expect("...while both freshly spawned bodies ARE bound",
+       [any(obj is body for obj in _bound) for body in _fresh_bodies],
+       [True, True])
+
+
+# ===========================================================================
 print("\n" + "=" * 74)
 if failures:
     print(f"FAILED {len(failures)}:")
@@ -774,5 +943,47 @@ MUTATIONS RUN, AND WHAT EACH ONE TURNED RED
         -> section 7: the two tolerance assertions fail
   * the `moveto` dropped from `SceneManager.spawn`
         -> section 8: the position pair fails at (0.0, 0.0)
+  * `SceneManager.spawn`'s `__require_scene` call deleted (the guard left
+    only at the bottom, in `bind`, which is where it was)
+        -> section 8, FAILED 3, and the third one was not predicted:
+             - "it constructed NOTHING on the way to that raise" got=1
+             - "the same call WITH a scene builds exactly one" got=2, because
+               the sceneless call had already built one
+             - "spawn with no scene raises, naming the TYPE and the fix"
+               (message lacks ['CountedProbe']) -- the error from `bind`
+               names the CLASS, `Counted`, and the author typed the tmx TYPE.
+               `expect_raises` checking fragments and not just the exception
+               class is what catches that
+  * `__require_scene` made an unconditional raise (`if True:`)
+        -> the check DIES at section 5's first `manager.bind(50, victim)`
+           with the traceback, which is the coarse half of the same pair
   * `behaviors.detach_all()` dropped from `despawn`
-        -> section 9: the slot-release pair fails""")
+        -> section 9: the slot-release pair fails
+  * `__forget_spawn_record` dropped from `despawn` (HEAD before this pass)
+        -> section 10, FAILED 4: "the renderer no longer holds a RECORD for
+           it", "exactly one row went", "despawn reports True for the record
+           alone", "leaving the list empty". Every drawing and updating
+           assertion in sections 5 and 6 still passes, which is why the leak
+           survived them: a hand-bound entity has no record at all
+  * `__forget_spawn_record` written as an unconditional `spawned_entities = []`
+        -> section 10, FAILED 4, led by "the neighbour's record is untouched"
+           -- while "the renderer no longer holds a RECORD for it" directly
+           above it PASSES. That pair is the whole reason both halves are
+           written: a removal proved to remove and never proved to leave the
+           neighbours alone
+  * `__forget_spawn_record` matching on `==` instead of `is`
+        -> nothing here, and deliberately so: no entity in the tree defines
+           `__eq__`. Section 7's `Equal` twins are the standing proof for the
+           renderer's half of the same rule
+  * `__forget_spawn_record` moved AFTER `despawn`'s early return
+        -> section 10, FAILED 2: "despawn reports True for the record alone"
+           and "leaving the list empty"
+  * `LayerRenderer.__prepare_entity_layers` EXTENDING `spawned_entities`
+    instead of assigning -- run as an in-memory wrapper, so renderer.py on
+    disk was never edited
+        -> section 10: "re-binding a map REPLACES the record list" fails at
+           3. The other two of that trio still pass, and that is worth
+           knowing: with the forget in place the ghost is already out of the
+           list, so an `extend` no longer resurrects anything -- the COUNT is
+           what catches it, and it is what would go red before a version of
+           this engine without the forget resurrected a reaped body""")

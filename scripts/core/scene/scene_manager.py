@@ -9,6 +9,19 @@ from scripts.core.game_object import PyoneerGameObject
 from scripts.core.renderer import LayerRenderer
 from scripts.core.scene.game_scene import GameScene
 from scripts.core.spawn import resolve_depth, spawn
+# `scripts/core/` importing `scripts/game/` at module level is the established
+# shape of this tree, not a new coupling introduced here. MEASURED: the two
+# `scripts.core` imports above -- `renderer`, which imports `scripts.game
+# .behavior`, `GameEntity`, `GameCamera` and `GameMap` itself, and `spawn`,
+# which imports `GamePlayer` -- already put 16 `scripts.game` modules on this
+# file's path, including every one named below except the flow. So five of the
+# six names here cost nothing, and the sixth costs the three-module flow
+# package, which is CONSTRUCTED here rather than merely annotated.
+# The one-way rule this repository actually enforces is law 2, `scripts/` may
+# never import `editor/`, and every tier-2 map file prints these names for
+# exactly that audit; `tools/check_flow.py` asserts both halves. Deferring
+# them into function bodies would hide 16 modules that load anyway and would
+# trade an ImportError at boot for one on the first spawn.
 from scripts.game.behavior import build as build_behaviors
 from scripts.game.behavior import read_requests
 from scripts.game.behavior.state import LIFE_GONE, state_of
@@ -64,10 +77,18 @@ class SceneManager:
         restore the agency the other had already changed. A game that wants a
         queue owns the queue and hands this one flow at a time.
 
-        Duck-typed on `update(delta)`: `SceneManager` is under `scripts/core/`
-        and importing `SceneFlow` for an annotation would put the whole flow
-        package on the import path of every scene. The router is imported
-        concretely because it is CONSTRUCTED here; the flow is not.
+        Duck-typed on `update(delta)`, and that method is the whole contract:
+        a game may hand this slot a queue wrapper, a fade, or a test double,
+        so the annotation says what is required rather than naming one class
+        that happens to satisfy it.
+
+        The reason is NOT an import-path argument, and the import-path
+        argument is false here -- measured, and asserted by
+        `tools/check_flow.py` in a subprocess so it cannot quietly become true
+        again. `from scripts.game.flow.router import ActionRouter` at the top
+        of this file executes `scripts/game/flow/__init__.py`, which imports
+        `scene_flow`, so binding a scene already loads ALL THREE flow modules.
+        Annotating `SceneFlow` here would add nothing to that path.
         """
 
     def __bind_renderer(self, renderer: LayerRenderer | None):
@@ -77,6 +98,20 @@ class SceneManager:
         self.renderer.bind_camera(camera)
         self.camera = camera
 
+    def __require_scene(self, doing: str) -> GameScene:
+        """The current scene, or raise naming what was being attempted.
+
+        One sentence, one place. `bind` is not the only entry point that
+        cannot proceed without a scene -- `spawn` asks FIRST, before it has
+        constructed anything -- and two call sites spelling
+        "call set_scene() first" is two chances for one of them to stop
+        saying it.
+        """
+        if self.current_scene is None:
+            raise PyoneerSceneError(
+                f"no current scene to {doing}; call set_scene() first")
+        return self.current_scene
+
     def bind(self, depth_or_definition: str | int, game_object: PyoneerGameObject | GameCamera | LayerRenderer):
         if isinstance(game_object, GameCamera):
             self.__bind_camera(game_object)
@@ -84,17 +119,14 @@ class SceneManager:
         elif isinstance(game_object, LayerRenderer):
             self.__bind_renderer(game_object)
             return
-        if self.current_scene is not None:
-            self.current_scene.bind(depth_or_definition, game_object)
-            self.renderer.bind(depth_or_definition, game_object)
-            self.__sink(game_object)
-            if isinstance(game_object, GameMap):
-                self.__bind_spawned_entities()
-        else:
-            raise PyoneerSceneError(
-                f"no current scene to bind {type(game_object).__name__} into "
-                f"at {depth_or_definition!r}; call set_scene() first"
-            )
+        scene = self.__require_scene(
+            f"bind {type(game_object).__name__} into "
+            f"at {depth_or_definition!r}")
+        scene.bind(depth_or_definition, game_object)
+        self.renderer.bind(depth_or_definition, game_object)
+        self.__sink(game_object)
+        if isinstance(game_object, GameMap):
+            self.__bind_spawned_entities()
 
     def __sink(self, game_object):
         """Hand `game_object` the scene's action router as its `action_sink`.
@@ -170,7 +202,25 @@ class SceneManager:
         AWAY, so every constructor of an entity in this engine has to place it
         afterwards. Doing it here is what stops the next caller finding that
         out at (0, 0).
+
+        THE SCENE IS ASKED FOR FIRST, BEFORE ANYTHING IS BUILT. `bind` at the
+        bottom carries the same guard, and that was measured as the wrong
+        place for it. With the guard only there, a spawn on a manager with no
+        scene constructed the entity, moved it to the asked-for position and
+        ran `attach_all` -- `behaviors.names` was already
+        `('lifecycle_mark',)` -- before anyone was told the call could not
+        succeed. Every behavior's `attach` hook had run by then, and an
+        `attach` is where a behavior audits what it needs (law 10), so the
+        first exception an author saw was whichever one of those fired.
+
+        And when none did, the message still came out of `bind`, which knows
+        the CLASS the registry built and not the tmx TYPE the caller typed:
+        measured, `no current scene to bind Counted into at 50` for a
+        `spawn("CountedProbe", ...)`. Asking here names `'CountedProbe'`.
+        `tools/check_lifecycle.py` section 8 asserts the type name is in the
+        message and that the construction counter is still zero.
         """
+        self.__require_scene("spawn %r into" % type_name)
         props = dict(properties or {})
         where = "SceneManager.spawn(%r)" % type_name
         entity = spawn(type_name, registry, **kwargs)
@@ -187,6 +237,44 @@ class SceneManager:
                   if depth is None else depth, entity)
         return entity
 
+    def __forget_spawn_record(self, game_object) -> bool:
+        """Drop `game_object`'s row from `renderer.spawned_entities`.
+
+        The THIRD removal, and the one `despawn`'s "both removals" sentence
+        used to be wrong about. `LayerRenderer.unbind` empties the layer, and
+        `spawned_entities` -- the map bind's document-order list of what it
+        constructed -- is a separate list that still holds a record, so a
+        reaped body stayed reachable from the renderer for as long as the map
+        was bound. Measured on a two-object fixture map: after
+        `despawn(a)`, `len(renderer.spawned_entities)` was still 2 and
+        `a` was one of them.
+
+        RESURRECTION IS NOT REACHABLE, and this is not the fix for it.
+        `__bind_spawned_entities` iterates that list and would re-bind
+        anything in it, but `LayerRenderer.__prepare_entity_layers` REBINDS
+        `spawned_entities` to a freshly spawned list on every map bind, and
+        `SceneManager.bind` only reaches `__bind_spawned_entities` through
+        `renderer.bind(GameMap)`, which is what runs it. Measured: after a
+        second bind of the same map, a despawned entity is in neither the
+        list nor the scene. What this method fixes is the RETENTION.
+
+        Here rather than in `LayerRenderer.unbind` because `SceneManager` is
+        the list's only engine-side reader -- `__bind_spawned_entities` is
+        what turns a record into a live entity -- and `despawn` is the one
+        method that has to undo that. Identity, never equality, for the
+        reason `LayerRenderer.unbind` gives at length: `list.remove` uses
+        `==`, and an entity that defined it would take a DIFFERENT record out.
+        """
+        renderer = self.renderer
+        if renderer is None:
+            return False
+        kept = [record for record in renderer.spawned_entities
+                if record.entity is not game_object]
+        if len(kept) == len(renderer.spawned_entities):
+            return False
+        renderer.spawned_entities = kept
+        return True
+
     def despawn(self, game_object: PyoneerGameObject) -> bool:
         """Take a bound object out of the scene AND out of the renderer.
 
@@ -194,12 +282,15 @@ class SceneManager:
         despawned by hand and then reaped from its own `state.life` answers
         True once and False after.
 
-        BOTH removals, which is the whole point. Measured before this method
-        existed: `scene.unbind(50, entity)` emptied the scene bucket, the
-        renderer still held the entity, and `EntityLayer.core_render_blits`
+        ALL THREE removals, which is the whole point. Measured before this
+        method existed: `scene.unbind(50, entity)` emptied the scene bucket,
+        the renderer still held the entity, and `EntityLayer.core_render_blits`
         went on queueing a token for it every frame -- an object that had
         stopped updating and would draw its final animation frame forever.
-        Either removal alone is a leak in one direction or the other.
+        The third is `__forget_spawn_record`, added after the first two
+        because a map-spawned body that had stopped updating and stopped
+        drawing was still held by `renderer.spawned_entities`. Any removal
+        alone is a leak in one direction or another.
 
         The behaviors are detached, in reverse run order, because that is what
         `EntityBehaviors.detach_all` is for and because an action behavior's
@@ -216,7 +307,12 @@ class SceneManager:
                               and self.current_scene.discard(game_object) is not None)
         removed_from_render = (self.renderer is not None
                                and self.renderer.unbind(game_object))
-        if not (removed_from_scene or removed_from_render):
+        # Unconditionally, and BEFORE the early return, so a record can never
+        # outlive the two bindings: an entity a caller had already taken out
+        # of the layer by hand would otherwise leave its row behind forever
+        # with no call left that would remove it.
+        forgotten = self.__forget_spawn_record(game_object)
+        if not (removed_from_scene or removed_from_render or forgotten):
             return False
         behaviors = getattr(game_object, "behaviors", None)
         if behaviors is not None and hasattr(behaviors, "detach_all"):

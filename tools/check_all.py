@@ -43,7 +43,8 @@ CHECKS = [
     ("movement", "top-down and platformer bodies, the intent, the animator"),
     ("behavior_docs", "BEHAVIORS.md is generated, and every column is backed"),
     ("action", "discrete verbs, cooldowns, the per-entity record, no bus"),
-    ("lifecycle", "a body declares itself gone, and is really unbound and undrawn"),
+    ("lifecycle", "a body declares itself gone, and is really unbound, undrawn "
+                  "and forgotten"),
     ("flow", "action routing, the step sequencer, and the agency it gives back"),
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
@@ -55,8 +56,9 @@ CHECKS = [
     ("collision_view", "collision overlay builds, glyphs distinguish direction "
                        "bits, a read past a companion's edge abstains"),
     ("map_events", "trigger vocabulary, collision filters, tmx round trip"),
-    ("collision_mount", "the overlay, the mode, one stroke one transaction, and "
-                        "a 4x map whose mask lands under the cursor"),
+    ("collision_mount", "the overlay, the mode, one stroke one transaction, "
+                        "a 4x map whose mask lands under the cursor, and the "
+                        "resolution a created companion is given"),
     ("collision_runtime", "the engine reads a mask and gates movement"),
     ("collision_field", "map load bakes passability and every body is handed it"),
     ("actions_panel", "trigger authoring, action verbs, exact inverses"),

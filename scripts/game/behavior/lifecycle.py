@@ -68,13 +68,42 @@ a consumer switches on. `lifetime_ms` ends `_ms` and is milliseconds, matching
 `editor/core/map_events.py`'s trigger vocabulary. It is NOT delta units;
 `event.data["delta"]` is milliseconds/60 and this module converts through
 `MS_PER_DELTA`, exactly as the action cooldown does.
+
+WHY THE TOKEN IS AUDITED AT CONSTRUCTION AND NOT AT ATTACH
+-----------------------------------------------------------
+Naming the token is only worth something if a name that means nothing is
+REFUSED. `update` reads `actions_of(entity).fired(self.despawn_on)`, and
+`ActionIntent.fired` is documented to never raise on an unknown name -- so
+`despawn_on="interakt_action"` returned None on every frame forever, nothing
+warned, and the body was silently immortal in a way indistinguishable from
+the action simply never firing. That is law 7 verbatim, and it is the shape
+`player_input.attach` already refuses for an unbound verb.
+
+The audit runs in `__init__`, against the REGISTRY, and the alternative was
+measured rather than reasoned about. Checking the entity's composed siblings
+in `attach` cannot work: `EntityBehaviors.attach_all` attaches in the
+sequence's order and `registry.build` preserves the AUTHORED token order, so
+`pyoneer_behaviors="lifecycle_mark,interact_action"` attaches this behavior
+FIRST -- measured, `build` returned `['lifecycle_mark', 'interact_action']`
+for that string even though the specs' orders are 95 and 15. A sibling check
+there would refuse a legal map on the strength of where the author put a
+comma, and `registry`'s own docstring calls the list order-insensitive.
+
+What the registry can answer is order-independent and is the half that
+matters: does ANY registered behavior write the slot this token names. What
+it deliberately cannot answer is whether THIS body carries that action --
+`interact_action` is a real token, and a body declaring `despawn_on` for an
+action it does not compose is still immortal. There is no composition-complete
+hook to ask that from, and inventing one to ask it is a larger change than
+the failure justifies; `ActionIntent.slots` reports the answer to anyone
+holding the entity.
 """
 from __future__ import annotations
 
 from typing import Any
 
 from scripts.core.errors import PyoneerConfigError
-from scripts.game.behavior.action import actions_of
+from scripts.game.behavior.action import SLOT_PREFIX, actions_of
 from scripts.game.behavior.base import (BehaviorParam, BehaviorSpec,
                                         EntityBehavior)
 from scripts.game.behavior.movement import MS_PER_DELTA
@@ -82,6 +111,33 @@ from scripts.game.behavior.state import LIFE_GONE, ensure_state
 
 ORDER: int = 95
 """Where a body is declared gone: after the relay, last of everything."""
+
+
+def _declared_action_tokens() -> tuple[str, ...]:
+    """Every action slot the live registry has a declared writer for, sorted.
+
+    Measured off `BehaviorSpec.writes` rather than off the token names,
+    because the slot is what `actions_of(entity).fired()` is keyed by:
+    `attack_action` declares `action_intent.attack_action`, and it is the tail
+    of that string a consumer names. A behavior that writes no such slot --
+    `topdown_move`, and `action_relay`, which READS every firing and records
+    none -- is not an answer to "which action ends this body", so neither
+    appears here. Reading the declaration also means a game that registers its
+    own action spec is audited against, rather than against a hard-coded three.
+
+    The registry is imported HERE and not at module scope. `registry` imports
+    THIS module at the bottom of its own body to register `LIFECYCLE_MARK`, so
+    a top-level import back is a cycle whose outcome depends on which of the
+    two a process imports first -- it resolves for `import registry` and
+    raises ImportError for `import lifecycle`. Nothing constructs a behavior
+    during import, so by the time any caller reaches this the table is whole.
+    """
+    from scripts.game.behavior.registry import BEHAVIOR_REGISTRY
+    return tuple(sorted(
+        write[len(SLOT_PREFIX):]
+        for spec in BEHAVIOR_REGISTRY.values()
+        for write in spec.writes
+        if write.startswith(SLOT_PREFIX)))
 
 
 class GameLifecycleMarkBehavior(EntityBehavior):
@@ -97,6 +153,10 @@ class GameLifecycleMarkBehavior(EntityBehavior):
     `state_of(entity).life = LIFE_GONE` from anywhere is a complete despawn
     request on an entity that carries this token. That is the seam. This class
     is one authorable writer of it, not the only way in.
+
+    A NON-EMPTY `despawn_on` that names no registered action RAISES here, for
+    the reason the module docstring measures: an unaudited token is a silently
+    immortal body. Empty stays legal and is the configuration above.
     """
 
     def __init__(self, despawn_on: str = "", lifetime_ms: int = 0):
@@ -114,6 +174,20 @@ class GameLifecycleMarkBehavior(EntityBehavior):
                 "first frame, which is indistinguishable from the body never "
                 "having spawned. Set it to 0 for no lifetime."
                 % (lifetime_ms,))
+        if despawn_on:
+            declared = _declared_action_tokens()
+            if despawn_on not in declared:
+                raise PyoneerConfigError(
+                    "lifecycle_mark declares despawn_on=%r, and no registered "
+                    "behavior writes that action slot. update() reads "
+                    "actions_of(entity).fired(%r), which answers None for a "
+                    "name nothing records -- so this body would never die, and "
+                    "a typo would be indistinguishable from the action simply "
+                    "never firing. It is an ACTION TOKEN, not an input verb: "
+                    "'action' is a verb and 'interact_action' is the token "
+                    "that polls it. Declared actions: %s."
+                    % (despawn_on, despawn_on,
+                       ", ".join(declared) or "<none>"))
         self.despawn_on = despawn_on
         self.lifetime_ms = lifetime_ms
         self._age_ms = 0.0
@@ -183,8 +257,10 @@ LIFECYCLE_MARK = BehaviorSpec(
                       "The ACTION TOKEN whose firing declares this body gone "
                       "-- 'interact_action' for a pickup, 'attack_action' for "
                       "a one-shot. Not an input verb: the verb is rebindable "
-                      "and the token is the stable name. Empty means no "
-                      "action ends this body.",
+                      "and the token is the stable name. Must name a "
+                      "registered action; an unknown one raises at "
+                      "construction rather than leaving the body immortal. "
+                      "Empty means no action ends this body.",
                       source="object"),
         BehaviorParam("lifetime_ms", "lifetime (ms)", "int", 0,
                       "Milliseconds this body exists for before it is declared "
@@ -193,11 +269,16 @@ LIFECYCLE_MARK = BehaviorSpec(
                       source="object"),
     ),
     writes=("state.life",),
-    # Nothing is REQUIRED. `despawn_on` reads the action record, and an entity
-    # with no action behavior reads the shared inert one, which reports that
-    # nothing ever fired -- so a mis-declared token is a body that simply never
-    # dies, not a crash. Declaring `action_intent` here would be a lie for the
-    # lifetime-only configuration, which is the majority one.
+    # Nothing is REQUIRED, and the two failures that used to hide behind that
+    # sentence are now separated. A token no registered behavior WRITES is a
+    # typo, and the constructor refuses it: an unaudited one made the body
+    # silently immortal. A token that is real and that THIS body does not
+    # compose stays quiet -- `actions_of` hands back the shared inert record,
+    # which reports that nothing ever fired -- because attach order is the
+    # authored token order and no site here can tell "not composed yet" from
+    # "not composed". Declaring `action_intent` in `requires` would not catch
+    # it either, and would be a lie for the lifetime-only configuration, which
+    # is the majority one.
     requires=(),
     order=ORDER,
     example='<property name="pyoneer_behaviors" '

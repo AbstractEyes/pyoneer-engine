@@ -170,22 +170,33 @@ class EditMode(Enum):
 
     @property
     def subdivides(self) -> bool:
-        """Does a companion layer's declared resolution change what one
-        addressable cell IS in this mode?
+        """Does a stroke in this mode land on the active layer's COMPANION?
 
-        The mode's half of the sub-cell answer, and the reason it is here
-        rather than as an `is COLLISION` test inside the canvas: this enum
-        already claims to be the fact about what a drag MEANS, and "how big
-        is the thing I am about to change" is precisely that fact. The other
-        half -- the NUMBER -- cannot live here, because it is read off a
-        specific companion layer of a specific map (`pyoneer_subcell`), and
-        this module holds no document by design.
+        WHICH LAYER, never how finely. The name is older than the answer, so
+        read this before trusting it: grepping every non-definition read of
+        `.subdivides` leaves exactly one, `MapCanvas.paint_unit`, and there it
+        picks the layer a stroke is measured against and written to -- the
+        active layer's passability companion in COLLISION, the active layer
+        itself in TILES. The RESOLUTION is then read off whichever layer that
+        turned out to be, from that layer's own `pyoneer_subcell`. This
+        property does NOT decide what one addressable cell IS, and the number
+        cannot live here at all: it belongs to a specific layer of a specific
+        map, and this module holds no document by design.
+
+        TREATING THE MODE AS THE CELL-SIZE AUTHORITY COST 1,200px, and the
+        measurement is in `paint_unit`'s own docstring rather than restated
+        here. The short of it: a companion is a selectable row in the Layers
+        panel, so an author can select one and paint it in TILE mode, where
+        "a cell is a tile" is then false. A click at px(1599,1599) on a
+        100x100 map wrote companion cell (99,99) -- which owns x396..399 --
+        with only 6% of the companion reachable at all, and because the
+        collision tileset shares the palette those were real masks. So the
+        resolution follows the layer being painted, in either mode.
 
         False for TILES on purpose, and it is not an oversight waiting to be
-        generalised. A tile layer's cell is a tile; if a passability
-        companion's resolution moved the art grid, declaring collision at 4x
-        would silently quarter the grid the author paints floor on, and the
-        two things have nothing to do with each other.
+        generalised: in TILES the author is painting the row they selected,
+        whatever kind of layer it is, and redirecting that write to a
+        companion would make the selected row unpaintable.
         """
         return self is EditMode.COLLISION
 

@@ -25,6 +25,10 @@ WHAT THIS FILE CLAIMS
     10. `input_bound` de-conflates "no manager" from "input taken away", and
         `enabled_inputs` is still an independent field rather than a derived
         one -- `check_action` requires an interaction to fire while frozen
+    11. `lifecycle_mark`'s `despawn_on` is audited against the registry's
+        declared action SLOTS at construction -- an unwritable token raises,
+        every declared one is still accepted, and a body whose authored list
+        puts `lifecycle_mark` first still composes and still dies
 
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
@@ -66,7 +70,11 @@ from scripts.game.behavior.movement import (ANIMATION_DRIVE,      # noqa: E402
                                             PLATFORMER_MOVE, TOPDOWN_MOVE,
                                             TOPDOWN_VERBS,
                                             GameAnimationDriveBehavior)
-from scripts.game.behavior.state import (FACING_DEFAULT, PHASE_IDLE,  # noqa: E402
+from scripts.game.behavior.action import ACTION_SPECS               # noqa: E402
+from scripts.game.behavior.lifecycle import (GameLifecycleMarkBehavior,  # noqa: E402
+                                             _declared_action_tokens)
+from scripts.game.behavior.state import (FACING_DEFAULT, LIFE_ALIVE,  # noqa: E402
+                                         LIFE_GONE, PHASE_IDLE,
                                          PHASE_MOVING, PHASES,
                                          SUPPORT_AIRBORNE, SUPPORT_GROUNDED,
                                          SUPPORTS, BodyState, ensure_state,
@@ -947,7 +955,73 @@ expect("...reachable under the old name too", _frozen.transform.position.x,
 
 
 # ===========================================================================
-print("\n11. summary")
+print("\n11. despawn_on names a REGISTERED action, and is refused otherwise")
+# ===========================================================================
+# `ActionIntent.fired` is documented never to raise on an unknown name, so an
+# unaudited `despawn_on` was a body that could not die and said nothing about
+# it -- the same silence a renamed token produces, which is why the audit
+# exists at all. It runs in `__init__` and reads the registry's declared
+# `writes`. BOTH halves are below: a gate proved only to refuse is this
+# tree's dominant vacuous shape.
+
+expect_raises("a despawn_on token nothing registers is refused",
+              PyoneerConfigError,
+              lambda: GameLifecycleMarkBehavior(despawn_on="interakt_action"),
+              "interakt_action", "interact_action", "ACTION TOKEN")
+expect_raises("...and so is a registered token that writes no action slot",
+              PyoneerConfigError,
+              lambda: GameLifecycleMarkBehavior(despawn_on="topdown_move"),
+              "topdown_move", "attack_action")
+expect_raises("...including action_relay, which READS firings and records none",
+              PyoneerConfigError,
+              lambda: GameLifecycleMarkBehavior(despawn_on="action_relay"),
+              "action_relay")
+expect_raises("...and an input VERB, the confusion the parameter warns about",
+              PyoneerConfigError,
+              lambda: GameLifecycleMarkBehavior(despawn_on="action"),
+              "not an input verb")
+
+# The permit half, at full width. An audit that refused everything would pass
+# every line above, so every action the registry declares a writer for is
+# constructed here -- and the audited set is measured against the ACTION specs
+# rather than against the whole token list, which is what fails if the scan is
+# ever widened to `BEHAVIOR_REGISTRY.keys()`.
+expect("the audited set is the registry's action SLOTS, not its token list",
+       _declared_action_tokens(),
+       tuple(sorted(spec.name for spec in ACTION_SPECS)))
+for _token in _declared_action_tokens():
+    expect(f"...and {_token}, a declared action, is accepted",
+           GameLifecycleMarkBehavior(despawn_on=_token).despawn_on, _token)
+expect("an empty despawn_on stays legal -- the documented 'neither' form",
+       (GameLifecycleMarkBehavior().despawn_on,
+        GameLifecycleMarkBehavior(despawn_on="", lifetime_ms=250).lifetime_ms),
+       ("", 250))
+
+# WHY THE AUDIT IS NOT AT ATTACH, measured rather than argued. `build` keeps
+# the AUTHORED token order, so this body attaches `lifecycle_mark` BEFORE the
+# action it names; a sibling check at attach would refuse a legal map on the
+# strength of where the author put a comma.
+_authored = build(read_requests(
+    {BEHAVIORS: "lifecycle_mark,interact_action",
+     PARAM_PREFIX + "despawn_on": "interact_action"}, where="check_state"))
+expect("build keeps the authored order, so lifecycle_mark attaches first",
+       [b.name for b in _authored], ["lifecycle_mark", "interact_action"])
+_early = Body()
+_early.action_manager = Keys("action").tap("action")
+_early.behaviors.attach_all(_authored)
+frame(_early)
+expect("...and that body still despawns on the action it named",
+       _early.state.life, LIFE_GONE)
+_quiet = Body()
+_quiet.action_manager = Keys("action")
+compose(_quiet, "lifecycle_mark,interact_action", despawn_on="interact_action")
+frame(_quiet)
+expect("...while an untapped verb leaves it alive, so the FIRING is the mark",
+       _quiet.state.life, LIFE_ALIVE)
+
+
+# ===========================================================================
+print("\n12. summary")
 # ===========================================================================
 print(f"\nassertions             : {len(asserted)}")
 print(f"axes on the record     : {sorted(BodyState().axes)}")

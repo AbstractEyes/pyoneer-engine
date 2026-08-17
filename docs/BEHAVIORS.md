@@ -371,7 +371,7 @@ Declares this body GONE -- when a named action fires, or after a declared lifeti
 
 | parameter | type | default | source | required | meaning |
 | --- | --- | --- | --- | --- | --- |
-| `despawn_on` | str | `''` | object | no | The ACTION TOKEN whose firing declares this body gone -- 'interact_action' for a pickup, 'attack_action' for a one-shot. Not an input verb: the verb is rebindable and the token is the stable name. Empty means no action ends this body. |
+| `despawn_on` | str | `''` | object | no | The ACTION TOKEN whose firing declares this body gone -- 'interact_action' for a pickup, 'attack_action' for a one-shot. Not an input verb: the verb is rebindable and the token is the stable name. Must name a registered action; an unknown one raises at construction rather than leaving the body immortal. Empty means no action ends this body. |
 | `lifetime_ms` | int | `0` | object | no | Milliseconds this body exists for before it is declared gone. 0 means no lifetime. Milliseconds, not delta units -- delta is ms/60 and this converts. |
 
 ```

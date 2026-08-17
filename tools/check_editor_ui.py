@@ -1224,7 +1224,7 @@ try:
     store = EditorSettings(FakeStore())
     expect("defaults come back typed",
            [type(store.get(s.key)).__name__ for s in SETTINGS],
-           ["str", "str", "bool", "int", "bool"])
+           ["str", "str", "bool", "int", "int", "bool"])
     store.set("show_grid", False)
     expect("a bool survives a text backend", store.get("show_grid"), False)
     store.set("show_grid", True)
@@ -1250,9 +1250,25 @@ try:
     store._backend.setValue("grid_step", "banana")
     expect("and so is something that is not a number at all",
            store.get("grid_step"), 1)
+    # The same validation, on the setting that decides what a NEW passability
+    # layer costs. A stored 3 is not a rounding question: it is a factor no
+    # 16px tile divides, and 0 is the ZeroDivisionError above wearing another
+    # key. Both halves again, and the fallback matters more here than for the
+    # grid -- this one reaches `paint_unit`, so a nonsense value would move
+    # every cell a click addresses rather than only the lines drawn over it.
+    store.set("collision_subcell", 4)
+    expect("the collision resolution round-trips as an int",
+           store.get("collision_subcell"), 4)
+    store._backend.setValue("collision_subcell", 3)
+    expect("a factor outside the choices falls back to one mask per tile",
+           store.get("collision_subcell"), 1)
+    store._backend.setValue("collision_subcell", 0)
+    expect("...and so does a stored 0", store.get("collision_subcell"), 1)
     store.reset()
     expect("reset restores every default", store.as_dict()["show_grid"], True)
     expect("including the grid spacing", store.as_dict()["grid_step"], 1)
+    expect("and the collision resolution, which is 1 because finer is not "
+           "free", store.as_dict()["collision_subcell"], 1)
 
     try:
         store.get("nonexistent")
@@ -1297,6 +1313,47 @@ try:
            window.canvas.cell_at(17.0, 33.0), before_click)
     apply_setting("grid_step", 1)
     expect("and back down again", window.canvas.grid_step, 1)
+
+    # And the sub-cell control, which is the OPPOSITE of the line above and
+    # deliberately so: it is the resolution a companion CREATED by the next
+    # collision stroke is given, so it has to reach `paint_unit` and move
+    # what a click addresses. Until it existed, `map.layer.add subcell=N` was
+    # reachable only through the AI response path -- a human who only clicks
+    # could not make a 4x companion at all, and there is no verb to re-scale
+    # one afterwards.
+    expect("the dialog offers the collision resolution as a real field",
+           shown("collision_subcell"), 1)
+    window.canvas.collision_subcell = 1
+    apply_setting("collision_subcell", 4)
+    expect("changing the preference reaches the canvas",
+           window.canvas.collision_subcell, 4)
+    apply_setting("collision_subcell", 1)
+    expect("and back down again", window.canvas.collision_subcell, 1)
+
+    # AND IT HAS TO BE READ AT BOOT, which is a separate wire from the one
+    # above and was the half nothing covered: a preference the dialog can
+    # change and the next launch forgets is a preference that works exactly
+    # once. Driven by constructing a SECOND window against a store that
+    # already holds the value, because `EditorSettings()` is built inside
+    # `__init__` and there is no other seam onto that moment.
+    import editor.ui.main_window as main_window_module               # noqa: E402
+
+    boot_store = EditorSettings(FakeStore())
+    boot_store.set("collision_subcell", 4)
+    boot_store.set("grid_step", 8)
+    _real_settings = main_window_module.EditorSettings
+    main_window_module.EditorSettings = lambda: boot_store
+    try:
+        booted = EditorWindow(session)
+    finally:
+        main_window_module.EditorSettings = _real_settings
+    expect("a freshly opened window reads the stored collision resolution",
+           booted.canvas.collision_subcell, 4)
+    expect("...and the stored grid spacing beside it, which nothing covered "
+           "either", booted.canvas.grid_step, 8)
+    booted.close()
+    booted.deleteLater()
+    application.processEvents()
 
     # ----------------------------------------------------------------
     print()

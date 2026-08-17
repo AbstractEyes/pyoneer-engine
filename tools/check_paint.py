@@ -11,6 +11,8 @@ none of them are visible at a glance:
   * a drag tool accumulating instead of redefining, so the rectangle can
     only ever grow
   * a stroke committing one transaction per cell, making undo useless
+  * `EditMode` growing back into the cell-size authority its docstring once
+    claimed it was -- the assumption that cost 1,200px
 
 No Qt, no pygame, no map. Runs on a bare clone.
 """
@@ -18,10 +20,14 @@ from __future__ import annotations
 
 import _bootstrap  # noqa: F401
 
+import ast
 import sys
+from pathlib import Path
 
+import editor.core.paint as paint_module
 from editor.core.paint import (
     Bounds,
+    EditMode,
     FloodTooLargeError,
     Stamp,
     Stroke,
@@ -429,6 +435,53 @@ expect("a coarser grid draws strictly fewer lines",
        len(grid_lines(37, 4)) < len(grid_lines(37, 1)), True)
 expect_raises("a step below one raises rather than drawing nothing",
               ValueError, lambda: grid_lines(10, 0))
+
+# --------------------------------------------------------------------------
+print()
+print("EditMode answers WHICH LAYER a stroke lands on, never HOW FINELY")
+# --------------------------------------------------------------------------
+# `subdivides` was documented as deciding "what one addressable cell IS in
+# this mode". It does not, and had not for a while: its one non-definition
+# reader is `MapCanvas.paint_unit`, which uses it to pick the layer a stroke
+# is measured against and written to, and reads the RESOLUTION off that
+# layer's own `pyoneer_subcell`. Assuming the mode was the authority is the
+# 1,200px defect `paint_unit`'s docstring measures. These guard the structure
+# that keeps the number out of this module -- which is the half a rewritten
+# docstring cannot guarantee on its own.
+#
+# WHICH mode subdivides is asserted in `tools/check_collision_view.py` and
+# deliberately not repeated here.
+for mode in EditMode:
+    expect(f"{mode.value}: subdivides is strictly a bool, never a count",
+           type(mode.subdivides) is bool, True)
+    numbers = sorted(name for name in dir(mode)
+                     if not name.startswith("_")
+                     and isinstance(getattr(mode, name), int)
+                     and not isinstance(getattr(mode, name), bool))
+    expect(f"{mode.value}: exposes no number at all, so it cannot size a cell",
+           numbers, [])
+
+# "This module holds no document by design" is the reason the number cannot
+# live here, and it is structural rather than a promise: paint.py imports
+# nothing first-party, so it has no way to reach a layer's declaration. The
+# regression this refuses is someone importing the document reader to answer
+# "how finely" in the enum instead of at the layer.
+_tree = ast.parse(Path(paint_module.__file__).read_text(encoding="utf-8"))
+_roots = {(node.module or "").split(".")[0]
+          for node in ast.walk(_tree) if isinstance(node, ast.ImportFrom)}
+_roots |= {alias.name.split(".")[0]
+           for node in ast.walk(_tree) if isinstance(node, ast.Import)
+           for alias in node.names}
+expect("paint.py imports nothing first-party, so it can hold no document",
+       sorted(r for r in _roots if r in ("editor", "scripts")), [])
+
+# The docstring itself, pinned by what it must POINT AT rather than by what it
+# must not say -- a reader who lands here has to be sent to the measurement.
+# Both fragments are absent from the claim this replaced, so a revert is red.
+_doc = EditMode.__dict__["subdivides"].__doc__ or ""
+expect("subdivides names its one real reader, where the number is read",
+       "paint_unit" in _doc, True)
+expect("...and names what assuming otherwise cost", "1,200px" in _doc, True)
 
 print()
 if failures:

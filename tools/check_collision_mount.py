@@ -47,6 +47,18 @@ than four times too close to the origin; and finally the guard, which
 refuses a stroke whose paint unit and companion disagree instead of writing
 a mask it cannot place.
 
+AND THE COMPANION THE EDITOR CREATES FOR ITSELF. Every 4x assertion in that
+third gets its resolution from a fixture that was hand-written with
+`pyoneer_subcell="4"` already on it, so for a whole pass nothing drove the
+path a real author takes first: a map with no companion at all, one stroke,
+and whatever resolution the editor decides. Measured, that was 1x always --
+`map.layer.add` was emitted with no `subcell` argument -- and since
+`map.layer.set` deliberately cannot write `pyoneer_subcell` and no verb
+re-scales a companion, "paint collision, then decide you want 4x" was a dead
+end. Proved for the pre-made case, never for the created one, which is the
+same shape that let the 1,200px bug through one level down. The last section
+drives the created case at 1x, 4x and 16x from a companion-less map.
+
 Against its OWN fixture map, never `data/maps/test.tmx`. The author paints
 in that file constantly, and four red suites have come from a check that
 pinned its contents. The fixture here declares exactly what the feature
@@ -94,17 +106,25 @@ from PySide6.QtWidgets import (                                         # noqa: 
     QMessageBox,
 )
 
-from editor.core.collision import SUBCELL, NO_DATA, gid_to_opinion      # noqa: E402
+from editor.core.collision import (                                     # noqa: E402
+    SUBCELL,
+    NO_DATA,
+    companion_subcell,
+    field_subcell,
+    gid_to_opinion,
+)
 from editor.core.layers import (                                        # noqa: E402
     BLOCK_ALL,
     BLOCK_UP,
     PASS_ALL,
     read_profile,
 )
+from editor.core.commands import Command                                # noqa: E402
 from editor.core.paint import EditMode, Stamp, Tool                     # noqa: E402
 from editor.core.scope import Scope                                     # noqa: E402
 from editor.core.session import Session                                 # noqa: E402
 from editor.ui import canvas as canvas_module                           # noqa: E402
+from scripts.core.errors import PyoneerError                            # noqa: E402
 from editor.ui.canvas import (                                          # noqa: E402
     COLLISION_IMAGE,
     COLLISION_TILESET,
@@ -535,10 +555,15 @@ def refuses_to_write(path: str) -> bool:
 
 
 def collision_canvas(session, *, layer: str | None = "Floor",
-                     mask: int = BLOCK_ALL):
+                     mask: int = BLOCK_ALL, subcell: int = 1):
     window = Harness(session, "fixture")
     window.show()
     application.processEvents()
+    # BEFORE the first rebuild, because this is what `paint_unit` answers for
+    # a companion that does not exist yet -- so it sizes the grid, the ghost
+    # and the stroke's bounds, not just the layer the commit creates. 1 is
+    # the canvas's own default and every block above it depends on that.
+    window.canvas.collision_subcell = subcell
     window.canvas.set_active_layer(layer)
     window.canvas.set_mode(EditMode.COLLISION)
     window.canvas.tool = Tool.BRUSH
@@ -1536,6 +1561,254 @@ try:
     expect("...and the message names the property and the value",
            (among(SUBCELL, said), among("banana", said)), (True, True))
     expect("...still with no dialog", modals, [])
+
+    # ----------------------------------------------------------------
+    print()
+    print("...AND THE READOUT SAYS SO TOO, rather than drawing a quiet 1x")
+    # ----------------------------------------------------------------
+    # The other half, and it is the half that shipped. `stack_subcell`
+    # degrades to 1 on a map `field_subcell` refuses -- correctly, because an
+    # editor that cannot draw a broken map cannot fix one -- and for as long
+    # as that was the whole story the All layers view drew a plausible 1x
+    # readout over a map that RAISES at load and said nothing whatsoever.
+    # The author learned from the stroke path, in a message about the stroke,
+    # and only if a stroke happened.
+    expect("the resolved view still degrades rather than raising",
+           canvas.stack_subcell(), 1)
+    expect("...and it does not raise on the mouse-move path either",
+           canvas.overlay_cell_at(26.0, 26.0), (1, 1))
+    expect("BUT THE REASON IS CARRIED, not swallowed",
+           canvas.stack_refusal() is not None, True)
+    expect("...naming the property and the value, as the stroke path does",
+           (SUBCELL in (canvas.stack_refusal() or ""),
+            "banana" in (canvas.stack_refusal() or "")), (True, True))
+    said.clear()
+    canvas.set_all_layers(True)
+    application.processEvents()
+    expect("switching All layers ON says it, in the status bar",
+           (among("cannot be trusted", said), among("banana", said)),
+           (True, True))
+    said.clear()
+    mouse(canvas, QEvent.Type.MouseMove, (1, 1), Qt.NoButton, Qt.NoButton)
+    expect("...and the cell readout keeps saying it, so nothing stomps it",
+           (among("cannot be trusted", said), among("banana", said)),
+           (True, True))
+    expect("...instead of describing a cell it cannot answer for",
+           any("passable" in line or "blocks" in line for line in said), False)
+    expect("...still with no dialog anywhere", modals, [])
+    window.close()
+
+    # The permissive half. A map whose declarations DO read has nothing to
+    # say, and a readout that cried on every map would be a readout the
+    # author stops reading -- which is the same defect as silence, later.
+    _ws, _sound_path, sound = open_workspace(fine_fixture())
+    window = collision_canvas(sound)
+    canvas = window.canvas
+    said = []
+    canvas.status.connect(said.append)
+    expect("a map that reads has no refusal to carry",
+           (canvas.stack_refusal(), canvas.stack_subcell()), (None, FINE_SUB))
+    canvas.set_all_layers(True)
+    application.processEvents()
+    mouse(canvas, QEvent.Type.MouseMove, (1, 1), Qt.NoButton, Qt.NoButton)
+    expect("...and All layers describes the cell instead of complaining",
+           among("cannot be trusted", said), False)
+    window.close()
+
+    # ==================================================================
+    print()
+    print("THE COMPANION THE EDITOR CREATES FOR ITSELF, at the resolution "
+          "the author asked for")
+    # ==================================================================
+    # THE GAP THAT LET THE 1x AUTO-CREATE SHIP GREEN. Every 4x assertion
+    # above starts from `fine_fixture()`, whose companion is hand-written
+    # with `pyoneer_subcell="4"` already on it. Nothing drove the path a real
+    # author takes FIRST -- a map with no companion at all, one stroke, and
+    # whatever resolution the editor decides to create. Measured before this
+    # section existed: `map.layer.add {"name": ..., "kind": "tile"}` with no
+    # `subcell` at all, so every companion the editor ever made for itself
+    # was 1x, `map.layer.set` deliberately cannot write `pyoneer_subcell`,
+    # and there is no verb to re-scale one -- "paint collision, then decide
+    # you want 4x" was a dead end that raises at load.
+    #
+    # Proved for the pre-made case, never for the created one: the same shape
+    # that let the 1,200px bug through one level down.
+    #
+    # Driven in scene PIXELS for that same reason: the created layer's cells
+    # and the clicked cell went through one funnel, so any assertion phrased
+    # in cells would be satisfied by the funnel agreeing with itself.
+    FRESH_CLICK = (26.0, 26.0)
+    for wanted in (1, FINE_SUB, 16):
+        print(f"  -- the author asks for {wanted} sub-cells per tile")
+        _ws, _fresh_path, fresh = open_workspace(FIXTURE)
+        FRESH_ORIGINAL = fresh.project.map("fixture").to_bytes()
+        window = collision_canvas(fresh, subcell=wanted)
+        canvas = window.canvas
+        document = fresh.project.map("fixture")
+        expect(f"{wanted}: the map really has no companion to read from",
+               "FloorCollision" in document.tile_layer_names(), False)
+        expect(f"{wanted}: so the CLICK is addressed at the resolution about "
+               f"to be created",
+               (canvas.paint_subcell, canvas.paint_width),
+               (wanted, TILE // wanted))
+
+        before = len(fresh.history())
+        click_px(application, canvas, *FRESH_CLICK)
+        expect(f"{wanted}: one click, one transaction",
+               len(fresh.history()) - before, 1)
+        added = [c for c in fresh.history()[-1].commands
+                 if c.verb == "map.layer.add"]
+        expect(f"{wanted}: the stroke created the companion",
+               [c.args.get("name") for c in added], ["FloorCollision"])
+        # OMITTED at 1, not passed as 1. The verb accepts 1 and writes
+        # `pyoneer_subcell="1"` for it, and no companion this editor has ever
+        # created carries that property: a default that rewrites what
+        # existing maps get is not a default.
+        expect(f"{wanted}: and asked for the factor, or for nothing at 1x",
+               added[0].args.get("subcell"), None if wanted == 1 else wanted)
+
+        document = fresh.project.map("fixture")
+        made = document.tile_layer("FloorCollision")
+        expect(f"{wanted}: it is {wanted}x the map on each axis",
+               (made.width, made.height),
+               (WIDTH * wanted, HEIGHT * wanted))
+        expect(f"{wanted}: and declares the factor, or nothing at all at 1x",
+               made.properties.get(SUBCELL), None if wanted == 1 else wanted)
+        # The ENGINE's own reader, not the editor's: a companion the editor
+        # can write and the engine refuses is the unloadable map this whole
+        # file exists to stop producing.
+        expect(f"{wanted}: THE ENGINE READS IT AT THE SAME RESOLUTION",
+               (companion_subcell(document, "FloorCollision"),
+                field_subcell(document)), (wanted, wanted))
+
+        marks = painted_cells(made)
+        expect(f"{wanted}: exactly one cell took the mask", len(marks), 1)
+        expect(f"{wanted}: AND THAT CELL CONTAINS THE CLICKED PIXEL",
+               bool(marks) and covers(marks[0], TILE // wanted, FRESH_CLICK),
+               True)
+        window.undo()
+        application.processEvents()
+        expect(f"{wanted}: and one undo is byte-identical",
+               fresh.project.map("fixture").to_bytes() == FRESH_ORIGINAL, True)
+        window.close()
+
+    # ------------------------------------------------------------------
+    print()
+    print("...and it moves the COLLISION grid only, never the tile grid")
+    # ------------------------------------------------------------------
+    # The other half of the same preference, and the half a permissive check
+    # skips: proved to subdivide, never proved to leave art alone. A
+    # companion's resolution is none of an art stroke's business -- that is
+    # `mode.subdivides`' whole job -- and a preference that quartered the
+    # grid the author paints floor on would make the editor unusable for
+    # everything except collision.
+    _ws, _art_path, art_map = open_workspace(FIXTURE)
+    window = collision_canvas(art_map, subcell=FINE_SUB)
+    canvas = window.canvas
+    expect("in collision mode the preference subdivides",
+           (canvas.paint_subcell, canvas.paint_width), (FINE_SUB, FINE_CELL))
+    canvas.set_mode(EditMode.TILES)
+    application.processEvents()
+    expect("...and in tile mode a cell is a whole tile, as it always was",
+           (canvas.paint_subcell, canvas.paint_width), (1, TILE))
+    canvas.stamp = Stamp.single(9)
+    before = len(art_map.history())
+    click_px(application, canvas, *FRESH_CLICK)
+    expect("so an art stroke writes the TILE under the cursor",
+           painted_cells(art_map.project.map("fixture").tile_layer("Floor")),
+           [(1, 1)])
+    expect("...as its own transaction, creating no companion",
+           (len(art_map.history()) - before,
+            "FloorCollision" in art_map.project.map(
+                "fixture").tile_layer_names()), (1, False))
+    window.close()
+
+    # ------------------------------------------------------------------
+    print()
+    print("...and it does NOT re-scale a companion that already exists")
+    # ------------------------------------------------------------------
+    # The preference decides what is CREATED and nothing else. A companion
+    # carries its own declaration, there is no verb to re-scale one, and a
+    # canvas that let a global preference override the file would move every
+    # mask on an existing map by changing a dropdown.
+    _ws, _keep_path, keep = open_workspace(fine_fixture())
+    window = collision_canvas(keep, subcell=1)          # asks for 1x...
+    canvas = window.canvas
+    expect("a 4x companion is still read at 4x, whatever the preference says",
+           (canvas.paint_subcell, canvas.paint_width), (FINE_SUB, FINE_CELL))
+    before = len(keep.history())
+    click_px(application, canvas, *FRESH_CLICK)
+    expect("...and the stroke lands in the file's own sub-cell",
+           painted_cells(keep.project.map("fixture").tile_layer(
+               "FloorCollision")), [(6, 6)])
+    expect("...adding no layer, because there is nothing to add",
+           [c.verb for c in keep.history()[-1].commands],
+           ["map.tile.set_many"])
+    expect("...as one transaction", len(keep.history()) - before, 1)
+    window.close()
+
+    _ws, _plain_path, plain1x = open_workspace(fine_fixture(declare=None,
+                                                            side=FINE_TILES))
+    window = collision_canvas(plain1x, subcell=FINE_SUB)  # ...and 4x
+    canvas = window.canvas
+    expect("a 1x companion stays 1x too -- an absent property is a "
+           "declaration",
+           (canvas.paint_subcell, canvas.paint_width), (1, TILE))
+    click_px(application, canvas, *FRESH_CLICK)
+    expect("...so the mask lands in the whole tile, as it always did",
+           painted_cells(plain1x.project.map("fixture").tile_layer(
+               "FloorCollision")), [(1, 1)])
+    expect("...and no map.layer.add went with it",
+           [c.verb for c in plain1x.history()[-1].commands],
+           ["map.tile.set_many"])
+    window.close()
+
+    # ------------------------------------------------------------------
+    print()
+    print("...and a factor THIS MAP cannot hold is refused, not rounded")
+    # ------------------------------------------------------------------
+    # Law 7 on the create path. The canvas cannot ask `companion_subcell`
+    # whether a factor is legal -- that reader needs a layer, and there is no
+    # layer yet -- so it spells the same rule and refuses. A mirror rots, so
+    # BOTH sides are asserted on the same map: the editor refuses at press,
+    # and `map.layer.add` carrying that very factor raises at apply.
+    ODD_TILE = 24                       # 16 does not divide it; 24 % 16 = 8
+    _ws, _odd_path, odd = open_workspace(FIXTURE.replace(
+        'tilewidth="16" tileheight="16" infinite',
+        f'tilewidth="{ODD_TILE}" tileheight="{ODD_TILE}" infinite'))
+    ODD_ORIGINAL = odd.project.map("fixture").to_bytes()
+    window = collision_canvas(odd, subcell=16)
+    canvas = window.canvas
+    said = []
+    canvas.status.connect(said.append)
+    expect("the map's tiles really are indivisible by the asked factor",
+           (odd.project.map("fixture").tile_width % 16 != 0), True)
+    expect("the canvas draws at the only resolution it can trust",
+           (canvas.paint_subcell, canvas.paint_width), (1, ODD_TILE))
+    expect("...and refuses to write rather than rounding to a cell that "
+           "cannot exist", canvas.collision_stroke_refusal() is not None, True)
+    before = len(odd.history())
+    drag(application, canvas, [(1, 1), (2, 1)])
+    expect("the stroke runs no command", len(odd.history()) - before, 0)
+    expect("...leaves the document byte-identical",
+           odd.project.map("fixture").to_bytes() == ODD_ORIGINAL, True)
+    expect("...names the factor and the tile size it will not divide",
+           (among("16", said), among(f"{ODD_TILE}x{ODD_TILE}px", said)),
+           (True, True))
+    expect("...and says it without a dialog", modals, [])
+    # THE MIRROR, AUDITED. If `companion_subcell` ever stops refusing this,
+    # the refusal above becomes the editor inventing a rule of its own and
+    # this line is what goes red.
+    engine_refused = "accepted"
+    try:
+        odd.run(Command("map.layer.add", Scope.of(("map", "fixture")),
+                        {"name": "Probe", "kind": "tile", "subcell": 16}))
+    except PyoneerError as exc:                                 # noqa: BLE001
+        engine_refused = SUBCELL in str(exc)
+    expect("...and the ENGINE refuses the same factor on the same map",
+           engine_refused, True)
+    expect("...leaving the document byte-identical after that too",
+           odd.project.map("fixture").to_bytes() == ODD_ORIGINAL, True)
     window.close()
 
 finally:

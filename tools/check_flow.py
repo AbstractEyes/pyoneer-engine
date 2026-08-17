@@ -9,7 +9,9 @@ permanently unable to walk:
         token-wide one and the token-wide one still serves other payloads
      2. the flow package reaches the event bus at ZERO points, proved from
         the parse tree of BOTH modules, with a decoy that proves the scan
-        can find one -- and imports nothing from `editor/`
+        can find one -- and imports nothing from `editor/`; and what the
+        package COSTS to import is measured in a subprocess rather than
+        argued, because a docstring in `SceneManager` argued it wrong
      3. `SceneManager` assigns `entity.action_sink` on BOTH binding routes,
         so `missing_requirements()` reports it before the bind and nothing
         after -- for a hand-built entity AND for one a map spawned
@@ -55,6 +57,7 @@ import _bootstrap  # noqa: F401  (must precede engine imports)
 import ast
 import inspect
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -70,7 +73,9 @@ from editor.core import map_events
 from scripts.core.errors import PyoneerConfigError
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.event_types import GameEventType
+from scripts.core import renderer as renderer_module
 from scripts.core.renderer import GameComponentLayer, LayerRenderer
+from scripts.core.scene import scene_manager as scene_manager_module
 from scripts.core.scene.game_scene import GameScene
 from scripts.core.scene.scene_manager import SceneManager
 from scripts.core.spawn import register as register_spawn
@@ -479,6 +484,71 @@ _relay = inspect.getsource(
     .GameActionRelayBehavior)
 expect("the relay that calls the sink is an `update`, i.e. the frame path",
        "def update(self, entity: Any, event: Any)" in _relay, True)
+
+# ---------------------------------------------------------------------------
+# WHAT THE FLOW PACKAGE ACTUALLY COSTS TO IMPORT, MEASURED IN A SUBPROCESS
+# ---------------------------------------------------------------------------
+# `sys.modules` in THIS process answers nothing: the file above imports
+# `GameWindow`, both flow modules and the whole engine. Each claim below is a
+# fresh interpreter that imports exactly one name.
+
+
+def loads(statement: str, module: str) -> bool:
+    """Is `module` in `sys.modules` after `statement`, in a FRESH interpreter?
+
+    The last line of stdout, because pygame prints a banner on import and
+    parsing the first line would read the SDL version as a boolean.
+    """
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         "import sys\nsys.path.insert(0, %r)\n%s\nprint(%r in sys.modules)"
+         % (_bootstrap.REPO_ROOT, statement, module)],
+        capture_output=True, text=True, cwd=_bootstrap.REPO_ROOT)
+    lines = proc.stdout.strip().splitlines()
+    return bool(lines) and lines[-1] == "True"
+
+
+# BOTH HALVES, and the first one retires an argument `SceneManager` used to
+# make. Its `flow` slot is annotated `Any`, and the stated reason WAS that
+# importing `SceneFlow` "would put the whole flow package on the import path
+# of every scene" -- while the line above it imports `ActionRouter`, which
+# executes `scripts/game/flow/__init__.py`, which imports `scene_flow`. The
+# package is one import unit, so the annotation would have added nothing.
+expect("importing the ROUTER alone already loads scene_flow: the flow package "
+       "is ONE import unit",
+       loads("import scripts.game.flow.router",
+             "scripts.game.flow.scene_flow"), True)
+# The other half: the same probe answers False, and for a claim that IS load
+# bearing -- `scene_flow` duck-types its window rather than importing
+# `GameWindow`, which would drag `CoreAssetManager`'s theme load onto the
+# import path of every module that touches a flow.
+expect("...while the same probe says False for GameWindow, which the flow "
+       "duck-types rather than imports",
+       loads("import scripts.game.flow",
+             "scripts.core.ui.widget.containers.window"), False)
+
+# The altitude question the same slot raises: is `scripts/core/` importing
+# `scripts/game/` a new coupling? Measured, no -- `scripts/core/renderer.py`
+# does it too, and `scene_manager` imports `renderer`, so those modules are on
+# its path whether or not it spells them. The one-way rule is law 2, below.
+expect("scripts/core/renderer.py imports scripts.game at module level too",
+       bool([m for m in scan(renderer_module)[1]
+             if m.startswith("scripts.game")]), True)
+expect("...so does scripts/core/scene/scene_manager.py",
+       bool([m for m in scan(scene_manager_module)[1]
+             if m.startswith("scripts.game")]), True)
+expect("...and NEITHER imports editor/ -- that is the rule that is real",
+       sorted([m for m in scan(renderer_module)[1]
+               if m.startswith("editor")]
+              + [m for m in scan(scene_manager_module)[1]
+                 if m.startswith("editor")]), [])
+# ...and the same scan DOES find an `editor` import where there is one. This
+# check file imports `editor.core.map_events` itself, so a prefix scan that
+# matched nothing because the spelling was wrong is distinguishable from a
+# clean pass -- the same argument the decoy above makes for the bus scan.
+expect("...proved: the same scan finds the editor import in THIS file",
+       [m for m in scan(sys.modules[__name__])[1] if m.startswith("editor")],
+       ["editor.core"])
 
 
 # ===========================================================================
@@ -938,6 +1008,22 @@ MUTATIONS RUN, AND WHAT EACH ONE TURNED RED
         -> section 1: the two wiring-time refusals fail
   * `e.handle()` planted in `ActionRouter.__call__`
         -> section 2: the parse-tree scan fails for router.py
+  * the subprocess probe pointed at a module nothing loads
+    (`loads("import scripts.core.depth", "scripts.game.flow.scene_flow")`)
+        -> answered False, measured. That is how the True half above is known
+           to be a measurement rather than a probe that always agrees. The
+           negative half that SHIPS is the GameWindow one, because that claim
+           is load bearing on its own: `scene_flow` duck-types its window
+  * `scripts/game/flow/__init__.py` no longer re-exporting `scene_flow`
+        -> section 2: "the flow package is ONE import unit" fails. NOT RUN as
+           a file edit -- `flow/__init__.py` was not this pass's to edit, and
+           the control above already shows the probe answers either way. If
+           it ever does fail, the paragraph to revisit is the one on
+           `SceneManager.flow`, which cites this measurement by name
+  * the `editor` prefix in the import scan misspelled (`edtor`)
+        -> section 2, FAILED 1: "the same scan finds the editor import in
+           THIS file". That is what stops the three `[]` assertions above it
+           from being vacuous
   * `SceneManager.__sink` deleted
         -> section 3: both `missing_requirements` halves fail, and section 4
            routes nothing at all

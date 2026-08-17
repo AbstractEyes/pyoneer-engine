@@ -169,6 +169,7 @@ class EditorWindow(QMainWindow):
 
         self.canvas.show_grid = self.settings.get("show_grid")
         self.canvas.grid_step = self.settings.get("grid_step")
+        self.canvas.collision_subcell = self.settings.get("collision_subcell")
         self.apply_theme(Theme.parse(self.settings.get("theme")))
         self.refresh_all()
         self.__select_first_paintable_layer()
@@ -740,6 +741,16 @@ class EditorWindow(QMainWindow):
             # never which cell a click lands in, and the moment those two
             # can disagree the grid starts lying about the map.
             self.canvas.grid_step = int(value)
+            self.canvas.rebuild()
+        elif key == "collision_subcell":
+            # The opposite of `grid_step` above, and deliberately: this one
+            # DOES change which cell a click lands in, because the layer the
+            # click is about to create is the layer being sized. It reaches
+            # `paint_unit` and moves the grid, the ghost and the bounds
+            # together or it moves none of them. Existing companions are
+            # untouched -- they declare their own resolution and this is only
+            # consulted for one that does not exist yet.
+            self.canvas.collision_subcell = int(value)
             self.canvas.rebuild()
         # `ide` is read in `reveal`, and `confirm_response` in
         # `apply_response` and `__offer` -- both at the moment they matter,

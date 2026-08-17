@@ -357,6 +357,18 @@ class MapCanvas(QGraphicsView):
         #: store -- and it can only ever SKIP boundaries, never invent
         #: them. See `paint.grid_lines`.
         self.grid_step = 1
+        #: How many sub-cells per map tile a companion layer CREATED by the
+        #: next collision stroke is given. An authoring preference, so it
+        #: comes from `editor.core.settings` -- the same one store
+        #: `grid_step` comes from -- and it reaches `paint_unit`, so the
+        #: cell a click addresses before the companion exists is the cell
+        #: the companion is about to hold.
+        #:
+        #: 1 by DEFAULT, and that number is not timidity: measured on a
+        #: 100x100 map, a 4x companion is 8.6x the file bytes and +271ms per
+        #: companion at load. The author opts in, and an existing companion
+        #: keeps whatever it declares -- there is no verb to re-scale one.
+        self.collision_subcell = 1
         #: The brush footprint, in paint cells, for the tools that have
         #: one. Transient like `tool` and `stamp` and deliberately not
         #: persisted: it is a moment-to-moment choice, not a view
@@ -463,8 +475,13 @@ class MapCanvas(QGraphicsView):
         rather than re-spelled here, so the cell the editor addresses is the
         cell the runtime bakes.
 
-        A companion that does not exist yet resolves to 1 -- the documented
-        default of an absent `pyoneer_subcell`, not a guess.
+        A companion that does not exist yet resolves to the resolution this
+        canvas would CREATE it at -- `collision_subcell`, the author's own
+        preference -- and not to 1. The two have to be the same number or
+        the first stroke on a fresh map is the 1,200px bug with the roles
+        swapped: the click addresses a whole tile and the layer created to
+        hold it stores sixteen masks per tile, so the mask lands in the
+        top-left sixteenth of the tile the author clicked.
 
         THE MODE IS NOT THE WHOLE ANSWER, and assuming it was cost 1,200px.
         `mode.subdivides` says WHICH LAYER a stroke goes to, and the sentence
@@ -501,23 +518,65 @@ class MapCanvas(QGraphicsView):
         in and the cell the readout draws are the same cell by construction
         rather than by two functions agreeing.
 
-        1 for a layer that does not exist yet, which is the answer for the
-        companion this stroke is about to create: `map.layer.add` builds it
-        at the map's size and takes no resolution. An absent property also
-        means 1 -- that is the file format's documented default, decided at
-        `SUBCELL` in `scripts/core/collision_runtime.py`, not a guess made
-        here.
+        An absent property means 1 -- that is the file format's documented
+        default, decided at `SUBCELL` in `scripts/core/collision_runtime.py`,
+        not a guess made here.
+
+        A layer that does not exist yet is two different questions wearing
+        one shape. If it is the COMPANION this canvas would create, the
+        answer is `__pending_subcell`: `map.layer.add` now takes a
+        resolution, so the layer is about to be whatever the author asked
+        for and the click has to address that same cell. Anything else --
+        no active layer, an object layer, a name this map does not have --
+        is 1, which is what a tile-mode stroke on an art layer has always
+        wanted.
 
         The error is RETURNED rather than raised because this is consulted on
         every mouse move and every grid line; see `PaintUnit.refusal`.
         """
         document = self.document
         if name is None or name not in document.tile_layer_names():
+            if name is not None and name == self.companion_name():
+                return self.__pending_subcell()
             return 1, None
         try:
             return companion_subcell(document, name), None
         except PyoneerError as exc:
             return 1, str(exc)
+
+    def __pending_subcell(self) -> tuple[int, str | None]:
+        """(resolution, why not) for the companion the next stroke CREATES.
+
+        `collision_subcell` is a PREFERENCE and the map is a FACT, and the
+        two are reconciled here -- once, into the same `(value, refusal)`
+        pair `__declared_subcell` hands back for a companion that already
+        exists. So `paint_unit` cannot tell the created case from the
+        pre-made one, which is exactly the distinction that let the 4x
+        assertions all start from a hand-written 4x fixture and never once
+        drive the path an author actually takes first.
+
+        THE REFUSAL IS `companion_subcell`'S OWN RULE, spelled here because
+        that reader needs a LAYER and this runs before one exists. A mirror
+        rots, so it is not left to be trusted: `tools/check_collision_mount
+        .py` asserts both sides on the same map -- that this refuses, and
+        that `map.layer.add` carrying the same factor raises there too. Law 7
+        decides the shape rather than a fallback: a factor the map cannot
+        hold draws at 1x and REFUSES to write, the same as an unreadable
+        declaration one branch up.
+        """
+        document = self.document
+        wanted = int(self.collision_subcell)
+        if wanted < 1:
+            return 1, (f"the collision resolution is set to {wanted} "
+                       f"sub-cells per tile; it is 1 or more (1 means one "
+                       f"mask per map tile)")
+        if document.tile_width % wanted or document.tile_height % wanted:
+            return 1, (f"the collision resolution is set to {wanted} "
+                       f"sub-cells per tile, but this map's tiles are "
+                       f"{document.tile_width}x{document.tile_height}px and "
+                       f"{wanted} does not divide them evenly; a sub-cell "
+                       f"has to land on whole pixels")
+        return wanted, None
 
     @property
     def paint_subcell(self) -> int:
@@ -732,9 +791,12 @@ class MapCanvas(QGraphicsView):
         name = self.companion_name()
         document = self.document
         if name is None or name not in document.tile_layer_names():
-            # There is nothing to disagree with yet. The companion this
-            # stroke creates is created at the map's size, which is 1x, and
-            # `paint_unit` says 1 for exactly the same reason.
+            # There is nothing to disagree with yet: the companion this
+            # stroke CREATES is created at `paint_unit`'s own resolution --
+            # `__commit_collision` passes that very number to
+            # `map.layer.add` -- so the two cannot diverge here by
+            # construction. A resolution the map cannot hold at all is
+            # already refused above, through `unit.refusal`.
             return None
         declared = companion_subcell(document, name)      # cannot raise: see above
         if declared == unit.subcell:
@@ -825,14 +887,44 @@ class MapCanvas(QGraphicsView):
         a stroke writes into.
 
         It raises on a stack whose declarations do not nest; that raise is
-        swallowed here for `paint_unit`'s reason -- this is consulted from
-        `rebuild`, and a map the editor cannot draw is a map the author
-        cannot fix.
+        caught for `paint_unit`'s reason -- this is consulted from `rebuild`,
+        and a map the editor cannot draw is a map the author cannot fix. It
+        is CAUGHT, not swallowed: `stack_refusal` is the other half and the
+        readout says it out loud.
+        """
+        return self.__field_subcell()[0]
+
+    def stack_refusal(self) -> str | None:
+        """Why the resolved view cannot be trusted on this map, or None.
+
+        THE HALF THAT WAS MISSING. `stack_subcell` degrades to 1 on a map
+        the ENGINE refuses to load, which is right -- an editor that cannot
+        draw a broken map is an editor that cannot fix one -- and for as
+        long as that was the whole story the all-layers view drew a
+        plausible 1x readout over a map that raises at load and said
+        nothing at all. The author found out from the STROKE path, if a
+        stroke happened to be refused, in a message about the stroke.
+
+        A readout that is wrong and quiet is the worst state an instrument
+        has, so the reason is carried out to where the author is looking:
+        the cell readout under the cursor, and the moment All layers is
+        switched on. Reported, never raised -- this sits on the same mouse
+        move `paint_unit` does.
+        """
+        return self.__field_subcell()[1]
+
+    def __field_subcell(self) -> tuple[int, str | None]:
+        """(the stack's resolution, why it could not be read).
+
+        The ONE read of `field_subcell` on this class, in the same
+        `(value, refusal)` shape `__declared_subcell` uses for one companion,
+        so `stack_subcell` and `stack_refusal` are two halves of one answer
+        rather than two functions that have to agree about when to raise.
         """
         try:
-            return field_subcell(self.document)
-        except PyoneerError:
-            return 1
+            return field_subcell(self.document), None
+        except PyoneerError as exc:
+            return 1, str(exc)
 
     def overlay_subcell(self) -> int:
         """The resolution the READOUT is drawn at.
@@ -1053,6 +1145,16 @@ class MapCanvas(QGraphicsView):
             return
         self.all_layers = bool(on)
         self.__collision_stale = True
+        # The gesture that ASKS for the resolved view is the one place a
+        # single status line cannot be stomped by something else's -- nothing
+        # else emits on this path. `set_mode` does (its tip, right after the
+        # rebuild), which is why the readout below repeats it on every move
+        # rather than this being the only telling.
+        if self.all_layers:
+            refusal = self.stack_refusal()
+            if refusal is not None:
+                self.status.emit(f"All layers is showing 1x cells and cannot "
+                                 f"be trusted: {refusal}")
         if self.overlay_geometry() != self.__overlay_geometry:
             self.rebuild()
             return
@@ -1408,6 +1510,20 @@ class MapCanvas(QGraphicsView):
             return
 
         if self.mode is EditMode.COLLISION and self.__overlay is not None:
+            # A RESOLVED VIEW THE MAP CANNOT SUPPORT DESCRIBES NOTHING. When
+            # `field_subcell` refuses this map the overlay is drawn at 1x --
+            # deliberately, so a broken map stays editable -- and describing
+            # a cell of it would be the readout stating the answer the player
+            # will feel, from a map that raises before the player gets one.
+            # Said here, on every move, because this line is the only status
+            # nothing else overwrites.
+            refusal = self.stack_refusal() if self.all_layers else None
+            if refusal is not None:
+                self.status.emit(f"cell ({column}, {row})   All layers is "
+                                 f"showing 1x cells and cannot be trusted: "
+                                 f"{refusal}")
+                super().mouseMoveEvent(event)
+                return
             # What the overlay is already showing, said in words -- including
             # which layer decided and whether one below it disagrees, neither
             # of which survives being reduced to a colour. Read at the
@@ -1561,8 +1677,10 @@ class MapCanvas(QGraphicsView):
         # always legal -- gets clipped to what actually exists. When it is
         # not, the commit creates it at the map's size in PAINT cells, so
         # that is what the stroke may write into; spelled through the paint
-        # unit rather than as `document.width` so it stays true the day
-        # `map.layer.add` learns to create a finer one.
+        # unit rather than as `document.width` against the day
+        # `map.layer.add` would learn to create a finer one. That day is
+        # here -- the commit passes this same number as `subcell` -- so this
+        # line is now load-bearing rather than anticipatory.
         subcell = self.paint_subcell
         read = companion.get_tile if companion is not None else _EMPTY_READER
         bounds = (Bounds(companion.width, companion.height)
@@ -1629,7 +1747,7 @@ class MapCanvas(QGraphicsView):
                                     pending.command_args()))
         if self.companion_layer() is None:
             commands.append(Command("map.layer.add", map_scope,
-                                    {"name": name, "kind": "tile"}))
+                                    self.__companion_add_args(name)))
             commands.append(Command(
                 "map.layer.set", map_scope.child("layer", self.active_layer),
                 {"key": "passability", "value": name}))
@@ -1661,6 +1779,36 @@ class MapCanvas(QGraphicsView):
                 f"{stroke.tool.label} collision ({len(edits)} cells): added "
                 f"the {pending.name!r} tileset, {pending.tile_count} masks"
                 f"{written}")
+
+    def __companion_add_args(self, name: str) -> dict:
+        """The `map.layer.add` that creates a companion for this stroke.
+
+        THE RESOLUTION COMES FROM THE FUNNEL, not from `collision_subcell`
+        directly. `paint_unit` is what decided which cell the click landed
+        in; passing anything else here would create a layer whose cells are
+        not the cells this stroke just addressed, which is the 1,200px bug
+        rebuilt from the other end. Reading the preference twice would be
+        two places for one number to be wrong.
+
+        `subcell` is OMITTED at 1 rather than passed as 1. The verb accepts
+        1 and writes `pyoneer_subcell="1"` for it, which is the format's
+        documented default said out loud -- and no companion this editor has
+        ever created carries that property. A default that rewrites what
+        existing maps get is not a default, so the 1x file stays the file it
+        has always been and the author opts in to anything else.
+
+        Until this argument existed, every companion the editor made for
+        itself was 1x: `map.layer.add subcell=N` was reachable only through
+        the AI response path, there is no verb to re-scale a companion
+        afterwards, and `map.layer.set` deliberately refuses to write
+        `pyoneer_subcell` -- so "paint collision, then decide you want 4x"
+        was a dead end that raises at load.
+        """
+        args: dict = {"name": name, "kind": "tile"}
+        subcell = self.paint_subcell
+        if subcell > 1:
+            args["subcell"] = subcell
+        return args
 
     def __pick_mask(self, column: int, row: int) -> None:
         """Alt+click, or the picker tool, in collision mode."""

@@ -47,7 +47,7 @@ dependency reports `SKIP` and never `PASS`.
 | `movement` | top-down and platformer bodies, the intent, the animator | Verify the four concrete behaviors: input, top-down, platformer, animator. |
 | `behavior_docs` | BEHAVIORS.md is generated, and every column is backed | Verify the behavior system's DOCUMENTATION cannot drift from the system. |
 | `action` | discrete verbs, cooldowns, the per-entity record, no bus | Verify the action component system: the edge, the clock, and the record. |
-| `lifecycle` | a body declares itself gone, and is really unbound and undrawn | Verify entity control: a body declares itself gone, and is really removed. |
+| `lifecycle` | a body declares itself gone, and is really unbound, undrawn and forgotten | Verify entity control: a body declares itself gone, and is really removed. |
 | `flow` | action routing, the step sequencer, and the agency it gives back | Verify scene and GUI flow: where a firing goes, and what step we are on. |
 | `window` | drag, close, focus, visibility matrix | Verify GameWindow drag, close and focus behaviour with synthetic input.""" |
 | `window_close` | visibility cascade, F1 toggle, typing suppresses movement | Close/reopen, visibility cascade, and text-capture gating. |
@@ -58,7 +58,7 @@ dependency reports `SKIP` and never `PASS`.
 | `collision` | three-level resolution, .blitmask round trip, mask encoding | Verify the collision data model and the .blitmask format. |
 | `collision_view` | collision overlay builds, glyphs distinguish direction bits, a read past a companion's edge abstains | Verify the collision overlay, its glyphs and the mode switch. |
 | `map_events` | trigger vocabulary, collision filters, tmx round trip | Verify the map-event vocabulary: round trip, validation, filter semantics. |
-| `collision_mount` | the overlay, the mode, one stroke one transaction, and a 4x map whose mask lands under the cursor | Assert the collision stack is actually WIRED to the canvas. |
+| `collision_mount` | the overlay, the mode, one stroke one transaction, a 4x map whose mask lands under the cursor, and the resolution a created companion is given | Assert the collision stack is actually WIRED to the canvas. |
 | `collision_runtime` | the engine reads a mask and gates movement | Verify that the engine reads authored masks and refuses a blocked step. |
 | `collision_field` | map load bakes passability and every body is handed it | Prove the map's passability actually reaches the bodies that move on it. |
 | `actions_panel` | trigger authoring, action verbs, exact inverses | Assert the two dormant things this pass wired are actually reachable. |
