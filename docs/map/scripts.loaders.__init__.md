@@ -5,6 +5,6 @@
 
 > File-format loaders that sit BELOW the engine.
 
-`scripts.loaders.__init__` · 10 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.loaders.__init__` · 16 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 This module defines no class, function or public constant.

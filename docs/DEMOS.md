@@ -285,12 +285,13 @@ These are the real gaps, in the order they cost the most:
    spawned entity. There is no `pyoneer_collision_offset` property and no
    behavior parameter. This is the shortest item on this list and the one
    most worth closing: it is per-ENTITY data living in per-GAME code.
-2. **A genre pack cannot supply the behavior list.** Every object in these
-   maps spells its list out. `editor/genres/*/genre.json` may declare
-   `layers[].object_classes[].behaviors`, and the editor is meant to
-   MATERIALISE that into the object when the object is added -- so the `.tmx`
-   stays the whole truth. Until it does, `demos/mapgen.py` writes the
-   strings.
+2. **A genre pack supplies the behavior list only through the EDITOR.**
+   `editor/genres/*/genre.json` declares
+   `layers[].object_classes[].behaviors`, and `map.object.add` materialises
+   it into the object as it is placed -- so the `.tmx` stays the whole truth
+   and the engine never reads a pack. `demos/mapgen.py` builds its maps in
+   Python rather than through the editor's command stream, so it still writes
+   the strings itself; every object in these maps spells its list out.
 3. **Nothing reads `data/project/tables/actors.json`.** Every
    `source="actors"` parameter on `platformer_move` therefore resolves from
    the object property or the declared default, which is why the side-on

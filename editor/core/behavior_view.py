@@ -96,10 +96,10 @@ _CHECKLIST_NOTE = (
 _PARAM_NOTE = (
     "Stored per object as `{prefix}<key>` and resolved most-specific-first: "
     "this property, then the actors row named by `pyoneer_actor`, then the "
-    "declared default. NOTHING IN scripts/ READS data/project/ -- there is no "
-    "engine-side table reader -- so the middle step is skipped today and a "
-    "`source=actors` parameter resolves from this property or from its "
-    "default.").format(prefix=PARAM_PREFIX)
+    "declared default. All three rungs are live -- the engine reads "
+    "data/project/tables/ through scripts/loaders/table_file.py -- so "
+    "clearing this property does not mean the default: it means whatever the "
+    "row says, if the object names one.").format(prefix=PARAM_PREFIX)
 
 _AXES_NOTE = (
     "What this composition writes on the shared `BodyState` record. Two "
@@ -168,9 +168,9 @@ def is_vocabulary(key: str) -> bool:
     """Whether `key` is a tmx property this panel owns.
 
     `pyoneer_behaviors` and every `pyoneer_param_*`. Deliberately NOT
-    `pyoneer_actor`: that names an actors-table row, nothing in `scripts/`
-    reads `data/project/` yet, and it is an ordinary string the generic
-    property editor handles correctly.
+    `pyoneer_actor`: that names an actors-table row, which the engine does
+    read, and it is an ordinary string the generic property editor handles
+    correctly -- this panel owns the composition, not the row reference.
     """
     return key == BEHAVIORS or key.startswith(PARAM_PREFIX)
 
@@ -539,9 +539,10 @@ def _param_doc(param: BehaviorParam, owners: Sequence[str],
              f"source {param.source} · read by {', '.join(owners)}",
              f"stored as {param.property_name}"]
     if param.source == "actors":
-        parts.append("`source=actors` means an actors row may supply it -- but "
-                     "nothing in scripts/ reads data/project/, so today it "
-                     "resolves from the property above or from the default.")
+        parts.append("`source=actors` means the actors row named by "
+                     "pyoneer_actor supplies it when this property is unset, "
+                     "and the engine reads that row -- so clearing this field "
+                     "falls to the row first and to the default only after.")
     if problem:
         parts.append("THE FILE SAYS SOMETHING THE ENGINE REFUSES: " + problem)
     return "\n".join(p for p in parts if p)

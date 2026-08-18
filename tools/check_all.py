@@ -37,8 +37,11 @@ CHECKS = [
     ("blitmap", "the native .blitmap/.tileset format and the tmx converter"),
     ("blitmap_engine", "the engine loads a .blitmap equivalently to its tmx"),
     ("spawn", "object layer -> entity registry, depth resolution, y-origin"),
-    ("spawn_runtime", "map objects become bound entities at the right depths"),
-    ("behavior", "behavior contract, registry, declared order, ordered drive"),
+    ("spawn_runtime", "map objects become bound entities at the right depths, "
+                      "and an authored pyoneer_actor reaches the behavior "
+                      "they carry"),
+    ("behavior", "behavior contract, registry, declared order, ordered drive, "
+                 "and the actors row read off disk as the middle rung"),
     ("state", "the shared body-state axes, and the two bodies translated onto them"),
     ("movement", "top-down and platformer bodies, the intent, the animator"),
     ("behavior_docs", "BEHAVIORS.md is generated, and every column is backed"),
@@ -59,7 +62,7 @@ CHECKS = [
     ("collision_mount", "the overlay, the mode, one stroke one transaction, "
                         "a 4x map whose mask lands under the cursor, and the "
                         "resolution a created companion is given"),
-    ("collision_runtime", "the engine reads a mask and gates movement"),
+    ("collision_runtime", "the engine reads a mask, stacks a tileset's own defaults under it, and gates movement"),
     ("collision_field", "map load bakes passability and every body is handed it"),
     ("actions_panel", "trigger authoring, action verbs, exact inverses"),
     ("behavior_ui", "behavior checklist from the registry, refusals at "

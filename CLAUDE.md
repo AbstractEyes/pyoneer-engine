@@ -131,7 +131,7 @@ tools/gen_map.py --write            regenerate the code map after a rename.
 pyoneer_                            EVERY tmx custom property starts with this
 pyoneer_behaviors                   comma-separated token list, ON THE OBJECT
 pyoneer_param_<key>                 one behavior parameter, on the same object
-pyoneer_actor                       actors-table row id (nothing reads it yet)
+pyoneer_actor                       actors-table row id; READ, see below
 ```
 
 A minimal driven top-down body declares
@@ -317,9 +317,16 @@ Each address below is a tag, so it stays true when the code moves.
 - **No `needs_art` flag on the check roster.** `docs/ASSETS.md` names seven
   art-dependent checks measured against an older, smaller roster; nothing
   re-measures it.
-- **No genre-pack default behavior list.** Four documents name the slot
-  `layers[].object_classes[].behaviors`; `GenreLayer` has no such field and
-  only a check parses it.
+- **~~No genre-pack default behavior list~~ — paid off.** `GenreLayer` now
+  carries `object_classes`, both packs declare a real list for `GamePlayer` on
+  their entity layer, and `map.object.add` MATERIALISES it into
+  `pyoneer_behaviors` on the new object (`#TAG:behaviors_materialised_at_add`).
+  It is a starting value, not a fallback: the engine never reads a pack, an
+  author's own list wins outright — including an explicit empty one — and
+  nothing re-asserts the default afterwards. A pack that declares no
+  `object_classes` is unchanged; one that declares a token the registry does
+  not know now RAISES at pack load rather than poisoning every map made from
+  it. Measured: `.venv/Scripts/python.exe tools/check_editor.py`.
 - **The `transform` keyword is accepted and discarded**
   (`#TAG:GameEntitySimple.__init__`, which is where `GameEntity`'s own
   `transform=` argument ends up). Pass position via `moveto`.
@@ -335,9 +342,16 @@ Each address below is a tag, so it stays true when the code moves.
   definition-only — `USE` is emitted once, from a `TextBox` pressing Enter, and
   bound by nobody. **Do not add an event member before a listener exists**;
   `USE` is the standing proof of what that costs.
-- **No engine-side reader for `data/project/tables/`.** The behaviour-parameter
-  chain's step 2 (the actors row) can therefore never fire, and no `hp` column
-  reaches the runtime.
+- **~~No engine-side reader for `data/project/tables/`~~ — paid off.**
+  `#TAG:scripts/loaders/table_file.py` reads them; `#TAG:actor_row` turns an
+  object's `pyoneer_actor` into the row and both spawn routes pass it, so the
+  behaviour-parameter chain's step 2 fires and an `hp` column reaches the
+  runtime. `LayerRenderer.tables` is the one slot, assigned in `main.py`
+  beside `spawn_defaults` and read by the map spawn and `SceneManager.spawn`
+  alike. Missing stays free (no `tables/` directory, no `pyoneer_actor`, a row
+  omitting a column: all fall to the declared default); unreadable and
+  contradictory raise, and a `pyoneer_actor` naming an absent row raises
+  naming the object.
 - **~~Two documents still address code by line number~~ — paid off.** Both are
   converted: DIAGNOSE's four became `#TAG:` addresses, and NEXT's seven went
   with the `ce66ce5`-era ranked list into `docs/history/NEXT_ce66ce5.md`, where
@@ -395,6 +409,9 @@ probably renamed.
 #TAG:qt_takewidget_sequence :: old = self.takeWidget()
 #TAG:behaviors_read_at_spawn :: read_requests(obj.properties
 #TAG:behaviors_attached_at_construction :: self.behaviors.attach_all
+#TAG:behaviors_materialised_at_add :: if BEHAVIORS in properties
 #TAG:topdown_move :: name="topdown_move"
 #TAG:map.object.property.set :: "map.object.property.set"
+#TAG:actor_row :: return tables.row(ACTORS, wanted, blame)
+#TAG:resolve_params :: if actors_row is not None and param.key in actors_row
 ```

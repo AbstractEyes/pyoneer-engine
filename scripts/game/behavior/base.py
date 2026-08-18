@@ -109,9 +109,14 @@ ACTOR: str = PREFIX + "actor"
 
 Optional. Absent means "this object has no actor row", and every
 `source="actors"` parameter then falls to its declared default unless the
-object overrides it. NOTE that nothing in `scripts/` reads `data/project/`
-today -- there is no engine-side table reader -- so the row has to be handed
-in by whoever loaded it. This module never opens a file.
+object overrides it. Present and naming a row that does not exist RAISES,
+naming the object: a reference that resolved to nothing would leave every
+parameter quietly at its default and look exactly like one that worked.
+
+THIS MODULE NEVER OPENS A FILE, and that is unchanged. The reader is
+`scripts/loaders/table_file.py` and the row is handed in --
+`map_loader.spawn_objects` for an authored object, `SceneManager.spawn` for a
+runtime one, both through `table_file.actor_row`.
 """
 
 PARAM_PREFIX: str = PREFIX + "param_"

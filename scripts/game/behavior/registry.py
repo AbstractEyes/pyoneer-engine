@@ -19,11 +19,13 @@ and three of them cannot do the job:
                           same list -- which is the "player is a more
                           specific class" shape this design exists to end,
                           wearing a dict as a disguise
-  an actors-table column  differs per ROW, and no object -> row link exists;
-                          adding one is a per-object property, i.e. the tmx
-                          property in disguise. Also: nothing in `scripts/`
-                          opens `data/project/` at all, so the engine has no
-                          reader for it
+  an actors-table column  differs per ROW, and the object -> row link is
+                          `pyoneer_actor`, i.e. a per-object property -- the
+                          tmx property in disguise. (The engine does read
+                          `data/project/` now, via
+                          `scripts/loaders/table_file.py`; that supplies
+                          PARAMETERS per row, which is step 2 below, and is a
+                          different question from which behaviors compose.)
   a genre-pack default    `editor/genres/` is under `editor/`, and `scripts/`
                           may never import `editor/`. A default only the pack
                           knows is a default the engine cannot apply, so the
@@ -45,10 +47,13 @@ most-specific-first exactly like `resolve_depth`:
     2. the actors row's `air_control` column       this actor, everywhere
     3. `BehaviorParam.default`                     nobody said anything
 
-Step 2 needs a row, and THIS MODULE NEVER LOADS ONE. There is no engine-side
-reader for `data/project/` and writing one is a separate piece of work; the
-caller that has a row hands it in, and `actors_row=None` -- which is every
-caller today -- means step 2 is skipped and step 3 answers. A `required=True`
+Step 2 needs a row, and THIS MODULE NEVER LOADS ONE -- that has not changed
+and is the point: the caller that has a row hands it in. What has changed is
+that a caller now does. `scripts/loaders/table_file.py` reads
+`data/project/tables/*.json`, `actor_row` turns an object's `pyoneer_actor`
+into the row, and both spawn routes pass it as `actors_row`. `None` still
+means step 2 is skipped and step 3 answers, which is what an object naming no
+row resolves to -- every object on every map shipped today. A `required=True`
 parameter with nothing at either level raises, naming the object, the
 behavior and the key.
 """

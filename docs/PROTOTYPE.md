@@ -145,13 +145,17 @@ Everything else is thinking, which is where it belongs.
 
 ## Where the editor joins this
 
-Nowhere yet, and that is the honest answer. The loop above writes `.tmx` from
-Python because there is no path from a filled form to an authored map — the
-editor's genre packs declare a slot for default behavior lists
-(`layers[].object_classes[].behaviors`) and the editor is meant to
-MATERIALISE it into an object when the object is added, so the `.tmx` stays the
-whole truth and the engine never has to read a pack. Until it does, a demo's
-map source spells the behavior strings out.
+At the behavior list, now. The editor's genre packs declare default lists at
+`layers[].object_classes[].behaviors`, and `map.object.add` MATERIALISES the
+one for that layer and class into the object's `pyoneer_behaviors` as it is
+placed — so the `.tmx` stays the whole truth and the engine never has to read
+a pack. Placing a `GamePlayer` on a platformer map's entity layer now produces
+a driven body without anyone typing a token.
+
+It is a starting value and not a fallback: edit the list on the object and your
+edit stands, because nothing reads the pack again. The loop above still writes
+`.tmx` from Python — a filled form is not yet a map — and a demo's map source
+still spells its strings out, which is the remaining half.
 
 What the loop already gives the editor is the vocabulary: the form's rows are
 the editor's own nouns — a genre pack id, a layer, an object type, a behavior

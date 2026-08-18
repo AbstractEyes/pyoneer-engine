@@ -65,11 +65,13 @@ from PySide6.QtWidgets import (                                         # noqa: 
     QMessageBox,
 )
 
+from editor.core import genre as genre_module                          # noqa: E402
 from editor.core.autotile import TerrainSet                             # noqa: E402
 from editor.core.commands import Command                                # noqa: E402
 from editor.core.paint import Stamp, Tool, grid_lines                   # noqa: E402
 from editor.core.scope import Scope                                     # noqa: E402
 from editor.core.session import Session                                 # noqa: E402
+from scripts.game.behavior.base import BEHAVIORS                        # noqa: E402
 from editor.ui import ask as ask_module                                 # noqa: E402
 from editor.ui.actions_panel import NOT_WIRED                           # noqa: E402
 from editor.ui.main_window import EditorWindow                          # noqa: E402
@@ -550,6 +552,34 @@ try:
     objects = session.project.map("test").object_layer("entity").objects()
     expect("an object was placed", len(objects), 1)
     expect("with the chosen class", objects[0].type, "GamePlayer")
+
+    # A CLICK, not a Command written by the check: the whole point of putting
+    # materialisation in the verb rather than in the panel is that the author's
+    # real path gets it. And the property is invisible on a rectangle, so the
+    # status line is asserted too -- an authoring surface where something
+    # happens and nothing says so is the defect this suite is named after.
+    STARTS_AS = genre_module.load("topdown_rpg").object_class(
+        "entity", "GamePlayer").behaviors_text
+    expect("clicking an entity layer materialises the pack's behavior list",
+           objects[0].properties.as_dict().get(BEHAVIORS), STARTS_AS)
+    expect("and the status bar says so, since a property is invisible",
+           STARTS_AS in window.statusBar().currentMessage(), True)
+
+    # The other half, through the same click path: a class the pack does not
+    # name is placed with nothing, and the status line does not invent a list.
+    window.canvas.object_class = "GameEntity"
+    mouse(window, QEvent.Type.MouseButtonPress, (6, 6))
+    application.processEvents()
+    plain = session.project.map("test").object_layer("entity").objects()[-1]
+    expect("a class the pack does not name is placed with nothing",
+           plain.properties.as_dict(), {})
+    expect("and the status line does not claim a list it did not write",
+           window.statusBar().currentMessage(), "placed GameEntity")
+    window.undo()
+    application.processEvents()
+    objects = session.project.map("test").object_layer("entity").objects()
+    expect("undoing it leaves the first object alone", len(objects), 1)
+    window.canvas.object_class = "GamePlayer"
 
     window.selection.select(Scope.of(("map", "test"), ("layer", "entity"),
                                      ("object", str(objects[0].id))))

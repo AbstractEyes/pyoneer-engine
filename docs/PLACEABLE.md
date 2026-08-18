@@ -76,7 +76,7 @@ Aliases, which resolve to the canonical name above:
 |---|---|
 | `pyoneer_behaviors` | comma-separated behavior tokens, on the OBJECT |
 | `pyoneer_param_<key>` | one behavior parameter |
-| `pyoneer_actor` | actors-table row id (no engine reader yet) |
+| `pyoneer_actor` | actors-table row id, read from `data/project/tables/actors.json` |
 
 Every custom property starts `pyoneer_`. The prefix is not style:
 pytmx raises and makes the whole map unloadable if a property

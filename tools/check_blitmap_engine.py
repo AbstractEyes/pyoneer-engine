@@ -827,13 +827,17 @@ try:
     real_spawn_objects = map_loader.spawn_objects
 
     def dispatching_spawn_objects(source, registry=None, *, defaults=None,
-                                  layers=None):
+                                  layers=None, tables=None):
+        # `tables` is accepted and forwarded rather than dropped: the renderer
+        # passes it on every bind, and a stand-in that swallowed it would make
+        # this check the one place in the tree where an object's
+        # `pyoneer_actor` silently resolved to nothing.
         records = getattr(source, "object_records", None)
         if callable(records):
             return spawn_native_objects(source, registry, defaults=defaults,
                                         layers=layers)
         return real_spawn_objects(source, registry, defaults=defaults,
-                                  layers=layers)
+                                  layers=layers, tables=tables)
 
     def census_and_frame(source_map):
         """Bind a map, then render one frame. Returns (layer census, hash)."""

@@ -5,7 +5,7 @@
 
 > Which token means which behavior, and how a map declares a list of them.
 
-`scripts.game.behavior.registry` · 670 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.behavior.registry` · 675 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,29 +13,29 @@
 
 ## Module constants
 
-- `scripts/game/behavior/registry.py:69` `BEHAVIOR_REGISTRY` #TAG:BEHAVIOR_REGISTRY
+- `scripts/game/behavior/registry.py:74` `BEHAVIOR_REGISTRY` #TAG:BEHAVIOR_REGISTRY
 
 ## Functions
 
-- `scripts/game/behavior/registry.py:77` `register(spec: BehaviorSpec, registry: MutableMapping[str, BehaviorSpec] | None=None) -> BehaviorSpec` #TAG:registry.register
+- `scripts/game/behavior/registry.py:82` `register(spec: BehaviorSpec, registry: MutableMapping[str, BehaviorSpec] | None=None) -> BehaviorSpec` #TAG:registry.register
   - Bind one token to its spec.
-- `scripts/game/behavior/registry.py:102` `register_all(specs: Iterable[BehaviorSpec], registry: MutableMapping[str, BehaviorSpec] | None=None) -> None` #TAG:registry.register_all
+- `scripts/game/behavior/registry.py:107` `register_all(specs: Iterable[BehaviorSpec], registry: MutableMapping[str, BehaviorSpec] | None=None) -> None` #TAG:registry.register_all
   - Register a sequence of specs. Mirrors `spawn.register_all`.
-- `scripts/game/behavior/registry.py:109` `resolve(name: str, registry: Mapping[str, BehaviorSpec] | None=None) -> BehaviorSpec` #TAG:registry.resolve
+- `scripts/game/behavior/registry.py:114` `resolve(name: str, registry: Mapping[str, BehaviorSpec] | None=None) -> BehaviorSpec` #TAG:registry.resolve
   - The spec for `name`, or raise naming it and listing the whole registry.
-- `scripts/game/behavior/registry.py:140` `parse_list(value: Any) -> tuple[str, ...]` #TAG:parse_list
+- `scripts/game/behavior/registry.py:145` `parse_list(value: Any) -> tuple[str, ...]` #TAG:parse_list
   - Split an authored `pyoneer_behaviors` value into tokens. Never raises.
-- `scripts/game/behavior/registry.py:170` `format_list(names: Iterable[str]) -> str` #TAG:format_list
+- `scripts/game/behavior/registry.py:175` `format_list(names: Iterable[str]) -> str` #TAG:format_list
   - The canonical stored form of a token list. Strict: raises on nonsense.
-- `scripts/game/behavior/registry.py:192` `validate_list(value: Any, registry: Mapping[str, BehaviorSpec] | None=None, where: str='') -> tuple[str, ...]` #TAG:validate_list
+- `scripts/game/behavior/registry.py:197` `validate_list(value: Any, registry: Mapping[str, BehaviorSpec] | None=None, where: str='') -> tuple[str, ...]` #TAG:validate_list
   - Parse and judge a token list, returning it as authored.
-- `scripts/game/behavior/registry.py:225` `resolve_params(spec: BehaviorSpec, properties: Mapping[str, Any] | None=None, actors_row: Mapping[str, Any] | None=None, where: str='') -> dict[str, Any]` #TAG:resolve_params
+- `scripts/game/behavior/registry.py:230` `resolve_params(spec: BehaviorSpec, properties: Mapping[str, Any] | None=None, actors_row: Mapping[str, Any] | None=None, where: str='') -> dict[str, Any]` #TAG:resolve_params
   - The constructor keywords for one behavior on one object.
-- `scripts/game/behavior/registry.py:269` `read_requests(properties: Mapping[str, Any] | None=None, actors_row: Mapping[str, Any] | None=None, *, registry: Mapping[str, BehaviorSpec] | None=None, where: str='') -> tuple[BehaviorRequest, ...]` #TAG:read_requests
+- `scripts/game/behavior/registry.py:274` `read_requests(properties: Mapping[str, Any] | None=None, actors_row: Mapping[str, Any] | None=None, *, registry: Mapping[str, BehaviorSpec] | None=None, where: str='') -> tuple[BehaviorRequest, ...]` #TAG:read_requests
   - Everything one tmx object declares about its behaviors.
-- `scripts/game/behavior/registry.py:312` `build(requests: Sequence[BehaviorRequest]) -> list[EntityBehavior]` #TAG:build
+- `scripts/game/behavior/registry.py:317` `build(requests: Sequence[BehaviorRequest]) -> list[EntityBehavior]` #TAG:build
   - Construct one behavior per request. Nothing is attached.
-- `scripts/game/behavior/registry.py:526` `_state_axes() -> list[str]` #TAG:_state_axes
+- `scripts/game/behavior/registry.py:531` `_state_axes() -> list[str]` #TAG:_state_axes
   - The `state.<axis>` vocabulary the writes column above is spelled in.
-- `scripts/game/behavior/registry.py:557` `describe_all(registry: Mapping[str, BehaviorSpec] | None=None) -> str` #TAG:registry.describe_all
+- `scripts/game/behavior/registry.py:562` `describe_all(registry: Mapping[str, BehaviorSpec] | None=None) -> str` #TAG:registry.describe_all
   - Render BEHAVIORS.md from the same table the engine binds from.

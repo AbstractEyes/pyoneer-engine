@@ -20,6 +20,7 @@ from scripts.core.scene.scene_manager import SceneManager
 from scripts.core.component import GameComponent
 from scripts.core.ui.widget.containers.window import GameWindow
 from scripts.game.behavior import format_list
+from scripts.loaders.table_file import load_tables
 from scripts.game.demo_window import DemoWindow
 
 #from widget.factory.component_factory import ComponentFactory
@@ -110,6 +111,12 @@ class MainGame:
         # Before the map, not after: binding the map is what spawns the
         # objects on its object layers, and they are constructed with these.
         self.renderer.spawn_defaults = self.spawn_arguments()
+        # Same ordering rule, same reason: `pyoneer_actor` on an authored
+        # object is resolved during the map bind, so the tables have to be in
+        # the renderer's hand before it. `load_tables()` reads
+        # data/project/tables/ and returns an EMPTY set when the directory is
+        # absent, so a clone with no Database boots identically.
+        self.renderer.tables = load_tables()
         self.scene.bind("MAP", game_map)
         test_objects = self.load_test_objects()
         for obj in test_objects:

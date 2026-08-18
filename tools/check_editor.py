@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import _bootstrap  # noqa: F401
 
+import atexit
 import json
 import os
 import shutil
@@ -41,6 +42,8 @@ from editor.core.request import Manifest, Note, parse_response, write_bundle
 from editor.core.scope import Scope, code_locations
 from editor.core.session import Session
 from scripts.core.collision_runtime import companion_subcell
+from scripts.game.behavior.base import BEHAVIORS
+from scripts.game.behavior.registry import BEHAVIOR_REGISTRY, validate_list
 
 REPO = _bootstrap.REPO_ROOT
 failures: list[str] = []
@@ -186,10 +189,157 @@ for pack_id in packs:
     expect(f"{pack_id}: declares an actors table",
            pack.table("actors") is not None, True)
 
-from editor.core.errors import PyoneerGenreMissingError
+from editor.core.errors import PyoneerGenreError, PyoneerGenreMissingError
 
 expect_raises("an unknown genre fails loudly", PyoneerGenreMissingError,
               lambda: genre_module.load("no_such_genre"))
+
+# --------------------------------------------------------------------------
+print()
+print("default behavior lists: absent is fine, present and wrong is fatal")
+# --------------------------------------------------------------------------
+# `layers[].object_classes[].behaviors` is where a pack says what a newly
+# placed object DOES. Everything below runs against packs written into a temp
+# directory rather than against `editor/genres/` -- law 4: a check asserts
+# what the CODE does, and the shipped packs are content someone may repaint.
+# The one exception is the block immediately below, which is deliberately a
+# claim about the shipped packs: a token they name that the registry does not
+# know would be written into every object ever placed from them.
+for pack_id in packs:
+    pack = genre_module.load(pack_id)
+    declared = pack.object_class("entity", "GamePlayer")
+    expect(f"{pack_id}: says what a placed GamePlayer starts as",
+           bool(declared and declared.behaviors), True)
+    tokens = declared.behaviors if declared else ()
+    expect(f"{pack_id}: every token it names is registered",
+           [t for t in tokens if t not in BEHAVIOR_REGISTRY], [])
+    # The half `validate_list` cannot see. Genre gating is REPORTED by the
+    # behavior panel and never enforced by the loader, so a pack shipping the
+    # other genre's movement token would load, materialise, attach, and simply
+    # not move -- the silent shape this repo keeps paying for.
+    expect(f"{pack_id}: and no token is gated to a DIFFERENT genre",
+           [t for t in tokens if BEHAVIOR_REGISTRY[t].genres
+            and pack_id not in BEHAVIOR_REGISTRY[t].genres], [])
+
+GENRE_FIXTURES = tempfile.mkdtemp(prefix="pyoneer_genre_fixture_")
+atexit.register(shutil.rmtree, GENRE_FIXTURES, ignore_errors=True)
+_fixture_serial = 0
+
+
+def fixture_pack(*layers):
+    """Write a throwaway pack; return a thunk that LOADS it.
+
+    A thunk rather than a loaded pack, because half of what is asserted here
+    is that loading REFUSES -- and a helper that loaded eagerly could only
+    ever exercise the half that succeeds, which is the exact one-sided shape
+    law 5 is about.
+    """
+    global _fixture_serial
+    _fixture_serial += 1
+    identifier = f"fixture{_fixture_serial}"
+    root = os.path.join(GENRE_FIXTURES, identifier)
+    os.makedirs(root)
+    with open(os.path.join(root, "genre.json"), "w", encoding="utf-8") as handle:
+        json.dump({"id": identifier, "title": "Fixture",
+                   "layers": list(layers)}, handle)
+    return lambda: genre_module.load(identifier, GENRE_FIXTURES)
+
+
+def entity_layer(**extra):
+    layer = {"name": "entity", "kind": "object", "object_types": ["GamePlayer"]}
+    layer.update(extra)
+    return layer
+
+
+DRIVEN = ["player_input", "topdown_move", "animation_drive"]
+
+expect("a pack that declares NO object_classes still loads",
+       fixture_pack(entity_layer())().layer("entity").object_types,
+       ("GamePlayer",))
+expect("...and answers nothing for every class, which is today's behaviour",
+       fixture_pack(entity_layer())().object_class("entity", "GamePlayer"), None)
+
+_declared = fixture_pack(entity_layer(object_classes=[
+    {"type": "GamePlayer", "behaviors": DRIVEN}]))()
+expect("a declared list survives load in the authored order",
+       _declared.object_class("entity", "GamePlayer").behaviors, tuple(DRIVEN))
+expect("...and its tmx form comes from the engine's own formatter",
+       _declared.object_class("entity", "GamePlayer").behaviors_text,
+       "player_input,topdown_move,animation_drive")
+expect("a class the pack does not name still gets nothing",
+       _declared.object_class("entity", "GameEntity"), None)
+expect("a LAYER the pack does not name gets nothing",
+       _declared.object_class("Floor", "GamePlayer"), None)
+
+expect_raises_naming(
+    "a token the registry does not know is refused at pack load",
+    PyoneerGenreError,
+    fixture_pack(entity_layer(object_classes=[
+        {"type": "GamePlayer", "behaviors": ["ghost_move"]}])),
+    "ghost_move", "GamePlayer", "raise at load")
+expect_raises_naming(
+    "the same token twice is refused",
+    PyoneerGenreError,
+    fixture_pack(entity_layer(object_classes=[
+        {"type": "GamePlayer", "behaviors": ["topdown_move", "topdown_move"]}])),
+    "topdown_move", "twice")
+expect_raises_naming(
+    "two tokens that declare a conflict are refused",
+    PyoneerGenreError,
+    fixture_pack(entity_layer(object_classes=[
+        {"type": "GamePlayer",
+         "behaviors": ["topdown_move", "platformer_move"]}])),
+    "topdown_move", "platformer_move", "conflict")
+expect_raises_naming(
+    "a default for a class the same layer forbids is refused",
+    PyoneerGenreError,
+    fixture_pack(entity_layer(object_classes=[
+        {"type": "GameScene", "behaviors": []}])),
+    "GameScene", "object_types")
+expect_raises_naming(
+    "the same class declared twice is refused",
+    PyoneerGenreError,
+    fixture_pack(entity_layer(object_classes=[
+        {"type": "GamePlayer", "behaviors": []},
+        {"type": "GamePlayer", "behaviors": DRIVEN}])),
+    "GamePlayer", "twice")
+expect_raises_naming(
+    "object_classes on a TILE layer is refused",
+    PyoneerGenreError,
+    fixture_pack({"name": "Floor", "kind": "tile", "object_classes": [
+        {"type": "GamePlayer", "behaviors": DRIVEN}]}),
+    "Floor", "tile layer")
+expect_raises_naming(
+    "an entry that is not an object is refused",
+    PyoneerGenreError,
+    fixture_pack(entity_layer(object_classes=["GamePlayer"])),
+    "entity", "'type'")
+expect_raises_naming(
+    "an entry with no type is refused",
+    PyoneerGenreError,
+    fixture_pack(entity_layer(object_classes=[{"behaviors": DRIVEN}])),
+    "entity", "'type'")
+expect_raises_naming(
+    "a behaviors value that is not a list is refused",
+    PyoneerGenreError,
+    fixture_pack(entity_layer(object_classes=[
+        {"type": "GamePlayer", "behaviors": {"a": 1}}])),
+    "GamePlayer", "behaviors", "dict")
+expect_raises_naming(
+    "object_classes that is not a list is refused",
+    PyoneerGenreError,
+    fixture_pack(entity_layer(object_classes={"type": "GamePlayer"})),
+    "entity", "must be a list")
+expect("an EMPTY object_classes is silence, not a contradiction",
+       fixture_pack(entity_layer(object_classes=[]))()
+       .object_class("entity", "GamePlayer"), None)
+expect("...even on a TILE layer, where a non-empty one is refused above",
+       fixture_pack({"name": "Floor", "kind": "tile", "object_classes": []})()
+       .layer("Floor").object_classes, ())
+expect("a class declared with an EMPTY list is a real answer, not silence",
+       fixture_pack(entity_layer(object_classes=[
+           {"type": "GamePlayer", "behaviors": []}]))()
+       .object_class("entity", "GamePlayer").behaviors, ())
 
 # --------------------------------------------------------------------------
 print()
@@ -629,6 +779,105 @@ try:
     expect("undo removed it",
            len(session.project.map("test").object_layer("entity").objects()), 0)
     expect("and the objectgroup went back to self-closing (byte-identical)",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    # ---------------------------------------------------------------
+    print()
+    print("the genre default is MATERIALISED onto the object at add time")
+    # ---------------------------------------------------------------
+    # `session` is a topdown_rpg project, and that pack declares a starting
+    # list for GamePlayer on `entity`. What is asserted is the PRECEDENCE,
+    # both halves of it: the default applies when the caller said nothing,
+    # and it does not apply when the caller said anything at all -- including
+    # "nothing", spelled out. A default that overrode an explicit empty list
+    # would be a policy rather than a starting value, which is the one thing
+    # this design is not.
+    STARTS_AS = genre_module.load("topdown_rpg").object_class(
+        "entity", "GamePlayer").behaviors_text
+
+    session.run(Command("map.object.add", ENTITY,
+                        {"type": "GamePlayer", "x": 16.0, "y": 16.0}))
+    born = session.project.map("test").object_layer("entity").objects()[0]
+    # `.as_dict().get` rather than `[...]`, so a version that materialises
+    # NOTHING reports a readable got/want instead of raising out of the check
+    # -- an assertion that crashes says less than one that names the value.
+    expect("a placed GamePlayer is born carrying the pack's list",
+           born.properties.as_dict().get(BEHAVIORS), STARTS_AS)
+    # Not "a string was written" -- the engine's own reader has to accept it,
+    # or the editor has just authored a map that raises at load.
+    expect("...and the ENGINE's reader accepts what the editor wrote",
+           validate_list(born.properties[BEHAVIORS]),
+           tuple(STARTS_AS.split(",")))
+    session.undo()
+    expect("undo takes the materialised property away with the object",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    session.run(Command("map.object.add", ENTITY,
+                        {"type": "GameEntity", "x": 16.0, "y": 16.0}))
+    plain = session.project.map("test").object_layer("entity").objects()[0]
+    expect("a class the pack does not name is born with NOTHING",
+           plain.properties.as_dict(), {})
+    session.undo()
+
+    session.run(Command("map.object.add", ENTITY,
+                        {"type": "GamePlayer", "x": 16.0, "y": 16.0,
+                         "properties": {BEHAVIORS: "lifecycle_mark"}}))
+    mine = session.project.map("test").object_layer("entity").objects()[0]
+    expect("a list the CALLER supplied wins over the pack's",
+           mine.properties[BEHAVIORS], "lifecycle_mark")
+    session.undo()
+
+    session.run(Command("map.object.add", ENTITY,
+                        {"type": "GamePlayer", "x": 16.0, "y": 16.0,
+                         "properties": {BEHAVIORS: ""}}))
+    empty = session.project.map("test").object_layer("entity").objects()[0]
+    expect("an EXPLICITLY empty list wins too -- 'this one does nothing' "
+           "is a thing an author may say",
+           empty.properties[BEHAVIORS], "")
+    session.undo()
+    expect("all four shapes unwound byte-identically",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    print()
+    print("...and it is a STARTING VALUE, never a policy that re-asserts")
+    session.run(Command("map.object.add", ENTITY,
+                        {"type": "GamePlayer", "x": 16.0, "y": 16.0}))
+    first = session.project.map("test").object_layer("entity").objects()[0]
+    target = ENTITY.child("object", str(first.id))
+
+    def behaviors_of(object_id):
+        return (session.project.map("test").object_layer("entity")
+                .find(object_id).properties.as_dict().get(BEHAVIORS))
+
+    session.run(Command("map.object.property.set", target,
+                        {"key": BEHAVIORS, "value": "topdown_move"}))
+    expect("the author narrows the list the editor gave them",
+           behaviors_of(first.id), "topdown_move")
+    session.run(Command("map.object.add", ENTITY,
+                        {"type": "GamePlayer", "x": 48.0, "y": 16.0}))
+    expect("adding a SECOND object does not re-assert the default on the first",
+           behaviors_of(first.id), "topdown_move")
+    second = session.project.map("test").object_layer("entity").objects()[1]
+    expect("...while the second one is born with the default, as it should be",
+           behaviors_of(second.id), STARTS_AS)
+    expect("two objects of one class on one map genuinely differ",
+           behaviors_of(first.id) != behaviors_of(second.id), True)
+    session.run(Command("map.object.move", target, {"x": 80.0, "y": 16.0}))
+    expect("moving the first does not re-assert it either",
+           behaviors_of(first.id), "topdown_move")
+    expect("and nothing in the pack's rules argues with the author's list",
+           [str(p) for p in session.problems() if BEHAVIORS in p.message], [])
+    session.undo()                       # the move
+    session.undo()                       # the second add
+    session.undo()                       # the author's property.set
+    expect("undoing the author's edit restores the materialised default",
+           behaviors_of(first.id), STARTS_AS)
+    session.redo()
+    expect("and redo puts the author's list back, not the pack's",
+           behaviors_of(first.id), "topdown_move")
+    session.undo()
+    session.undo()                       # the first add
+    expect("the whole sequence unwound byte-identically",
            session.project.map("test").to_bytes() == ORIGINAL, True)
 
     print()

@@ -1,6 +1,6 @@
 """Verify that the engine reads authored masks and refuses a blocked step.
 
-Nine claims. Every one of them is something the code is otherwise free to
+Ten claims. Every one of them is something the code is otherwise free to
 break with no visible symptom until a player walks through a wall in a room
 nobody tests twice:
 
@@ -13,6 +13,25 @@ nobody tests twice:
     an entity with no field moves by the arithmetic it moved by before
     editor/core/collision.py is still this module, and not a copy of it
     a companion may be four times the map, and an old one gates as it did
+    a mask baked into a TILE gates wherever it is stamped, and loses to paint
+
+WHAT SECTION 10 IS FOR
+----------------------
+Level one -- the mask a tileset carries for each of its own tiles -- is the
+weakest of the three levels and the only one an author never repeats. It is
+also a PRECEDENCE change, and precedence is where this repository's assertions
+have historically been half-written: proved to apply, never proved to be
+overridden. So section 10 states every claim twice, in opposite directions,
+and the mutation battery behind it confirms that all eighteen ways of getting
+it wrong turn this file red -- including the four that only one direction
+would have caught (a merge instead of a replacement, a default that outranks
+the paint, a parallaxed layer joining the stack, and the sidecar being
+addressed by its own firstgid rather than by the map's).
+
+Every fixture is written into a temp directory of its own, sidecar included,
+for the reason THE FIXTURE IS THIS FILE'S OWN gives below -- and one extra:
+half of these fixtures exist in order to be missing a file, and a shared
+directory would let one of them fix another.
 
 WHAT SECTION 9 IS FOR
 ---------------------
@@ -105,6 +124,7 @@ from scripts.core.collision_runtime import (
     STAR,
     allowed_distance,
     collision_first_gid,
+    collision_layers,
     companion_pairs,
     companion_reader,
     companion_subcell,
@@ -122,6 +142,7 @@ from scripts.core.collision_runtime import (
     parsed_layer,
     resolve,
     split_gid,
+    tileset_defaults,
     transform_mask,
 )
 from scripts.core.depth import MAP_DEPTH, resolve_layer_depth
@@ -878,7 +899,13 @@ if editor_collision is not None:
         "CollisionField", "CollisionLayer", "Resolution", "OpinionReader",
         "STEP", "OPPOSITE", "abstains", "companion_reader",
         "describe_opinion", "gid_to_opinion", "is_opinion", "join_gid",
-        "opinion_to_gid", "resolve", "split_gid", "transform_mask")
+        "opinion_to_gid", "resolve", "split_gid", "transform_mask",
+        # Level one and the .blitmask format, which lived on the editor side
+        # until `field_from_map` grew a reader for them. They are the newest
+        # and therefore the likeliest to be pasted back.
+        "Blitmask", "PyoneerBlitmaskError", "TilesetDefaults",
+        "opinion_to_token", "token_to_opinion", "tileset_defaults",
+        "tileset_reader")
     expect("collision.py's model is this module's own objects",
            [name for name in shared_in_collision
             if getattr(editor_collision, name) is not getattr(runtime, name)],
@@ -915,7 +942,12 @@ if editor_collision is not None:
                   "gid_to_mask", "opinion_to_gid", "gid_to_opinion",
                   "split_gid", "join_gid", "is_opinion", "describe_opinion",
                   "abstains", "companion_reader", "transform_mask",
-                  "resolve", "Resolution", "CollisionLayer", "CollisionField"}
+                  "resolve", "Resolution", "CollisionLayer", "CollisionField",
+                  "MAGIC", "NO_DATA_TOKEN", "STAR_TOKEN", "TOKENS",
+                  "OPINIONS", "DEFAULTS_PROPERTY", "Blitmask",
+                  "PyoneerBlitmaskError", "TilesetDefaults",
+                  "opinion_to_token", "token_to_opinion", "tileset_defaults",
+                  "tileset_reader"}
     expect("layers.py defines none of the shared vocabulary itself",
            sorted(module_level_bindings(editor_layers) & vocabulary), [])
     expect("nor does collision.py",
@@ -1236,6 +1268,457 @@ expect("the second layer cell starts where the first one ends",
 expect_raises("a scale below one is refused", ValueError,
               lambda: companion_reader(cells, MASK_FIRST_GID, scale=0),
               "1 or more")
+
+
+# ---------------------------------------------------------------------------
+# 10. Level one: the mask baked into the TILE
+# ---------------------------------------------------------------------------
+# The claim: a mask authored once per tile, in a `.blitmask` beside the map
+# and named by the tileset's own `pyoneer_collision`, gates a body wherever
+# that tile is stamped -- UNDER anything a companion layer says about the
+# same cell.
+#
+# Precedence is the whole of it, and precedence is the shape this repository
+# gets wrong: a rule proved to APPLY and never proved to be OVERRIDDEN passes
+# just as happily when the levels are merged, or reordered, or when the
+# weakest one quietly wins. So every claim below is made in both directions:
+#
+#   a default gates where nothing was painted   AND  a paint beats a default
+#   a paint beats a default                     AND  it REPLACES rather than
+#                                                    merging with it
+#   a star suppresses a default                 AND  the layer BELOW is asked
+#   a map with no mask file is unchanged        AND  the same map with one is
+#                                                    measurably different
+#   an unpaired layer joins the stack           AND  only when defaults exist
+#   a parallaxed layer is left out              AND  a paired one never is
+print()
+print("level one: a mask baked into the tile")
+
+# `.` is NO_DATA, so tile 0 says nothing at all -- which is what makes the
+# "unauthored is open" cells below a real answer rather than an absence of
+# tiles. Tile 1 blocks everything, tile 2 blocks down, tile 3 blocks right
+# (chosen so a horizontal flip has something to mirror).
+NL_ = chr(10)
+PROBE_MASK = "blitmask 1\nsize 2 2\nname probe\n.f\n14\n"
+# The second sheet exists to make a firstgid that is NOT 1 load-bearing:
+# its tile 1 is gid 23, and a reader that fell back to the file's own
+# `firstgid` metadata (1) would look up local id 22, find nothing, and
+# answer silence for a cell the author plainly stamped.
+CLUTTER_MASK = "blitmask 1\nsize 2 2\nname clutter\n.2\n..\n"
+
+FLIPPED_RIGHT = 4 | FLIP_HORIZONTAL      # tile 3, mirrored: blocks LEFT
+
+DEFAULTS = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" \
+renderorder="right-down" width="4" height="3" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="9" nextobjectid="1">
+ <tileset firstgid="1" name="probe" tilewidth="16" tileheight="16" tilecount="4" columns="2">
+  <properties>
+   <property name="pyoneer_collision" value="probe.blitmask"/>
+  </properties>
+  <image source="no-such-art.png" width="32" height="32"/>
+ </tileset>
+ <tileset firstgid="5" name="collision" tilewidth="16" tileheight="16" tilecount="17" columns="17">
+  <image source="no-such-masks.png" width="272" height="16"/>
+ </tileset>
+ <tileset firstgid="22" name="clutter" tilewidth="16" tileheight="16" tilecount="4" columns="2">
+  <properties>
+   <property name="pyoneer_collision" value="clutter.blitmask"/>
+  </properties>
+  <image source="no-such-clutter.png" width="32" height="32"/>
+ </tileset>
+ <layer id="1" name="Foreground" width="4" height="3">
+  <data encoding="csv">
+0,0,0,0,
+0,0,0,0,
+2,2,0,0
+</data>
+ </layer>
+ <layer id="2" name="ForegroundCollision" width="4" height="3">
+  <data encoding="csv">
+0,0,0,0,
+0,0,0,0,
+0,21,0,0
+</data>
+ </layer>
+ <layer id="3" name="Floor" width="4" height="3">
+  <properties>
+   <property name="pyoneer_passability" value="FloorMasks"/>
+  </properties>
+  <data encoding="csv">
+1,2,3,2147483652,
+2,2,2,2,
+1,3,1,1
+</data>
+ </layer>
+ <layer id="4" name="FloorMasks" width="4" height="3">
+  <data encoding="csv">
+0,0,0,0,
+0,5,6,21,
+0,0,0,0
+</data>
+ </layer>
+ <layer id="6" name="GroundClutter" width="4" height="3">
+  <data encoding="csv">
+0,0,0,0,
+0,0,0,0,
+0,0,23,0
+</data>
+ </layer>
+ <layer id="5" name="Paralax" width="4" height="3">
+  <properties>
+   <property name="pyoneer_parallax_x" type="float" value="1.4"/>
+  </properties>
+  <data encoding="csv">
+0,0,0,0,
+0,0,0,0,
+0,0,0,2
+</data>
+ </layer>
+</map>
+"""
+
+# The SAME map with the one property removed. Everything else -- every layer,
+# every gid, the mask file still sitting on disk beside it -- is identical,
+# so any difference between the two fields is this feature and nothing else.
+NO_DEFAULTS = DEFAULTS
+for _sheet in ("probe.blitmask", "clutter.blitmask"):
+    NO_DEFAULTS = NO_DEFAULTS.replace(
+        "  <properties>" + NL_ + '   <property name="pyoneer_collision" '
+        + 'value="%s"/>' % _sheet + NL_ + "  </properties>" + NL_, "")
+assert NO_DEFAULTS != DEFAULTS and "pyoneer_collision" not in NO_DEFAULTS
+
+# Paralax at 1.0 is no longer parallaxed, so it is an ordinary world-
+# coordinate layer and joins the stack with nothing declared on it at all.
+WORLD_PARALLAX = DEFAULTS.replace('value="1.4"', 'value="1.0"')
+# ...and this one stays parallaxed but DECLARES a companion, which is the
+# author saying "collide against this layer" out loud. A declaration is never
+# filtered, whatever the layer's motion.
+DECLARED_PARALLAX = DEFAULTS.replace(
+    '   <property name="pyoneer_parallax_x" type="float" value="1.4"/>\n',
+    '   <property name="pyoneer_parallax_x" type="float" value="1.4"/>\n'
+    '   <property name="pyoneer_passability" value="ParalaxMasks"/>\n'
+).replace(' </map>', ' </map>').replace(
+    '</map>',
+    ' <layer id="6" name="ParalaxMasks" width="4" height="3">\n'
+    '  <data encoding="csv">\n0,0,0,0,\n0,0,0,0,\n0,0,0,0\n</data>\n'
+    ' </layer>\n</map>')
+
+level_one_scratch = tempfile.mkdtemp(prefix="pyoneer-defaults-")
+
+
+def write_level_one(name, text, *, mask=PROBE_MASK, mask_name="probe.blitmask"):
+    """One .tmx plus the sidecar it names, in their own directory.
+
+    A directory each, because half of these fixtures exist to be missing a
+    file and the other half must not be affected by that.
+    """
+    room = os.path.join(level_one_scratch, name)
+    os.makedirs(room, exist_ok=True)
+    map_path = os.path.join(room, "map.tmx")
+    with open(map_path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+    if mask is not None:
+        with open(os.path.join(room, mask_name), "w",
+                  encoding="utf-8", newline="") as handle:
+            handle.write(mask)
+    with open(os.path.join(room, "clutter.blitmask"), "w",
+              encoding="utf-8", newline="") as handle:
+        handle.write(CLUTTER_MASK)
+    return map_path
+
+
+DEFAULTS_PATH = write_level_one("with", DEFAULTS)
+NO_DEFAULTS_PATH = write_level_one("without", NO_DEFAULTS)
+
+# ---- the sidecar is found, read, and addressed by gid --------------------
+table = tileset_defaults(MapDocument.load(DEFAULTS_PATH))
+expect("every tileset that names a sidecar gets one entry, in map order",
+       [(d.name, d.first_gid, d.columns, d.rows) for d in table],
+       [("probe", 1, 2, 2), ("clutter", 22, 2, 2)])
+# The second sheet is the one that makes the FIRSTGID load-bearing. Its
+# file says `firstgid 1` nowhere, and the map's own 22 is what addresses
+# it; a reader taking the number from the sidecar instead would read gid
+# 23 as local id 22, find nothing, and answer silence.
+expect("a sidecar is addressed by the MAP's firstgid, not by its own",
+       [table[1].opinion_for_gid(gid) for gid in (22, 23, 24)],
+       [NO_DATA, BLOCK_LEFT, NO_DATA])
+expect("...and the two sheets do not answer for each other" + "'" + "s gids",
+       (table[0].opinion_for_gid(23), table[1].opinion_for_gid(2)),
+       (NO_DATA, NO_DATA))
+expect("a tileset that names nothing contributes nothing",
+       tileset_defaults(MapDocument.load(NO_DEFAULTS_PATH)), [])
+expect("a tile's mask is addressed by its gid, not by its index",
+       [table[0].opinion_for_gid(gid) for gid in (1, 2, 3, 4)],
+       [NO_DATA, BLOCK_ALL, BLOCK_DOWN, BLOCK_RIGHT])
+expect("a gid outside the tileset is silence, not open",
+       table[0].opinion_for_gid(5), NO_DATA)
+# The flip pair. A tileset default is read off the ART layer, and art is
+# flipped constantly -- a mirrored wall that blocks from the side it is not
+# drawn on is the bug that only shows on the mirrored half of a room.
+expect("an unflipped tile blocks the way it was authored",
+       table[0].opinion_for_gid(4), BLOCK_RIGHT)
+expect("and the same tile mirrored blocks from the other side",
+       table[0].opinion_for_gid(FLIPPED_RIGHT), BLOCK_LEFT)
+
+# ---- the baked field -----------------------------------------------------
+level_one_field = field_from_map(DEFAULTS_PATH)
+plain_field = field_from_map(NO_DEFAULTS_PATH)
+
+expect("the field is still the map's size; level one adds no resolution",
+       (level_one_field.width, level_one_field.height,
+        level_one_field.tile_width, level_one_field.tile_height),
+       (4, 3, 16, 16))
+
+# THE HEADLINE. Floor (1, 0) holds tile 1, whose tileset mask is BLOCK_ALL,
+# and FloorMasks is EMPTY there -- nobody painted a companion cell.
+expect("a tile default gates a cell nobody painted",
+       level_one_field.mask_at(1, 0), BLOCK_ALL)
+expect("...and the same cell of the same map without the sidecar is open",
+       plain_field.mask_at(1, 0), PASS_ALL)
+expect("a partly-blocking tile default keeps its own bits",
+       level_one_field.mask_at(2, 0), BLOCK_DOWN)
+expect("a flipped tile's default arrives mirrored in the field",
+       level_one_field.mask_at(3, 0), BLOCK_LEFT)
+expect("a tile whose mask is a dot still says nothing",
+       level_one_field.mask_at(0, 0), PASS_ALL)
+
+# THE OTHER HALF, and the one a merge would pass. Row 1 is tile 1 all the way
+# across, so every cell in it has a BLOCK_ALL default underneath.
+expect("row 1 really is defaulted to blocked before the paint lands",
+       (level_one_field.mask_at(0, 1), plain_field.mask_at(0, 1)),
+       (BLOCK_ALL, PASS_ALL))
+expect("a painted OPEN cell beats the tile default rather than losing to it",
+       level_one_field.mask_at(1, 1), PASS_ALL)
+expect("a painted PARTIAL cell REPLACES the default, it does not merge",
+       level_one_field.mask_at(2, 1), BLOCK_DOWN)
+# The merge would be BLOCK_ALL | BLOCK_DOWN == BLOCK_ALL, which is also what
+# no override at all gives. Saying it as its own assertion means the label
+# names the failure rather than the value.
+expect("...so the merged answer is exactly what did NOT happen",
+       level_one_field.mask_at(2, 1) == (BLOCK_ALL | BLOCK_DOWN), False)
+
+# A star is an authored abstention. Over a tileset default it SUPPRESSES it
+# -- which NO_DATA cannot do -- and hands the question to the layer below.
+expect("a star painted over a default suppresses it",
+       level_one_field.mask_at(3, 1), PASS_ALL)
+expect("and it hands the cell to the layer BELOW, whose default decides",
+       level_one_field.mask_at(1, 2), BLOCK_DOWN)
+expect("...which is not what the starred layer's own default said",
+       table[0].opinion_for_gid(2), BLOCK_ALL)
+expect("the topmost layer's default wins over a lower layer's",
+       level_one_field.mask_at(0, 2), BLOCK_ALL)
+
+# The whole field, as bytes. One line that fails if any cell above moved, and
+# the pair below is the migration guarantee: a map with no sidecar bakes what
+# it baked before level one existed, to the bit.
+expect("the whole field is what the three levels say it is",
+       list(level_one_field.masks()),
+       [0, 15, 1, 2,
+        15, 0, 1, 0,
+        15, 1, 2, 0])
+expect("a map with no sidecar bakes exactly the companion-only field",
+       list(plain_field.masks()),
+       [0, 0, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 0])
+expect("...and the two are really different, so the line above is not vacuous",
+       level_one_field == plain_field, False)
+
+# ---- which layers level one reaches -------------------------------------
+# GroundClutter declares nothing at all: no companion, no passability, no
+# property of any kind. It holds one tile from the SECOND sheet, and that is
+# the entire authoring step this feature exists to reduce the job to.
+expect("a layer that declares nothing gates through its tiles alone",
+       (level_one_field.mask_at(2, 2), plain_field.mask_at(2, 2)),
+       (BLOCK_LEFT, PASS_ALL))
+expect("...and it is really unpaired, so nothing but the tileset put it there",
+       [name for name, _c in companion_pairs(MapDocument.load(DEFAULTS_PATH))],
+       ["Foreground", "Floor"])
+# Paralax draws at 1.4x the camera, so its cell (3, 2) is not over the map's
+# cell (3, 2). It holds a BLOCK_ALL tile there and must not gate.
+expect("a parallaxed layer's tiles do not gate the world",
+       level_one_field.mask_at(3, 2), PASS_ALL)
+world_field = field_from_map(write_level_one("world", WORLD_PARALLAX))
+expect("the same layer at parallax 1.0 joins with nothing declared on it",
+       world_field.mask_at(3, 2), BLOCK_ALL)
+declared_field = field_from_map(write_level_one("declared", DECLARED_PARALLAX))
+expect("and a parallaxed layer that DECLARES a companion is never filtered",
+       declared_field.mask_at(3, 2), BLOCK_ALL)
+# The guard that keeps every existing map on its old bytes: an unpaired layer
+# joins the stack only when there are defaults for it to carry.
+expect("an unpaired layer joins the stack only when defaults exist",
+       ([layer.name for layer in
+         collision_layers(MapDocument.load(write_level_one("world2",
+                                                           WORLD_PARALLAX)))],
+        [layer.name for layer in
+         collision_layers(MapDocument.load(NO_DEFAULTS_PATH))]),
+       (["Foreground", "GroundClutter", "Floor", "Paralax"],
+        ["Foreground", "Floor"]))
+
+# ---- the gate, from a body's point of view -------------------------------
+# A field is only worth baking if something refuses a step because of it.
+expect_close("a body is stopped by a tile default it never painted",
+             allowed_distance(level_one_field, 8.0, 8.0, BLOCK_RIGHT, 16.0),
+             8.0 - EDGE_INSET)
+expect("...and walks the same step freely without the sidecar",
+       allowed_distance(plain_field, 8.0, 8.0, BLOCK_RIGHT, 16.0), 16.0)
+walker = probe(8.0, 8.0, field=level_one_field, speed=64)
+walker.move_direction(1.0, "right")
+expect("and the entity path clamps against it too, not just the gate",
+       walker.transform.position.x < 16.0, True)
+
+# ---- level one under a 4x companion --------------------------------------
+# An art layer has no sub-cells: it is drawn, one tile per map cell. So its
+# default has to cover the whole map tile in a field baked four times finer,
+# and a companion sub-cell inside that tile still has to beat it.
+SUBCELL_DEFAULTS = DEFAULTS.replace(
+    ' <layer id="4" name="FloorMasks" width="4" height="3">\n'
+    '  <data encoding="csv">\n0,0,0,0,\n0,5,6,21,\n0,0,0,0\n</data>\n'
+    ' </layer>\n',
+    ' <layer id="4" name="FloorMasks" width="16" height="12">\n'
+    '  <properties>\n   <property name="pyoneer_subcell" type="int" value="4"/>\n'
+    '  </properties>\n  <data encoding="csv">\n'
+    + ",\n".join(",".join("5" if (x, y) == (6, 2) else "0"
+                          for x in range(16)) for y in range(12))
+    + "\n</data>\n </layer>\n")
+assert 'width="16" height="12"' in SUBCELL_DEFAULTS
+subcell_field = field_from_map(write_level_one("subcell", SUBCELL_DEFAULTS))
+expect("a 4x companion bakes a 4x field, and level one comes with it",
+       (subcell_field.width, subcell_field.height, subcell_field.tile_width),
+       (16, 12, 4))
+expect("one stamped tile's default covers all four of its sub-cells across",
+       [subcell_field.mask_at(x, 1) for x in (4, 5, 6, 7)],
+       [BLOCK_ALL, BLOCK_ALL, BLOCK_ALL, BLOCK_ALL])
+# ...except the one quarter-tile a companion cell was painted open in. Same
+# map tile, same default, one sub-cell apart.
+expect("and a painted sub-cell still beats it, inside that same tile",
+       subcell_field.mask_at(6, 2), PASS_ALL)
+expect("...while its neighbour a quarter-tile away keeps the default",
+       subcell_field.mask_at(5, 2), BLOCK_ALL)
+
+# ---- no companion, no collision tileset, and it still gates --------------
+# The promise level one is FOR: an author who has painted nothing has no
+# companion layer, and a map that has never been in collision mode has no
+# `collision` tileset either. Gating the read on either of them would make
+# the one level that needs no painting the one level you cannot have without
+# painting -- so this map declares neither, and still gates.
+LONE = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" \
+renderorder="right-down" width="4" height="3" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="3" nextobjectid="1">
+ <tileset firstgid="1" name="probe" tilewidth="16" tileheight="16" tilecount="4" columns="2">
+  <properties>
+   <property name="pyoneer_collision" value="probe.blitmask"/>
+  </properties>
+  <image source="no-such-art.png" width="32" height="32"/>
+ </tileset>
+ <layer id="1" name="Floor" width="4" height="3">
+  <data encoding="csv">
+1,2,3,2147483652,
+0,0,0,0,
+0,0,0,0
+</data>
+ </layer>
+</map>
+"""
+lone_document = MapDocument.load(write_level_one("lone", LONE))
+expect("a map may declare tile defaults and no collision tileset at all",
+       collision_first_gid(lone_document), None)
+expect("...and no companion layer either",
+       companion_pairs(lone_document), [])
+lone_field = field_from_map(lone_document)
+expect("yet the tile defaults alone bake a field",
+       lone_field is not None, True)
+expect("which gates the stamped tiles, mirroring the flipped one",
+       [lone_field.mask_at(x, 0) for x in range(4)],
+       [PASS_ALL, BLOCK_ALL, BLOCK_DOWN, BLOCK_LEFT])
+expect("and leaves the cells that hold no tile alone",
+       [lone_field.mask_at(x, 1) for x in range(4)],
+       [PASS_ALL, PASS_ALL, PASS_ALL, PASS_ALL])
+expect("while the same map with the reference removed bakes nothing at all",
+       field_from_map(write_level_one(
+           "lone-plain",
+           LONE.replace('<property name="pyoneer_collision" '
+                        'value="probe.blitmask"/>', ''))),
+       None)
+
+
+# ---- a short sidecar is authored data, not a mistake ---------------------
+# Masking the wall rows of a sheet and stopping is ordinary. Tiles past the
+# end of the file say nothing; they do not block and they do not raise.
+short_field = field_from_map(write_level_one(
+    "short", DEFAULTS, mask="blitmask 1\nsize 2 1\nname probe\n.f\n"))
+expect("a sidecar shorter than the sheet masks what it covers",
+       short_field.mask_at(1, 0), BLOCK_ALL)
+expect("and says nothing about the tiles past its last row",
+       (short_field.mask_at(2, 0), short_field.mask_at(3, 0)),
+       (PASS_ALL, PASS_ALL))
+
+
+# ---- declared and not honourable: every one of them raises ---------------
+# The line this whole feature turns on. An ABSENT property is the optional
+# case and must cost nothing; a PRESENT one that cannot be honoured must be
+# loud, because every failure below reads, from the player's side, as a
+# feature nobody switched on.
+print()
+print("a declared sidecar that cannot be honoured raises")
+
+expect_raises(
+    "a sidecar that is not there is named, with the path it resolved to",
+    PyoneerConfigError,
+    lambda: field_from_map(write_level_one(
+        "missing", DEFAULTS.replace('"probe.blitmask"', '"no-such.blitmask"'))),
+    "pyoneer_collision", "no-such.blitmask", "is not there")
+
+expect_raises(
+    "a tileset whose extent this map cannot know is refused",
+    PyoneerConfigError,
+    lambda: field_from_map(write_level_one(
+        "extent", DEFAULTS.replace(' tilecount="4" columns="2"', ' columns="2"'))),
+    "probe", "no mask")
+
+expect_raises(
+    "a tileset with no columns is refused; a mask grid needs them",
+    PyoneerConfigError,
+    lambda: field_from_map(write_level_one(
+        "columns", DEFAULTS.replace(' tilecount="4" columns="2"', ' tilecount="4"'))),
+    "probe", "no columns")
+
+expect_raises(
+    "a sidecar a different WIDTH from the sheet is refused, not shifted",
+    PyoneerConfigError,
+    lambda: field_from_map(write_level_one(
+        "width", DEFAULTS.replace(' tilecount="4" columns="2"',
+                                  ' tilecount="4" columns="4"'))),
+    "4 columns wide", "are 2", "shifts every row")
+
+expect_raises(
+    "a sidecar TALLER than the sheet is refused; those cells read by nothing",
+    PyoneerConfigError,
+    lambda: field_from_map(write_level_one(
+        "taller", DEFAULTS.replace(' tilecount="4" columns="2"',
+                                   ' tilecount="2" columns="2"'))),
+    "read by nothing")
+
+expect_raises(
+    "a sidecar that names a DIFFERENT sheet is refused",
+    PyoneerConfigError,
+    lambda: field_from_map(write_level_one(
+        "misnamed", DEFAULTS.replace('name="probe"', 'name="probe2"'))),
+    "belong to tileset 'probe'", "attached them to 'probe2'")
+
+expect_raises(
+    "a relative reference with no document path is refused, not guessed",
+    PyoneerConfigError,
+    lambda: tileset_defaults(MapDocument.from_bytes(DEFAULTS.encode("utf-8"))),
+    "no path to resolve it against", "pyoneer_collision")
+
+# The vocabulary the format is spelled in. A property name is FILE FORMAT, so
+# it is pinned as a literal rather than compared to itself.
+expect("the declaration is a pyoneer_ property, so pytmx cannot refuse the map",
+       runtime.DEFAULTS_PROPERTY, "pyoneer_collision")
+
 
 
 # ---------------------------------------------------------------------------

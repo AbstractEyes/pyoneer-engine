@@ -123,15 +123,25 @@ prove   the routed payload reaches the flow AND a different payload reaches noth
 Read that against [`DEMOS.md`](DEMOS.md)'s story section for what each `prove`
 row cost to make true.
 
-### Where the example is honest about a hole
+### Where the example used to be honest about a hole
 
 The `actor` row above resolves — every column is declared by the `topdown_rpg`
-pack — and **nothing reads it at runtime.** There is no engine-side reader for
-`data/project/tables/`, so step 2 of parameter resolution (the actors row)
-cannot fire, and `hp=10` reaches nothing. The row is in the example anyway,
-because a form that quietly dropped the fields the engine cannot consume yet
-would hide the gap instead of dating it. When a table reader lands, this row
-starts working and nothing above it changes.
+pack — and it is **read at runtime now.** `scripts/loaders/table_file.py` is
+the engine-side reader for `data/project/tables/`, so step 2 of parameter
+resolution fires: an object carrying `pyoneer_actor` gets its row's columns
+under its own `pyoneer_param_*` and over each parameter's declared default.
+Nothing above this section changed to make that true, which is the claim this
+paragraph made while the hole was open and the one it keeps now that it is
+filled.
+
+Two halves of that are worth stating, because both are load-bearing:
+
+* A column the row omits, a project with no `tables/` directory, and an object
+  with no `pyoneer_actor` all behave exactly as they did before the reader
+  existed — the declared default answers.
+* A `pyoneer_actor` naming a row that is **absent** raises, naming the object.
+  It does not fall back. A row reference that resolved to nothing would look
+  identical to one that worked, with every number quietly at its default.
 
 ## Filling it in for a genre that is not top-down
 

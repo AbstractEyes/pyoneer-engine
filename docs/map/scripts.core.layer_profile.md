@@ -5,7 +5,7 @@
 
 > What a map layer declares about itself, read at load time.
 
-`scripts.core.layer_profile` · 150 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.layer_profile` · 161 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
@@ -29,7 +29,9 @@
 - `scripts/core/layer_profile.py:91` `_flag(properties: dict, key: str, fallback: bool) -> bool` #TAG:layer_profile._flag
 - `scripts/core/layer_profile.py:98` `read(layer) -> LayerProfile` #TAG:layer_profile.read
   - Read a pytmx layer's declared profile. Never raises.
-- `scripts/core/layer_profile.py:131` `parallax_view(view, parallax: tuple[float, float], full_width: int, full_height: int)` #TAG:parallax_view
+- `scripts/core/layer_profile.py:111` `read_properties(properties: dict) -> LayerProfile` #TAG:read_properties
+  - The same reading, from a plain mapping rather than from a layer.
+- `scripts/core/layer_profile.py:142` `parallax_view(view, parallax: tuple[float, float], full_width: int, full_height: int)` #TAG:parallax_view
   - Where a parallaxed layer should sample from, clamped to its surface.
 
 ## Classes

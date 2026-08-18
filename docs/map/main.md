@@ -3,39 +3,39 @@
 
 # `main.py` — tier 2 #TAG:main.py
 
-`main` · 347 lines · tier 1: [`../MAP.md`](../MAP.md)
+`main` · 354 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    config.managers.core_asset_manager scripts.core.component scripts.core.event_manager scripts.core.game_object scripts.core.input scripts.core.renderer scripts.core.scene.game_scene scripts.core.scene.scene_manager scripts.core.ui.widget.containers.window scripts.game.behavior scripts.game.demo_window scripts.game.entity.game_entity scripts.game.entity.game_player scripts.game.game_camera scripts.game.game_map
+    config.managers.core_asset_manager scripts.core.component scripts.core.event_manager scripts.core.game_object scripts.core.input scripts.core.renderer scripts.core.scene.game_scene scripts.core.scene.scene_manager scripts.core.ui.widget.containers.window scripts.game.behavior scripts.game.demo_window scripts.game.entity.game_entity scripts.game.entity.game_player scripts.game.game_camera scripts.game.game_map scripts.loaders.table_file
 
 ## Module constants
 
-- `main.py:55` `PLAYER_BEHAVIORS` #TAG:PLAYER_BEHAVIORS
-- `main.py:57` `SCENERY_BEHAVIORS` #TAG:main.SCENERY_BEHAVIORS
+- `main.py:56` `PLAYER_BEHAVIORS` #TAG:PLAYER_BEHAVIORS
+- `main.py:58` `SCENERY_BEHAVIORS` #TAG:main.SCENERY_BEHAVIORS
 
 ## Classes
 
 ### `class MainGame` #TAG:MainGame
 
-`main.py:61`–`343`
+`main.py:62`–`350`
 
-- `main.py:62` `__init__(self, autostart: bool=True)` #TAG:MainGame.__init__
-- `main.py:95` `prepare(self)` #TAG:MainGame.prepare
-- `main.py:100` `build(self)` #TAG:MainGame.build
-- `main.py:103` `prepare_test_scene(self)` #TAG:MainGame.prepare_test_scene
-- `main.py:121` `spawn_arguments(self) -> dict[str, dict]` #TAG:MainGame.spawn_arguments
+- `main.py:63` `__init__(self, autostart: bool=True)` #TAG:MainGame.__init__
+- `main.py:96` `prepare(self)` #TAG:MainGame.prepare
+- `main.py:101` `build(self)` #TAG:MainGame.build
+- `main.py:104` `prepare_test_scene(self)` #TAG:MainGame.prepare_test_scene
+- `main.py:128` `spawn_arguments(self) -> dict[str, dict]` #TAG:MainGame.spawn_arguments
   - Constructor arguments for the entity types a map may place.
-- `main.py:153` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:MainGame.load_map
-- `main.py:160` `load_test_objects(self)` #TAG:MainGame.load_test_objects
-- `main.py:223` `load_config(self)` #TAG:MainGame.load_config
-- `main.py:228` `load_renderer(self)` #TAG:MainGame.load_renderer
-- `main.py:271` `quit(self)` #TAG:MainGame.quit
-- `main.py:275` `begin(self, max_frames: int | None=None)` #TAG:MainGame.begin
+- `main.py:160` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:MainGame.load_map
+- `main.py:167` `load_test_objects(self)` #TAG:MainGame.load_test_objects
+- `main.py:230` `load_config(self)` #TAG:MainGame.load_config
+- `main.py:235` `load_renderer(self)` #TAG:MainGame.load_renderer
+- `main.py:278` `quit(self)` #TAG:MainGame.quit
+- `main.py:282` `begin(self, max_frames: int | None=None)` #TAG:MainGame.begin
   - Run the main loop.
-- `main.py:292` `tick(self) -> float` #TAG:MainGame.tick
+- `main.py:299` `tick(self) -> float` #TAG:MainGame.tick
   - Advance exactly one frame. Returns the delta time used.
-- `main.py:316` `handle_global_input(self)` #TAG:MainGame.handle_global_input
+- `main.py:323` `handle_global_input(self)` #TAG:MainGame.handle_global_input
   - Application-level keys, handled before the scene sees anything.
-- `main.py:332` `toggle_window(self)` #TAG:MainGame.toggle_window
+- `main.py:339` `toggle_window(self)` #TAG:MainGame.toggle_window
   - F1: show or hide the test window.

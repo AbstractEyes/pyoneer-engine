@@ -73,6 +73,7 @@ from scripts.core.log import trace_assets
 from scripts.core.spawn import SPAWN_REGISTRY, resolve_depth, spawn
 from scripts.game.behavior import BehaviorRequest, read_requests
 from scripts.loaders.map_document import MapDocument, MapObject
+from scripts.loaders.table_file import ProjectTables, actor_row
 
 
 @dataclass(frozen=True)
@@ -224,7 +225,8 @@ def spawn_objects(document_or_tmx: Any,
                   registry: Mapping[str, Callable[..., Any]] | None = None,
                   *,
                   defaults: Mapping[str, Mapping[str, Any]] | None = None,
-                  layers: Sequence[str] | None = None) -> list[SpawnedEntity]:
+                  layers: Sequence[str] | None = None,
+                  tables: ProjectTables | None = None) -> list[SpawnedEntity]:
     """Construct an entity for every typed object in the map's object groups.
 
     `registry` maps a tmx object type to its constructor; it defaults to
@@ -241,6 +243,15 @@ def spawn_objects(document_or_tmx: Any,
                                  "animation_config": assets.animations.get("entity")}}
 
     `layers` restricts the pass to named object groups; None means all.
+
+    `tables` is the project's data tables, read by
+    `scripts.loaders.table_file.load_tables`. An object naming a row with
+    `pyoneer_actor` gets that row's columns as the MIDDLE rung of parameter
+    resolution -- under its own `pyoneer_param_*` properties and over each
+    parameter's declared default. None means the caller supplied no tables,
+    which is legal and costs nothing until an object names a row; naming one
+    then raises rather than falling to defaults, because a `pyoneer_actor`
+    that resolved to nothing is indistinguishable from one that worked.
 
     An object with NO type is skipped, and the skipped ids are reported once
     per layer. Untyped objects are ordinary in Tiled -- a rectangle marking
@@ -285,7 +296,17 @@ def spawn_objects(document_or_tmx: Any,
             # has none: a token that resolved to nothing would silently
             # disarm every object carrying it, and unlike a missing behavior
             # it looks like it worked.
-            behaviors = read_requests(obj.properties, where=where)  # #TAG:behaviors_read_at_spawn
+            #
+            # `actor_row` is the second argument -- the rung between the
+            # object's own properties and each parameter's default -- and it
+            # is resolved HERE rather than inside read_requests because that
+            # module never opens a file and this one is the file layer. It
+            # returns None for an object with no `pyoneer_actor`, which is
+            # every object on every shipped map, so this call is byte-for-byte
+            # the old one until a map names a row.
+            behaviors = read_requests(obj.properties,  # #TAG:behaviors_read_at_spawn
+                                      actor_row(tables, obj.properties, where),
+                                      where=where)
             spawned.append(SpawnedEntity(entity=entity, depth=depth,
                                          layer_name=layer_name,
                                          object_id=obj.id,

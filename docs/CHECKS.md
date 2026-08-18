@@ -41,8 +41,8 @@ dependency reports `SKIP` and never `PASS`.
 | `blitmap` | the native .blitmap/.tileset format and the tmx converter | Measure the native .blitmap / .tileset formats and the tmx converter. |
 | `blitmap_engine` | the engine loads a .blitmap equivalently to its tmx | Measure the engine's .blitmap load path against the pytmx one it joins. |
 | `spawn` | object layer -> entity registry, depth resolution, y-origin | Verify the object-layer -> entity spawn path. |
-| `spawn_runtime` | map objects become bound entities at the right depths | Verify that a tmx object becomes a live entity in a running renderer. |
-| `behavior` | behavior contract, registry, declared order, ordered drive | Verify the entity behavior system: the contract, the table, the drive. |
+| `spawn_runtime` | map objects become bound entities at the right depths, and an authored pyoneer_actor reaches the behavior they carry | Verify that a tmx object becomes a live entity in a running renderer. |
+| `behavior` | behavior contract, registry, declared order, ordered drive, and the actors row read off disk as the middle rung | Verify the entity behavior system: the contract, the table, the drive. |
 | `state` | the shared body-state axes, and the two bodies translated onto them | Verify the shared state vocabulary: `BodyState`, and the two bodies on it. |
 | `movement` | top-down and platformer bodies, the intent, the animator | Verify the four concrete behaviors: input, top-down, platformer, animator. |
 | `behavior_docs` | BEHAVIORS.md is generated, and every column is backed | Verify the behavior system's DOCUMENTATION cannot drift from the system. |
@@ -59,7 +59,7 @@ dependency reports `SKIP` and never `PASS`.
 | `collision_view` | collision overlay builds, glyphs distinguish direction bits, a read past a companion's edge abstains | Verify the collision overlay, its glyphs and the mode switch. |
 | `map_events` | trigger vocabulary, collision filters, tmx round trip | Verify the map-event vocabulary: round trip, validation, filter semantics. |
 | `collision_mount` | the overlay, the mode, one stroke one transaction, a 4x map whose mask lands under the cursor, and the resolution a created companion is given | Assert the collision stack is actually WIRED to the canvas. |
-| `collision_runtime` | the engine reads a mask and gates movement | Verify that the engine reads authored masks and refuses a blocked step. |
+| `collision_runtime` | the engine reads a mask, stacks a tileset's own defaults under it, and gates movement | Verify that the engine reads authored masks and refuses a blocked step. |
 | `collision_field` | map load bakes passability and every body is handed it | Prove the map's passability actually reaches the bodies that move on it. |
 | `actions_panel` | trigger authoring, action verbs, exact inverses | Assert the two dormant things this pass wired are actually reachable. |
 | `behavior_ui` | behavior checklist from the registry, refusals at authoring time, exact undo | The editor's behavior surface: the checklist, the refusals, the undo. |

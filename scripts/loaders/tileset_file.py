@@ -455,17 +455,22 @@ class TilesetFile:
     COLLISION IS A REFERENCE, NOT A COPY
     ------------------------------------
     `collision` names a `.blitmask` sitting beside the image. That format
-    already exists in `editor/core/collision.py`, it is already grid-shaped
+    lives in `scripts/core/collision_runtime.py`, it is already grid-shaped
     to the tileset (`TilesetDefaults.opinions` is row-major over
     columns x rows), and it is already round-trip tested. Re-encoding those
     opinions inside this file would be a second spelling of the same data,
     and the second spelling is always the one that rots.
 
-    It is a reference for a harder reason too: `scripts/` may never import
-    `editor/` (tools/check_editor.py asserts it), so this module cannot
-    parse a .blitmask even if it wanted to. Naming the file is the whole of
-    what this side is entitled to do, and it is enough -- the editor reads
-    the name and loads the mask itself.
+    WHAT READS IT TODAY, AND WHAT DOES NOT. The engine reads per-tile masks
+    on the .tmx path: a tmx `<tileset>` declares `pyoneer_collision`,
+    `collision_runtime.tileset_defaults` loads the file it names, and
+    `field_from_map` stacks it under the companion levels. Nothing reads
+    THIS line yet, because the .blitmap path has no collision read at all --
+    `field_from_map` answers None for a native map, by design and with its
+    reasons written down. When that path grows one, this field is the
+    declaration it should use, and the parser is now on this side of the
+    fence: the old reason it could not be read here (`scripts/` may never
+    import `editor/`) stopped applying the day the format moved.
     """
 
     name: str
@@ -509,7 +514,8 @@ class TilesetFile:
             warn_content(
                 "tileset %r points its collision defaults at %r, which is not "
                 "a %s. The per-tile mask format is the one in "
-                "editor/core/collision.py and nothing else reads it"
+                "scripts/core/collision_runtime.py, and a reference that is "
+                "not one names a file no reader will open"
                 % (self.name, self.collision, BLITMASK_SUFFIX))
         seen: set[int] = set()
         for entry in self.tiles:

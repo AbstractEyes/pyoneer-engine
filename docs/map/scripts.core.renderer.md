@@ -3,139 +3,139 @@
 
 # `scripts/core/renderer.py` — tier 2 #TAG:scripts/core/renderer.py
 
-`scripts.core.renderer` · 1023 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.renderer` · 1045 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    scripts.core scripts.core.blitpool scripts.core.collision_runtime scripts.core.component scripts.core.depth scripts.core.errors scripts.core.event_manager scripts.core.event_types scripts.core.game_object scripts.core.log scripts.core.viewclip scripts.game.behavior scripts.game.entity.game_entity scripts.game.game_camera scripts.game.game_map scripts.loaders.map_loader
+    scripts.core scripts.core.blitpool scripts.core.collision_runtime scripts.core.component scripts.core.depth scripts.core.errors scripts.core.event_manager scripts.core.event_types scripts.core.game_object scripts.core.log scripts.core.viewclip scripts.game.behavior scripts.game.entity.game_entity scripts.game.game_camera scripts.game.game_map scripts.loaders.map_loader scripts.loaders.table_file
 
 ## Functions
 
-- `scripts/core/renderer.py:29` `drawable_tile_count(layer: pytmx.TiledTileLayer, tile_map: pytmx.TiledMap) -> int` #TAG:drawable_tile_count
+- `scripts/core/renderer.py:30` `drawable_tile_count(layer: pytmx.TiledTileLayer, tile_map: pytmx.TiledMap) -> int` #TAG:drawable_tile_count
   - How many cells of this tile layer actually resolve to a surface.
-- `scripts/core/renderer.py:46` `opaque_mask(surface: Surface) -> pygame.mask.Mask` #TAG:opaque_mask
+- `scripts/core/renderer.py:47` `opaque_mask(surface: Surface) -> pygame.mask.Mask` #TAG:opaque_mask
   - Pixels with alpha exactly 255.
-- `scripts/core/renderer.py:51` `partial_alpha_mask(surface: Surface) -> pygame.mask.Mask` #TAG:partial_alpha_mask
+- `scripts/core/renderer.py:52` `partial_alpha_mask(surface: Surface) -> pygame.mask.Mask` #TAG:partial_alpha_mask
   - Pixels with alpha strictly between 0 and 255.
-- `scripts/core/renderer.py:310` `_masks(surface: Surface, cache: MaskCache | None) -> tuple[pygame.mask.Mask, pygame.mask.Mask]` #TAG:_masks
+- `scripts/core/renderer.py:311` `_masks(surface: Surface, cache: MaskCache | None) -> tuple[pygame.mask.Mask, pygame.mask.Mask]` #TAG:_masks
   - Opaque and partial-alpha masks, optionally memoized within one pass.
-- `scripts/core/renderer.py:340` `composite_is_exact(surfaces: list[Surface], cache: MaskCache | None=None) -> bool` #TAG:composite_is_exact
+- `scripts/core/renderer.py:341` `composite_is_exact(surfaces: list[Surface], cache: MaskCache | None=None) -> bool` #TAG:composite_is_exact
   - Can these surfaces be flattened without moving a single screen pixel?
 
 ## Classes
 
 ### `class Layer(PyoneerGameObject)` #TAG:Layer
 
-`scripts/core/renderer.py:58`–`83`
+`scripts/core/renderer.py:59`–`84`
 
-- `scripts/core/renderer.py:60` `__init__(self, layer_name: str, layer_depth: int, layer_surface: Surface)` #TAG:Layer.__init__
-- `scripts/core/renderer.py:66` `core_lifecycle_prepare(self) -> Surface` #TAG:Layer.core_lifecycle_prepare
-- `scripts/core/renderer.py:69` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:Layer.core_frame_update
-- `scripts/core/renderer.py:72` `core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:Layer.core_lifecycle_build
-- `scripts/core/renderer.py:75` `core_lifecycle_dispose(self, event: Optional[PyoneerEvent]=None) -> bool` #TAG:Layer.core_lifecycle_dispose
-- `scripts/core/renderer.py:78` `core_render_blits(self, event: Optional[PyoneerEvent]=None)` #TAG:Layer.core_render_blits
-- `scripts/core/renderer.py:82` `core_input_receive(self, events: list[pygame.event.Event] | pygame.event.Event)` #TAG:Layer.core_input_receive
+- `scripts/core/renderer.py:61` `__init__(self, layer_name: str, layer_depth: int, layer_surface: Surface)` #TAG:Layer.__init__
+- `scripts/core/renderer.py:67` `core_lifecycle_prepare(self) -> Surface` #TAG:Layer.core_lifecycle_prepare
+- `scripts/core/renderer.py:70` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:Layer.core_frame_update
+- `scripts/core/renderer.py:73` `core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:Layer.core_lifecycle_build
+- `scripts/core/renderer.py:76` `core_lifecycle_dispose(self, event: Optional[PyoneerEvent]=None) -> bool` #TAG:Layer.core_lifecycle_dispose
+- `scripts/core/renderer.py:79` `core_render_blits(self, event: Optional[PyoneerEvent]=None)` #TAG:Layer.core_render_blits
+- `scripts/core/renderer.py:83` `core_input_receive(self, events: list[pygame.event.Event] | pygame.event.Event)` #TAG:Layer.core_input_receive
 
 ### `class EntityLayer(Layer)` #TAG:EntityLayer
 
-`scripts/core/renderer.py:86`–`146`
+`scripts/core/renderer.py:87`–`147`
 
-- `scripts/core/renderer.py:87` `__init__(self, layer_name: str, layer_depth: int, layer_surface: Surface)` #TAG:EntityLayer.__init__
-- `scripts/core/renderer.py:91` `bind(self, entity: GameEntity)` #TAG:EntityLayer.bind
-- `scripts/core/renderer.py:94` `unbind(self, entity: GameEntity)` #TAG:EntityLayer.unbind
-- `scripts/core/renderer.py:97` `core_lifecycle_prepare(self) -> Surface` #TAG:EntityLayer.core_lifecycle_prepare
-- `scripts/core/renderer.py:101` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:EntityLayer.core_frame_update
-- `scripts/core/renderer.py:115` `core_render_blits(self, event: Optional[PyoneerEvent]=None)` #TAG:EntityLayer.core_render_blits
+- `scripts/core/renderer.py:88` `__init__(self, layer_name: str, layer_depth: int, layer_surface: Surface)` #TAG:EntityLayer.__init__
+- `scripts/core/renderer.py:92` `bind(self, entity: GameEntity)` #TAG:EntityLayer.bind
+- `scripts/core/renderer.py:95` `unbind(self, entity: GameEntity)` #TAG:EntityLayer.unbind
+- `scripts/core/renderer.py:98` `core_lifecycle_prepare(self) -> Surface` #TAG:EntityLayer.core_lifecycle_prepare
+- `scripts/core/renderer.py:102` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:EntityLayer.core_frame_update
+- `scripts/core/renderer.py:116` `core_render_blits(self, event: Optional[PyoneerEvent]=None)` #TAG:EntityLayer.core_render_blits
 
 ### `class GameComponentLayer(Layer)` #TAG:GameComponentLayer
 
-`scripts/core/renderer.py:149`–`172`
+`scripts/core/renderer.py:150`–`173`
 
-- `scripts/core/renderer.py:150` `__init__(self, layer_name: str, layer_depth: int, layer_surface: Surface)` #TAG:GameComponentLayer.__init__
-- `scripts/core/renderer.py:154` `core_lifecycle_prepare(self) -> Surface` #TAG:GameComponentLayer.core_lifecycle_prepare
-- `scripts/core/renderer.py:157` `core_frame_update(self, delta: float)` #TAG:GameComponentLayer.core_frame_update
-- `scripts/core/renderer.py:162` `core_render_blits(self, event: Optional[PyoneerEvent])` #TAG:GameComponentLayer.core_render_blits
-- `scripts/core/renderer.py:167` `bind(self, component: GameComponent)` #TAG:GameComponentLayer.bind
-- `scripts/core/renderer.py:171` `unbind(self, component: GameComponent)` #TAG:GameComponentLayer.unbind
+- `scripts/core/renderer.py:151` `__init__(self, layer_name: str, layer_depth: int, layer_surface: Surface)` #TAG:GameComponentLayer.__init__
+- `scripts/core/renderer.py:155` `core_lifecycle_prepare(self) -> Surface` #TAG:GameComponentLayer.core_lifecycle_prepare
+- `scripts/core/renderer.py:158` `core_frame_update(self, delta: float)` #TAG:GameComponentLayer.core_frame_update
+- `scripts/core/renderer.py:163` `core_render_blits(self, event: Optional[PyoneerEvent])` #TAG:GameComponentLayer.core_render_blits
+- `scripts/core/renderer.py:168` `bind(self, component: GameComponent)` #TAG:GameComponentLayer.bind
+- `scripts/core/renderer.py:172` `unbind(self, component: GameComponent)` #TAG:GameComponentLayer.unbind
 
 ### `class MapLayer(Layer)` #TAG:MapLayer
 
-`scripts/core/renderer.py:175`–`232`
+`scripts/core/renderer.py:176`–`233`
 
-- `scripts/core/renderer.py:176` `__init__(self, *args, **kwargs)` #TAG:MapLayer.__init__
-- `scripts/core/renderer.py:186` `set_layer(self, layer: pytmx.TiledTileLayer, tile_map: pytmx.TiledMap)` #TAG:MapLayer.set_layer
-- `scripts/core/renderer.py:194` `@property static(self) -> bool` #TAG:MapLayer.static
+- `scripts/core/renderer.py:177` `__init__(self, *args, **kwargs)` #TAG:MapLayer.__init__
+- `scripts/core/renderer.py:187` `set_layer(self, layer: pytmx.TiledTileLayer, tile_map: pytmx.TiledMap)` #TAG:MapLayer.set_layer
+- `scripts/core/renderer.py:195` `@property static(self) -> bool` #TAG:MapLayer.static
   - Whether this layer may be flattened into a composite.
-- `scripts/core/renderer.py:198` `rebake(self) -> MapLayer` #TAG:MapLayer.rebake
+- `scripts/core/renderer.py:199` `rebake(self) -> MapLayer` #TAG:MapLayer.rebake
   - Re-rasterize this layer's tiles onto its own surface.
-- `scripts/core/renderer.py:217` `core_lifecycle_prepare(self) -> MapLayer` #TAG:MapLayer.core_lifecycle_prepare
-- `scripts/core/renderer.py:220` `core_frame_update(self, delta: float)` #TAG:MapLayer.core_frame_update
-- `scripts/core/renderer.py:223` `core_render_blits(self, event: Optional[PyoneerEvent])` #TAG:MapLayer.core_render_blits
+- `scripts/core/renderer.py:218` `core_lifecycle_prepare(self) -> MapLayer` #TAG:MapLayer.core_lifecycle_prepare
+- `scripts/core/renderer.py:221` `core_frame_update(self, delta: float)` #TAG:MapLayer.core_frame_update
+- `scripts/core/renderer.py:224` `core_render_blits(self, event: Optional[PyoneerEvent])` #TAG:MapLayer.core_render_blits
   - Blit this layer's viewport, offset by its parallax factor.
 
 ### `class MapComposite(Layer)` #TAG:MapComposite
 
-`scripts/core/renderer.py:235`–`304`
+`scripts/core/renderer.py:236`–`305`
 
 > One baked surface standing in for a run of consecutive static tile layers.
 
-- `scripts/core/renderer.py:258` `__init__(self, sources: list[MapLayer], layer_depth: int)` #TAG:MapComposite.__init__
-- `scripts/core/renderer.py:273` `covers(self, depth_band: tuple[int, int]) -> bool` #TAG:MapComposite.covers
+- `scripts/core/renderer.py:259` `__init__(self, sources: list[MapLayer], layer_depth: int)` #TAG:MapComposite.__init__
+- `scripts/core/renderer.py:274` `covers(self, depth_band: tuple[int, int]) -> bool` #TAG:MapComposite.covers
   - Does this composite hold any layer inside the given depth band?
-- `scripts/core/renderer.py:277` `rebake(self) -> MapComposite` #TAG:MapComposite.rebake
+- `scripts/core/renderer.py:278` `rebake(self) -> MapComposite` #TAG:MapComposite.rebake
   - Flatten the source layers, in depth order, into a single surface.
-- `scripts/core/renderer.py:294` `core_lifecycle_prepare(self) -> MapComposite` #TAG:MapComposite.core_lifecycle_prepare
-- `scripts/core/renderer.py:297` `core_frame_update(self, delta: float)` #TAG:MapComposite.core_frame_update
-- `scripts/core/renderer.py:300` `core_render_blits(self, event: Optional[PyoneerEvent])` #TAG:MapComposite.core_render_blits
+- `scripts/core/renderer.py:295` `core_lifecycle_prepare(self) -> MapComposite` #TAG:MapComposite.core_lifecycle_prepare
+- `scripts/core/renderer.py:298` `core_frame_update(self, delta: float)` #TAG:MapComposite.core_frame_update
+- `scripts/core/renderer.py:301` `core_render_blits(self, event: Optional[PyoneerEvent])` #TAG:MapComposite.core_render_blits
 
 ### `class LayerRenderer` #TAG:LayerRenderer
 
-`scripts/core/renderer.py:407`–`1022`
+`scripts/core/renderer.py:408`–`1044`
 
-- `scripts/core/renderer.py:409` `__init__(self, surface: Surface)` #TAG:LayerRenderer.__init__
+- `scripts/core/renderer.py:410` `__init__(self, surface: Surface)` #TAG:LayerRenderer.__init__
   - Load the Tiled map data and the surface to render to.
-- `scripts/core/renderer.py:477` `__bind_map(self, tmx_data: pytmx.TiledMap)` #TAG:LayerRenderer.__bind_map
-- `scripts/core/renderer.py:493` `__gate(self, entity: GameEntity) -> None` #TAG:LayerRenderer.__gate
+- `scripts/core/renderer.py:498` `__bind_map(self, tmx_data: pytmx.TiledMap)` #TAG:LayerRenderer.__bind_map
+- `scripts/core/renderer.py:514` `__gate(self, entity: GameEntity) -> None` #TAG:LayerRenderer.__gate
   - Hand `entity` the passability of the map it is being drawn on.
-- `scripts/core/renderer.py:508` `__gate_entities(self) -> None` #TAG:LayerRenderer.__gate_entities
+- `scripts/core/renderer.py:529` `__gate_entities(self) -> None` #TAG:LayerRenderer.__gate_entities
   - Re-gate every entity the renderer currently draws.
-- `scripts/core/renderer.py:521` `__make_tile_layer(self, layer_name: str, layer_depth: int, layer_surface: Surface, tmx_data: pytmx.TiledMap, layer: pytmx.TiledTileLayer) -> MapLayer` #TAG:LayerRenderer.__make_tile_layer
+- `scripts/core/renderer.py:542` `__make_tile_layer(self, layer_name: str, layer_depth: int, layer_surface: Surface, tmx_data: pytmx.TiledMap, layer: pytmx.TiledTileLayer) -> MapLayer` #TAG:LayerRenderer.__make_tile_layer
   - Make a tile layer, and bind it to the layer list for rendering.
-- `scripts/core/renderer.py:528` `__prepare_map_layers(self, tmx_data: pytmx.TiledMap)` #TAG:LayerRenderer.__prepare_map_layers
+- `scripts/core/renderer.py:549` `__prepare_map_layers(self, tmx_data: pytmx.TiledMap)` #TAG:LayerRenderer.__prepare_map_layers
   - Rasterize every tile layer the MAP declares.
-- `scripts/core/renderer.py:587` `invalidate(self, depth_band: int | tuple[int, int] | None=None, *, sources_dirty: bool=True) -> None` #TAG:LayerRenderer.invalidate
+- `scripts/core/renderer.py:608` `invalidate(self, depth_band: int | tuple[int, int] | None=None, *, sources_dirty: bool=True) -> None` #TAG:LayerRenderer.invalidate
   - Mark baked map composites stale; the next render() rebakes them.
-- `scripts/core/renderer.py:624` `rebake_map(self) -> None` #TAG:LayerRenderer.rebake_map
+- `scripts/core/renderer.py:645` `rebake_map(self) -> None` #TAG:LayerRenderer.rebake_map
   - Do the work invalidate() asked for. Idempotent.
-- `scripts/core/renderer.py:654` `__regroup_map_layers(self) -> None` #TAG:LayerRenderer.__regroup_map_layers
+- `scripts/core/renderer.py:675` `__regroup_map_layers(self) -> None` #TAG:LayerRenderer.__regroup_map_layers
   - Replace runs of tile-only depths with one MapComposite each.
-- `scripts/core/renderer.py:717` `@staticmethod __split_exact_groups(sources: list[MapLayer]) -> list[list[MapLayer]]` #TAG:LayerRenderer.__split_exact_groups
+- `scripts/core/renderer.py:738` `@staticmethod __split_exact_groups(sources: list[MapLayer]) -> list[list[MapLayer]]` #TAG:LayerRenderer.__split_exact_groups
   - Greedily cut a run into the longest provably-exact merge groups.
-- `scripts/core/renderer.py:741` `image(self, image_in: Surface | None=None) -> Surface` #TAG:LayerRenderer.image
-- `scripts/core/renderer.py:746` `__prepare_entity_layers(self, tmx_data: pytmx.TiledMap)` #TAG:LayerRenderer.__prepare_entity_layers
+- `scripts/core/renderer.py:762` `image(self, image_in: Surface | None=None) -> Surface` #TAG:LayerRenderer.image
+- `scripts/core/renderer.py:767` `__prepare_entity_layers(self, tmx_data: pytmx.TiledMap)` #TAG:LayerRenderer.__prepare_entity_layers
   - Spawn every typed object on the map's object layers and bind it.
-- `scripts/core/renderer.py:813` `bind_camera(self, camera: GameCamera)` #TAG:LayerRenderer.bind_camera
+- `scripts/core/renderer.py:835` `bind_camera(self, camera: GameCamera)` #TAG:LayerRenderer.bind_camera
   - Bind a camera to the renderer.
-- `scripts/core/renderer.py:817` `remove_camera(self)` #TAG:LayerRenderer.remove_camera
+- `scripts/core/renderer.py:839` `remove_camera(self)` #TAG:LayerRenderer.remove_camera
   - Remove the camera from the renderer.
-- `scripts/core/renderer.py:821` `__deploy_blits(self)` #TAG:LayerRenderer.__deploy_blits
+- `scripts/core/renderer.py:843` `__deploy_blits(self)` #TAG:LayerRenderer.__deploy_blits
   - Get the render layers.
-- `scripts/core/renderer.py:841` `bind(self, layer: str | int, game_object: PyoneerGameObject)` #TAG:LayerRenderer.bind
+- `scripts/core/renderer.py:863` `bind(self, layer: str | int, game_object: PyoneerGameObject)` #TAG:LayerRenderer.bind
   - Bind a game object to a specific layer.
-- `scripts/core/renderer.py:855` `unbind(self, game_object: PyoneerGameObject) -> bool` #TAG:LayerRenderer.unbind
+- `scripts/core/renderer.py:877` `unbind(self, game_object: PyoneerGameObject) -> bool` #TAG:LayerRenderer.unbind
   - Stop drawing `game_object`. The inverse of `bind`, and it was absent.
-- `scripts/core/renderer.py:901` `__entity_layer(self, depth: int, layer_name: int | str) -> tuple[EntityLayer, bool]` #TAG:LayerRenderer.__entity_layer
+- `scripts/core/renderer.py:923` `__entity_layer(self, depth: int, layer_name: int | str) -> tuple[EntityLayer, bool]` #TAG:LayerRenderer.__entity_layer
   - The EntityLayer at `depth`, creating one if that depth has none.
-- `scripts/core/renderer.py:917` `__bind_entity(self, entity: GameEntity, layer_name: int | str='ENTITY_2')` #TAG:LayerRenderer.__bind_entity
+- `scripts/core/renderer.py:939` `__bind_entity(self, entity: GameEntity, layer_name: int | str='ENTITY_2')` #TAG:LayerRenderer.__bind_entity
   - Bind an entity to a specific layer.
-- `scripts/core/renderer.py:933` `__inside_map_span(self, depth: int) -> bool` #TAG:LayerRenderer.__inside_map_span
+- `scripts/core/renderer.py:955` `__inside_map_span(self, depth: int) -> bool` #TAG:LayerRenderer.__inside_map_span
   - Could a new layer at `depth` land inside a run of tile layers?
-- `scripts/core/renderer.py:944` `__invalidate_if_inside_map_span(self, depth: int) -> None` #TAG:LayerRenderer.__invalidate_if_inside_map_span
+- `scripts/core/renderer.py:966` `__invalidate_if_inside_map_span(self, depth: int) -> None` #TAG:LayerRenderer.__invalidate_if_inside_map_span
   - Regroup ONLY if a new layer at `depth` could split a tile run.
-- `scripts/core/renderer.py:957` `__prepare_depth(self, depth: int | str)` #TAG:LayerRenderer.__prepare_depth
-- `scripts/core/renderer.py:968` `__bind_ui_component(self, widget: GameComponent, layer_name: str | int='UI')` #TAG:LayerRenderer.__bind_ui_component
-- `scripts/core/renderer.py:977` `update(self, delta: float)` #TAG:LayerRenderer.update
+- `scripts/core/renderer.py:979` `__prepare_depth(self, depth: int | str)` #TAG:LayerRenderer.__prepare_depth
+- `scripts/core/renderer.py:990` `__bind_ui_component(self, widget: GameComponent, layer_name: str | int='UI')` #TAG:LayerRenderer.__bind_ui_component
+- `scripts/core/renderer.py:999` `update(self, delta: float)` #TAG:LayerRenderer.update
   - update all available layers.
-- `scripts/core/renderer.py:989` `render(self)` #TAG:LayerRenderer.render
+- `scripts/core/renderer.py:1011` `render(self)` #TAG:LayerRenderer.render
   - draw all available layers.
-- `scripts/core/renderer.py:1005` `rotate_image(self, image, position, origin, angle) -> tuple[Surface, Rect]` #TAG:LayerRenderer.rotate_image
+- `scripts/core/renderer.py:1027` `rotate_image(self, image, position, origin, angle) -> tuple[Surface, Rect]` #TAG:LayerRenderer.rotate_image

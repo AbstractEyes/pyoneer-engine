@@ -40,7 +40,10 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
 import ast
+import json
 import os
+import shutil
+import tempfile
 import warnings
 
 import pygame
@@ -61,7 +64,17 @@ from scripts.game.behavior import (ACTOR, BEHAVIOR_REGISTRY, BEHAVIORS,
                                    describe_all, format_list, parse_list,
                                    read_requests, register, resolve,
                                    resolve_params, validate_list)
+from scripts.game.behavior.base import PARAM_SOURCES
 from scripts.game.entity.game_entity import GameEntity
+from scripts.loaders.table_file import (ACTORS, TABLES_DIR,
+                                        ProjectTables, actor_row,
+                                        load_tables, row_id)
+# The one editor import in this file, and it exists to bind ONE fact: the
+# path the Database panel writes to is the path the engine reads from.
+# `editor/` may import `scripts/` and never the reverse (law 2); a CHECK
+# stands outside both, and is the only place the two spellings of that
+# path can be compared without either package learning about the other.
+import editor.core.project as editor_project
 
 failures: list[str] = []
 asserted: list[str] = []
@@ -719,7 +732,236 @@ expect_raises("...so an int-declared parameter refuses a fractional value",
 
 
 # ===========================================================================
-print("\n8. build constructs, stamps, and refuses the wrong thing")
+print("\n8. the actors row comes off DISK, and is the middle rung")
+# ===========================================================================
+# Section 7 proves the ladder when a row arrives as a dict. This proves where
+# the dict comes from -- `data/project/tables/*.json`, the files the editor's
+# Database panel writes -- and it is the half that did not exist: ten
+# parameters in the shipped registry declare `source="actors"`, and until
+# `scripts/loaders/table_file.py` landed every caller passed None, so the
+# middle rung was specified, covered by section 7, and never once supplied.
+#
+# THE FIXTURE IS THIS FILE'S OWN. `data/project/tables/actors.json` is the
+# author's content, and a check that pinned its numbers would go red the next
+# time they tune the player's speed -- law 4 wearing a different hat.
+TABLES_ROOT = tempfile.mkdtemp(prefix="pyoneer_tables_")
+
+
+def _tables_dir(name: str) -> str:
+    """A directory of its own, so one malformed file cannot leak into a peer."""
+    directory = os.path.join(TABLES_ROOT, name)
+    os.makedirs(directory, exist_ok=True)
+    return directory
+
+
+def _write_table(directory: str, filename: str, payload) -> str:
+    path = os.path.join(directory, filename)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(payload if isinstance(payload, str)
+                     else json.dumps(payload, indent=2))
+    return directory
+
+
+GOOD_ACTORS = {
+    "table": "actors",
+    "title": "Actors",
+    "columns": [{"name": "gravity", "type": "float", "default": 9.0},
+                {"name": "air_control", "type": "float", "default": 0.25},
+                {"name": "display_name", "type": "str"}],
+    "rows": {"hero": {"gravity": 2.0, "display_name": "Brent"},
+             "boss": {"gravity": 3.0, "air_control": 0.9,
+                      "display_name": "Boss"},
+             "bare": {"display_name": "Nothing set"}},
+}
+GOOD = load_tables(_write_table(_tables_dir("good"), "actors.json",
+                                GOOD_ACTORS))
+
+# -- the spellings of one identifier, bound so they cannot drift ------------
+# `ACTORS` is the table's name inside the file, the stem on disk, and the
+# literal a parameter writes as `source=`. One FILE FORMAT string wearing
+# three hats (law 8), so renaming any one of them has to go red here.
+expect("the table a source='actors' parameter reads IS a declared source",
+       ACTORS in PARAM_SOURCES, True)
+expect("the editor writes exactly where the engine reads",
+       os.path.join(editor_project.PROJECT_DIR, editor_project.TABLES_DIR),
+       TABLES_DIR)
+expect("...and the files are the whole interface: the reader imports no editor",
+       [line.rstrip() for line in
+        open(os.path.join(_bootstrap.REPO_ROOT, "scripts", "loaders",
+                          "table_file.py"), encoding="utf-8")
+        if line.startswith(("import editor", "from editor"))], [])
+
+# -- MISSING IS NOT AN ERROR -----------------------------------------------
+# Every line in this block describes a project that never asked for any of
+# this, and every one has to behave exactly as it did before the reader
+# existed. Getting this half wrong breaks every map that ships today.
+_absent = load_tables(os.path.join(TABLES_ROOT, "no_such_directory"))
+expect("a project with no tables directory reads as no tables",
+       (len(_absent), _absent.names()), (0, []))
+expect("...as a real value and not None, so no caller writes that branch",
+       isinstance(_absent, ProjectTables), True)
+expect("an empty tables directory is the same answer",
+       len(load_tables(_tables_dir("empty"))), 0)
+expect("a non-json file in the directory is not a table",
+       len(load_tables(_write_table(_tables_dir("noise"), "README.txt",
+                                    "not a table"))), 0)
+expect("an object naming no actor resolves no row, with tables loaded",
+       actor_row(GOOD, {"pyoneer_param_gravity": 1.0}, "object id=1"), None)
+expect("...and with no tables at all, which is every caller before this",
+       actor_row(None, {}, "object id=2"), None)
+
+# The rung is skipped per KEY, not per row: `bare` exists and omits `gravity`,
+# so the default answers for it while `hero` supplies one out of the same
+# file. Both halves, because a reader that returned an empty row for
+# everything would pass the first of these on its own.
+expect("a row that omits the column falls to the declared default",
+       resolve_params(PARAMS, {}, actor_row(GOOD, {ACTOR: "bare"}, "id=3"),
+                      "object id=3")["gravity"], 9.0)
+expect("...while a row in the SAME file that carries it supplies it",
+       resolve_params(PARAMS, {}, actor_row(GOOD, {ACTOR: "hero"}, "id=4"),
+                      "object id=4")["gravity"], 2.0)
+
+# -- UNREADABLE AND CONTRADICTORY ARE ERRORS -------------------------------
+# The other side of rule 7's line, and the side that decides whether this is a
+# feature or a way to break every existing map. Each raise names the FILE,
+# because a project has many and "a table is malformed" is not actionable.
+expect_raises("a table file that is not JSON raises, naming the file",
+              PyoneerConfigError,
+              lambda: load_tables(_write_table(_tables_dir("badjson"),
+                                               "actors.json", "{,}")),
+              "actors.json", "not valid JSON")
+expect_raises("a table file that is a JSON list is refused", PyoneerConfigError,
+              lambda: load_tables(_write_table(_tables_dir("list"),
+                                               "actors.json", "[]")),
+              "actors.json", "JSON object")
+expect_raises("a file with no 'table' key is refused", PyoneerConfigError,
+              lambda: load_tables(_write_table(_tables_dir("nokey"),
+                                               "actors.json", {"rows": {}})),
+              "actors.json", "'table' key")
+expect_raises("a file whose table name contradicts its own filename",
+              PyoneerConfigError,
+              lambda: load_tables(_write_table(
+                  _tables_dir("mismatch"), "actors.json",
+                  {"table": "actor", "rows": {}})),
+              "'actor'", "'actors.json'", "same identifier")
+expect_raises("'rows' that is not an object keyed by row id",
+              PyoneerConfigError,
+              lambda: load_tables(_write_table(
+                  _tables_dir("rowslist"), "actors.json",
+                  {"table": "actors", "rows": []})),
+              "actors.json", "'rows'")
+expect_raises("a row that is not an object of column -> value",
+              PyoneerConfigError,
+              lambda: load_tables(_write_table(
+                  _tables_dir("rowscalar"), "actors.json",
+                  {"table": "actors", "rows": {"hero": 3}})),
+              "'hero'", "int")
+expect_raises("'columns' that is not a list", PyoneerConfigError,
+              lambda: load_tables(_write_table(
+                  _tables_dir("colsdict"), "actors.json",
+                  {"table": "actors", "columns": {}})),
+              "'columns'")
+expect_raises("a column with no name", PyoneerConfigError,
+              lambda: load_tables(_write_table(
+                  _tables_dir("noname"), "actors.json",
+                  {"table": "actors", "columns": [{"type": "int"}],
+                   "rows": {}})),
+              "column 0", "'name'")
+# The one refusal that is not tidiness: `resolve_params` matches a row on the
+# parameter KEY and never consults the schema, so an off-schema key is a live
+# value reaching a behavior out of a file whose own columns deny it exists --
+# and the editor's Database panel, which renders columns, would show the
+# author nothing at all.
+expect_raises("a row key the table declares no column for", PyoneerConfigError,
+              lambda: load_tables(_write_table(
+                  _tables_dir("stray"), "actors.json",
+                  {"table": "actors",
+                   "columns": [{"name": "gravity", "type": "float"}],
+                   "rows": {"hero": {"gravity": 5.0, "stamina": 7}}})),
+              "'hero'", "'stamina'", "no column")
+# ...and the half that proves the guard is not simply refusing everything.
+expect("a well-formed file with every one of those shapes right loads",
+       (GOOD.names(), sorted(GOOD.table(ACTORS).rows),
+        GOOD.table(ACTORS).columns),
+       ([ACTORS], ["bare", "boss", "hero"],
+        ("gravity", "air_control", "display_name")))
+
+# -- pyoneer_actor: what a row reference may say, and what it may not ------
+expect("a row id written as a string finds the row",
+       actor_row(GOOD, {ACTOR: "boss"}, "id=5")["gravity"], 3.0)
+expect("...and one Tiled typed as int addresses the same row through str()",
+       row_id(7), "7")
+expect("...with surrounding whitespace taken off, because Tiled keeps it",
+       row_id("  hero  "), "hero")
+expect_raises("a bool row id is refused rather than addressing 'True'",
+              PyoneerConfigError, lambda: row_id(True, "object id=6"),
+              "pyoneer_actor", "bool", "object id=6")
+expect_raises("a float row id is refused rather than addressing '1.0'",
+              PyoneerConfigError, lambda: row_id(1.0, "object id=7"),
+              "pyoneer_actor", "float")
+expect_raises("a present but empty pyoneer_actor is refused",
+              PyoneerConfigError, lambda: row_id("   ", "object id=8"),
+              "pyoneer_actor", "empty", "object id=8")
+expect_raises("a pyoneer_actor naming an absent row raises, NAMING the object",
+              PyoneerAssetMissingError,
+              lambda: actor_row(GOOD, {ACTOR: "ghost"}, "tmx object id=9"),
+              "'ghost'", "tmx object id=9", "hero")
+expect_raises("...and one naming a row in a table the project has not got",
+              PyoneerAssetMissingError,
+              lambda: actor_row(load_tables(_tables_dir("empty")),
+                                {ACTOR: "hero"}, "tmx object id=10"),
+              "data table", "'actors'", "tmx object id=10")
+expect_raises("...and one on a pass handed no tables at all, which names the "
+              "WIRING rather than a missing row", PyoneerConfigError,
+              lambda: actor_row(None, {ACTOR: "hero"}, "tmx object id=11"),
+              "tmx object id=11", "LayerRenderer.tables")
+
+# -- the whole ladder, through a file, in one call -------------------------
+# Three DIFFERENT numbers at the three levels, for the reason section 7 gives:
+# equal values would let any reading order pass.
+_ladder = read_requests({BEHAVIORS: "params", "pyoneer_param_gravity": 1.0},
+                        actor_row(GOOD, {ACTOR: "hero"}, "object id=12"),
+                        registry=SCRATCH, where="object id=12")
+expect("object property beats the row that came off disk",
+       _ladder[0].values["gravity"], 1.0)
+_row_wins = read_requests({BEHAVIORS: "params"},
+                          actor_row(GOOD, {ACTOR: "hero"}, "object id=13"),
+                          registry=SCRATCH, where="object id=13")
+expect("...the row off disk beats the declared default",
+       _row_wins[0].values["gravity"], 2.0)
+_default_wins = read_requests({BEHAVIORS: "params"},
+                              actor_row(GOOD, {ACTOR: "bare"}, "object id=14"),
+                              registry=SCRATCH, where="object id=14")
+expect("...and the declared default answers when the row is silent",
+       _default_wins[0].values["gravity"], 9.0)
+expect("all three asked for the same behavior, so the number is the only "
+       "thing that differed",
+       {r[0].spec.name for r in (_ladder, _row_wins, _default_wins)},
+       {"params"})
+expect("...and the value really reaches the constructor, not just the request",
+       build(_row_wins)[0].gravity, 2.0)
+
+# `source="object"` IGNORES the row and says so -- proved against a row that
+# really came off disk, because the file is the only place an author can
+# write `air_control` for an actor, and the warning is the only thing that
+# tells them it did nothing.
+_off_schema = expect_warns(
+    "a per-object parameter refuses a disk row's column, and warns",
+    lambda: resolve_params(PARAMS, {},
+                           actor_row(GOOD, {ACTOR: "boss"}, "object id=15"),
+                           "object id=15"),
+    "air_control", "object id=15", "pyoneer_param_air_control")
+expect("...and keeps its declared default rather than the row's 0.9",
+       _off_schema["air_control"], 0.25)
+expect("...while the same row's source='actors' column is still read, so the "
+       "refusal is per PARAMETER and not per row",
+       _off_schema["gravity"], 3.0)
+
+shutil.rmtree(TABLES_ROOT, ignore_errors=True)
+
+
+# ===========================================================================
+print("\n9. build constructs, stamps, and refuses the wrong thing")
 # ===========================================================================
 _built = build(read_requests({BEHAVIORS: "params",
                               "pyoneer_param_gravity": 3.5},
@@ -746,7 +988,7 @@ expect_raises("a declared parameter the constructor will not take", TypeError,
 
 
 # ===========================================================================
-print("\n9. run order is the DECLARED order, not the attach order")
+print("\n10. run order is the DECLARED order, not the attach order")
 # ===========================================================================
 # The probe is off-diagonal on purpose. `zed` is declared to run FIRST
 # (order 10) but is attached SECOND and sorts LAST alphabetically, so a sort
@@ -805,7 +1047,7 @@ expect("describe() names order and writes for a trace",
 
 
 # ===========================================================================
-print("\n10. the drive: three frames, a snapshot, a gate, and no swallowing")
+print("\n11. the drive: three frames, a snapshot, a gate, and no swallowing")
 # ===========================================================================
 # THREE frames, not one. A single frame cannot tell "ran once per frame" from
 # "ran once at attach", and cannot see an interleave at all.
@@ -898,7 +1140,7 @@ expect("and the set is empty", len(entity.behaviors), 0)
 
 
 # ===========================================================================
-print("\n11. the real entity: composition moves it, and empty is frame-neutral")
+print("\n12. the real entity: composition moves it, and empty is frame-neutral")
 # ===========================================================================
 # Driven against a real GameEntity through the real move_direction gate, so
 # this is composition doing the engine's own work rather than a mock agreeing
@@ -942,7 +1184,7 @@ expect("but attaching it was still allowed, because input_=None is legal",
 
 
 # ===========================================================================
-print("\n12. BEHAVIORS.md is generated from the table the engine binds from")
+print("\n13. BEHAVIORS.md is generated from the table the engine binds from")
 # ===========================================================================
 _empty_doc = describe_all({})
 expect_true("an empty registry says so instead of printing a bare heading",
@@ -997,7 +1239,7 @@ expect_true("an authoring-only behavior says so in the same place as its name",
 
 
 # ===========================================================================
-print("\n13. summary")
+print("\n14. summary")
 # ===========================================================================
 print(f"\nassertions             : {len(asserted)}")
 print(f"registry at HEAD       : {len(BEHAVIOR_REGISTRY)} behavior(s)")

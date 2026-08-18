@@ -15,7 +15,7 @@
 
 - `editor/core/project.py:44` `PROJECT_DIR` #TAG:PROJECT_DIR
 - `editor/core/project.py:45` `PROJECT_FILE` #TAG:PROJECT_FILE
-- `editor/core/project.py:46` `TABLES_DIR` #TAG:TABLES_DIR
+- `editor/core/project.py:46` `TABLES_DIR` #TAG:project.TABLES_DIR
 
 ## Functions
 

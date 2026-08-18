@@ -5,34 +5,34 @@
 
 > Turn a map's `<objectgroup>` entries into constructed entities.
 
-`scripts.loaders.map_loader` · 312 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.loaders.map_loader` · 333 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    scripts.core.errors scripts.core.log scripts.core.spawn scripts.game.behavior scripts.loaders.map_document
+    scripts.core.errors scripts.core.log scripts.core.spawn scripts.game.behavior scripts.loaders.map_document scripts.loaders.table_file
 
 ## Functions
 
-- `scripts/loaders/map_loader.py:109` `as_document(source: Any) -> MapDocument` #TAG:as_document
+- `scripts/loaders/map_loader.py:110` `as_document(source: Any) -> MapDocument` #TAG:as_document
   - Coerce a MapDocument, a pytmx.TiledMap or a path into a MapDocument.
-- `scripts/loaders/map_loader.py:132` `has_tmx_document(source: Any) -> bool` #TAG:has_tmx_document
+- `scripts/loaders/map_loader.py:133` `has_tmx_document(source: Any) -> bool` #TAG:has_tmx_document
   - Can `as_document` re-read this source's .tmx? A native map cannot.
-- `scripts/loaders/map_loader.py:156` `object_group_elements(document: MapDocument) -> list[ElementTree.Element]` #TAG:object_group_elements
+- `scripts/loaders/map_loader.py:157` `object_group_elements(document: MapDocument) -> list[ElementTree.Element]` #TAG:object_group_elements
   - Every real `<objectgroup>` in the map, in document order.
-- `scripts/loaders/map_loader.py:174` `object_top_left(obj: MapObject, tile_height: int) -> tuple[float, float]` #TAG:object_top_left
+- `scripts/loaders/map_loader.py:175` `object_top_left(obj: MapObject, tile_height: int) -> tuple[float, float]` #TAG:object_top_left
   - The object's position translated to the top-left origin the renderer uses.
-- `scripts/loaders/map_loader.py:201` `_warn_unrotatable(obj: MapObject, layer_name: str) -> None` #TAG:_warn_unrotatable
+- `scripts/loaders/map_loader.py:202` `_warn_unrotatable(obj: MapObject, layer_name: str) -> None` #TAG:_warn_unrotatable
   - Say so when a map asks for a rotation the render path cannot draw.
-- `scripts/loaders/map_loader.py:223` `spawn_objects(document_or_tmx: Any, registry: Mapping[str, Callable[..., Any]] | None=None, *, defaults: Mapping[str, Mapping[str, Any]] | None=None, layers: Sequence[str] | None=None) -> list[SpawnedEntity]` #TAG:spawn_objects
+- `scripts/loaders/map_loader.py:224` `spawn_objects(document_or_tmx: Any, registry: Mapping[str, Callable[..., Any]] | None=None, *, defaults: Mapping[str, Mapping[str, Any]] | None=None, layers: Sequence[str] | None=None, tables: ProjectTables | None=None) -> list[SpawnedEntity]` #TAG:spawn_objects
   - Construct an entity for every typed object in the map's object groups.
-- `scripts/loaders/map_loader.py:306` `spawn_counts(spawned: Iterable[SpawnedEntity]) -> dict[str, int]` #TAG:spawn_counts
+- `scripts/loaders/map_loader.py:327` `spawn_counts(spawned: Iterable[SpawnedEntity]) -> dict[str, int]` #TAG:spawn_counts
   - How many of each type a pass produced. For logging and for checks.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class SpawnedEntity` #TAG:SpawnedEntity
 
-`scripts/loaders/map_loader.py:79`–`102`
+`scripts/loaders/map_loader.py:80`–`103`
 
 > One constructed entity and everything the binder needs to place it.
 

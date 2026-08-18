@@ -32,12 +32,16 @@ nothing to differ; `tools/check_collision_runtime.py` section 8 asserts
 IDENTITY instead -- the editor's names must be these objects -- which is what
 fails the day somebody pastes a second copy back.
 
-What deliberately did NOT move: the `.blitmask` text format, `TilesetDefaults`
-and `Blitmask`. They are authoring shapes, the runtime path here does not
-need them (a companion layer's masks live in the .tmx, not in a sidecar), and
-moving a 250-line parser the engine never calls would only widen this module.
-Level one of the three-level stack -- the tileset's own defaults -- is
-therefore NOT read at runtime yet. See THE LEVELS below.
+`TilesetDefaults`, `tileset_reader`, `Blitmask` and the `.blitmask` text
+format moved here too, later and for the opposite reason to the rest. The
+argument for leaving them on the editor side was that the runtime never
+opened a sidecar, which was true until `field_from_map` started reading
+level one; at that point the choice was to move 250 lines or to write a
+second parser for a format whose whole job is to be read the same way twice.
+Law 2's corollary already priced the second option at 425 duplicate lines.
+What stayed behind is only what an AUTHORING tool asks for -- the
+conversions between a `Blitmask` and the two shapes the editor holds, and
+`describe_stack`, which exists to fill a tooltip.
 
 THE ENCODING, IN ONE PARAGRAPH
 ------------------------------
@@ -52,15 +56,36 @@ a mask stroke in the editor is an ordinary tile stroke with ordinary undo.
 
 THE LEVELS
 ----------
-`editor/core/collision.py` documents three, weakest first: tileset defaults,
-layer companion, per-cell override. This module reads the MIDDLE one, and
-that is not a shortcut -- it is parity with what the editor currently
-authors. `MapCanvas.collision_stack()` builds its `CollisionLayer`s with
-`companion=` alone: no defaults, no overrides. So the overlay an author sees
-while painting and the field a player walks through are resolved from the
-same single level. When the editor starts writing tileset defaults, the
-missing piece here is `tileset_reader` plus a `.blitmask` load, and
-`CollisionLayer` already has the slot for it.
+Three, weakest first: tileset defaults, layer companion, per-cell override.
+This module reads the bottom TWO. Level one is a `.blitmask` beside the map,
+named by a tileset's `pyoneer_collision` property and loaded by
+`tileset_defaults`; level two is a companion tile layer in the .tmx. Level
+three -- the sparse per-cell override -- is still authored by nobody and
+read from no file, so `CollisionLayer.overrides` stays the empty dict at
+runtime and is written only by a caller holding the object.
+
+WHY LEVEL ONE IS WORTH THE READ. A wall tile is a wall everywhere it is
+stamped, and saying so per cell per layer is four hundred chances to miss
+one. With a tileset default, stamping the tile IS authoring the collision;
+the companion layer stops being how you say "this is a wall" and becomes
+only how you say "not THIS one" -- a door left open, a hole in a fence, a
+brick that is scenery on the background layer.
+
+PRECEDENCE IS THE WHOLE FEATURE, and it is `CollisionLayer.opinion_at` that
+carries it: override, then companion, then defaults, first one that is not
+NO_DATA wins. A painted companion cell therefore OVERRIDES the tile default
+rather than merging with it -- painting PASS_ALL over a tile whose default is
+BLOCK_ALL gives PASS_ALL, not BLOCK_ALL, and not the union -- and a STAR
+painted over a default suppresses it and asks the layer BELOW instead. Both
+directions are asserted in `tools/check_collision_runtime.py`, because a
+precedence rule proved in one direction is half an invariant and half is the
+dominant failure shape in this tree.
+
+`MapCanvas.collision_stack()` still builds its `CollisionLayer`s with
+`companion=` alone, so the editor's OVERLAY does not yet show level one. That
+is a gap in the overlay, not in the model: the two call the same `resolve`
+over the same `CollisionLayer`, and the overlay starts agreeing the day it
+passes `defaults=tileset_defaults(document)` in.
 
 THE READ PATH, AND THE TWO pytmx TRAPS
 --------------------------------------
@@ -196,12 +221,19 @@ what lets `tools/smoke.py` stay on its baseline, and it is checked.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field as dataclass_field
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, ClassVar, Mapping, Sequence
 
 from scripts.core.depth import resolve_layer_depth
 from scripts.core.errors import PyoneerConfigError, warn_content
-from scripts.core.layer_profile import DEPTH, PASSABILITY, PREFIX
+from scripts.core.layer_profile import (
+    DEPTH,
+    PASSABILITY,
+    PREFIX,
+    STATIC,
+    read_properties as read_layer_properties,
+)
 from scripts.core.log import trace_assets
 
 # A reader of gids at a cell. The unit every level of the stack is expressed
@@ -458,6 +490,454 @@ def abstains(opinion: int) -> bool:
     treated alike.
     """
     return opinion == NO_DATA or opinion == STAR
+
+
+# ---------------------------------------------------------------------------
+# Level one: what a tile means, wherever it is stamped
+# ---------------------------------------------------------------------------
+# Moved here from `editor/core/collision.py`, whole, on the day the engine
+# grew a reader for it. It was authored on the editor side because nothing
+# in `scripts/` opened a sidecar; `field_from_map` does now, and a second
+# copy of a 250-line parser is the one thing law 2's corollary already cost
+# this repository 425 lines to undo. `editor/core/collision.py` imports
+# every name below and re-exports it, so no caller over there changed.
+
+class PyoneerBlitmaskError(PyoneerConfigError):
+    """A .blitmask file is not the agreed format.
+
+    Carries the offending line, because a 100-row grid with one bad
+    character should not read as "the file is broken".
+    """
+
+    def __init__(self, message: str, *, line: int | None = None,
+                 path: str | None = None, **context: Any):
+        where = []
+        if path:
+            where.append(path)
+            context["path"] = path
+        if line is not None:
+            where.append(f"line {line}")
+            context["line"] = line
+        if where:
+            message = f"{' '.join(where)}: {message}"
+        super().__init__(message, **context)
+        self.line = line
+        self.path = path
+
+
+# --------------------------------------------------------------------------
+# Level one: what a tile means, wherever it is stamped
+# --------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TilesetDefaults:
+    """One mask per tile in a tileset, addressed by gid.
+
+    `opinions` is row-major over the tileset's own grid, which is why the
+    .blitmask that stores it has the tileset's shape: the file laid beside
+    the image reads as the image.
+    """
+
+    first_gid: int
+    columns: int
+    rows: int
+    opinions: tuple[int, ...]
+    name: str = ""
+
+    def __post_init__(self) -> None:
+        if self.first_gid < 1:
+            raise ValueError(f"a tileset firstgid is 1 or more, got "
+                             f"{self.first_gid}")
+        if self.columns <= 0 or self.rows <= 0:
+            raise ValueError(f"a tileset is at least 1x1, got "
+                             f"{self.columns}x{self.rows}")
+        if len(self.opinions) != self.columns * self.rows:
+            raise ValueError(
+                f"tileset {self.name or '?'} is {self.columns}x{self.rows} = "
+                f"{self.columns * self.rows} tiles but carries "
+                f"{len(self.opinions)} opinions")
+        bad = [v for v in self.opinions if not is_opinion(v)]
+        if bad:
+            raise ValueError(f"opinions outside 0..{STAR} and NO_DATA: "
+                             f"{sorted(set(bad))[:8]}")
+
+    @property
+    def tile_count(self) -> int:
+        return self.columns * self.rows
+
+    @property
+    def last_gid(self) -> int:
+        return self.first_gid + self.tile_count - 1
+
+    def holds(self, gid: int) -> bool:
+        bare, _flags = split_gid(gid)
+        return self.first_gid <= bare <= self.last_gid
+
+    def local_id(self, gid: int) -> int:
+        """The tile's index within this tileset, or -1 if it is not ours."""
+        bare, _flags = split_gid(gid)
+        if not self.first_gid <= bare <= self.last_gid:
+            return -1
+        return bare - self.first_gid
+
+    def opinion_for_gid(self, gid: int) -> int:
+        """What this tileset says about a tile, mirrored to match its flags."""
+        local = self.local_id(gid)
+        if local < 0:
+            return NO_DATA
+        _bare, flags = split_gid(gid)
+        return transform_mask(self.opinions[local], flags)
+
+    def opinion_for_local(self, tile_id: int) -> int:
+        if not 0 <= tile_id < self.tile_count:
+            return NO_DATA
+        return self.opinions[tile_id]
+
+    def with_local(self, tile_id: int, opinion: int) -> "TilesetDefaults":
+        """A copy with one tile changed. Frozen, so editing is replacement --
+        which is also what makes an undo step a stored reference."""
+        if not 0 <= tile_id < self.tile_count:
+            raise ValueError(f"tile {tile_id} is outside 0..{self.tile_count - 1}")
+        if not is_opinion(opinion):
+            raise ValueError(f"{opinion} is not an opinion")
+        opinions = list(self.opinions)
+        opinions[tile_id] = opinion
+        return TilesetDefaults(self.first_gid, self.columns, self.rows,
+                               tuple(opinions), self.name)
+
+    def to_blitmask(self, **meta: str) -> "Blitmask":
+        head = {"kind": "tileset", "firstgid": str(self.first_gid)}
+        if self.name:
+            head["name"] = self.name
+        head.update(meta)
+        return Blitmask(self.columns, self.rows, self.opinions, head)
+
+    @classmethod
+    def from_blitmask(cls, blitmask: "Blitmask", *,
+                      first_gid: int | None = None,
+                      name: str | None = None) -> "TilesetDefaults":
+        """Read defaults back, taking firstgid and name from the file's own
+        metadata unless the caller overrides them -- the file was written
+        next to a tileset whose firstgid may since have moved."""
+        if first_gid is None:
+            raw = blitmask.meta.get("firstgid", "1")
+            try:
+                first_gid = int(raw)
+            except ValueError:
+                raise PyoneerBlitmaskError(
+                    f"firstgid must be an integer, got {raw!r}") from None
+        if name is None:
+            name = blitmask.meta.get("name", "")
+        return cls(first_gid, blitmask.width, blitmask.height,
+                   blitmask.opinions, name)
+
+
+def tileset_reader(art: Reader, defaults: Sequence[TilesetDefaults], *,
+                   scale: int = 1) -> OpinionReader:
+    """Level one as an OpinionReader: read the ART layer's gid at a cell,
+    ask whichever tileset owns that gid what the tile means.
+
+    Note what this reads: the art, not a companion. That is the level's
+    whole value -- painting a wall tile IS painting collision, with nothing
+    else to author and nothing to keep in sync.
+
+    `scale` is how many FIELD cells one of the art layer's cells covers, and
+    it is `companion_reader`'s argument with the same meaning and the same
+    arithmetic. An art layer has no sub-cell -- it is drawn, and the renderer
+    draws one tile per map cell -- so where a companion's scale is the
+    field's resolution divided by its own declaration, an art layer's is the
+    field's resolution whole. Getting it wrong does not lose the level, it
+    RELOCATES it, which is the failure `companion_reader` has the measured
+    number for.
+    """
+    table = tuple(defaults)
+
+    def at(x: int, y: int) -> int:
+        raw = art(x, y)
+        if raw <= 0:
+            return NO_DATA
+        for tileset in table:
+            opinion = tileset.opinion_for_gid(raw)
+            if opinion != NO_DATA:
+                return opinion
+        return NO_DATA
+
+    if scale == 1:
+        return at
+    if scale < 1:
+        raise ValueError(f"scale is 1 or more, got {scale}")
+    return lambda x, y: at(x // scale, y // scale)
+
+
+# --------------------------------------------------------------------------
+# The .blitmask file
+# --------------------------------------------------------------------------
+
+MAGIC = "blitmask"
+NO_DATA_TOKEN = "."
+STAR_TOKEN = "*"
+_HEX = "0123456789abcdef"
+
+# One char per opinion. Built from the vocabulary rather than typed out, so
+# it cannot drift from it.
+TOKENS: dict[int, str] = {NO_DATA: NO_DATA_TOKEN, STAR: STAR_TOKEN}
+TOKENS.update({mask: _HEX[mask] for mask in range(BLOCK_ALL + 1)})
+OPINIONS: dict[str, int] = {token: opinion for opinion, token in TOKENS.items()}
+OPINIONS.update({token.upper(): opinion for token, opinion in OPINIONS.items()
+                 if token in _HEX})
+
+
+def opinion_to_token(opinion: int) -> str:
+    """One char for one opinion.
+
+    Raises rather than substituting anything for an opinion outside the
+    vocabulary. If the domain ever widens to STAR|direction -- 32 values
+    instead of 17 -- a single char stops being enough and this is where
+    that has to be noticed, loudly, rather than where a `*` silently
+    swallowed a direction bit.
+    """
+    token = TOKENS.get(opinion)
+    if token is None:
+        raise PyoneerBlitmaskError(
+            f"{opinion} has no .blitmask token; the format encodes NO_DATA, "
+            f"STAR and masks 0..{BLOCK_ALL} as one character each")
+    return token
+
+
+def token_to_opinion(token: str) -> int:
+    opinion = OPINIONS.get(token)
+    if opinion is None:
+        raise PyoneerBlitmaskError(
+            f"{token!r} is not a .blitmask cell; expected one of "
+            f"'.', '*' or a hex digit")
+    return opinion
+
+
+@dataclass(frozen=True)
+class Blitmask:
+    """A grid of opinions plus its metadata: the whole file, as a value.
+
+    Frozen because it is the thing a command stores to make its own inverse
+    -- an edit produces a new Blitmask and the old one IS the undo state,
+    with nothing to copy defensively and nothing that can change underneath
+    a stored reference.
+
+    `at` answers NO_DATA outside the grid rather than raising, because a
+    Blitmask is usable directly as an `OpinionReader` and a reader that
+    raises at the border is a reader every caller has to wrap.
+    """
+
+    width: int
+    height: int
+    opinions: tuple[int, ...]
+    meta: dict[str, str] = dataclass_field(default_factory=dict)
+
+    VERSION: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        if self.width <= 0 or self.height <= 0:
+            raise PyoneerBlitmaskError(
+                f"a blitmask is at least 1x1, got {self.width}x{self.height}")
+        if len(self.opinions) != self.width * self.height:
+            raise PyoneerBlitmaskError(
+                f"a {self.width}x{self.height} grid wants "
+                f"{self.width * self.height} cells, got {len(self.opinions)}")
+        bad = [v for v in self.opinions if not is_opinion(v)]
+        if bad:
+            raise PyoneerBlitmaskError(
+                f"cells outside NO_DATA and 0..{STAR}: {sorted(set(bad))[:8]}")
+        for key, value in self.meta.items():
+            if not key or any(c.isspace() for c in key):
+                raise PyoneerBlitmaskError(
+                    f"metadata key {key!r} must be one word with no spaces")
+            if key in ("size", MAGIC):
+                raise PyoneerBlitmaskError(
+                    f"{key!r} is structural and cannot be a metadata key")
+            if "\n" in str(value) or "\r" in str(value):
+                raise PyoneerBlitmaskError(
+                    f"metadata {key!r} must be a single line")
+
+    # -- building ----------------------------------------------------------
+
+    @classmethod
+    def blank(cls, width: int, height: int, *, fill: int = NO_DATA,
+              **meta: str) -> "Blitmask":
+        return cls(width, height, (fill,) * (width * height), dict(meta))
+
+    @classmethod
+    def from_rows(cls, rows: Sequence[Sequence[int]],
+                  **meta: str) -> "Blitmask":
+        if not rows or not rows[0]:
+            raise PyoneerBlitmaskError("a blitmask needs at least one cell")
+        width = len(rows[0])
+        if any(len(row) != width for row in rows):
+            raise PyoneerBlitmaskError("blitmask rows must all be one length")
+        flat = tuple(value for row in rows for value in row)
+        return cls(width, len(rows), flat, dict(meta))
+
+    # -- asking ------------------------------------------------------------
+
+    def at(self, x: int, y: int) -> int:
+        if 0 <= x < self.width and 0 <= y < self.height:
+            return self.opinions[y * self.width + x]
+        return NO_DATA
+
+    def reader(self) -> OpinionReader:
+        """The grid as a level of a `CollisionLayer`."""
+        return self.at
+
+    def row(self, y: int) -> tuple[int, ...]:
+        return self.opinions[y * self.width:(y + 1) * self.width]
+
+    def rows(self) -> list[tuple[int, ...]]:
+        return [self.row(y) for y in range(self.height)]
+
+    def with_cell(self, x: int, y: int, opinion: int) -> "Blitmask":
+        if not 0 <= x < self.width or not 0 <= y < self.height:
+            raise PyoneerBlitmaskError(
+                f"({x}, {y}) is outside {self.width}x{self.height}")
+        if not is_opinion(opinion):
+            raise PyoneerBlitmaskError(f"{opinion} is not an opinion")
+        opinions = list(self.opinions)
+        opinions[y * self.width + x] = opinion
+        return Blitmask(self.width, self.height, tuple(opinions),
+                        dict(self.meta))
+
+    def counts(self) -> dict[int, int]:
+        out: dict[int, int] = {}
+        for opinion in self.opinions:
+            out[opinion] = out.get(opinion, 0) + 1
+        return out
+
+    # -- text --------------------------------------------------------------
+
+    def render(self) -> str:
+        """The file, as a string. Always ends in a newline: a text file
+        whose last line has no terminator is the one every diff tool
+        complains about."""
+        lines = [f"{MAGIC} {self.VERSION}", f"size {self.width} {self.height}"]
+        lines += [f"{key} {value}" for key, value in self.meta.items()]
+        for y in range(self.height):
+            lines.append("".join(opinion_to_token(v) for v in self.row(y)))
+        return "\n".join(lines) + "\n"
+
+    @classmethod
+    def parse(cls, text: str, *, path: str | None = None) -> "Blitmask":
+        """Read a .blitmask, refusing anything it cannot read exactly.
+
+        The grammar has one rule that makes it unambiguous without any
+        separator ceremony: a header line is `key value` and therefore
+        CONTAINS A SPACE, and a grid row is cell characters and therefore
+        does not. So the header ends at the first line with no space in it.
+        """
+        numbered = [(n, raw.strip()) for n, raw in enumerate(text.splitlines(), 1)]
+        # Comments and blank lines are for humans and carry nothing, so they
+        # are dropped here and do not survive a load/save cycle. Line numbers
+        # are kept, which is the only reason the enumerate is up there.
+        lines = [(n, s) for n, s in numbered if s and not s.startswith("#")]
+        if not lines:
+            raise PyoneerBlitmaskError("file is empty", path=path)
+
+        number, first = lines[0]
+        parts = first.split()
+        if len(parts) != 2 or parts[0] != MAGIC:
+            raise PyoneerBlitmaskError(
+                f"expected {MAGIC!r} and a version, got {first!r}",
+                line=number, path=path)
+        try:
+            version = int(parts[1])
+        except ValueError:
+            raise PyoneerBlitmaskError(
+                f"version must be an integer, got {parts[1]!r}",
+                line=number, path=path) from None
+        if version != cls.VERSION:
+            raise PyoneerBlitmaskError(
+                f"version {version} is not readable by this build "
+                f"(expected {cls.VERSION})", line=number, path=path)
+
+        width = height = -1
+        meta: dict[str, str] = {}
+        index = 1
+        while index < len(lines):
+            number, line = lines[index]
+            if " " not in line:
+                break                       # the grid starts here
+            key, value = line.split(" ", 1)
+            value = value.strip()
+            if key == "size":
+                # Structural, so it never lands in `meta` and the duplicate
+                # check below cannot see it. Without this, a second size line
+                # silently wins and the grid is read against a shape the
+                # author did not write last.
+                if width >= 0:
+                    raise PyoneerBlitmaskError("size appears twice",
+                                               line=number, path=path)
+                size = value.split()
+                if len(size) != 2:
+                    raise PyoneerBlitmaskError(
+                        f"size wants width and height, got {value!r}",
+                        line=number, path=path)
+                try:
+                    width, height = int(size[0]), int(size[1])
+                except ValueError:
+                    raise PyoneerBlitmaskError(
+                        f"size wants two integers, got {value!r}",
+                        line=number, path=path) from None
+                if width <= 0 or height <= 0:
+                    raise PyoneerBlitmaskError(
+                        f"size must be positive, got {width}x{height}",
+                        line=number, path=path)
+            elif key in meta:
+                raise PyoneerBlitmaskError(f"metadata {key!r} appears twice",
+                                           line=number, path=path)
+            else:
+                meta[key] = value
+            index += 1
+
+        if width < 0:
+            raise PyoneerBlitmaskError("no size line", path=path)
+
+        grid = lines[index:]
+        if len(grid) != height:
+            number = grid[height][0] if len(grid) > height else lines[-1][0]
+            raise PyoneerBlitmaskError(
+                f"size says {height} rows, found {len(grid)}",
+                line=number, path=path)
+        opinions: list[int] = []
+        for number, row in grid:
+            if len(row) != width:
+                raise PyoneerBlitmaskError(
+                    f"size says {width} cells, row is {len(row)}",
+                    line=number, path=path)
+            for column, token in enumerate(row):
+                try:
+                    opinions.append(token_to_opinion(token))
+                except PyoneerBlitmaskError as error:
+                    raise PyoneerBlitmaskError(
+                        f"column {column + 1}: {error.message}",
+                        line=number, path=path) from None
+        return cls(width, height, tuple(opinions), meta)
+
+    # -- disk --------------------------------------------------------------
+
+    @classmethod
+    def load(cls, path: str) -> "Blitmask":
+        with open(path, "r", encoding="utf-8") as handle:
+            return cls.parse(handle.read(), path=path)
+
+    def save(self, path: str) -> None:
+        """Write it. newline="" so the bytes are the bytes on every
+        platform -- this repo's whole tmx contract is byte-exactness, and a
+        sidecar that grows carriage returns on Windows and loses them on
+        the next machine is a diff nobody authored."""
+        directory = os.path.dirname(os.path.abspath(path))
+        if directory and not os.path.isdir(directory):
+            os.makedirs(directory, exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(self.render())
+
+    def __str__(self) -> str:
+        return self.render()
 
 
 # ---------------------------------------------------------------------------
@@ -863,6 +1343,32 @@ COLLISION_TILESET = "collision"
 #: `editor/ui/canvas.py` imports it, for the reason above.
 COMPANION_SUFFIX = "Collision"
 
+#: A tmx `<tileset>`'s declaration of its own per-tile masks: the name of a
+#: `.blitmask` file, resolved RELATIVE TO THE .tmx exactly as the tileset's
+#: own `<image source>` is.
+#:
+#: One base for every path in a .tmx, with no exceptions to remember, which
+#: is why it is not resolved beside the image even though beside the image is
+#: where the file belongs. An author writing
+#: `pyoneer_collision="../graphics/tilesets/System/TileA2.blitmask"` under an
+#: `<image source="../graphics/tilesets/System/TileA2.png"/>` has written the
+#: same prefix twice and can see that he has; an author writing
+#: `"TileA2.blitmask"` against an image two directories away would be writing
+#: a path whose base is different from the one on the line above it, and the
+#: failure of guessing wrong is a mask that silently does not load.
+#:
+#: ABSENT MEANS NO DEFAULTS, and that is the whole of the optional case: a
+#: tileset that declares nothing contributes nothing, every map authored
+#: before this existed is unchanged, and `field_from_map` bakes exactly what
+#: it baked before. PRESENT AND UNREADABLE RAISES -- see `tileset_defaults`,
+#: which is where the line between "not authored" and "authored wrong" is
+#: drawn, and why it is drawn there.
+#:
+#: It sits outside `layer_profile.KNOWN` for `SUBCELL`'s reason and one more:
+#: KNOWN is the vocabulary the layer INSPECTOR offers, and this is not a
+#: layer property at all.
+DEFAULTS_PROPERTY = PREFIX + "collision"
+
 #: How many sub-cells a companion layer divides each map TILE into, along each
 #: axis. Declared on the COMPANION layer, `type="int"`, and ABSENT MEANS 1.
 #:
@@ -1120,6 +1626,23 @@ def layer_depth(document, layer_name: str) -> int:
     return declared if declared >= 0 else UNRANKED_DEPTH
 
 
+def layer_rank(document, layer_name: str, index: int) -> tuple[int, int]:
+    """Sort key that puts a layer where `resolve` expects it: TOPMOST FIRST.
+
+    Depth first, then reverse document order, both negated because a stack
+    is walked from the top and `sorted` walks from the front. The tie-break
+    is not arbitrary: the renderer appends same-depth layers into one list
+    and draws it in order, so the layer written LAST in the file is the one
+    drawn on top and therefore the one that decides first.
+
+    One function rather than the expression written twice, because
+    `collision_layers` ranks a DIFFERENT set of layers than `companion_pairs`
+    does the moment a tileset declares defaults -- and two spellings of "which
+    layer decides" is the failure this whole module is shaped to avoid.
+    """
+    return (-layer_depth(document, layer_name), -index)
+
+
 def companion_pairs(document) -> list[tuple[str, str]]:
     """(art layer, companion layer) for every layer that has masks, TOPMOST
     FIRST -- which is `resolve`'s contract and the reverse of a tmx layer
@@ -1151,9 +1674,9 @@ def companion_pairs(document) -> list[tuple[str, str]]:
                     "%s" % (name, PASSABILITY, companion, sorted(known))
                 )
             continue
-        ranked.append((layer_depth(document, name), index, name, companion))
-    ranked.sort(key=lambda item: (-item[0], -item[1]))
-    return [(name, companion) for _depth, _index, name, companion in ranked]
+        ranked.append((name, companion, layer_rank(document, name, index)))
+    ranked.sort(key=lambda item: item[2])
+    return [(name, companion) for name, companion, _rank in ranked]
 
 
 def gid_inverse(tmx_data) -> dict[int, int]:
@@ -1270,8 +1793,147 @@ def document_gid_reader(tile_layer) -> Reader:
     return read
 
 
+def at_world_coordinates(document, layer_name: str) -> bool:
+    """Are this layer's tile cells the same cells the collision field uses?
+
+    No for a parallaxed layer and no for a `dynamic` one: both are drawn at
+    an offset that changes with the camera, so cell (3, 4) of that layer is
+    not over cell (3, 4) of the map, and gating on it would put a wall where
+    nothing is drawn. This module's own docstring calls a wall 84 pixels off
+    "strictly worse than a wall that vanished"; it is the same failure.
+
+    Read through `layer_profile.read_properties` rather than by fetching
+    `pyoneer_parallax_x` here, so "what counts as parallaxed" has one answer
+    and the renderer owns it.
+
+    Only `collision_layers` asks, and only about a layer that has NO
+    companion. A layer that DECLARES `pyoneer_passability` is the author
+    saying "collide against this one" in as many words, and this function is
+    never consulted for it -- so nothing anybody authored is dropped here.
+    What is filtered is the automatic half: which layers a TILESET default
+    reaches without being asked.
+    """
+    profile = read_layer_properties(
+        document.tile_layer(layer_name).properties.as_dict())
+    return profile.motion == STATIC and not profile.parallaxed
+
+
+def tileset_defaults(document) -> list[TilesetDefaults]:
+    """Level one for this map: each tileset's own per-tile masks, loaded.
+
+    A tileset declares them with `DEFAULTS_PROPERTY`, and the returned list
+    is in the map's tileset order -- which would only matter for a map whose
+    gid ranges overlap, and they cannot.
+
+    WHERE THE LINE BETWEEN "NOT AUTHORED" AND "AUTHORED WRONG" IS
+    -------------------------------------------------------------
+    An ABSENT property returns nothing for that tileset and is not an error,
+    and that is the entire optional case: every map in this repository
+    declares no defaults, bakes exactly what it baked before, and
+    `tools/smoke.py` cannot move. A PRESENT property that cannot be honoured
+    RAISES, every time, because the alternative is the shape this repository
+    has already paid for -- 39 authored tiles dropped for months because a
+    name did not match and nothing said so. Six ways to be wrong, each of
+    them silent if it is not caught here:
+
+      * the document has no path, so a relative reference has no base. Only
+        a document built from bytes can reach this.
+      * the file is not there. A renamed or unshipped sidecar reads as a
+        tileset with no collision at all, which looks exactly like a feature
+        nobody turned on.
+      * the tileset's extent is unknown -- an EXTERNAL `<tileset source=>`,
+        or an embedded one with no `tilecount`. `TilesetRef.holds` answers
+        False for those, and False here is indistinguishable from "that gid
+        is not mine", so every tile would silently have no mask.
+      * `columns` is missing or zero. The mask grid is row-major over the
+        sheet, so with no column count there is no arithmetic from a gid to
+        a cell of the mask.
+      * the mask is a different WIDTH from the sheet. Every row after the
+        first is then shifted, so the masks load, apply, and describe the
+        wrong tiles -- the failure that still looks like the feature working.
+      * the mask NAMES a different sheet. `to_blitmask` writes the tileset's
+        name into the file, so a copied property pointing at another sheet's
+        mask is caught by the file itself.
+
+    A mask SHORTER than the sheet is legal and deliberate: `TilesetDefaults`
+    is built at the file's own height and `opinion_for_local` answers NO_DATA
+    past its end, so masking the first three rows of a 24-row sheet and
+    stopping is an ordinary thing to author. Only a mask TALLER than the
+    sheet raises, for `companion_subcell`'s reason -- taller is the case
+    where the cells exist, were authored, and would be read by nothing.
+    """
+    path = getattr(document, "path", None)
+    base = os.path.dirname(os.path.abspath(path)) if path else ""
+    table: list[TilesetDefaults] = []
+    for ref in document.tilesets():
+        reference = str(document.properties_of(ref.element)
+                        .get(DEFAULTS_PROPERTY, "") or "").strip()
+        if not reference:
+            continue
+        label = ref.name or ref.source or ("the tileset at firstgid %d"
+                                           % ref.first_gid)
+        if not os.path.isabs(reference) and not base:
+            raise PyoneerConfigError(
+                "tileset %r declares %s=%r, but this map has no path to "
+                "resolve it against -- it was built from bytes. Load the map "
+                "from a file, or make the reference absolute"
+                % (label, DEFAULTS_PROPERTY, reference))
+        resolved = os.path.normpath(reference if os.path.isabs(reference)
+                                    else os.path.join(base, reference))
+        if not os.path.isfile(resolved):
+            raise PyoneerConfigError(
+                "tileset %r declares %s=%r, which resolves to %s and is not "
+                "there. The reference is relative to the .tmx, the same as "
+                "the tileset's own image source"
+                % (label, DEFAULTS_PROPERTY, reference, resolved),
+                source=path)
+        if not ref.extent_known:
+            raise PyoneerConfigError(
+                "tileset %r declares %s=%r but this map cannot say which "
+                "gids it owns: an external tileset keeps its tilecount in "
+                "the .tsx, and an embedded one may omit it. Without an "
+                "extent every tile would silently read as having no mask"
+                % (label, DEFAULTS_PROPERTY, reference), source=path)
+        if ref.columns <= 0:
+            raise PyoneerConfigError(
+                "tileset %r declares %s=%r but no columns, and a mask grid "
+                "is row-major over the sheet -- with no column count there "
+                "is no way from a gid to a cell of the mask"
+                % (label, DEFAULTS_PROPERTY, reference), source=path)
+        mask = Blitmask.load(resolved)
+        rows = -(-ref.tile_count // ref.columns)        # ceiling division
+        if mask.width != ref.columns:
+            raise PyoneerConfigError(
+                "tileset %r is %d columns wide and its masks %s are %d. A "
+                "mask grid is row-major over the sheet, so a different width "
+                "does not lose a column -- it shifts every row after the "
+                "first and masks the wrong tiles"
+                % (label, ref.columns, resolved, mask.width), source=path)
+        if mask.height > rows:
+            raise PyoneerConfigError(
+                "masks %s are %dx%d but tileset %r is %d tiles in %d "
+                "columns, which is %d rows. The %d cells past that edge were "
+                "authored and would be read by nothing"
+                % (resolved, mask.width, mask.height, label, ref.tile_count,
+                   ref.columns, rows, (mask.height - rows) * mask.width),
+                source=path)
+        declared = str(mask.meta.get("name", "") or "")
+        if declared and ref.name and declared != ref.name:
+            raise PyoneerConfigError(
+                "masks %s say they belong to tileset %r, and this map "
+                "attached them to %r. One of the two is a copied reference; "
+                "drop the mask's name line if the file is deliberately shared"
+                % (resolved, declared, ref.name), source=path)
+        table.append(TilesetDefaults.from_blitmask(
+            mask, first_gid=ref.first_gid, name=ref.name))
+        trace_assets("tileset defaults %s -> %s (%dx%d, firstgid %d)",
+                     label, resolved, mask.width, mask.height, ref.first_gid)
+    return table
+
+
 def collision_layers(document, tmx_data=None, *, subcell: int | None = None,
-                     pairs: Sequence[tuple[str, str]] | None = None
+                     pairs: Sequence[tuple[str, str]] | None = None,
+                     defaults: Sequence[TilesetDefaults] | None = None
                      ) -> list[CollisionLayer]:
     """The map's collision stack, TOPMOST FIRST, as lazy readers.
 
@@ -1285,34 +1947,98 @@ def collision_layers(document, tmx_data=None, *, subcell: int | None = None,
     coordinates. It defaults to `field_subcell(document)`, which is the finest
     any layer declares -- so calling this with two arguments, as everything
     did before sub-cells existed, still returns a stack that composes.
+
+    `defaults` is level one, `tileset_defaults(document)` by default. It
+    changes WHICH LAYERS ARE IN THE STACK, and that is the one thing about
+    this function worth reading twice:
+
+      * with NO defaults, the stack comes out as `pairs` and nothing else,
+        which is what it has always been -- not because unpaired layers are
+        skipped early, but because a layer with no level to carry is dropped
+        below. One rule decides membership rather than two agreeing. Every
+        map in this repository takes this branch and bakes the same bytes it
+        baked before level one existed.
+      * with defaults, every tile layer that is not itself a companion joins
+        -- because the whole point of a mask on the TILE is that stamping the
+        tile is the only authoring step, and a layer nobody thought to give a
+        companion is exactly the layer that would otherwise be missed.
+        `at_world_coordinates` filters that automatic half; a layer that
+        declares a companion is never filtered, whatever it declares.
+
+    Both branches rank through `layer_rank`, so a layer's position in the
+    stack does not depend on how it got there.
     """
     first_gid = collision_first_gid(document)
-    if first_gid is None:
+    if defaults is None:
+        defaults = tileset_defaults(document)
+    defaults = tuple(defaults)
+    if first_gid is None and not defaults:
         return []
     if pairs is None:
         pairs = companion_pairs(document)
     if subcell is None:
         subcell = field_subcell(document, pairs)
+
+    companion_of = dict(pairs)
+    companions = {companion for _name, companion in pairs}
+    entries: list[tuple[tuple[int, int], str, str]] = []
+    for index, name in enumerate(document.tile_layer_names()):
+        companion = companion_of.get(name, "")
+        if not companion and (name in companions
+                              or not at_world_coordinates(document, name)):
+            continue
+        entries.append((layer_rank(document, name, index), name, companion))
+    entries.sort(key=lambda entry: entry[0])
+
     stack: list[CollisionLayer] = []
-    for name, companion in pairs:
-        own = companion_subcell(document, companion)
-        if subcell % own:
-            raise PyoneerConfigError(
-                f"collision layer {companion!r} declares {SUBCELL}={own}, "
-                f"which does not divide the field's {subcell}",
-                source=getattr(document, "path", None))
-        read: Reader | None = None
-        if tmx_data is not None:
-            parsed = parsed_layer(tmx_data, companion)
-            if parsed is not None:
-                read = file_gid_reader(tmx_data, parsed)
-        if read is None:
-            read = document_gid_reader(document.tile_layer(companion))
-        stack.append(CollisionLayer(
-            name=name,
-            companion=companion_reader(read, first_gid,
-                                       scale=subcell // own)))
+    for _rank, name, companion in entries:
+        level_two: OpinionReader | None = None
+        if companion and first_gid is not None:
+            own = companion_subcell(document, companion)
+            if subcell % own:
+                raise PyoneerConfigError(
+                    f"collision layer {companion!r} declares {SUBCELL}={own}, "
+                    f"which does not divide the field's {subcell}",
+                    source=getattr(document, "path", None))
+            level_two = companion_reader(
+                _gid_reader(document, tmx_data, companion), first_gid,
+                scale=subcell // own)
+        level_one: OpinionReader | None = None
+        if defaults:
+            # The ART layer, read at the field's resolution. An art layer is
+            # always one cell per map tile -- it is drawn, and the renderer
+            # has no sub-cell -- so its scale is the field's subcell whole,
+            # where a companion's is the field's divided by its own.
+            level_one = tileset_reader(
+                _gid_reader(document, tmx_data, name), defaults, scale=subcell)
+        if level_one is None and level_two is None:
+            # THE rule that keeps every existing map on its old bytes. A layer
+            # that reached this point with no companion and no defaults has
+            # nothing to say at any cell, and an empty layer in the stack is
+            # not harmless: `Resolution.layer` is an INDEX, so a silent layer
+            # between two loud ones renumbers the deciding layer the editor's
+            # overlay reports. Membership is decided by having a level, never
+            # by being a tile layer.
+            continue
+        stack.append(CollisionLayer(name=name, defaults=level_one,
+                                    companion=level_two))
     return stack
+
+
+def _gid_reader(document, tmx_data, layer_name: str) -> Reader:
+    """One tile layer's FILE gids, from the parsed map if there is one.
+
+    The parsed map is preferred for `field_from_map`'s reason -- the engine
+    holds it already and re-reading the grid from disk would let collision
+    disagree with the tiles being drawn -- and the document is the fallback
+    for a caller that has no parsed map, and for a layer the parse does not
+    carry.
+    """
+    if tmx_data is not None:
+        parsed = parsed_layer(tmx_data, layer_name)
+        if parsed is not None:
+            return file_gid_reader(tmx_data, parsed)
+    return document_gid_reader(document.tile_layer(layer_name))
 
 
 def field_from_map(source, *, document=None, undecided: int = PASS_ALL,
@@ -1362,14 +2088,20 @@ def field_from_map(source, *, document=None, undecided: int = PASS_ALL,
     # the map's dimensions is what silently discarded every sub-cell a 4x
     # companion held -- see `companion_subcell`, which has the number. The
     # tileset scan comes first so that a map declaring no collision at all
-    # never reaches a property reader that can raise about one.
+    # never reaches a property reader that can raise about one. Level one is
+    # looked up in the same breath, because a map may declare tileset
+    # defaults and no companion at all -- that is the ordinary shape of this
+    # feature, not an edge case, and gating the whole read on the presence of
+    # a `collision` TILESET would make the level nobody has to paint the one
+    # level you cannot have without painting.
     stack: list[CollisionLayer] = []
     subcell = 1
-    if collision_first_gid(document) is not None:
+    defaults = tileset_defaults(document)
+    if collision_first_gid(document) is not None or defaults:
         pairs = companion_pairs(document)
         subcell = field_subcell(document, pairs)
         stack = collision_layers(document, tmx_data, subcell=subcell,
-                                 pairs=pairs)
+                                 pairs=pairs, defaults=defaults)
     if not stack:
         return None
     field = CollisionField.bake(

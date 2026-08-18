@@ -5,92 +5,23 @@
 
 > Collision as authored data: three levels, one resolution, one baked field.
 
-`editor.core.collision` · 669 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.collision` · 245 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    editor.core.errors editor.core.layers editor.core.paint scripts.core.collision_runtime
-
-## Module constants
-
-- `editor/core/collision.py:323` `MAGIC` #TAG:collision.MAGIC
-- `editor/core/collision.py:324` `NO_DATA_TOKEN` #TAG:NO_DATA_TOKEN
-- `editor/core/collision.py:325` `STAR_TOKEN` #TAG:STAR_TOKEN
-- `editor/core/collision.py:330` `TOKENS` #TAG:TOKENS
-- `editor/core/collision.py:332` `OPINIONS` #TAG:OPINIONS
+    editor.core.layers editor.core.paint scripts.core.collision_runtime
 
 ## Functions
 
-- `editor/core/collision.py:295` `tileset_reader(art: Reader, defaults: Sequence[TilesetDefaults]) -> OpinionReader` #TAG:tileset_reader
-  - Level one as an OpinionReader: read the ART layer's gid at a cell,
-- `editor/core/collision.py:337` `opinion_to_token(opinion: int) -> str` #TAG:opinion_to_token
-  - One char for one opinion.
-- `editor/core/collision.py:354` `token_to_opinion(token: str) -> int` #TAG:token_to_opinion
-- `editor/core/collision.py:590` `field_from_blitmask(blitmask: Blitmask, *, tile_width: int=16, tile_height: int=16, outside: int=BLOCK_ALL, undecided: int=PASS_ALL) -> CollisionField` #TAG:field_from_blitmask
+- `editor/core/collision.py:166` `field_from_blitmask(blitmask: Blitmask, *, tile_width: int=16, tile_height: int=16, outside: int=BLOCK_ALL, undecided: int=PASS_ALL) -> CollisionField` #TAG:field_from_blitmask
   - A field straight from a file. NO_DATA cells become `undecided`, so
-- `editor/core/collision.py:611` `blitmask_from_field(field_in: CollisionField, **meta: str) -> Blitmask` #TAG:blitmask_from_field
+- `editor/core/collision.py:187` `blitmask_from_field(field_in: CollisionField, **meta: str) -> Blitmask` #TAG:blitmask_from_field
   - The field as a file. Every cell is a real mask by now, so a round trip
-- `editor/core/collision.py:621` `describe_stack(layers: Sequence[CollisionLayer], x: int, y: int) -> str` #TAG:describe_stack
+- `editor/core/collision.py:197` `describe_stack(layers: Sequence[CollisionLayer], x: int, y: int) -> str` #TAG:describe_stack
   - Every layer's opinion at one cell, topmost first, for a tooltip.
-- `editor/core/collision.py:636` `blitmask_from_companion(read: Reader, width: int, height: int, first_gid: int, **meta: str) -> Blitmask` #TAG:blitmask_from_companion
+- `editor/core/collision.py:212` `blitmask_from_companion(read: Reader, width: int, height: int, first_gid: int, **meta: str) -> Blitmask` #TAG:blitmask_from_companion
   - A companion tile layer, exported as a .blitmask.
-- `editor/core/collision.py:649` `companion_gids(blitmask: Blitmask, first_gid: int) -> Iterator[tuple[int, int, int]]` #TAG:companion_gids
+- `editor/core/collision.py:225` `companion_gids(blitmask: Blitmask, first_gid: int) -> Iterator[tuple[int, int, int]]` #TAG:companion_gids
   - The inverse: (x, y, gid) triples ready for `map.tile.set_many`.
-- `editor/core/collision.py:662` `as_mapping(blitmask: Blitmask) -> Mapping[tuple[int, int], int]` #TAG:as_mapping
+- `editor/core/collision.py:238` `as_mapping(blitmask: Blitmask) -> Mapping[tuple[int, int], int]` #TAG:as_mapping
   - The declared cells only, as the sparse dict `CollisionLayer.overrides`
-
-## Classes
-
-### `class PyoneerBlitmaskError(PyoneerProjectError)` #TAG:PyoneerBlitmaskError
-
-`editor/core/collision.py:165`–`185`
-
-> A .blitmask file is not the agreed format.
-
-- `editor/core/collision.py:172` `__init__(self, message: str, *, line: int | None=None, path: str | None=None, **context: Any)` #TAG:PyoneerBlitmaskError.__init__
-
-### `@dataclass(frozen=True) class TilesetDefaults` #TAG:TilesetDefaults
-
-`editor/core/collision.py:193`–`292`
-
-> One mask per tile in a tileset, addressed by gid.
-
-- `editor/core/collision.py:207` `__post_init__(self) -> None` #TAG:TilesetDefaults.__post_init__
-- `editor/core/collision.py:225` `@property tile_count(self) -> int` #TAG:TilesetDefaults.tile_count
-- `editor/core/collision.py:229` `@property last_gid(self) -> int` #TAG:TilesetDefaults.last_gid
-- `editor/core/collision.py:232` `holds(self, gid: int) -> bool` #TAG:TilesetDefaults.holds
-- `editor/core/collision.py:236` `local_id(self, gid: int) -> int` #TAG:TilesetDefaults.local_id
-  - The tile's index within this tileset, or -1 if it is not ours.
-- `editor/core/collision.py:243` `opinion_for_gid(self, gid: int) -> int` #TAG:TilesetDefaults.opinion_for_gid
-  - What this tileset says about a tile, mirrored to match its flags.
-- `editor/core/collision.py:251` `opinion_for_local(self, tile_id: int) -> int` #TAG:TilesetDefaults.opinion_for_local
-- `editor/core/collision.py:256` `with_local(self, tile_id: int, opinion: int) -> 'TilesetDefaults'` #TAG:TilesetDefaults.with_local
-  - A copy with one tile changed. Frozen, so editing is replacement --
-- `editor/core/collision.py:268` `to_blitmask(self, **meta: str) -> 'Blitmask'` #TAG:TilesetDefaults.to_blitmask
-- `editor/core/collision.py:276` `@classmethod from_blitmask(cls, blitmask: 'Blitmask', *, first_gid: int | None=None, name: str | None=None) -> 'TilesetDefaults'` #TAG:TilesetDefaults.from_blitmask
-  - Read defaults back, taking firstgid and name from the file's own
-
-### `@dataclass(frozen=True) class Blitmask` #TAG:Blitmask
-
-`editor/core/collision.py:364`–`587`
-
-> A grid of opinions plus its metadata: the whole file, as a value.
-
-- `editor/core/collision.py:384` `__post_init__(self) -> None` #TAG:Blitmask.__post_init__
-- `editor/core/collision.py:410` `@classmethod blank(cls, width: int, height: int, *, fill: int=NO_DATA, **meta: str) -> 'Blitmask'` #TAG:Blitmask.blank
-- `editor/core/collision.py:415` `@classmethod from_rows(cls, rows: Sequence[Sequence[int]], **meta: str) -> 'Blitmask'` #TAG:Blitmask.from_rows
-- `editor/core/collision.py:427` `at(self, x: int, y: int) -> int` #TAG:Blitmask.at
-- `editor/core/collision.py:432` `reader(self) -> OpinionReader` #TAG:Blitmask.reader
-  - The grid as a level of a `CollisionLayer`.
-- `editor/core/collision.py:436` `row(self, y: int) -> tuple[int, ...]` #TAG:Blitmask.row
-- `editor/core/collision.py:439` `rows(self) -> list[tuple[int, ...]]` #TAG:Blitmask.rows
-- `editor/core/collision.py:442` `with_cell(self, x: int, y: int, opinion: int) -> 'Blitmask'` #TAG:Blitmask.with_cell
-- `editor/core/collision.py:453` `counts(self) -> dict[int, int]` #TAG:Blitmask.counts
-- `editor/core/collision.py:461` `render(self) -> str` #TAG:Blitmask.render
-  - The file, as a string. Always ends in a newline: a text file
-- `editor/core/collision.py:472` `@classmethod parse(cls, text: str, *, path: str | None=None) -> 'Blitmask'` #TAG:Blitmask.parse
-  - Read a .blitmask, refusing anything it cannot read exactly.
-- `editor/core/collision.py:571` `@classmethod load(cls, path: str) -> 'Blitmask'` #TAG:Blitmask.load
-- `editor/core/collision.py:575` `save(self, path: str) -> None` #TAG:Blitmask.save
-  - Write it. newline="" so the bytes are the bytes on every
-- `editor/core/collision.py:586` `__str__(self) -> str` #TAG:Blitmask.__str__

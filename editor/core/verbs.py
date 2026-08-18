@@ -37,6 +37,7 @@ from editor.core.scope import Scope
 from editor.core import genre as genre_module
 from editor.core import layers as layer_module
 from editor.core import map_events as map_event_module
+from scripts.game.behavior.base import BEHAVIORS
 
 
 def _layer_keys() -> list[str]:
@@ -566,7 +567,10 @@ def _tileset_restore(project: Project, cmd: Command) -> Command:
     "map.object.add",  # #TAG:map.object.add
     summary="Place an object on an object layer. `type` is the class name "
             "the game resolves to a spawnable entity, so it must be a name "
-            "the spawn registry knows.",
+            "the spawn registry knows. If the genre pack declares a default "
+            "behavior list for that class on that layer, it is written onto "
+            "the new object as `pyoneer_behaviors` here and never consulted "
+            "again -- a starting value, not a policy.",
     scopes=["map:*/layer:*"],
     params=[
         Param("type", str, "the object's class, e.g. 'Chest' or 'PlayerStart'"),
@@ -581,7 +585,11 @@ def _tileset_restore(project: Project, cmd: Command) -> Command:
         Param("gid", int, "tile gid, if this object draws as a tile",
               required=False, default=0),
         Param("properties", dict, "custom properties; types are inferred and "
-                                  "written with an explicit tmx type attribute",
+                                  "written with an explicit tmx type "
+                                  "attribute. A `pyoneer_behaviors` given "
+                                  "here WINS over the genre pack's default "
+                                  "for this class, including an explicit "
+                                  "empty one",
               required=False, default=None),
         Param("object_id", int, "force a specific id; leave unset and the "
                                 "document assigns the next free one",
@@ -602,11 +610,50 @@ def _object_add(project: Project, cmd: Command) -> Command:
         width=args["width"] or None,
         height=args["height"] or None,
         gid=args["gid"] or None,
-        properties=args["properties"] or None,
+        properties=_born_with(project, cmd.scope, args),
         object_id=args["object_id"] or None,
     )
+    # The inverse takes the WHOLE element away, materialised property and
+    # all, so nothing about this needs its own undo step: a default that only
+    # ever exists on an object that is being created is undone by uncreating
+    # it.
     return Command("map.object.remove",
                    cmd.scope.child("object", str(created.id)))
+
+
+def _born_with(project: Project, scope: Scope,
+               args: dict[str, Any]) -> dict[str, Any] | None:
+    """The custom properties a newly added object is born carrying.
+
+    This is where a genre pack's `layers[].object_classes[].behaviors` stops
+    being a declaration and becomes map data. The editor MATERIALISES it here
+    and never consults it again -- `scripts/` may not import `editor/`, so an
+    engine-side fallback is not available at any price, and the `.tmx` being
+    the whole truth is what makes a map play the same whether or not the
+    editor has ever opened it.
+
+    PRECEDENCE, and both halves are asserted in `tools/check_editor.py`:
+
+      1. a `pyoneer_behaviors` the CALLER supplied wins outright, including
+         an explicit empty one -- "this object does nothing" is a thing an
+         author is allowed to say, and a default that overrode it would be a
+         policy rather than a starting value
+      2. otherwise the pack's list for this layer and this class, if it
+         declares one
+      3. otherwise nothing at all, which is every pack that declares no
+         `object_classes` and every class it does not name
+
+    Nothing re-asserts step 2 afterwards. Editing the list on the object is
+    the last word forever, because no later command reads the pack.
+    """
+    properties = dict(args["properties"] or {})
+    if BEHAVIORS in properties:                # #TAG:behaviors_materialised_at_add
+        return properties or None
+    declared = project.genre.object_class(scope.require("layer"), args["type"])
+    if declared is None or not declared.behaviors:
+        return properties or None
+    properties[BEHAVIORS] = declared.behaviors_text
+    return properties
 
 
 @command(

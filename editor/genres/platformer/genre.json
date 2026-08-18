@@ -56,7 +56,23 @@
       "object_types": [
         "GamePlayer"
       ],
-      "unique_types": ["GamePlayer"]
+      "unique_types": ["GamePlayer"],
+      "object_classes": [
+        {
+          "type": "GamePlayer",
+          "doc": "What a newly placed GamePlayer starts as. The editor MATERIALISES this into the object's pyoneer_behaviors property when the object is added -- it is a starting value, not a policy: edit the list on the object afterwards and your edit stands, because nothing reads this again. Every token here must be registered; the engine RAISES on an unknown one at load, so a typo in this list would break every map made from this pack. platformer_move is this genre's movement token, which is the only line that differs between the two packs.",
+          "behaviors": [
+            "player_input",
+            "attack_action",
+            "interact_action",
+            "pause_action",
+            "platformer_move",
+            "animation_drive",
+            "action_relay",
+            "lifecycle_mark"
+          ]
+        }
+      ]
     }
   ],
   "tables": [

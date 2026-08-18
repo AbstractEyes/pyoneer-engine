@@ -45,6 +45,8 @@ from editor.core.errors import (
     PyoneerGenreMissingError,
 )
 from editor.core.scope import Scope
+from scripts.core.errors import PyoneerError
+from scripts.game.behavior import registry as behavior_registry
 
 GENRES_DIR = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "genres")
@@ -96,6 +98,43 @@ class GenreTable:
 
 
 @dataclass(frozen=True)
+class GenreObjectClass:
+    """One class on an object layer, and the behavior list a NEW one starts with.
+
+    THE ONE THING THIS IS NOT
+    -------------------------
+    It is not a fallback the engine resolves. The editor MATERIALISES this
+    list into `pyoneer_behaviors` on the object at the moment the object is
+    added, and then never looks at it again. Two reasons, both hard:
+
+      * `scripts/` may never import `editor/`, so the engine cannot read a
+        pack at all -- a default only the pack knew would be a default the
+        engine could not apply
+      * the `.tmx` staying the whole truth is what makes a map play the same
+        whether or not the editor has ever opened it
+
+    So this is a STARTING VALUE. An author who then edits the object's list
+    keeps their edit forever; nothing re-asserts this one, because nothing
+    reads it after the add. That is the difference between a default and a
+    policy, and it is the whole design.
+
+    `behaviors` is validated at pack load against the live registry -- an
+    unregistered token here would be written into every object placed from
+    this pack and make each of those maps raise at load, which is the
+    loudest possible way to be wrong at the latest possible moment.
+    """
+
+    type: str
+    behaviors: tuple[str, ...] = ()
+    doc: str = ""
+
+    @property
+    def behaviors_text(self) -> str:
+        """The canonical `pyoneer_behaviors` value, from the engine's own formatter."""
+        return behavior_registry.format_list(self.behaviors)
+
+
+@dataclass(frozen=True)
 class GenreLayer:
     """One map layer the genre expects, and what it means."""
 
@@ -107,6 +146,13 @@ class GenreLayer:
     collision: bool = False
     object_types: tuple[str, ...] = ()      # allowed classes on an object layer
     unique_types: tuple[str, ...] = ()      # classes that may appear at most once
+    object_classes: tuple[GenreObjectClass, ...] = ()   # per-class starting lists
+
+    def object_class(self, object_type: str) -> GenreObjectClass | None:
+        for declared in self.object_classes:
+            if declared.type == object_type:
+                return declared
+        return None
 
 
 @dataclass(frozen=True)
@@ -136,6 +182,18 @@ class GenrePack:
             if table.name == name:
                 return table
         return None
+
+    def object_class(self, layer: str,
+                     object_type: str) -> GenreObjectClass | None:
+        """What a new `object_type` on `layer` starts as, if the pack says.
+
+        `None` for every layer and class the pack is silent about, which is
+        every pack that declares no `object_classes` at all -- silence is not
+        an error, it is the state every pack shipped in until one filled the
+        slot.
+        """
+        found = self.layer(layer)
+        return found.object_class(object_type) if found else None
 
     @property
     def required_layers(self) -> tuple[GenreLayer, ...]:
@@ -329,16 +387,101 @@ def _layer(item: dict, path: str) -> GenreLayer:
         raise PyoneerGenreError(
             f"layer {item.get('name')!r} has kind {kind!r}; "
             f"must be 'tile' or 'object'", path=path)
+    name = item["name"]
+    allowed = tuple(item.get("object_types", []))
     return GenreLayer(
-        name=item["name"],
+        name=name,
         kind=kind,
         depth=int(item.get("depth", 0)),
         doc=item.get("doc", ""),
         required=bool(item.get("required", False)),
         collision=bool(item.get("collision", False)),
-        object_types=tuple(item.get("object_types", [])),
+        object_types=allowed,
         unique_types=tuple(item.get("unique_types", [])),
+        object_classes=_object_classes(item, name, kind, allowed, path),
     )
+
+
+def _object_classes(item: dict, layer_name: str, kind: str,
+                    allowed: tuple[str, ...],
+                    path: str) -> tuple[GenreObjectClass, ...]:
+    """Parse `layers[].object_classes[]`, and draw the one line that matters.
+
+    ABSENT IS NOT AN ERROR. A pack that declares no `object_classes` -- which
+    is every pack that ever shipped before one did -- loads exactly as it did
+    before and hands every placed object nothing. That is the whole
+    compatibility promise, and it is why this returns `()` rather than
+    raising on a missing key.
+
+    PRESENT AND CONTRADICTORY IS AN ERROR, loudly, at load. A tile layer with
+    object classes, an entry that is not an object, an entry with no `type`,
+    the same class twice, a class the same layer's `object_types` forbids, a
+    token the registry does not know -- each of those would otherwise be
+    written into real maps by an editor that looked like it was working.
+    """
+    raw = item.get("object_classes", ())
+    if raw is None or (isinstance(raw, (list, tuple)) and not raw):
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        raise PyoneerGenreError(
+            f"layer {layer_name!r} declares object_classes as a "
+            f"{type(raw).__name__}; it must be a list of "
+            f'{{"type": ..., "behaviors": [...]}} entries', path=path)
+    if kind != "object":
+        raise PyoneerGenreError(
+            f"layer {layer_name!r} is a {kind} layer and declares "
+            f"object_classes; only an object layer holds objects, so this "
+            f"default could never be materialised into anything", path=path)
+    found = tuple(_object_class(entry, layer_name, allowed, path)
+                  for entry in raw)
+    duplicate = _first_duplicate([c.type for c in found])
+    if duplicate:
+        raise PyoneerGenreError(
+            f"layer {layer_name!r} declares object class {duplicate!r} twice; "
+            f"one class has one starting behavior list, and two would make "
+            f"which one a new object gets depend on file order", path=path)
+    return found
+
+
+def _object_class(entry: Any, layer_name: str, allowed: tuple[str, ...],
+                  path: str) -> GenreObjectClass:
+    if not isinstance(entry, dict):
+        raise PyoneerGenreError(
+            f"layer {layer_name!r} has an object_classes entry that is a "
+            f"{type(entry).__name__}, not an object carrying a 'type'",
+            path=path)
+    kind = entry.get("type", "")
+    if not isinstance(kind, str) or not kind:
+        raise PyoneerGenreError(
+            f"layer {layer_name!r} has an object_classes entry with no "
+            f"'type'; the type names the class the default belongs to",
+            path=path, has=sorted(entry))
+    if allowed and kind not in allowed:
+        raise PyoneerGenreError(
+            f"layer {layer_name!r} declares default behaviors for object "
+            f"class {kind!r}, which the same layer's object_types does not "
+            f"allow: {list(allowed)}", path=path)
+    raw = entry.get("behaviors", ())
+    if not isinstance(raw, (list, tuple, str)):
+        raise PyoneerGenreError(
+            f"layer {layer_name!r} gives object class {kind!r} a behaviors "
+            f"value of type {type(raw).__name__}; it must be a list of "
+            f"behavior tokens", path=path)
+    # The engine's own judge, not a second copy of it: `validate_list` is
+    # what a map load runs, so a list this accepts is a list every object
+    # placed from this pack can carry.
+    try:
+        tokens = behavior_registry.validate_list(
+            raw, where=f"genre layer {layer_name!r}, object class {kind!r}")
+    except PyoneerError as exc:
+        detail = getattr(exc, "message", None) or str(exc)
+        raise PyoneerGenreError(
+            f"layer {layer_name!r} gives object class {kind!r} a default "
+            f"behavior list the engine refuses, so every object placed from "
+            f"this pack would make its map raise at load: {detail}",
+            path=path) from exc
+    return GenreObjectClass(type=kind, behaviors=tokens,
+                            doc=entry.get("doc", ""))
 
 
 def _table(item: dict, path: str) -> GenreTable:

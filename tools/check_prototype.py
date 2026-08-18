@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
+import ast
 import inspect
 import json
 import os
@@ -94,6 +95,8 @@ from scripts.core.depth import resolve_layer_depth               # noqa: E402
 from scripts.core.input import KEYBOARD                          # noqa: E402
 from scripts.core.spawn import SPAWN_REGISTRY                    # noqa: E402
 from scripts.game.behavior import BEHAVIOR_REGISTRY              # noqa: E402
+from scripts.game.behavior.base import ACTOR as ACTOR_PROPERTY   # noqa: E402
+from scripts.loaders.table_file import actor_row, load_tables    # noqa: E402
 from scripts.game.flow.router import ANY_PAYLOAD                 # noqa: E402
 from scripts.game.flow.scene_flow import (ADVANCE_ACTION,        # noqa: E402
                                           FlowStep, SceneFlow)
@@ -857,11 +860,23 @@ try:
            (hasattr(StoryLine, "open") and hasattr(StoryLine, "close")
             and not issubclass(StoryLine, StoryBox)), True)
 
-    # The honest hole the template admits to, asserted in both directions so
-    # the admission cannot quietly become false OR quietly become a lie about
-    # a mechanism that does not exist. Not a grep for the words "project" and
-    # "tables" -- prose says those, and a rule that fires on a docstring is a
-    # rule that gets deleted rather than fixed.
+    # The template's `actor` row, asserted in both directions so the claim
+    # cannot quietly become false OR quietly become a lie about a mechanism
+    # that does not exist. Not a grep for the words "project" and "tables" --
+    # prose says those, and a rule that fires on a docstring is a rule that
+    # gets deleted rather than fixed.
+    #
+    # THIS PIN WAS WRITTEN TO GO RED, AND IT DID. Its second half used to
+    # assert that no caller anywhere handed a row over, and its comment said
+    # "the day a table reader lands and passes a row, this goes red and that
+    # paragraph gets rewritten". The reader landed --
+    # `scripts/loaders/table_file.py` -- so the half is inverted below and
+    # DESIGN_TEMPLATE.md's "honest about a hole" section is rewritten to
+    # match. The half that measured a string ("actors_row" appearing in a
+    # file) is deliberately not kept even inverted: the supplying call spells
+    # the name `actor_row`, so the old scan would have passed unchanged while
+    # asserting the opposite of the truth. What is measured now is the CALL
+    # and the VALUE.
     #
     # Half one: step 2 of parameter resolution is BUILT. `read_requests` takes
     # an actors row and applies it over the declared default.
@@ -876,30 +891,48 @@ try:
            declared[0].values["move_speed"],
            next(p.default for p in BEHAVIOR_REGISTRY["platformer_move"].params
                 if p.key == "move_speed"))
-    # Half two: nothing in the engine or in any game ever hands one over, which
-    # is exactly why the template documents its `actor` row as inert. The day a
-    # table reader lands and passes a row, this goes red and that paragraph
-    # gets rewritten -- which is the point of pinning it.
-    suppliers = []
-    for root in ("scripts", "demos", "main.py"):
-        full = os.path.join(ROOT, root)
-        walk = ([(os.path.dirname(full), [], [os.path.basename(full)])]
-                if os.path.isfile(full) else os.walk(full))
-        for base, _dirs, names in walk:
-            if "__pycache__" in base:
+    # Half two: a caller DOES hand one over now, on both spawn routes, so the
+    # `actor` row a filled-in form writes reaches a running behavior. Measured
+    # as the call in the AST rather than as a substring anywhere in the file:
+    # deleting either `actor_row(...)` argument leaves both modules importing
+    # the name and mentioning it in prose, and only the call site matters.
+    def _passes_actor_row(rel: str) -> bool:
+        tree = ast.parse(open(os.path.join(ROOT, rel.replace("/", os.sep)),
+                              encoding="utf-8").read())
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call)
+                    and getattr(node.func, "id", None) == "read_requests"):
                 continue
-            for name in names:
-                if not name.endswith(".py"):
-                    continue
-                path = os.path.join(base, name)
-                rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
-                if rel == "scripts/game/behavior/registry.py":
-                    continue                 # where the keyword is DEFINED
-                with open(path, encoding="utf-8") as handle:
-                    if "actors_row" in handle.read():
-                        suppliers.append(rel)
-    expect("...and no caller anywhere hands one over, so the actors row can "
-           "never reach a running behavior", sorted(suppliers), [])
+            for argument in node.args[1:]:
+                called = (argument.func if isinstance(argument, ast.Call)
+                          else None)
+                if (getattr(called, "id", None) == "actor_row"
+                        or getattr(called, "attr", "").endswith("actor_row")):
+                    return True
+        return False
+
+    expect("the map spawn hands read_requests an actors row",
+           _passes_actor_row("scripts/loaders/map_loader.py"), True)
+    expect("...and so does the runtime spawn, so an authored object and a "
+           "Python-built one read the same rung",
+           _passes_actor_row("scripts/core/scene/scene_manager.py"), True)
+
+    # And the value really arrives, through the reader, from a file. A fixture
+    # table written here -- data/project/tables/actors.json is the author's and
+    # a check that pinned it would go red the next time they edit a number.
+    table_dir = os.path.join(WORKSPACE, "tables")
+    os.makedirs(table_dir, exist_ok=True)
+    with open(os.path.join(table_dir, "actors.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"table": "actors",
+                   "columns": [{"name": "move_speed", "type": "float"}],
+                   "rows": {"hero": {"move_speed": 777.0}}}, handle)
+    loaded = load_tables(table_dir)
+    from_file = read_requests(
+        {BEHAVIORS_PROPERTY: "platformer_move"},
+        actor_row(loaded, {ACTOR_PROPERTY: "hero"}, "the template's example"))
+    expect("...and a row read off disk by pyoneer_actor is what the behavior "
+           "is built with", from_file[0].values["move_speed"], 777.0)
 
 finally:
     mapgen.MAPS_DIR = SHIPPED_MAPS_DIR

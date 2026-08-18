@@ -406,14 +406,14 @@ Derived from `editor/genres/*/genre.json`, so a pack that gains a column gains i
 - **passability is authored against** `Floor` (companion `FloorCollision`)
 - **object layer `entity` allows** `GamePlayer`
 - **actors columns a parameter may name** `display_name` (str), `animation` (str), `hp` (int), `move_speed` (float), `jump_velocity` (float), `gravity` (float), `max_fall_speed` (float), `air_control` (float), `coyote_ms` (int), `contact_damage` (int), `playable` (bool)
-- **default behavior lists** none declared. The pack may declare them as `layers[].object_classes[].behaviors`; the editor is meant to MATERIALISE such a default into the object when the object is added, so the `.tmx` stays the whole truth and the engine never has to read a pack -- `scripts/` may not import `editor/`.
+- **default behavior lists** `GamePlayer` on `entity` -> `player_input,attack_action,interact_action,pause_action,platformer_move,animation_drive,action_relay,lifecycle_mark`. The editor MATERIALISES these into the object's `pyoneer_behaviors` property when the object is added, so the `.tmx` stays the whole truth and the engine never has to read a pack -- `scripts/` may not import `editor/`. It is a STARTING VALUE, not a policy: edit the list on the object afterwards and your edit stands, because nothing reads the pack again.
 
 ### `topdown_rpg` -- Top-down RPG
 
 - **passability is authored against** `Floor` (companion `FloorCollision`)
 - **object layer `entity` allows** `GamePlayer`
 - **actors columns a parameter may name** `display_name` (str), `animation` (str), `hp` (int), `attack` (int), `defence` (int), `speed` (int), `level` (int), `playable` (bool)
-- **default behavior lists** none declared. The pack may declare them as `layers[].object_classes[].behaviors`; the editor is meant to MATERIALISE such a default into the object when the object is added, so the `.tmx` stays the whole truth and the engine never has to read a pack -- `scripts/` may not import `editor/`.
+- **default behavior lists** `GamePlayer` on `entity` -> `player_input,attack_action,interact_action,pause_action,topdown_move,animation_drive,action_relay,lifecycle_mark`. The editor MATERIALISES these into the object's `pyoneer_behaviors` property when the object is added, so the `.tmx` stays the whole truth and the engine never has to read a pack -- `scripts/` may not import `editor/`. It is a STARTING VALUE, not a policy: edit the list on the object afterwards and your edit stands, because nothing reads the pack again.
 
 ## Swapping one behavior list for another
 

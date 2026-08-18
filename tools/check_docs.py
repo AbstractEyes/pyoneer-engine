@@ -366,7 +366,8 @@ def render_placeable() -> str:
             "| property | meaning |", "|---|---|",
             f"| `{BEHAVIORS}` | comma-separated behavior tokens, on the OBJECT |",
             f"| `{PARAM_PREFIX}<key>` | one behavior parameter |",
-            f"| `{ACTOR}` | actors-table row id (no engine reader yet) |",
+            f"| `{ACTOR}` | actors-table row id, read from "
+            f"`data/project/tables/actors.json` |",
             "",
             f"Every custom property starts `{PREFIX}`. The prefix is not style:",
             "pytmx raises and makes the whole map unloadable if a property",

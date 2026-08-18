@@ -5,7 +5,7 @@
 
 > What a map object COMPOSES, as data: the behavior list, its parameters,
 
-`editor.core.behavior_view` · 738 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.behavior_view` · 739 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -43,16 +43,16 @@
 - `editor/core/behavior_view.py:515` `_current(param: BehaviorParam, raw: Any) -> tuple[Any, str]` #TAG:_current
   - (what to show in the editor, what is wrong with the file), never raises.
 - `editor/core/behavior_view.py:535` `_param_doc(param: BehaviorParam, owners: Sequence[str], problem: str) -> str` #TAG:_param_doc
-- `editor/core/behavior_view.py:550` `_param_emitter(scope: Scope, param: BehaviorParam, on_error: Callable[[str], None])` #TAG:_param_emitter
+- `editor/core/behavior_view.py:551` `_param_emitter(scope: Scope, param: BehaviorParam, on_error: Callable[[str], None])` #TAG:_param_emitter
   - Editing one parameter, through the ordinary property verb.
-- `editor/core/behavior_view.py:571` `_orphans(scope: Scope, tokens: Sequence[str], table: Mapping[str, BehaviorSpec], raw: Mapping[str, Any]) -> list[Field]` #TAG:_orphans
+- `editor/core/behavior_view.py:572` `_orphans(scope: Scope, tokens: Sequence[str], table: Mapping[str, BehaviorSpec], raw: Mapping[str, Any]) -> list[Field]` #TAG:_orphans
   - `pyoneer_param_*` properties no ticked behavior declares.
-- `editor/core/behavior_view.py:607` `_axes(tokens: Sequence[str], table: Mapping[str, BehaviorSpec]) -> Section` #TAG:_axes
+- `editor/core/behavior_view.py:608` `_axes(tokens: Sequence[str], table: Mapping[str, BehaviorSpec]) -> Section` #TAG:_axes
   - Which axes of the shared `BodyState` this composition writes, and by whom.
-- `editor/core/behavior_view.py:654` `_problems(tokens: Sequence[str], table: Mapping[str, BehaviorSpec], raw: Mapping[str, Any], standing: Sequence[str]) -> Section | None` #TAG:_problems
+- `editor/core/behavior_view.py:655` `_problems(tokens: Sequence[str], table: Mapping[str, BehaviorSpec], raw: Mapping[str, Any], standing: Sequence[str]) -> Section | None` #TAG:_problems
   - What the engine would say at load, said here instead. None when clean.
-- `editor/core/behavior_view.py:686` `_declared_params(tokens: Sequence[str], table: Mapping[str, BehaviorSpec]) -> Iterable[BehaviorParam]` #TAG:_declared_params
-- `editor/core/behavior_view.py:703` `strip_vocabulary(inspection: Inspection) -> Inspection` #TAG:strip_vocabulary
+- `editor/core/behavior_view.py:687` `_declared_params(tokens: Sequence[str], table: Mapping[str, BehaviorSpec]) -> Iterable[BehaviorParam]` #TAG:_declared_params
+- `editor/core/behavior_view.py:704` `strip_vocabulary(inspection: Inspection) -> Inspection` #TAG:strip_vocabulary
   - Take the behavior vocabulary out of a generic Properties section.
 
 ## Classes

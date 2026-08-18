@@ -122,7 +122,7 @@ Remove one field of a trigger declaration, returning it to its default. Deleting
 
 ### `map.object.add`
 
-Place an object on an object layer. `type` is the class name the game resolves to a spawnable entity, so it must be a name the spawn registry knows.
+Place an object on an object layer. `type` is the class name the game resolves to a spawnable entity, so it must be a name the spawn registry knows. If the genre pack declares a default behavior list for that class on that layer, it is written onto the new object as `pyoneer_behaviors` here and never consulted again -- a starting value, not a policy.
 
 *Scopes:* `map:*/layer:*`
 
@@ -135,7 +135,7 @@ Place an object on an object layer. `type` is the class name the game resolves t
 | `width` | float | no (default `0.0`) | pixels; omit for a point object |
 | `height` | float | no (default `0.0`) | pixels; omit for a point object |
 | `gid` | int | no (default `0`) | tile gid, if this object draws as a tile |
-| `properties` | dict | no (default `None`) | custom properties; types are inferred and written with an explicit tmx type attribute |
+| `properties` | dict | no (default `None`) | custom properties; types are inferred and written with an explicit tmx type attribute. A `pyoneer_behaviors` given here WINS over the genre pack's default for this class, including an explicit empty one |
 | `object_id` | int | no (default `0`) | force a specific id; leave unset and the document assigns the next free one |
 
 ```json

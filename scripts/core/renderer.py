@@ -24,6 +24,7 @@ from scripts.core.errors import (PyoneerBindTargetError, PyoneerCameraMissingErr
                                  PyoneerLayerError, warn_content)
 from scripts.game.behavior import build as build_behaviors
 from scripts.loaders.map_loader import SpawnedEntity, spawn_objects
+from scripts.loaders.table_file import ProjectTables
 
 
 def drawable_tile_count(layer: pytmx.TiledTileLayer, tile_map: pytmx.TiledMap) -> int:
@@ -444,6 +445,26 @@ class LayerRenderer:
         ships and true of every probe a check writes.
         """
 
+        self.tables: ProjectTables | None = None
+        """The project's data tables, or None when nobody loaded any.
+
+        Sits beside `spawn_defaults` because it is the same kind of thing: a
+        value a .tmx object cannot carry, handed over before the map is
+        bound. An object's `pyoneer_actor` names a row in here, and that row
+        is the middle rung of behavior-parameter resolution -- under the
+        object's own `pyoneer_param_*`, over each parameter's default.
+
+        The renderer holds it for the reason it holds `collision_field`: it
+        is the single funnel every entity passes through, so the one slot
+        serves the map spawn and `SceneManager.spawn` both, and a runtime
+        projectile cannot end up reading a different table set than the
+        object beside it that Tiled placed.
+
+        None is the honest default and costs nothing: `actor_row` returns
+        None for an object that names no row, which is every object on every
+        map shipped today. `main.py` assigns `load_tables()` at boot.
+        """
+
         self.spawned_entities: list[SpawnedEntity] = []
         """What the last map bind spawned, in document order.
 
@@ -785,7 +806,8 @@ class LayerRenderer:
         catches an entity bound BEFORE the map -- so the gate is one call site
         for both cases instead of one here and a different one there.
         """
-        spawned = spawn_objects(tmx_data, defaults=self.spawn_defaults)
+        spawned = spawn_objects(tmx_data, defaults=self.spawn_defaults,
+                                tables=self.tables)
         self.spawned_entities = spawned
         regroup = False
         for record in spawned:

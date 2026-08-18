@@ -63,7 +63,8 @@ import pygame
 pygame.init()
 
 from editor.core import genre as genre_module
-from editor.core.genre import GenreField, GenreLayer, GenrePack, GenreTable
+from editor.core.genre import (GenreField, GenreLayer, GenreObjectClass,
+                               GenrePack, GenreTable)
 from scripts.core import layer_profile
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.event_types import GameEventType
@@ -284,35 +285,61 @@ def spawn_violations(packs, registry=None) -> list[str]:
     return found
 
 
-def default_list_violations(raw_packs, registry) -> list[str]:
-    """Every behavior token a pack declares as a class default that is unknown.
+def default_list_violations(packs, registry) -> list[str]:
+    """Every class default a pack declares that would not actually work.
 
-    The slot is `layers[].object_classes[] = {"type": ..., "behaviors": [...]}`
-    and NO pack fills it today, deliberately: the registry is empty, so a
-    declared default would name a token that raises. The rule is written now
-    anyway, because the day a pack fills it is the day it needs checking, and
-    a rule added afterwards checks nothing that already shipped.
+    Reads `GenreLayer.object_classes` -- the loaded field, not a second parse
+    of the same JSON. This function used to re-read `genre.json` because the
+    dataclass had no such field; two readers of one file format is how a rule
+    and the thing it judges drift apart, so there is now one.
+
+    `editor/core/genre.py` already refuses, at pack load, everything the
+    ENGINE would refuse: an unregistered token, a duplicate, a declared
+    conflict, a class the layer forbids. What is left for a check is the two
+    things `validate_list` structurally cannot see, because neither makes a
+    map fail to load -- they make a placed object quietly not work:
+
+      * a token gated to a DIFFERENT genre. `spec.genres` is reported by the
+        behavior panel and enforced by nobody, so a platformer pack shipping
+        `topdown_move` would load, materialise, attach, and not move.
+      * a token whose status is not `live`. `_swap_section` already refuses
+        to RECOMMEND one for exactly this reason; a pack default is a
+        stronger claim than a recommendation, so it is held to the same bar.
+
+    The unregistered-token clause is kept as well. It is unreachable through
+    `genre.load` today and that is the point: it is what still catches a pack
+    built any other way, and the day the loader's guard is loosened this is
+    the assertion that goes red instead of the author's map.
     """
     found: list[str] = []
-    for genre_id in sorted(raw_packs):
-        raw = raw_packs[genre_id]
-        for layer in raw.get("layers", []):
-            allowed = list(layer.get("object_types", []))
-            for entry in layer.get("object_classes", []):
-                kind = entry.get("type", "")
-                if allowed and kind not in allowed:
-                    found.append(
-                        "genre %r declares default behaviors for object class "
-                        "%r on layer %r, which that layer does not allow"
-                        % (genre_id, kind, layer.get("name", "?")))
-                for token in parse_list(entry.get("behaviors", [])):
-                    if token not in registry:
+    for genre_id in sorted(packs):
+        pack = packs[genre_id]
+        for layer in pack.layers:
+            for declared in layer.object_classes:
+                for token in declared.behaviors:
+                    spec = registry.get(token)
+                    if spec is None:
                         found.append(
                             "genre %r gives object class %r the default "
                             "behavior %r, which is not registered (%s)"
-                            % (genre_id, kind, token,
+                            % (genre_id, declared.type, token,
                                ", ".join(sorted(registry)) or "the registry "
                                "is empty"))
+                        continue
+                    if spec.genres and genre_id not in spec.genres:
+                        found.append(
+                            "genre %r gives object class %r the default "
+                            "behavior %r, which declares genres %s -- it "
+                            "would attach and do nothing"
+                            % (genre_id, declared.type, token,
+                               list(spec.genres)))
+                    if spec.status != "live":
+                        found.append(
+                            "genre %r gives object class %r the default "
+                            "behavior %r, whose status is %r -- a default is "
+                            "a stronger claim than a recommendation, and "
+                            "this one is not recommended either"
+                            % (genre_id, declared.type, token, spec.status))
     return found
 
 
@@ -600,7 +627,7 @@ def integration_rows() -> list[tuple[str, bool, str]]:
 # The generator
 # ===========================================================================
 
-def _genre_section(packs, raw_packs) -> list[str]:
+def _genre_section(packs) -> list[str]:
     lines = ["## What each genre pack declares", "",
              "Derived from `editor/genres/*/genre.json`, so a pack that gains "
              "a column gains it here. A behavior whose parameter declares "
@@ -630,20 +657,29 @@ def _genre_section(packs, raw_packs) -> list[str]:
                          % ", ".join("`%s` (%s)" % (f.name, f.type)
                                      for f in actors.fields))
         defaults = []
-        for layer in raw_packs[genre_id].get("layers", []):
-            for entry in layer.get("object_classes", []):
-                defaults.append("`%s` -> `%s`"
-                                % (entry.get("type", "?"),
-                                   ",".join(parse_list(entry.get("behaviors", [])))
-                                   or "nothing"))
-        lines.append("- **default behavior lists** %s"
-                     % (", ".join(defaults) or
-                        "none declared. The pack may declare them as "
-                        "`layers[].object_classes[].behaviors`; the editor is "
-                        "meant to MATERIALISE such a default into the object "
-                        "when the object is added, so the `.tmx` stays the "
-                        "whole truth and the engine never has to read a pack "
-                        "-- `scripts/` may not import `editor/`."))
+        for layer in pack.layers:
+            for declared in layer.object_classes:
+                defaults.append("`%s` on `%s` -> `%s`"
+                                % (declared.type, layer.name,
+                                   declared.behaviors_text or "nothing"))
+        if defaults:
+            lines.append(
+                "- **default behavior lists** %s. The editor MATERIALISES "
+                "these into the object's `%s` property when the object is "
+                "added, so the `.tmx` stays the whole truth and the engine "
+                "never has to read a pack -- `scripts/` may not import "
+                "`editor/`. It is a STARTING VALUE, not a policy: edit the "
+                "list on the object afterwards and your edit stands, because "
+                "nothing reads the pack again."
+                % (", ".join(defaults), BEHAVIORS))
+        else:
+            lines.append(
+                "- **default behavior lists** none declared. The pack may "
+                "declare them as `layers[].object_classes[].behaviors`; the "
+                "editor MATERIALISES such a default into the object when the "
+                "object is added, so the `.tmx` stays the whole truth and the "
+                "engine never has to read a pack -- `scripts/` may not import "
+                "`editor/`.")
         lines.append("")
     return lines
 
@@ -716,7 +752,7 @@ def _swap_section(registry) -> list[str]:
     return lines
 
 
-def render_doc(registry=None, packs=None, raw_packs=None) -> str:
+def render_doc(registry=None, packs=None) -> str:
     """The whole of `docs/BEHAVIORS.md`, from the registry and the packs.
 
     `describe_all()` first and verbatim, so the half the engine owns is not
@@ -724,8 +760,8 @@ def render_doc(registry=None, packs=None, raw_packs=None) -> str:
     around it has wired, and what the packs declare.
     """
     registry = BEHAVIOR_REGISTRY if registry is None else registry
-    if packs is None or raw_packs is None:
-        packs, raw_packs = load_packs()
+    if packs is None:
+        packs = load_packs()
     lines = [describe_all(registry).rstrip("\n"), "", SENTINEL, ""]
     lines.append("## Integration status")
     lines.append("")
@@ -743,20 +779,21 @@ def render_doc(registry=None, packs=None, raw_packs=None) -> str:
     for what, ok, cost in rows:
         lines.append("| %s | %s | %s |" % (what, "**yes**" if ok else "no", cost))
     lines.append("")
-    lines.extend(_genre_section(packs, raw_packs))
+    lines.extend(_genre_section(packs))
     lines.extend(_swap_section(registry))
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def load_packs():
-    """(id -> GenrePack, id -> the raw genre.json dict)."""
-    packs, raw = {}, {}
-    for genre_id in genre_module.available():
-        packs[genre_id] = genre_module.load(genre_id)
-        with open(os.path.join(GENRES_DIR, genre_id, "genre.json"),
-                  encoding="utf-8") as handle:
-            raw[genre_id] = json.load(handle)
-    return packs, raw
+    """id -> GenrePack, for every pack on disk.
+
+    Used to return the parsed `genre.json` alongside, because two rules here
+    needed a field `GenreLayer` did not have. It has it now, so the raw dict
+    is gone -- a file format with two readers in one process is the shape
+    that lets a rule and its subject disagree.
+    """
+    return {genre_id: genre_module.load(genre_id)
+            for genre_id in genre_module.available()}
 
 
 # ===========================================================================
@@ -793,7 +830,7 @@ def _fixture_pack(genre_id="fixture", columns=(("gravity", "float"),),
                                         for n, t in columns)),))
 
 
-PACKS, RAW_PACKS = load_packs()
+PACKS = load_packs()
 DEFINED = defined_names()
 
 print("check_behavior_docs -- the paper must agree with the machinery")
@@ -803,7 +840,7 @@ print(f"  registry: {len(BEHAVIOR_REGISTRY)} behavior(s); "
 
 if "--write" in sys.argv:
     with open(DOC_PATH, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(render_doc(BEHAVIOR_REGISTRY, PACKS, RAW_PACKS))
+        handle.write(render_doc(BEHAVIOR_REGISTRY, PACKS))
     print(f"\nwrote {os.path.relpath(DOC_PATH, ROOT)} "
           f"({len(BEHAVIOR_REGISTRY)} behavior(s))")
     raise SystemExit(0)
@@ -823,7 +860,7 @@ expect_true("the file exists at all", DOC_EXISTS)
 expect_true("its first half is byte-for-byte registry.describe_all()",
             DOC.startswith(describe_all(BEHAVIOR_REGISTRY).rstrip("\n")))
 expect("...and the whole file matches the generator",
-       DOC, render_doc(BEHAVIOR_REGISTRY, PACKS, RAW_PACKS))
+       DOC, render_doc(BEHAVIOR_REGISTRY, PACKS))
 expect("the boundary between the two halves is marked exactly once",
        DOC.count(SENTINEL), 1)
 # Not implied by the equality above, unlike the count: if `describe_all` ever
@@ -850,7 +887,7 @@ expect("no behavior is listed twice", len(set(_sections)), len(_sections))
 # entries, and over a document that has been damaged in each of the two ways.
 _fix_registry = {"zzz_late": _spec("zzz_late", order=90),
                  "aaa_early": _spec("aaa_early", order=10)}
-_fix_doc = render_doc(_fix_registry, PACKS, RAW_PACKS)
+_fix_doc = render_doc(_fix_registry, PACKS)
 _fs, _fr = catalogue_tokens(_fix_doc)
 expect("fixture: a populated registry produces a section per behavior",
        sorted(_fs), ["aaa_early", "zzz_late"])
@@ -869,7 +906,7 @@ expect("fixture: a doc missing one summary row is detected",
 expect("fixture: the catalogue is in declared order, not alphabetical",
        list(catalogue_tokens(render_doc(
            {"aaa_late": _spec("aaa_late", order=90),
-            "zzz_early": _spec("zzz_early", order=10)}, PACKS, RAW_PACKS))[0]),
+            "zzz_early": _spec("zzz_early", order=10)}, PACKS))[0]),
        ["zzz_early", "aaa_late"])
 
 
@@ -888,7 +925,7 @@ for _token, _keys in documented_params(DOC).items():
 _pdoc = render_doc(
     {"early": _spec("early", (_param("gravity", "float", 900.0),), order=10),
      "late": _spec("late", (_param("hop", "int", 3, "object"),), order=90)},
-    PACKS, RAW_PACKS)
+    PACKS)
 expect("fixture: a behavior's parameters are documented under its own heading",
        sorted(documented_params(_pdoc)["early"]), ["gravity"])
 expect("fixture: a later behavior's parameter is not credited to an earlier one",
@@ -968,30 +1005,54 @@ expect_reports(
                            unique_types=("GameScene",)),))}),
     "'f'", "'GameScene'", "without allowing it")
 
+# The fixtures below build `GenrePack` objects DIRECTLY rather than going
+# through `genre.load`, and that is deliberate: `editor/core/genre.py` refuses
+# an unregistered token at load, so a pack loaded from disk can no longer carry
+# one. Bypassing the loader is the only way to prove this rule still bites --
+# and it is exactly the case it exists for, since the loader's guard is one
+# edit away from being loosened.
+def _default_pack(genre_id="f", behaviors=(), object_type="GamePlayer"):
+    return GenrePack(
+        id=genre_id, title="F", summary="", root="",
+        layers=(GenreLayer(
+            name="entity", kind="object", object_types=("GamePlayer",),
+            object_classes=(GenreObjectClass(type=object_type,
+                                             behaviors=tuple(behaviors)),)),))
+
+
 expect("no pack declares a default behavior list it cannot resolve",
-       default_list_violations(RAW_PACKS, BEHAVIOR_REGISTRY), [])
+       default_list_violations(PACKS, BEHAVIOR_REGISTRY), [])
+expect("the real packs' defaults are not empty, so that line means something",
+       sorted(c.type for p in PACKS.values() for l in p.layers
+              for c in l.object_classes), ["GamePlayer", "GamePlayer"])
 expect_reports(
     "fixture: a declared default naming an unregistered token is reported",
-    default_list_violations(
-        {"f": {"layers": [{"name": "entity", "object_types": ["GamePlayer"],
-                           "object_classes": [{"type": "GamePlayer",
-                                               "behaviors": ["ghost_move"]}]}]}},
-        BEHAVIOR_REGISTRY),
+    default_list_violations({"f": _default_pack(behaviors=("ghost_move",))},
+                            BEHAVIOR_REGISTRY),
     "'f'", "'ghost_move'", "not registered")
 expect("fixture: a declared default naming a REGISTERED token is clean",
-       default_list_violations(
-           {"f": {"layers": [{"name": "entity", "object_types": ["GamePlayer"],
-                              "object_classes": [{"type": "GamePlayer",
-                                                  "behaviors": ["real"]}]}]}},
-           {"real": _spec("real")}), [])
+       default_list_violations({"f": _default_pack(behaviors=("real",))},
+                               {"real": _spec("real", genres=())}), [])
 expect_reports(
-    "fixture: a default for a class the layer does not allow is reported",
-    default_list_violations(
-        {"f": {"layers": [{"name": "entity", "object_types": ["GamePlayer"],
-                           "object_classes": [{"type": "GameScene",
-                                               "behaviors": []}]}]}},
-        BEHAVIOR_REGISTRY),
-    "'f'", "'GameScene'", "does not allow")
+    "fixture: a default gated to ANOTHER genre is reported -- it would "
+    "attach and silently do nothing",
+    default_list_violations({"f": _default_pack(behaviors=("real",))},
+                            {"real": _spec("real", genres=("other",))}),
+    "'f'", "'real'", "would attach and do nothing")
+expect("fixture: the same token under the genre it declares is clean",
+       default_list_violations({"f": _default_pack(behaviors=("real",))},
+                               {"real": _spec("real", genres=("f",))}), [])
+expect_reports(
+    "fixture: a default whose spec is not live is reported",
+    default_list_violations({"f": _default_pack(behaviors=("real",))},
+                            {"real": _spec("real", genres=(),
+                                           status="authoring-only")}),
+    "'f'", "'real'", "'authoring-only'")
+expect("fixture: a pack with no object_classes at all reports nothing",
+       default_list_violations(
+           {"f": GenrePack(id="f", title="F", summary="", root="",
+                           layers=(GenreLayer(name="entity", kind="object"),))},
+           BEHAVIOR_REGISTRY), [])
 
 
 # ===========================================================================

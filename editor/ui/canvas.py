@@ -83,6 +83,7 @@ from scripts.core.collision_runtime import (  # noqa: F401  (re-exported)
     companion_name as engine_companion_name,
     depth_for_layer_name,
 )
+from scripts.game.behavior.base import BEHAVIORS
 from scripts.loaders.map_document import tileset_geometry
 
 from editor.core import autotile
@@ -1936,6 +1937,15 @@ class MapCanvas(QGraphicsView):
                 "x": float(column * self.tile_width),
                 "y": float(row * self.tile_height),
             }))
+            # A genre default materialised onto the new object is otherwise
+            # INVISIBLE: the property is on the object and the author is
+            # looking at a rectangle. Say the list out loud once, here, or
+            # filling in a pack is again a surface where nothing happens.
+            placed = self.document.object_layer(self.active_layer).objects()
+            tokens = (placed[-1].properties.as_dict().get(BEHAVIORS, "")
+                      if placed else "")
+            self.status.emit(f"placed {self.object_class}"
+                             + (f" with {tokens}" if tokens else ""))
             return
         self.status.emit("select a layer to paint on, or an object to select")
 

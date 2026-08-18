@@ -40,6 +40,7 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
 import ast
+import json
 import os
 import shutil
 import sys
@@ -55,16 +56,19 @@ import pytmx
 
 from scripts.core import blitpool
 from scripts.core.depth import MAP_DEPTH
-from scripts.core.errors import PyoneerConfigError
+from scripts.core.errors import (PyoneerAssetMissingError,
+                                 PyoneerConfigError)
 from scripts.core.renderer import (EntityLayer, LayerRenderer, MapComposite,
                                    MapLayer)
 from scripts.core.scene.game_scene import GameScene
 from scripts.core.scene.scene_manager import SceneManager
 from scripts.core.spawn import DEFAULT_OBJECT_DEPTH, SPAWN_REGISTRY, register
+from scripts.game.behavior import BEHAVIOR_REGISTRY
 from scripts.game.entity.game_entity import GameEntity
 from scripts.game.entity.game_transform import Transform
 from scripts.game.game_camera import GameCamera
 from scripts.game.game_map import GameMap
+from scripts.loaders.table_file import load_tables
 
 failures: list[str] = []
 
@@ -208,6 +212,58 @@ UNTYPED_OBJECTS = """ <objectgroup id="4" name="entity">
   <object id="8" name="stringly" type="Probe" x="0" y="0" width="16" height="16">
    <properties>
     <property name="depth" value="20"/>
+   </properties>
+  </object>
+ </objectgroup>
+"""
+
+# Three objects that differ ONLY in what they say about an actors row, so the
+# ladder is measured on one map, one bind and one table. id=10 names a row;
+# id=11 names the same row and overrides ONE of its columns per object; id=12
+# names none. `pyoneer_actor` is written untyped, which is what Tiled emits
+# for a property the author did not type, so it arrives as the string it is.
+ACTOR_OBJECTS = """ <objectgroup id="4" name="entity">
+  <object id="10" name="from_row" type="Probe" x="0" y="16" width="16" height="16">
+   <properties>
+    <property name="pyoneer_behaviors" value="platformer_move"/>
+    <property name="pyoneer_actor" value="hero"/>
+   </properties>
+  </object>
+  <object id="11" name="overridden" type="Probe" x="16" y="16" width="16" height="16">
+   <properties>
+    <property name="pyoneer_behaviors" value="platformer_move"/>
+    <property name="pyoneer_actor" value="hero"/>
+    <property name="pyoneer_param_move_speed" type="float" value="11.0"/>
+   </properties>
+  </object>
+  <object id="12" name="no_row" type="Probe" x="32" y="16" width="16" height="16">
+   <properties>
+    <property name="pyoneer_behaviors" value="platformer_move"/>
+   </properties>
+  </object>
+ </objectgroup>
+"""
+
+# Names a row the table does not carry. The failure this exists to make loud:
+# left to fall back, every parameter would sit at its default and the map
+# would be indistinguishable from one where the Database works.
+GHOST_ACTOR_OBJECTS = """ <objectgroup id="4" name="entity">
+  <object id="13" name="ghost_row" type="Probe" x="0" y="16" width="16" height="16">
+   <properties>
+    <property name="pyoneer_behaviors" value="platformer_move"/>
+    <property name="pyoneer_actor" value="nobody"/>
+   </properties>
+  </object>
+ </objectgroup>
+"""
+
+# Behaviors and no row reference: the shape every .tmx in this repository
+# ships in. Bound by a renderer that was never handed tables, it must behave
+# exactly as it did before the reader existed.
+NO_ACTOR_OBJECTS = """ <objectgroup id="4" name="entity">
+  <object id="14" name="plain" type="Probe" x="0" y="16" width="16" height="16">
+   <properties>
+    <property name="pyoneer_behaviors" value="platformer_move"/>
    </properties>
   </object>
  </objectgroup>
@@ -598,11 +654,15 @@ try:
     expect("main.py still builds the scene in prepare_test_scene",
            len(scene_setup), 1)
     body = scene_setup[0] if scene_setup else ast.parse("pass")
-    defaults_at = [node.lineno for node in ast.walk(body)
-                   if isinstance(node, ast.Assign)
-                   and any(isinstance(target, ast.Attribute)
-                           and target.attr == "spawn_defaults"
-                           for target in node.targets)]
+    def assigned_at(attribute: str) -> list[int]:
+        return [node.lineno for node in ast.walk(body)
+                if isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Attribute)
+                        and target.attr == attribute
+                        for target in node.targets)]
+
+    defaults_at = assigned_at("spawn_defaults")
+    tables_at = assigned_at("tables")
     map_bind_at = [node.lineno for node in ast.walk(body)
                    if isinstance(node, ast.Call)
                    and isinstance(node.func, ast.Attribute)
@@ -614,6 +674,161 @@ try:
     expect("and the assignment comes FIRST",
            bool(defaults_at) and bool(map_bind_at)
            and max(defaults_at) < min(map_bind_at), True)
+    # `tables` has the same ordering rule and a LOUDER failure than
+    # spawn_defaults: an object's `pyoneer_actor` is resolved during the bind,
+    # so tables assigned afterwards means a raise at boot rather than a wrong
+    # number later. Asserted the same way and for the same reason -- main.py is
+    # the only caller that has to order these statements.
+    expect("main.py hands the renderer its data tables exactly once",
+           len(tables_at), 1)
+    expect("...and before the map bind, which is when a pyoneer_actor is read",
+           bool(tables_at) and bool(map_bind_at)
+           and max(tables_at) < min(map_bind_at), True)
+
+    # ------------------------------------ the actors table reaches a live body
+    print()
+    print("an authored pyoneer_actor reaches the behavior a bound map built")
+    # The last hop of the parameter ladder, measured where it is actually
+    # taken: not `resolve_params` with a dict handed to it (tools/
+    # check_behavior.py section 8 does that), but a .tmx object, a .json table
+    # and a LayerRenderer.bind, ending at the attribute on the behavior
+    # instance the renderer constructed. Ten parameters declare
+    # `source="actors"` and until `scripts/loaders/table_file.py` landed the
+    # answer to every one of them was its declared default.
+    #
+    # THREE OBJECTS ON ONE MAP, so the difference between them cannot be the
+    # map, the bind, the table or the order. Only what each <object> says.
+    table_root = os.path.join(workspace, "project_tables")
+    os.makedirs(table_root, exist_ok=True)
+    with open(os.path.join(table_root, "actors.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"table": "actors",
+                   "columns": [{"name": "move_speed", "type": "float"},
+                               {"name": "gravity", "type": "float"}],
+                   "rows": {"hero": {"move_speed": 240.0, "gravity": 111.0}}},
+                  handle)
+    project_tables = load_tables(table_root)
+
+    actor_map = write_fixture("actors.tmx", HEAD + TILES + ACTOR_OBJECTS
+                              + "</map>\n")
+    actor_renderer = LayerRenderer(SCREEN)
+    actor_renderer.bind_camera(GameCamera(pygame.Vector2(128, 128),
+                                          pygame.Rect(0, 0, 128, 128), scale=1))
+    actor_renderer.tables = project_tables
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("always")
+        actor_renderer.bind("MAP", GameMap(pytmx.load_pygame(actor_map)))
+
+    def moved(object_id: int):
+        """The `platformer_move` instance on the entity that object spawned."""
+        for record in actor_renderer.spawned_entities:
+            if record.object_id == object_id:
+                found = record.entity.behaviors.get("platformer_move")
+                return _MissingEntity() if found is None else found
+        return _MissingEntity()
+
+    declared = BEHAVIOR_REGISTRY["platformer_move"]
+    default_speed = declared.param("move_speed").default
+    default_gravity = declared.param("gravity").default
+    expect("the three numbers under test are three DIFFERENT numbers, so no "
+           "reading order passes by accident",
+           len({default_speed, 240.0, 11.0}), 3)
+    expect("all three objects spawned off the one bind",
+           sorted(record.object_id for record in actor_renderer.spawned_entities),
+           [10, 11, 12])
+
+    expect("an object naming a row is built with that row's column",
+           moved(10).move_speed, 240.0)
+    expect("...and with the row's other column too, so it is the ROW that "
+           "arrived and not one lucky key", moved(10).gravity, 111.0)
+    expect("its own pyoneer_param_ beats the row it names",
+           moved(11).move_speed, 11.0)
+    expect("...per KEY, so the same object still takes the row's gravity",
+           moved(11).gravity, 111.0)
+    expect("an object on the SAME map naming no row gets the declared default",
+           moved(12).move_speed, default_speed)
+    expect("...for every actors parameter it declares, not just the one",
+           moved(12).gravity, default_gravity)
+
+    # -------------------------------- and the refusals, from inside the bind
+    print()
+    print("a row reference that cannot resolve stops the bind, naming the object")
+    # Each of these is the failure that would otherwise be INVISIBLE: the body
+    # spawns, every number quietly sits at its default, and the map looks like
+    # a map where the Database does nothing -- which is exactly what it was
+    # before this landed.
+    unwired = LayerRenderer(SCREEN)
+    unwired.bind_camera(GameCamera(pygame.Vector2(128, 128),
+                                   pygame.Rect(0, 0, 128, 128), scale=1))
+    expect_raises("a map that names a row bound by a renderer with no tables",
+                  PyoneerConfigError,
+                  lambda: unwired.bind("MAP", GameMap(pytmx.load_pygame(actor_map))),
+                  "id=10", "LayerRenderer.tables")
+
+    ghost_map = write_fixture("ghost_actor.tmx",
+                              HEAD + TILES + GHOST_ACTOR_OBJECTS + "</map>\n")
+    ghosted = LayerRenderer(SCREEN)
+    ghosted.bind_camera(GameCamera(pygame.Vector2(128, 128),
+                                   pygame.Rect(0, 0, 128, 128), scale=1))
+    ghosted.tables = project_tables
+    expect_raises("a pyoneer_actor naming a row the table has not got",
+                  PyoneerAssetMissingError,
+                  lambda: ghosted.bind("MAP", GameMap(pytmx.load_pygame(ghost_map))),
+                  "'nobody'", "id=13", "hero")
+
+    # The half that keeps every shipped map working: behaviors, parameters and
+    # NO pyoneer_actor, bound by a renderer that was never given tables. This
+    # is the shape of every .tmx in the repository, and it must not raise, must
+    # not warn about tables, and must resolve to the declared defaults.
+    plain_map = write_fixture("no_actor.tmx",
+                              HEAD + TILES + NO_ACTOR_OBJECTS + "</map>\n")
+    plain = LayerRenderer(SCREEN)
+    plain.bind_camera(GameCamera(pygame.Vector2(128, 128),
+                                 pygame.Rect(0, 0, 128, 128), scale=1))
+    with warnings.catch_warnings(record=True) as plain_warnings:
+        warnings.simplefilter("always")
+        plain.bind("MAP", GameMap(pytmx.load_pygame(plain_map)))
+    plain_move = [record.entity.behaviors.get("platformer_move")
+                  for record in plain.spawned_entities
+                  if record.entity.behaviors.get("platformer_move")]
+    expect("with no tables and no pyoneer_actor, the map still binds",
+           len(plain_move), 1)
+    expect("...to the declared default, exactly as before any of this existed",
+           plain_move[0].move_speed if plain_move else None, default_speed)
+    expect("...and the tables were never mentioned in a warning",
+           [message for message in
+            (str(w.message) for w in plain_warnings) if "table" in message], [])
+
+    # ------------------------------- SceneManager.spawn reads the SAME slot
+    print()
+    print("a runtime spawn reads the row out of the renderer's one slot")
+    # Two routes into a frame, one table set. A second slot on SceneManager
+    # would be a second thing to forget, and the symptom would be a projectile
+    # built in Python resolving move_speed to 120 while the object Tiled placed
+    # beside it resolved 240 -- the same map, the same behavior, two answers.
+    runtime = SceneManager(_HostStub())
+    runtime.add_scene("runtime", GameScene("runtime"))
+    runtime.set_scene("runtime")
+    runtime_renderer = LayerRenderer(SCREEN)
+    runtime_renderer.tables = project_tables
+    runtime.bind("renderer", runtime_renderer)
+    runtime.bind("camera", GameCamera(pygame.Vector2(128, 128),
+                                      pygame.Rect(0, 0, 128, 128), scale=1))
+    thrown = runtime.spawn("Probe", (8.0, 8.0), depth=50,
+                           properties={"pyoneer_behaviors": "platformer_move",
+                                       "pyoneer_actor": "hero"})
+    expect("a Python-built body reads the actors row the map objects read",
+           thrown.behaviors.get("platformer_move").move_speed, 240.0)
+    expect_raises("...and a runtime row reference that cannot resolve raises, "
+                  "naming the spawn", PyoneerAssetMissingError,
+                  lambda: runtime.spawn("Probe", (0.0, 0.0), depth=50,
+                                        properties={"pyoneer_actor": "nobody"}),
+                  "'nobody'", "SceneManager.spawn")
+    bare = runtime.spawn("Probe", (0.0, 0.0), depth=50,
+                         properties={"pyoneer_behaviors": "platformer_move"})
+    expect("a runtime spawn naming no row still gets the declared default",
+           bare.behaviors.get("platformer_move").move_speed, default_speed)
+
 
 finally:
     SPAWN_REGISTRY.pop("Probe", None)

@@ -29,6 +29,7 @@ from scripts.game.entity.game_entity import GameEntity
 from scripts.game.flow.router import ActionRouter
 from scripts.game.game_camera import GameCamera
 from scripts.game.game_map import GameMap
+from scripts.loaders.table_file import actor_row
 
 from scripts.core.depth import OBJECT_CONVERTER, OBJECT_DEPTH, MAP_DEPTH
 
@@ -192,6 +193,12 @@ class SceneManager:
         what a token means, and a game that builds a projectile in Python
         spells its behavior list exactly as Tiled would.
 
+        `pyoneer_actor` in those properties is read too, through the same
+        `scripts.loaders.table_file.actor_row` the map spawn uses, so the
+        full ladder applies here as well: the properties' own
+        `pyoneer_param_*`, then that actors row, then each parameter's
+        declared default.
+
         `depth=None` resolves through `scripts.core.spawn.resolve_depth`, so
         `pyoneer_depth` on the properties, then the per-class convention, then
         the default -- one home for the depth ladder rather than a second copy
@@ -225,7 +232,8 @@ class SceneManager:
         where = "SceneManager.spawn(%r)" % type_name
         entity = spawn(type_name, registry, **kwargs)
         entity.moveto((float(position[0]), float(position[1])))
-        requests = read_requests(props, where=where)
+        requests = read_requests(props, self.__actor_row(props, where),
+                                 where=where)
         if requests:
             # BEFORE the bind, exactly as `__prepare_entity_layers` composes
             # before binding: `attach_all` raises on a duplicate token, a
@@ -236,6 +244,27 @@ class SceneManager:
         self.bind(resolve_depth(type_name, props, where=where)
                   if depth is None else depth, entity)
         return entity
+
+    def __actor_row(self,
+                    properties: Mapping[str, Any],
+                    where: str) -> Mapping[str, Any] | None:
+        """The actors row `properties` names, read through the renderer's tables.
+
+        The renderer's, not a second slot of this manager's own. `tables` is
+        handed over once before the map is bound and the map spawn reads it
+        there; a copy here would be a second place to forget, and the failure
+        would be a runtime projectile resolving `move_speed` from a default
+        while the object Tiled placed beside it read 240 from the row. One
+        slot, two readers -- the same argument `LayerRenderer.__gate` makes
+        for the collision field and `__sink` makes for the action router.
+
+        With no renderer bound this passes None, and `actor_row` turns that
+        into a raise NAMING the missing wiring -- but only for an object that
+        actually declares `pyoneer_actor`. A spawn that names no row is
+        untouched, which is every `spawn()` call in the tree today.
+        """
+        return actor_row(getattr(self.renderer, "tables", None),
+                         properties, where)
 
     def __forget_spawn_record(self, game_object) -> bool:
         """Drop `game_object`'s row from `renderer.spawned_entities`.

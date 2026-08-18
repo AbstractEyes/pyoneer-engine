@@ -105,7 +105,18 @@ def read(layer) -> LayerProfile:
     properties = getattr(layer, "properties", None) or {}
     if not isinstance(properties, dict):
         return DEFAULT
+    return read_properties(properties)
 
+
+def read_properties(properties: dict) -> LayerProfile:
+    """The same reading, from a plain mapping rather than from a layer.
+
+    Split out because a pytmx layer is not the only thing that carries these
+    properties: `MapDocument`'s tile layers carry them too, typed by the same
+    rules, and `scripts/core/collision_runtime.py` has to ask a DOCUMENT
+    layer whether it sits at world coordinates. Two readings of `parallax`
+    would be two answers on the day one of them was fixed.
+    """
     depth = properties.get(DEPTH, -1)
     try:
         depth = int(depth)

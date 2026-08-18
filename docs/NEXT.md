@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every item below was re-measured against d8c303f on 2026-08-16 by the command printed beside it -->
+<!-- pyoneer-stamp: hand-written; every item below was re-measured against d8c303f on 2026-08-16 by the command printed beside it. The genre-pack default behavior list shipped afterwards and left this list; see CLAUDE.md's Known gaps. -->
 
 # Next — what is open, ranked, and the command that measured it
 
@@ -73,14 +73,7 @@ Do not add a member before a listener exists; delete or wire these.
 Anchor: `#TAG:post_dispose_unwired`. Measured by walking `scripts/` for each
 member name and counting references outside `scripts/core/event_types.py`.
 
-**5. No genre-pack default behavior list.** Four documents name the slot
-`layers[].object_classes[].behaviors`; the dataclass has `object_types` and no
-`behaviors` field at all, and only a check parses the shape.
-Cost: a genre pack cannot say what a placed object *does*, which is the whole
-point of composing behavior from data. Address: `#TAG:GenreLayer`.
-Measured: read the dataclass — it is nine fields and none of them is that one.
-
-**6. The two silent-failure sites, in the order they will bite.**
+**5. The two silent-failure sites, in the order they will bite.**
 Both are described in `CLAUDE.md`'s *Known gaps*; the ranking is the addition:
 `#TAG:GameAnimationHandler.__init__` starts a sequence before any behavior
 attaches, so a side-on-only or portrait-only sprite sheet raises inside the

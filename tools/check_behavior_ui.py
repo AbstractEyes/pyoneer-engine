@@ -474,9 +474,10 @@ try:
            all(word in sideon_fields["gravity"].doc
                for word in ("source actors", "platformer_move",
                             gravity.property_name)), True)
-    expect("the actors caveat is stated where it bites",
-           "nothing in scripts/ reads data/project/"
-           in sideon_fields["gravity"].doc, True)
+    expect("the actors rung is stated where it bites, and stated as LIVE",
+           ("the engine reads that row" in sideon_fields["gravity"].doc
+            and "nothing in scripts/ reads data/project/"
+            not in sideon_fields["gravity"].doc), True)
     expect("an undeclared parameter is marked as showing the default",
            "(default)" in sideon_fields["jump_velocity"].label, True)
     expect("and offers exactly that default",

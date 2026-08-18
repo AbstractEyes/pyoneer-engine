@@ -5,7 +5,7 @@
 
 > Runtime collision: read the masks the editor authors, and refuse a step.
 
-`scripts.core.collision_runtime` · 1385 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.collision_runtime` · 2117 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,137 +13,210 @@
 
 ## Module constants
 
-- `scripts/core/collision_runtime.py:225` `BLOCK_DOWN` #TAG:BLOCK_DOWN
-- `scripts/core/collision_runtime.py:226` `BLOCK_LEFT` #TAG:BLOCK_LEFT
-- `scripts/core/collision_runtime.py:227` `BLOCK_RIGHT` #TAG:BLOCK_RIGHT
-- `scripts/core/collision_runtime.py:228` `BLOCK_UP` #TAG:BLOCK_UP
-- `scripts/core/collision_runtime.py:229` `PASS_ALL` #TAG:PASS_ALL
-- `scripts/core/collision_runtime.py:230` `BLOCK_ALL` #TAG:BLOCK_ALL
-- `scripts/core/collision_runtime.py:231` `STAR` #TAG:STAR
-- `scripts/core/collision_runtime.py:233` `DIRECTION_NAMES` #TAG:DIRECTION_NAMES
-- `scripts/core/collision_runtime.py:242` `DIRECTION_BITS` #TAG:DIRECTION_BITS
-- `scripts/core/collision_runtime.py:247` `STEP` #TAG:STEP
-- `scripts/core/collision_runtime.py:253` `OPPOSITE` #TAG:OPPOSITE
-- `scripts/core/collision_runtime.py:304` `GID_FLAG_MASK` #TAG:GID_FLAG_MASK
-- `scripts/core/collision_runtime.py:305` `GID_VALUE_MASK` #TAG:collision_runtime.GID_VALUE_MASK
-- `scripts/core/collision_runtime.py:306` `FLIP_HORIZONTAL` #TAG:FLIP_HORIZONTAL
-- `scripts/core/collision_runtime.py:307` `FLIP_VERTICAL` #TAG:FLIP_VERTICAL
-- `scripts/core/collision_runtime.py:308` `FLIP_DIAGONAL` #TAG:FLIP_DIAGONAL
-- `scripts/core/collision_runtime.py:377` `NO_DATA` #TAG:NO_DATA
-- `scripts/core/collision_runtime.py:763` `EDGE_INSET` #TAG:EDGE_INSET
-- `scripts/core/collision_runtime.py:855` `COLLISION_TILESET` #TAG:COLLISION_TILESET
-- `scripts/core/collision_runtime.py:864` `COMPANION_SUFFIX` #TAG:COMPANION_SUFFIX
-- `scripts/core/collision_runtime.py:889` `SUBCELL` #TAG:SUBCELL
-- `scripts/core/collision_runtime.py:921` `UNRANKED_DEPTH` #TAG:UNRANKED_DEPTH
+- `scripts/core/collision_runtime.py:257` `BLOCK_DOWN` #TAG:BLOCK_DOWN
+- `scripts/core/collision_runtime.py:258` `BLOCK_LEFT` #TAG:BLOCK_LEFT
+- `scripts/core/collision_runtime.py:259` `BLOCK_RIGHT` #TAG:BLOCK_RIGHT
+- `scripts/core/collision_runtime.py:260` `BLOCK_UP` #TAG:BLOCK_UP
+- `scripts/core/collision_runtime.py:261` `PASS_ALL` #TAG:PASS_ALL
+- `scripts/core/collision_runtime.py:262` `BLOCK_ALL` #TAG:BLOCK_ALL
+- `scripts/core/collision_runtime.py:263` `STAR` #TAG:STAR
+- `scripts/core/collision_runtime.py:265` `DIRECTION_NAMES` #TAG:DIRECTION_NAMES
+- `scripts/core/collision_runtime.py:274` `DIRECTION_BITS` #TAG:DIRECTION_BITS
+- `scripts/core/collision_runtime.py:279` `STEP` #TAG:STEP
+- `scripts/core/collision_runtime.py:285` `OPPOSITE` #TAG:OPPOSITE
+- `scripts/core/collision_runtime.py:336` `GID_FLAG_MASK` #TAG:GID_FLAG_MASK
+- `scripts/core/collision_runtime.py:337` `GID_VALUE_MASK` #TAG:collision_runtime.GID_VALUE_MASK
+- `scripts/core/collision_runtime.py:338` `FLIP_HORIZONTAL` #TAG:FLIP_HORIZONTAL
+- `scripts/core/collision_runtime.py:339` `FLIP_VERTICAL` #TAG:FLIP_VERTICAL
+- `scripts/core/collision_runtime.py:340` `FLIP_DIAGONAL` #TAG:FLIP_DIAGONAL
+- `scripts/core/collision_runtime.py:409` `NO_DATA` #TAG:NO_DATA
+- `scripts/core/collision_runtime.py:676` `MAGIC` #TAG:collision_runtime.MAGIC
+- `scripts/core/collision_runtime.py:677` `NO_DATA_TOKEN` #TAG:NO_DATA_TOKEN
+- `scripts/core/collision_runtime.py:678` `STAR_TOKEN` #TAG:STAR_TOKEN
+- `scripts/core/collision_runtime.py:683` `TOKENS` #TAG:TOKENS
+- `scripts/core/collision_runtime.py:685` `OPINIONS` #TAG:OPINIONS
+- `scripts/core/collision_runtime.py:1243` `EDGE_INSET` #TAG:EDGE_INSET
+- `scripts/core/collision_runtime.py:1335` `COLLISION_TILESET` #TAG:COLLISION_TILESET
+- `scripts/core/collision_runtime.py:1344` `COMPANION_SUFFIX` #TAG:COMPANION_SUFFIX
+- `scripts/core/collision_runtime.py:1370` `DEFAULTS_PROPERTY` #TAG:DEFAULTS_PROPERTY
+- `scripts/core/collision_runtime.py:1395` `SUBCELL` #TAG:SUBCELL
+- `scripts/core/collision_runtime.py:1427` `UNRANKED_DEPTH` #TAG:UNRANKED_DEPTH
 
 ## Functions
 
-- `scripts/core/collision_runtime.py:261` `describe_mask(mask: int) -> str` #TAG:describe_mask
+- `scripts/core/collision_runtime.py:293` `describe_mask(mask: int) -> str` #TAG:describe_mask
   - Human-readable passability, for tooltips, traces and generated docs.
-- `scripts/core/collision_runtime.py:274` `mask_to_gid(mask: int, first_gid: int) -> int` #TAG:mask_to_gid
+- `scripts/core/collision_runtime.py:306` `mask_to_gid(mask: int, first_gid: int) -> int` #TAG:mask_to_gid
   - A passability mask as a gid in its companion layer.
-- `scripts/core/collision_runtime.py:281` `gid_to_mask(gid: int, first_gid: int) -> int` #TAG:gid_to_mask
+- `scripts/core/collision_runtime.py:313` `gid_to_mask(gid: int, first_gid: int) -> int` #TAG:gid_to_mask
   - The inverse. gid 0 (an empty cell) reads as fully open.
-- `scripts/core/collision_runtime.py:311` `split_gid(raw: int) -> tuple[int, int]` #TAG:split_gid
+- `scripts/core/collision_runtime.py:343` `split_gid(raw: int) -> tuple[int, int]` #TAG:split_gid
   - A raw tmx gid as (bare gid, flip flags).
-- `scripts/core/collision_runtime.py:316` `join_gid(bare: int, flags: int) -> int` #TAG:join_gid
+- `scripts/core/collision_runtime.py:348` `join_gid(bare: int, flags: int) -> int` #TAG:join_gid
   - The inverse of `split_gid`.
-- `scripts/core/collision_runtime.py:333` `_mirror(bits: int, mapping: Mapping[int, int]) -> int` #TAG:_mirror
-- `scripts/core/collision_runtime.py:341` `transform_mask(mask: int, flags: int) -> int` #TAG:transform_mask
+- `scripts/core/collision_runtime.py:365` `_mirror(bits: int, mapping: Mapping[int, int]) -> int` #TAG:_mirror
+- `scripts/core/collision_runtime.py:373` `transform_mask(mask: int, flags: int) -> int` #TAG:transform_mask
   - A mask as seen through a tile's flip flags.
-- `scripts/core/collision_runtime.py:380` `is_opinion(value: int) -> bool` #TAG:is_opinion
+- `scripts/core/collision_runtime.py:412` `is_opinion(value: int) -> bool` #TAG:is_opinion
   - True for NO_DATA or any mask this vocabulary defines.
-- `scripts/core/collision_runtime.py:385` `describe_opinion(opinion: int) -> str` #TAG:describe_opinion
+- `scripts/core/collision_runtime.py:417` `describe_opinion(opinion: int) -> str` #TAG:describe_opinion
   - `describe_mask` extended by the one value it cannot describe.
-- `scripts/core/collision_runtime.py:394` `gid_to_opinion(gid: int, first_gid: int) -> int` #TAG:gid_to_opinion
+- `scripts/core/collision_runtime.py:426` `gid_to_opinion(gid: int, first_gid: int) -> int` #TAG:gid_to_opinion
   - A companion-layer gid as an opinion. The sibling of `gid_to_mask`.
-- `scripts/core/collision_runtime.py:417` `opinion_to_gid(opinion: int, first_gid: int) -> int` #TAG:opinion_to_gid
+- `scripts/core/collision_runtime.py:449` `opinion_to_gid(opinion: int, first_gid: int) -> int` #TAG:opinion_to_gid
   - The inverse: NO_DATA becomes the empty cell, everything else defers to
-- `scripts/core/collision_runtime.py:426` `companion_reader(read: Reader, first_gid: int, *, scale: int=1) -> OpinionReader` #TAG:companion_reader
+- `scripts/core/collision_runtime.py:458` `companion_reader(read: Reader, first_gid: int, *, scale: int=1) -> OpinionReader` #TAG:companion_reader
   - A companion tile layer's gids, as opinions.
-- `scripts/core/collision_runtime.py:453` `abstains(opinion: int) -> bool` #TAG:abstains
+- `scripts/core/collision_runtime.py:485` `abstains(opinion: int) -> bool` #TAG:abstains
   - Does this opinion pass the question to the layer BELOW?
-- `scripts/core/collision_runtime.py:556` `resolve(layers: Sequence[CollisionLayer], x: int, y: int, *, undecided: int=PASS_ALL) -> Resolution` #TAG:collision_runtime.resolve
+- `scripts/core/collision_runtime.py:635` `tileset_reader(art: Reader, defaults: Sequence[TilesetDefaults], *, scale: int=1) -> OpinionReader` #TAG:tileset_reader
+  - Level one as an OpinionReader: read the ART layer's gid at a cell,
+- `scripts/core/collision_runtime.py:690` `opinion_to_token(opinion: int) -> str` #TAG:opinion_to_token
+  - One char for one opinion.
+- `scripts/core/collision_runtime.py:707` `token_to_opinion(token: str) -> int` #TAG:token_to_opinion
+- `scripts/core/collision_runtime.py:1036` `resolve(layers: Sequence[CollisionLayer], x: int, y: int, *, undecided: int=PASS_ALL) -> Resolution` #TAG:collision_runtime.resolve
   - Walk a layer stack and report the first layer that decides.
-- `scripts/core/collision_runtime.py:766` `allowed_distance(field: CollisionField, pixel_x: float, pixel_y: float, direction: int, distance: float) -> float` #TAG:allowed_distance
+- `scripts/core/collision_runtime.py:1246` `allowed_distance(field: CollisionField, pixel_x: float, pixel_y: float, direction: int, distance: float) -> float` #TAG:allowed_distance
   - How far an anchor at (pixel_x, pixel_y) may actually travel.
-- `scripts/core/collision_runtime.py:836` `move_point(field: CollisionField, pixel_x: float, pixel_y: float, direction: int, distance: float) -> tuple[float, float]` #TAG:move_point
+- `scripts/core/collision_runtime.py:1316` `move_point(field: CollisionField, pixel_x: float, pixel_y: float, direction: int, distance: float) -> tuple[float, float]` #TAG:move_point
   - `allowed_distance` applied: where the anchor actually ends up.
-- `scripts/core/collision_runtime.py:924` `depth_for_layer_name(layer_name: str | None) -> int` #TAG:depth_for_layer_name
+- `scripts/core/collision_runtime.py:1430` `depth_for_layer_name(layer_name: str | None) -> int` #TAG:depth_for_layer_name
   - Where a layer sorts by its NAME alone, unranked ones included.
-- `scripts/core/collision_runtime.py:936` `collision_first_gid(document) -> int | None` #TAG:collision_first_gid
+- `scripts/core/collision_runtime.py:1442` `collision_first_gid(document) -> int | None` #TAG:collision_first_gid
   - The firstgid masks are stored relative to, or None if this map has no
-- `scripts/core/collision_runtime.py:946` `companion_name(document, layer_name: str) -> str` #TAG:companion_name
+- `scripts/core/collision_runtime.py:1452` `companion_name(document, layer_name: str) -> str` #TAG:companion_name
   - Which layer holds `layer_name`'s masks. Declared wins over convention.
-- `scripts/core/collision_runtime.py:960` `companion_subcell(document, companion: str) -> int` #TAG:companion_subcell
+- `scripts/core/collision_runtime.py:1466` `companion_subcell(document, companion: str) -> int` #TAG:companion_subcell
   - How finely `companion` divides a map tile, validated against the map.
-- `scripts/core/collision_runtime.py:1065` `field_subcell(document, pairs: Sequence[tuple[str, str]] | None=None) -> int` #TAG:field_subcell
+- `scripts/core/collision_runtime.py:1571` `field_subcell(document, pairs: Sequence[tuple[str, str]] | None=None) -> int` #TAG:field_subcell
   - The resolution the whole stack has to bake at: the FINEST declared.
-- `scripts/core/collision_runtime.py:1100` `layer_depth(document, layer_name: str) -> int` #TAG:layer_depth
+- `scripts/core/collision_runtime.py:1606` `layer_depth(document, layer_name: str) -> int` #TAG:layer_depth
   - Where a layer sits in the draw order, by the renderer's own rules.
-- `scripts/core/collision_runtime.py:1123` `companion_pairs(document) -> list[tuple[str, str]]` #TAG:companion_pairs
+- `scripts/core/collision_runtime.py:1629` `layer_rank(document, layer_name: str, index: int) -> tuple[int, int]` #TAG:layer_rank
+  - Sort key that puts a layer where `resolve` expects it: TOPMOST FIRST.
+- `scripts/core/collision_runtime.py:1646` `companion_pairs(document) -> list[tuple[str, str]]` #TAG:companion_pairs
   - (art layer, companion layer) for every layer that has masks, TOPMOST
-- `scripts/core/collision_runtime.py:1159` `gid_inverse(tmx_data) -> dict[int, int]` #TAG:gid_inverse
+- `scripts/core/collision_runtime.py:1682` `gid_inverse(tmx_data) -> dict[int, int]` #TAG:gid_inverse
   - pytmx's internal gid -> the FILE gid, flip flags included.
-- `scripts/core/collision_runtime.py:1191` `_flag_bits(flags: Any) -> int` #TAG:_flag_bits
+- `scripts/core/collision_runtime.py:1714` `_flag_bits(flags: Any) -> int` #TAG:_flag_bits
   - A pytmx `TileFlags` triple as tmx flip bits.
-- `scripts/core/collision_runtime.py:1208` `parsed_layer(tmx_data, name: str)` #TAG:parsed_layer
+- `scripts/core/collision_runtime.py:1731` `parsed_layer(tmx_data, name: str)` #TAG:parsed_layer
   - The named tile layer of a parsed map, or None.
-- `scripts/core/collision_runtime.py:1227` `file_gid_reader(tmx_data, layer) -> Reader` #TAG:file_gid_reader
+- `scripts/core/collision_runtime.py:1750` `file_gid_reader(tmx_data, layer) -> Reader` #TAG:file_gid_reader
   - A parsed tile layer as a reader of FILE gids.
-- `scripts/core/collision_runtime.py:1253` `document_gid_reader(tile_layer) -> Reader` #TAG:document_gid_reader
+- `scripts/core/collision_runtime.py:1776` `document_gid_reader(tile_layer) -> Reader` #TAG:document_gid_reader
   - A `MapDocument` tile layer as a reader of FILE gids.
-- `scripts/core/collision_runtime.py:1273` `collision_layers(document, tmx_data=None, *, subcell: int | None=None, pairs: Sequence[tuple[str, str]] | None=None) -> list[CollisionLayer]` #TAG:collision_layers
+- `scripts/core/collision_runtime.py:1796` `at_world_coordinates(document, layer_name: str) -> bool` #TAG:at_world_coordinates
+  - Are this layer's tile cells the same cells the collision field uses?
+- `scripts/core/collision_runtime.py:1821` `tileset_defaults(document) -> list[TilesetDefaults]` #TAG:tileset_defaults
+  - Level one for this map: each tileset's own per-tile masks, loaded.
+- `scripts/core/collision_runtime.py:1934` `collision_layers(document, tmx_data=None, *, subcell: int | None=None, pairs: Sequence[tuple[str, str]] | None=None, defaults: Sequence[TilesetDefaults] | None=None) -> list[CollisionLayer]` #TAG:collision_layers
   - The map's collision stack, TOPMOST FIRST, as lazy readers.
-- `scripts/core/collision_runtime.py:1318` `field_from_map(source, *, document=None, undecided: int=PASS_ALL, outside: int=BLOCK_ALL) -> CollisionField | None` #TAG:field_from_map
+- `scripts/core/collision_runtime.py:2028` `_gid_reader(document, tmx_data, layer_name: str) -> Reader` #TAG:_gid_reader
+  - One tile layer's FILE gids, from the parsed map if there is one.
+- `scripts/core/collision_runtime.py:2044` `field_from_map(source, *, document=None, undecided: int=PASS_ALL, outside: int=BLOCK_ALL) -> CollisionField | None` #TAG:field_from_map
   - The map's passability, baked, or None when it declares none.
 
 ## Classes
 
+### `class PyoneerBlitmaskError(PyoneerConfigError)` #TAG:PyoneerBlitmaskError
+
+`scripts/core/collision_runtime.py:505`–`525`
+
+> A .blitmask file is not the agreed format.
+
+- `scripts/core/collision_runtime.py:512` `__init__(self, message: str, *, line: int | None=None, path: str | None=None, **context: Any)` #TAG:PyoneerBlitmaskError.__init__
+
+### `@dataclass(frozen=True) class TilesetDefaults` #TAG:TilesetDefaults
+
+`scripts/core/collision_runtime.py:533`–`632`
+
+> One mask per tile in a tileset, addressed by gid.
+
+- `scripts/core/collision_runtime.py:547` `__post_init__(self) -> None` #TAG:TilesetDefaults.__post_init__
+- `scripts/core/collision_runtime.py:565` `@property tile_count(self) -> int` #TAG:TilesetDefaults.tile_count
+- `scripts/core/collision_runtime.py:569` `@property last_gid(self) -> int` #TAG:TilesetDefaults.last_gid
+- `scripts/core/collision_runtime.py:572` `holds(self, gid: int) -> bool` #TAG:TilesetDefaults.holds
+- `scripts/core/collision_runtime.py:576` `local_id(self, gid: int) -> int` #TAG:TilesetDefaults.local_id
+  - The tile's index within this tileset, or -1 if it is not ours.
+- `scripts/core/collision_runtime.py:583` `opinion_for_gid(self, gid: int) -> int` #TAG:TilesetDefaults.opinion_for_gid
+  - What this tileset says about a tile, mirrored to match its flags.
+- `scripts/core/collision_runtime.py:591` `opinion_for_local(self, tile_id: int) -> int` #TAG:TilesetDefaults.opinion_for_local
+- `scripts/core/collision_runtime.py:596` `with_local(self, tile_id: int, opinion: int) -> 'TilesetDefaults'` #TAG:TilesetDefaults.with_local
+  - A copy with one tile changed. Frozen, so editing is replacement --
+- `scripts/core/collision_runtime.py:608` `to_blitmask(self, **meta: str) -> 'Blitmask'` #TAG:TilesetDefaults.to_blitmask
+- `scripts/core/collision_runtime.py:616` `@classmethod from_blitmask(cls, blitmask: 'Blitmask', *, first_gid: int | None=None, name: str | None=None) -> 'TilesetDefaults'` #TAG:TilesetDefaults.from_blitmask
+  - Read defaults back, taking firstgid and name from the file's own
+
+### `@dataclass(frozen=True) class Blitmask` #TAG:Blitmask
+
+`scripts/core/collision_runtime.py:717`–`940`
+
+> A grid of opinions plus its metadata: the whole file, as a value.
+
+- `scripts/core/collision_runtime.py:737` `__post_init__(self) -> None` #TAG:Blitmask.__post_init__
+- `scripts/core/collision_runtime.py:763` `@classmethod blank(cls, width: int, height: int, *, fill: int=NO_DATA, **meta: str) -> 'Blitmask'` #TAG:Blitmask.blank
+- `scripts/core/collision_runtime.py:768` `@classmethod from_rows(cls, rows: Sequence[Sequence[int]], **meta: str) -> 'Blitmask'` #TAG:Blitmask.from_rows
+- `scripts/core/collision_runtime.py:780` `at(self, x: int, y: int) -> int` #TAG:Blitmask.at
+- `scripts/core/collision_runtime.py:785` `reader(self) -> OpinionReader` #TAG:Blitmask.reader
+  - The grid as a level of a `CollisionLayer`.
+- `scripts/core/collision_runtime.py:789` `row(self, y: int) -> tuple[int, ...]` #TAG:Blitmask.row
+- `scripts/core/collision_runtime.py:792` `rows(self) -> list[tuple[int, ...]]` #TAG:Blitmask.rows
+- `scripts/core/collision_runtime.py:795` `with_cell(self, x: int, y: int, opinion: int) -> 'Blitmask'` #TAG:Blitmask.with_cell
+- `scripts/core/collision_runtime.py:806` `counts(self) -> dict[int, int]` #TAG:Blitmask.counts
+- `scripts/core/collision_runtime.py:814` `render(self) -> str` #TAG:Blitmask.render
+  - The file, as a string. Always ends in a newline: a text file
+- `scripts/core/collision_runtime.py:825` `@classmethod parse(cls, text: str, *, path: str | None=None) -> 'Blitmask'` #TAG:Blitmask.parse
+  - Read a .blitmask, refusing anything it cannot read exactly.
+- `scripts/core/collision_runtime.py:924` `@classmethod load(cls, path: str) -> 'Blitmask'` #TAG:Blitmask.load
+- `scripts/core/collision_runtime.py:928` `save(self, path: str) -> None` #TAG:Blitmask.save
+  - Write it. newline="" so the bytes are the bytes on every
+- `scripts/core/collision_runtime.py:939` `__str__(self) -> str` #TAG:Blitmask.__str__
+
 ### `@dataclass class CollisionLayer` #TAG:CollisionLayer
 
-`scripts/core/collision_runtime.py:468`–`527`
+`scripts/core/collision_runtime.py:948`–`1007`
 
 > The three levels for one map layer, and the walk down them.
 
-- `scripts/core/collision_runtime.py:487` `opinion_at(self, x: int, y: int) -> int` #TAG:CollisionLayer.opinion_at
+- `scripts/core/collision_runtime.py:967` `opinion_at(self, x: int, y: int) -> int` #TAG:CollisionLayer.opinion_at
   - Strongest level that has something to say, or NO_DATA.
-- `scripts/core/collision_runtime.py:506` `set_override(self, x: int, y: int, opinion: int) -> None` #TAG:CollisionLayer.set_override
+- `scripts/core/collision_runtime.py:986` `set_override(self, x: int, y: int, opinion: int) -> None` #TAG:CollisionLayer.set_override
   - Write the strongest level.
-- `scripts/core/collision_runtime.py:523` `clear_override(self, x: int, y: int) -> None` #TAG:CollisionLayer.clear_override
-- `scripts/core/collision_runtime.py:526` `override_at(self, x: int, y: int) -> int` #TAG:CollisionLayer.override_at
+- `scripts/core/collision_runtime.py:1003` `clear_override(self, x: int, y: int) -> None` #TAG:CollisionLayer.clear_override
+- `scripts/core/collision_runtime.py:1006` `override_at(self, x: int, y: int) -> int` #TAG:CollisionLayer.override_at
 
 ### `@dataclass(frozen=True) class Resolution` #TAG:Resolution
 
-`scripts/core/collision_runtime.py:531`–`553`
+`scripts/core/collision_runtime.py:1011`–`1033`
 
 > What a cell resolves to, and who decided.
 
-- `scripts/core/collision_runtime.py:545` `@property decided(self) -> bool` #TAG:Resolution.decided
+- `scripts/core/collision_runtime.py:1025` `@property decided(self) -> bool` #TAG:Resolution.decided
   - False when every layer abstained and `mask` is the fallback.
-- `scripts/core/collision_runtime.py:549` `describe(self) -> str` #TAG:Resolution.describe
+- `scripts/core/collision_runtime.py:1029` `describe(self) -> str` #TAG:Resolution.describe
 
 ### `class CollisionField` #TAG:CollisionField
 
-`scripts/core/collision_runtime.py:593`–`750`
+`scripts/core/collision_runtime.py:1073`–`1230`
 
 > A resolved mask per cell, flat, immutable, and cheap to ask.
 
-- `scripts/core/collision_runtime.py:609` `__init__(self, width: int, height: int, masks: bytes | Sequence[int], *, tile_width: int=16, tile_height: int=16, outside: int=BLOCK_ALL) -> None` #TAG:CollisionField.__init__
-- `scripts/core/collision_runtime.py:636` `@classmethod bake(cls, layers: Sequence[CollisionLayer], width: int, height: int, *, tile_width: int=16, tile_height: int=16, outside: int=BLOCK_ALL, undecided: int=PASS_ALL) -> 'CollisionField'` #TAG:CollisionField.bake
+- `scripts/core/collision_runtime.py:1089` `__init__(self, width: int, height: int, masks: bytes | Sequence[int], *, tile_width: int=16, tile_height: int=16, outside: int=BLOCK_ALL) -> None` #TAG:CollisionField.__init__
+- `scripts/core/collision_runtime.py:1116` `@classmethod bake(cls, layers: Sequence[CollisionLayer], width: int, height: int, *, tile_width: int=16, tile_height: int=16, outside: int=BLOCK_ALL, undecided: int=PASS_ALL) -> 'CollisionField'` #TAG:CollisionField.bake
   - Resolve every cell once. `layers` is topmost first, as `resolve`.
-- `scripts/core/collision_runtime.py:667` `contains(self, x: int, y: int) -> bool` #TAG:CollisionField.contains
-- `scripts/core/collision_runtime.py:670` `mask_at(self, x: int, y: int) -> int` #TAG:CollisionField.mask_at
-- `scripts/core/collision_runtime.py:675` `cell_of(self, pixel_x: float, pixel_y: float) -> tuple[int, int]` #TAG:CollisionField.cell_of
+- `scripts/core/collision_runtime.py:1147` `contains(self, x: int, y: int) -> bool` #TAG:CollisionField.contains
+- `scripts/core/collision_runtime.py:1150` `mask_at(self, x: int, y: int) -> int` #TAG:CollisionField.mask_at
+- `scripts/core/collision_runtime.py:1155` `cell_of(self, pixel_x: float, pixel_y: float) -> tuple[int, int]` #TAG:CollisionField.cell_of
   - Pixel to cell, floored.
-- `scripts/core/collision_runtime.py:685` `mask_at_pixel(self, pixel_x: float, pixel_y: float) -> int` #TAG:CollisionField.mask_at_pixel
-- `scripts/core/collision_runtime.py:689` `blocks(self, x: int, y: int, direction: int) -> bool` #TAG:CollisionField.blocks
+- `scripts/core/collision_runtime.py:1165` `mask_at_pixel(self, pixel_x: float, pixel_y: float) -> int` #TAG:CollisionField.mask_at_pixel
+- `scripts/core/collision_runtime.py:1169` `blocks(self, x: int, y: int, direction: int) -> bool` #TAG:CollisionField.blocks
   - Does the cell itself refuse to be LEFT in this direction?
-- `scripts/core/collision_runtime.py:700` `can_move(self, x: int, y: int, direction: int) -> bool` #TAG:CollisionField.can_move
+- `scripts/core/collision_runtime.py:1180` `can_move(self, x: int, y: int, direction: int) -> bool` #TAG:CollisionField.can_move
   - Can something step from (x, y) one cell in `direction`?
-- `scripts/core/collision_runtime.py:725` `counts(self) -> dict[int, int]` #TAG:CollisionField.counts
+- `scripts/core/collision_runtime.py:1205` `counts(self) -> dict[int, int]` #TAG:CollisionField.counts
   - How many cells hold each mask. For a summary line, and for
-- `scripts/core/collision_runtime.py:733` `masks(self) -> bytes` #TAG:CollisionField.masks
+- `scripts/core/collision_runtime.py:1213` `masks(self) -> bytes` #TAG:CollisionField.masks
   - The flat row-major store. `bytes`, so handing it out cannot let a
-- `scripts/core/collision_runtime.py:738` `__eq__(self, other: object) -> bool` #TAG:CollisionField.__eq__
-- `scripts/core/collision_runtime.py:747` `__repr__(self) -> str` #TAG:CollisionField.__repr__
+- `scripts/core/collision_runtime.py:1218` `__eq__(self, other: object) -> bool` #TAG:CollisionField.__eq__
+- `scripts/core/collision_runtime.py:1227` `__repr__(self) -> str` #TAG:CollisionField.__repr__
