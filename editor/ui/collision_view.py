@@ -39,9 +39,21 @@ Drawing every collision layer's glyphs on top of each other was tried and
 hides the thing you opened it for: an upper layer is mostly stars and empty
 cells, and both of those are "abstain, ask below", so the stack paints
 abstentions over the ground layer's real answers. `bake_resolved()` renders
-the ONE mask the player will actually feel, plus two cheap channels the
-stack cannot express -- a corner tick saying which layer decided, and a
-centre square saying a layer below disagreed.
+the ONE mask the player will actually feel, plus three cheap channels the
+stack cannot express -- a corner tick saying which layer decided, a centre
+square saying a layer below disagreed, and a top-right wedge saying which
+LEVEL of the deciding layer spoke.
+
+WHY THE LEVEL CHANNEL EXISTS AT ALL
+-----------------------------------
+Until a tileset could carry its own `.blitmask`, "which layer decided" was
+the whole of provenance, because a layer had exactly one level an author
+could reach. It no longer is. A blocked cell is now either the TILE that was
+stamped there or a mask painted over it in the companion layer, and the two
+want opposite repairs -- change the tileset, or repaint the cell. Nothing
+about the glyph distinguishes them, and the tileset level is invisible
+everywhere else in this editor, so the overlay is the only place the question
+can be asked. See `deciding_level`.
 """
 from __future__ import annotations
 
@@ -57,6 +69,7 @@ from PySide6.QtGui import (
     QIcon,
     QImage,
     QPainter,
+    QPainterPath,
     QPen,
     QPixmap,
 )
@@ -71,17 +84,10 @@ from PySide6.QtWidgets import QGraphicsItem, QLabel, QVBoxLayout, QWidget
 from editor.core.collision import (
     NO_DATA,
     CollisionLayer,
-    companion_reader,
     describe_opinion,
     gid_to_opinion,
     resolve,
 )
-# Straight from the engine, the way `editor/ui/canvas.py` takes
-# `collision_first_gid` and `companion_name`: this is a reader ADAPTER, not
-# part of the model `editor/core/collision.py` re-exports, and the rule it
-# carries -- a read past a companion's edge answers 0 -- has to be the engine's
-# own or the overlay and the runtime disagree about a partly-authored map.
-from scripts.core.collision_runtime import document_gid_reader
 from editor.core.layers import (
     BLOCK_ALL,
     BLOCK_DOWN,
@@ -111,6 +117,42 @@ _DIRECTION_BITS = (BLOCK_UP, BLOCK_DOWN, BLOCK_LEFT, BLOCK_RIGHT)
 
 
 # --------------------------------------------------------------------------
+# Which LEVEL decided
+# --------------------------------------------------------------------------
+# `Resolution.layer` answers "which LAYER decided", and for as long as a
+# layer had one authorable level that was the whole of provenance. A tileset
+# `.blitmask` makes it half an answer: a blocked cell is now either the TILE
+# the author stamped or a mask the author PAINTED over it, and those two want
+# opposite repairs -- edit the tileset, or repaint the companion. Neither is
+# guessable from the glyph, and the tileset level is invisible everywhere
+# else in this editor, so the overlay is the only place the question can be
+# asked at all.
+#
+# Numbered WEAKEST FIRST, matching `CollisionLayer`'s field order and the
+# order the three levels are documented in, so a bigger number is a stronger
+# claim and `max` means what it looks like it means.
+
+#: No level spoke: the cell is undecided, or this is a single-layer bake.
+LEVEL_NONE = -1
+#: Level one -- the tile's own mask, from the tileset's `.blitmask`.
+LEVEL_TILESET = 0
+#: Level two -- a cell of the companion layer, painted in this editor.
+LEVEL_COMPANION = 1
+#: Level three -- a per-cell override. Authored by nobody today; here
+#: because `CollisionLayer` carries it and a channel that reports two of
+#: three levels would be lying by omission the day the third arrives.
+LEVEL_OVERRIDE = 2
+
+#: What the status line calls each one. Phrased from the AUTHOR's side --
+#: what to go and change -- rather than as the level's internal name.
+LEVEL_NAMES: Mapping[int, str] = {
+    LEVEL_TILESET: "from the tileset",
+    LEVEL_COMPANION: "painted",
+    LEVEL_OVERRIDE: "overridden",
+}
+
+
+# --------------------------------------------------------------------------
 # Palette
 # --------------------------------------------------------------------------
 
@@ -136,6 +178,16 @@ PROVENANCE = (
     QColor(96, 224, 255), QColor(126, 226, 128), QColor(255, 226, 96),
     QColor(255, 158, 84), QColor(238, 118, 210), QColor(140, 156, 255),
 )
+#: The LEVEL wedge, top-right. Near-white and near-black are the two inks
+#: this vocabulary had left: red is a blocked edge, amber is star, violet is
+#: a conflict, and the six PROVENANCE hues are layer indices. A seventh hue
+#: would be a hue the author has to learn against six that already cycle.
+LEVEL_INK = QColor(246, 248, 252, 240)
+#: Level three, which nothing authors yet. A different INK on the same shape,
+#: because "somebody patched this cell" and "the tile brought this" are the
+#: same KIND of answer -- not the companion you are painting -- and shape is
+#: the channel that survives being shrunk.
+OVERRIDE_INK = QColor(28, 32, 44, 235)
 
 
 # --------------------------------------------------------------------------
@@ -415,12 +467,14 @@ class CollisionOverlay(QGraphicsItem):
         self.tile_height = int(tile_height)
         self.show_provenance = True
         self.show_conflicts = True
+        self.show_levels = True
 
         self.__glyphs: Mapping[int, QPixmap] = glyph_pixmaps(
             self.tile_width, self.tile_height, keyline)
         self.__masks: list[int] = [NO_DATA] * (self.width * self.height)
         self.__owners: list[int] | None = None
         self.__conflicts: list[bool] | None = None
+        self.__levels: list[int] | None = None
 
         self.__pixmap = QPixmap(max(1, self.width * self.tile_width),
                                 max(1, self.height * self.tile_height))
@@ -462,6 +516,7 @@ class CollisionOverlay(QGraphicsItem):
         self.__masks = self.__fit(masks)
         self.__owners = None
         self.__conflicts = None
+        self.__levels = None
         self.__render_all()
 
     def bake_resolved(self, layers: Sequence[CollisionLayer], *,
@@ -482,12 +537,14 @@ class CollisionOverlay(QGraphicsItem):
         an overlay that drew every unauthored cell as an assertion would ink
         the whole map and say nothing.
         """
-        self.__masks, self.__owners, self.__conflicts = resolve_field(
-            layers, self.width, self.height, undecided=undecided)
+        (self.__masks, self.__owners, self.__conflicts,
+         self.__levels) = resolve_field(layers, self.width, self.height,
+                                        undecided=undecided)
         self.__render_all()
 
     def set_cell(self, x: int, y: int, mask: int, *,
-                 owner: int = -1, conflicted: bool = False) -> None:
+                 owner: int = -1, conflicted: bool = False,
+                 level: int = LEVEL_NONE) -> None:
         """Change one cell in place, without re-baking the field.
 
         This is the reason the pixmap is private. Writing four kilobytes into
@@ -502,6 +559,8 @@ class CollisionOverlay(QGraphicsItem):
             self.__owners[index] = owner
         if self.__conflicts is not None:
             self.__conflicts[index] = conflicted
+        if self.__levels is not None:
+            self.__levels[index] = level
 
         left, top = x * self.tile_width, y * self.tile_height
         painter = QPainter(self.__pixmap)
@@ -511,7 +570,7 @@ class CollisionOverlay(QGraphicsItem):
         painter.fillRect(left, top, self.tile_width, self.tile_height,
                          Qt.transparent)
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-        self.__paint_cell(painter, x, y, mask, owner, conflicted)
+        self.__paint_cell(painter, x, y, mask, owner, conflicted, level)
         painter.end()
         self.update(QRectF(left, top, self.tile_width, self.tile_height))
 
@@ -540,6 +599,19 @@ class CollisionOverlay(QGraphicsItem):
             return False
         return self.__conflicts[y * self.width + x]
 
+    def level_at(self, x: int, y: int) -> int:
+        """Which LEVEL of the deciding layer answered, or LEVEL_NONE.
+
+        LEVEL_NONE outside a resolve as well as outside the field, for
+        `owner_at`'s reason: a single-layer bake shows one layer's companion
+        and nothing else, so every cell's level channel would carry the same
+        value and reporting it would invent a distinction.
+        """
+        if self.__levels is None or not (0 <= x < self.width
+                                         and 0 <= y < self.height):
+            return LEVEL_NONE
+        return self.__levels[y * self.width + x]
+
     def cell_image(self, x: int, y: int) -> QImage:
         """A COPY of one cell's rendered pixels, for tooltips and checks.
 
@@ -554,7 +626,12 @@ class CollisionOverlay(QGraphicsItem):
         text = describe_opinion(self.mask_at(x, y))
         owner = self.owner_at(x, y)
         if owner >= 0:
-            text += f"  (layer {owner})"
+            # The level goes INSIDE the layer's own bracket, because it is a
+            # fact about that layer rather than a third independent thing.
+            # "layer 0, from the tileset" is the whole answer to "why is this
+            # cell blocked and what do I go and change".
+            level = LEVEL_NAMES.get(self.level_at(x, y))
+            text += f"  (layer {owner}{', ' + level if level else ''})"
         if self.conflicted_at(x, y):
             text += "  — a layer below disagrees"
         return text
@@ -572,20 +649,23 @@ class CollisionOverlay(QGraphicsItem):
         self.__pixmap.fill(Qt.transparent)
         painter = QPainter(self.__pixmap)
         owners, conflicts = self.__owners, self.__conflicts
+        levels = self.__levels
         width = self.width
         for index, mask in enumerate(self.__masks):
             owner = owners[index] if owners is not None else -1
             conflicted = conflicts[index] if conflicts is not None else False
+            level = levels[index] if levels is not None else LEVEL_NONE
             if mask == NO_DATA or (mask == PASS_ALL and owner < 0
                                    and not conflicted):
                 continue                      # nothing to say about this cell
             self.__paint_cell(painter, index % width, index // width,
-                              mask, owner, conflicted)
+                              mask, owner, conflicted, level)
         painter.end()
         self.update()
 
     def __paint_cell(self, painter: QPainter, x: int, y: int, mask: int,
-                     owner: int, conflicted: bool) -> None:
+                     owner: int, conflicted: bool,
+                     level: int = LEVEL_NONE) -> None:
         left, top = x * self.tile_width, y * self.tile_height
         glyph = self.__glyphs.get(mask)
         if glyph is not None:
@@ -605,6 +685,46 @@ class CollisionOverlay(QGraphicsItem):
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(QRectF(left + 5.5 * ux, top + 5.5 * uy,
                                     5 * ux, 5 * uy))
+        if self.show_levels:
+            self.__paint_level(painter, left, top, ux, uy, level)
+
+    def __paint_level(self, painter: QPainter, left: float, top: float,
+                      ux: float, uy: float, level: int) -> None:
+        """The LEVEL wedge: the top-right corner, 3u on a side.
+
+        A SHAPE and not a hue, in the one corner nothing else claims. Colour
+        was spent before this channel existed -- red is a blocked edge, amber
+        is star, violet is a conflict, and the six PROVENANCE inks cycle by
+        layer index -- so a seventh hue would be one more thing to learn
+        against six that already repeat. The bars are inset 3u from every
+        corner (`_bar_geometry`), the provenance tick owns the top-LEFT 2x2u
+        and the conflict square owns the centre 5x5u, so a 3u corner triangle
+        can never touch any of them.
+
+        ABSENCE MEANS "PAINTED", which is the assumption the author already
+        has and the level they can see in the single-layer view anyway. The
+        mark goes on the levels that are invisible everywhere else in this
+        editor: a tileset default lives in a `.blitmask` beside the .tmx, and
+        an override lives only in memory. Marking the surprising case also
+        leaves a fully-painted map's readout exactly as clean as it was
+        before this channel existed.
+
+        It vanishes below about a 6px cell the way the provenance tick does,
+        and that is the right level of detail: at fit-zoom the question is
+        where the walls are, not which file they came out of.
+        """
+        ink = LEVEL_INK if level == LEVEL_TILESET else (
+            OVERRIDE_INK if level == LEVEL_OVERRIDE else None)
+        if ink is None:
+            return
+        wedge = QPainterPath()
+        right = left + 16.0 * ux
+        wedge.moveTo(right - 3.0 * ux, top)
+        wedge.lineTo(right, top)
+        wedge.lineTo(right, top + 3.0 * uy)
+        wedge.closeSubpath()
+        painter.setPen(Qt.NoPen)
+        painter.fillPath(wedge, ink)
 
 
 # --------------------------------------------------------------------------
@@ -626,38 +746,20 @@ def masks_from_layer(layer, first_gid: int) -> list[int]:
             for y in range(height) for x in range(width)]
 
 
-def layer_from_companion(layer, first_gid: int, name: str = "", *,
-                         scale: int = 1) -> CollisionLayer:
-    """A document tile layer as a stack member.
-
-    `scale` is the field's resolution divided by this layer's own -- see
-    `companion_reader`, which is where the arithmetic and the measurement
-    live. It matters here for the same reason it matters in the runtime and
-    for a worse-looking reason: the all-layers overlay is what an author reads
-    to find out where a wall IS, so a stack that mixes a 1x and a 4x companion
-    and drops the scale draws the 1x layer's walls in the wrong place.
-
-    READS PAST THE EDGE ANSWER NOTHING, WHICH IS WHY THIS GOES THROUGH
-    `document_gid_reader`. A companion may legitimately be smaller than the
-    field -- half a map authored, or a 4x layer covering the top-left
-    quarter -- and `resolve` treats "nothing here" as abstention, which is
-    exactly right past its edge. `MapDocument`'s own `get_tile` RAISES
-    instead, so reading a stack member directly took the editor down with a
-    `PyoneerConfigError` mid-rebuild the moment the field was larger than one
-    of its layers, which mixing resolutions makes ordinary rather than
-    exotic. The engine's `file_gid_reader` has answered 0 there since it was
-    written; this is that same rule, taken from the same module rather than
-    spelled a second time here.
-
-    It costs one flat copy of the layer's gids where the old closure copied
-    nothing. Measured on the 100x100 layer in `data/maps/test.tmx`: 0.032 ms
-    against 4.3 ms for the per-cell sweep a single bake already pays, so the
-    snapshot is 1% of the work it feeds.
-    """
-    return CollisionLayer(
-        name=name or getattr(layer, "name", ""),
-        companion=companion_reader(document_gid_reader(layer), first_gid,
-                                   scale=scale))
+# THE HELPER THAT USED TO LIVE HERE. `layer_from_companion` built one stack
+# member from one document tile layer, and `MapCanvas.collision_stack` called
+# it in a loop. It is gone because `collision_stack` now delegates to the
+# engine's `collision_layers`, which composes exactly the same two functions
+# -- `companion_reader(document_gid_reader(layer), first_gid, scale=...)` --
+# and composes level ONE beside them, which this never did.
+#
+# Deleted rather than kept as a convenience, and the distinction matters:
+# once nothing production calls it, it is a SECOND way to build a stack
+# member that no longer has to agree with the first. A check written through
+# it would still pass on the day `collision_layers` changed how a member is
+# made, and would be proving something about this module instead of about
+# the editor. `tools/check_collision_view.py` builds its members from the two
+# engine functions directly now, for that reason.
 
 
 def layer_from_masks(masks: Sequence[int], width: int,
@@ -677,25 +779,105 @@ def layer_from_masks(masks: Sequence[int], width: int,
     return CollisionLayer(name=name, companion=read)
 
 
+def deciding_level(layer: CollisionLayer, x: int, y: int) -> int:
+    """Which of ONE layer's three levels produced `opinion_at`, or LEVEL_NONE.
+
+    Attribution, not resolution. `resolve` has already named the deciding
+    LAYER by the time this is asked; all this does is look inside that one
+    layer and say which of its levels spoke. It walks nothing and it decides
+    nothing -- ask it about a layer `resolve` did not choose and the answer
+    is true but useless.
+
+    IT RESTATES `CollisionLayer.opinion_at`'s ORDER, AND THAT IS THE RISK.
+    Strongest first -- override, companion, defaults -- because that is the
+    only order in which the specific beats the general, and it is spelled
+    here a second time because `opinion_at` returns a MASK and a mask cannot
+    carry where it came from. The alternative was a fourth channel on
+    `Resolution`, which `CollisionField.bake` would then pay for on every one
+    of 160,000 cells to answer a question only an overlay asks.
+
+    So the duplication is real and it is pinned rather than trusted:
+    `tools/check_collision_view.py` walks the whole truth table -- every
+    combination of the three levels present, absent, NO_DATA, a mask and a
+    star -- and asserts that the level named here is the level whose own
+    reader returned `opinion_at`'s answer. Reverse this walk and that check
+    goes red on the first row.
+
+    NO_DATA and not `abstains`: a painted STAR is a level SPEAKING. It ends
+    this layer's walk and asks the layer below, which is `resolve`'s
+    business, not this function's -- and "the author painted a star here" is
+    exactly the provenance an author starring over a tileset default wants
+    back.
+    """
+    if layer.override_at(x, y) != NO_DATA:
+        return LEVEL_OVERRIDE
+    if layer.companion is not None and layer.companion(x, y) != NO_DATA:
+        return LEVEL_COMPANION
+    if layer.defaults is not None and layer.defaults(x, y) != NO_DATA:
+        return LEVEL_TILESET
+    return LEVEL_NONE
+
+
+def resolve_cell(layers: Sequence[CollisionLayer], x: int, y: int, *,
+                 undecided: int = NO_DATA) -> tuple[int, int, bool, int]:
+    """One cell, all four channels: (mask, layer, conflicted, level).
+
+    The ONE place a cell becomes a readout, called per cell by
+    `resolve_field` for a whole bake and called directly by
+    `MapCanvas.__sync_overlay` for the handful of cells a stroke touched.
+    Those two used to spell the same three lines separately, which is a
+    difference that survives every check written against either one of them:
+    a stroke under the resolved view would draw one thing and the next full
+    bake would draw another, in the same cells, from the same document.
+
+    The mask, the deciding layer and the conflict flag are the engine's
+    `resolve` and nothing here touches them. The level is `deciding_level`
+    asked about the layer `resolve` named, so an undecided cell costs nothing
+    beyond the walk it already paid for.
+    """
+    resolution = resolve(layers, x, y, undecided=undecided)
+    level = (deciding_level(layers[resolution.layer], x, y)
+             if resolution.decided else LEVEL_NONE)
+    return resolution.mask, resolution.layer, resolution.conflicted, level
+
+
 def resolve_field(layers: Sequence[CollisionLayer], width: int, height: int,
                   *, undecided: int = NO_DATA
-                  ) -> tuple[list[int], list[int], list[bool]]:
+                  ) -> tuple[list[int], list[int], list[bool], list[int]]:
     """The whole resolved field as plain data, for anything without a pixmap.
 
     `layers[0]` is the TOP-MOST. Split out from `bake_resolved` so a check,
     an exporter or a tooltip can ask "what will the player feel here"
     without building a QGraphicsItem.
+
+    Four channels, and the fourth costs at most three reader calls on ONE
+    layer: the mask, the deciding layer, whether a layer below disagreed,
+    and which LEVEL of the deciding layer spoke. `deciding_level` is asked
+    only about the layer `resolve` named, so an undecided cell costs nothing
+    extra at all.
+
+    MEASURED, because a per-cell walk is where this module's time goes.
+    100x100 over a three-layer stack, best of five: 28.2 ms for the three
+    channels this returned before, 35.1 ms for four -- so the level channel
+    and the call to `resolve_cell` together are +6.9 ms, about a quarter.
+    The full `bake_resolved` around it is 88 ms, most of it painting. That
+    price is paid when the resolved view is switched on or the document
+    changes underneath it, never per stroke: a stroke goes through
+    `set_cell` for the cells it touched, which is 10.4 us each.
     """
     masks: list[int] = []
     owners: list[int] = []
     conflicts: list[bool] = []
+    levels: list[int] = []
     for y in range(height):
         for x in range(width):
-            resolution = resolve(layers, x, y, undecided=undecided)
-            masks.append(resolution.mask)
-            owners.append(resolution.layer)
-            conflicts.append(resolution.conflicted)
-    return masks, owners, conflicts
+            mask, owner, conflicted, level = resolve_cell(
+                layers, x, y, undecided=undecided)
+            masks.append(mask)
+            owners.append(owner)
+            conflicts.append(conflicted)
+            levels.append(level)
+    return masks, owners, conflicts, levels
 
 
 # --------------------------------------------------------------------------

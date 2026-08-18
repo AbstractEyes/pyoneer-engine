@@ -16,7 +16,7 @@ Rules that are enforced, not suggested:
 - Types are checked and never coerced. `"5"` is not `5`.
 - A response is one transaction. One bad line rolls back the rest.
 
-33 verbs:
+35 verbs:
 
 ### `map.layer.add`
 
@@ -292,6 +292,41 @@ Add an embedded tileset, appended above every gid range the map already uses. An
 
 ```json
 {"verb": "map.tileset.add", "scope": "map:test", "args": {"name": "Dungeon", "image": "../graphics/tilesets/System/Dungeon.png"}}
+```
+
+### `map.tileset.mask.restore`
+
+Write one tile's mask back AND put the tileset's pyoneer_collision declaration back to what it was, an empty `reference` removing it. The exact inverse of map.tileset.mask.set and of itself, and the only reason a set that had to declare the sidecar can be undone without leaving the .tmx one property heavier than it was found. Rarely written by hand -- use map.tileset.mask.set, which derives the reference and provisions the file.
+
+*Scopes:* `map:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `name` | str | no (default `''`) | tileset name; leave empty and pass first_gid |
+| `first_gid` | int | no (default `0`) | address the tileset by its firstgid instead of its name |
+| `tile` | int | yes | the tile's id within its tileset |
+| `mask` | int | yes | the opinion exactly as it was found; -1 is no opinion |
+| `reference` | str | no (default `''`) | the pyoneer_collision value to leave on the tileset, spelled exactly as the file spells it. Empty removes the property, and the mask is then written into whatever the tileset declares now |
+
+```json
+{"verb": "map.tileset.mask.restore", "scope": "map:test", "args": {"name": "Dungeon", "tile": 7, "mask": -1, "reference": ""}}
+```
+
+### `map.tileset.mask.set`
+
+Set one TILE's collision mask, once, for everywhere that tile is ever stamped. It is stored in the tileset's own .blitmask sidecar and declared on the <tileset> with pyoneer_collision, which is the level the engine stacks UNDER every companion layer -- so a cell painted in the collision overlay still wins. The mask is the vocabulary the overlay paints: -1 no opinion, 0 open, 1 down, 2 left, 4 right, 8 up, added together, 15 blocked on all four sides, 16 the star that abstains and defers to the layer below. The sidecar is WRITTEN when it is not there, sized to the sheet, and nothing asks first. Undo restores the cell and the declaration exactly and leaves the file on disk -- a grid of no-data reads as no masks at all.
+
+*Scopes:* `map:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `name` | str | no (default `''`) | tileset name; leave empty and pass first_gid for an external <tileset source=...>, which carries no name in this file |
+| `first_gid` | int | no (default `0`) | address the tileset by its firstgid instead of its name |
+| `tile` | int | yes | the tile's id WITHIN its tileset -- 0-based, row-major over the sheet, which is a gid minus the tileset's firstgid |
+| `mask` | int | yes | -1 for no opinion, 0..15 for the direction bits (1 down, 2 left, 4 right, 8 up), 16 for the star |
+
+```json
+{"verb": "map.tileset.mask.set", "scope": "map:test", "args": {"name": "Dungeon", "tile": 7, "mask": 15}}
 ```
 
 ### `map.tileset.remove`

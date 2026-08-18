@@ -25,6 +25,7 @@ Everything else is a soft rule and surfaces in Problems.
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from editor.core.commands import Command, Param, command
@@ -37,6 +38,18 @@ from editor.core.scope import Scope
 from editor.core import genre as genre_module
 from editor.core import layers as layer_module
 from editor.core import map_events as map_event_module
+# The collision vocabulary through the editor's re-export, never a second
+# copy of it -- law 2's corollary cost 425 duplicate lines on exactly this
+# pair of modules. `BLITMASK_SUFFIX` is the extension the .tileset format
+# already validates a mask reference against, so it is spelled once there.
+from editor.core.collision import (
+    DEFAULTS_PROPERTY,
+    NO_DATA,
+    Blitmask,
+    TilesetDefaults,
+    is_opinion,
+)
+from scripts.loaders.tileset_file import BLITMASK_SUFFIX
 from scripts.game.behavior.base import BEHAVIORS
 
 
@@ -557,6 +570,368 @@ def _tileset_restore(project: Project, cmd: Command) -> Command:
                        {"name": name, "force": True})
     return Command("map.tileset.remove", cmd.scope,
                    {"first_gid": first_gid, "force": True})
+
+
+# --------------------------------------------------------------------------
+# Tile masks -- level one of the collision stack, authored from the editor
+#
+# `scripts/core/collision_runtime.py` reads a tileset's per-tile masks out of
+# a `.blitmask` named by the `pyoneer_collision` property on the `<tileset>`
+# element, and `field_from_map` stacks that level UNDER every companion so a
+# painted cell still wins. Until these two verbs there was no way to author
+# either half from here: the property had to be typed into the .tmx by hand
+# and the sidecar written in a text editor, which is the authoring equivalent
+# of the dialog `provision_collision_tileset` exists not to show.
+#
+# THE FILE IS PROVISIONED, NOT ASKED ABOUT
+# ----------------------------------------
+# `map.tileset.mask.set` writes the `.blitmask` when it is not there, the
+# same call the first collision stroke makes for `Collision.png`. The editor
+# knows exactly what is needed, so asking is a modal on a routine path. What
+# it costs is stated rather than hidden -- see the next paragraph.
+#
+# WHAT HAS NO INVERSE, AND WHY THAT IS SOUND        #TAG:written_file_has_no_inverse
+# ------------------------------------------
+# Three things can change: one cell of the sidecar, the tmx property, and the
+# sidecar's EXISTENCE. The first two are inverted exactly, and the inverse
+# carries the opinion and the reference it FOUND rather than ones it could
+# re-derive -- `_action_inverse` makes the same argument for the same shape.
+# The third is not inverted: undo leaves the file on disk, all-NO_DATA if
+# this verb created it. That is deliberate and it is measurable. A grid of
+# no-data reads exactly as a tileset with no masks at all -- once the
+# property is gone `tileset_defaults` never opens the file, and
+# `opinion_for_local` answers NO_DATA either way -- so the baked field is
+# identical with the file present or absent, and the thing undo is contracted
+# to restore, the .tmx byte for byte, IS restored. An undo that DELETED a
+# file would be a strictly worse trade: it can destroy work the author put
+# there, and it buys nothing that assertion does not already give.
+#
+# GROWING a short mask is in the same class. Masking only the first three
+# rows of a 24-row sheet is legal and deliberate -- `tileset_defaults` says
+# so in as many words -- so setting a tile below that has to add rows. The
+# added rows are NO_DATA, so again the meaning is unchanged, and undo
+# restores the cell rather than the row count.
+#
+# WHY TWO VERBS AND NOT ONE
+# -------------------------
+# `restore` is the exact inverse of `set` and of itself, the way
+# `map.object.action.restore` is, because the two things that change have to
+# come back TOGETHER: putting the cell back without removing a declaration
+# this call created leaves the tmx one property heavier than it was found. A
+# `set` that could also undeclare would need its `reference` argument to
+# treat empty as "delete", which is a second meaning for a default value, so
+# the undeclaring half lives in the verb only the stream writes.
+# --------------------------------------------------------------------------
+
+def _tileset_for_mask(project: Project, cmd: Command):
+    """The `<tileset>` a mask verb addresses, and the document holding it.
+
+    The two refusals are `tileset_defaults`' own, moved forward to authoring
+    time. A mask grid is row-major over the sheet, so with no `columns` there
+    is no arithmetic from a tile id to a cell of it; and with no tile count
+    nothing can say which gids the tileset owns, which is exactly the state
+    in which every tile silently reads as having no mask. Writing a file the
+    engine would then refuse to load is the half-delivery these verbs exist
+    to end, so the refusal comes before anything is written.
+    """
+    document = project.map(cmd.scope.require("map"))
+    ref = document.tileset(_tileset_key(cmd))
+    label = ref.name or ref.source or ref.first_gid
+    if not ref.extent_known:
+        raise PyoneerCommandArgumentError(
+            f"tileset {label!r} does not say which gids it owns -- an "
+            f"external tileset keeps its tilecount in the .tsx, and an "
+            f"embedded one may omit it. Without an extent every tile would "
+            f"silently read as having no mask",
+            verb=cmd.verb, first_gid=ref.first_gid)
+    if ref.columns <= 0:
+        raise PyoneerCommandArgumentError(
+            f"tileset {label!r} declares no columns, and a mask grid is "
+            f"row-major over the sheet -- with no column count there is no "
+            f"way from a tile id to a cell of the mask",
+            verb=cmd.verb, first_gid=ref.first_gid)
+    return document, ref
+
+
+def _declared_mask_reference(document, ref, cmd: Command) -> str:
+    """The tileset's `pyoneer_collision` value EXACTLY as the file spells it,
+    or "" when it declares none.
+
+    Exactly, because this string is what an inverse writes back, and a
+    stripped or re-typed copy of it is a .tmx that does not come back byte
+    for byte. The two shapes that cannot survive that round trip are refused
+    here rather than quietly rewritten: a property present but blank would be
+    indistinguishable from an absent one in the inverse, and one declared
+    `type="int"` would come back as a string.
+    """
+    raw = document.properties_of(ref.element).get(DEFAULTS_PROPERTY)
+    label = ref.name or ref.first_gid
+    if raw is None:
+        return ""
+    if not isinstance(raw, str):
+        raise PyoneerCommandArgumentError(
+            f"tileset {label!r} declares {DEFAULTS_PROPERTY} as "
+            f"{type(raw).__name__} ({raw!r}); a mask reference is a path, and "
+            f"rewriting the property's type here would change bytes this verb "
+            f"never meant to touch", verb=cmd.verb)
+    if not raw.strip():
+        raise PyoneerCommandArgumentError(
+            f"tileset {label!r} declares {DEFAULTS_PROPERTY} with no value. "
+            f"The engine reads that as no masks at all, and an undo could not "
+            f"tell it apart from the property being absent -- remove it, or "
+            f"give it a {BLITMASK_SUFFIX} path", verb=cmd.verb)
+    return raw
+
+
+def _conventional_mask_reference(ref, cmd: Command) -> str:
+    """Where a tileset's masks go when it does not say: in the image's own
+    directory, named after the TILESET.
+
+    Beside the art, because that is where `TilesetDefaults` says the file
+    belongs -- its grid is row-major over the sheet, so the file laid beside
+    the image reads as the image -- and because a sheet shared by five maps
+    then has ONE mask file rather than five copies that drift.
+
+    Named after the tileset and NOT after the image, which is the half worth
+    the sentence. Two `<tileset>` elements may point at one sheet with
+    different geometry and different firstgids, and one mask file cannot be
+    both of them: `to_blitmask` stores the tileset's name in the file and
+    `tileset_defaults` raises when it disagrees with the one it is attached
+    to, so an image-derived name would make the second tileset's first
+    authored mask break the first tileset's map. Path separators in the name
+    are replaced rather than honoured, `blitmap.tileset_reference`'s
+    precedent: a tileset called `System/TileA2` must not write outside the
+    directory it was given.
+    """
+    if not ref.image_source:
+        raise PyoneerCommandArgumentError(
+            f"tileset {ref.name or ref.first_gid!r} declares no image in this "
+            f"map, so there is nowhere obvious to put its masks. Declare "
+            f"{DEFAULTS_PROPERTY} on the tileset, or name the file with "
+            f"map.tileset.mask.restore's `reference`", verb=cmd.verb)
+    if not ref.name:
+        raise PyoneerCommandArgumentError(
+            f"the tileset at firstgid {ref.first_gid} has no name, and a mask "
+            f"file is named after the tileset rather than after the sheet "
+            f"(two tilesets may share one sheet). Name it, or declare "
+            f"{DEFAULTS_PROPERTY} yourself", verb=cmd.verb)
+    stem = ref.name.replace("/", "_").replace("\\", "_") + BLITMASK_SUFFIX
+    # Forward slashes, because that is how a .tmx spells a path and how the
+    # `<image source=>` sitting beside this reference is already spelled.
+    directory = os.path.dirname(ref.image_source)
+    return f"{directory}/{stem}" if directory else stem
+
+
+def _mask_file_path(document, reference: str, cmd: Command) -> str:
+    """A reference as an absolute path on this machine.
+
+    The same arithmetic `tileset_defaults` does when it loads the file, and
+    for the same reason: the reference is relative to the .tmx, exactly as
+    the tileset's own image source is.
+    """
+    path = getattr(document, "path", None)
+    if os.path.isabs(reference):
+        return os.path.normpath(reference)
+    if not path:
+        raise PyoneerCommandArgumentError(
+            f"this map has no path to resolve {reference!r} against -- it was "
+            f"built from bytes. Load the map from a file, or make the "
+            f"reference absolute", verb=cmd.verb)
+    return os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(path)), reference))
+
+
+def _mask_grid(ref, resolved: str, cmd: Command) -> Blitmask:
+    """The tileset's mask grid: the file when it is there, a blank one shaped
+    to the sheet when it is not.
+
+    The two shape refusals are `tileset_defaults`' again. A mask a different
+    WIDTH from the sheet does not lose a column, it shifts every row after
+    the first and masks the wrong tiles; a mask TALLER than the sheet holds
+    cells that were authored and would be read by nothing.
+    """
+    # Ceiling division, the same line `tileset_defaults` uses to decide how
+    # many rows a sheet's masks may occupy.
+    rows = -(-ref.tile_count // ref.columns)
+    if not os.path.isfile(resolved):
+        return TilesetDefaults(ref.first_gid, ref.columns, rows,
+                               (NO_DATA,) * (ref.columns * rows),
+                               ref.name).to_blitmask()
+    grid = Blitmask.load(resolved)
+    label = ref.name or ref.first_gid
+    if grid.width != ref.columns:
+        raise PyoneerCommandArgumentError(
+            f"tileset {label!r} is {ref.columns} columns wide and its masks "
+            f"{resolved} are {grid.width}. A mask grid is row-major over the "
+            f"sheet, so a different width does not lose a column -- it shifts "
+            f"every row after the first and masks the wrong tiles",
+            verb=cmd.verb)
+    if grid.height > rows:
+        raise PyoneerCommandArgumentError(
+            f"masks {resolved} are {grid.width}x{grid.height} but tileset "
+            f"{label!r} is {ref.tile_count} tiles in {ref.columns} columns, "
+            f"which is {rows} rows. The "
+            f"{(grid.height - rows) * grid.width} cells past that edge were "
+            f"authored and would be read by nothing", verb=cmd.verb)
+    return grid
+
+
+def _grown_to(grid: Blitmask, rows: int) -> Blitmask:
+    """The grid with enough rows to reach `rows`, padded with NO_DATA."""
+    if rows <= grid.height:
+        return grid
+    pad = (NO_DATA,) * ((rows - grid.height) * grid.width)
+    return Blitmask(grid.width, rows, grid.opinions + pad, dict(grid.meta))
+
+
+def _mask_edit(project: Project, cmd: Command, *,
+               wanted: str | None) -> Command | None:
+    """One tile's mask written, and the declaration left where `wanted` says.
+
+    `wanted` is None for `map.tileset.mask.set` -- "keep whatever the tileset
+    declares, and declare the conventional file if it declares nothing" --
+    and the exact reference for `map.tileset.mask.restore`, where "" means
+    the property must go.
+    """
+    document, ref = _tileset_for_mask(project, cmd)
+    tile, mask = cmd.args["tile"], cmd.args["mask"]
+    label = ref.name or ref.first_gid
+    if not is_opinion(mask):
+        raise PyoneerCommandArgumentError(
+            f"{mask} is not an opinion: {NO_DATA} is no-data, "
+            f"{layer_module.STAR} is the star that abstains, and "
+            f"0..{layer_module.BLOCK_ALL} are the direction bits",
+            verb=cmd.verb)
+    if not 0 <= tile < ref.tile_count:
+        raise PyoneerCommandArgumentError(
+            f"tile {tile} is outside 0..{ref.tile_count - 1}; a tile id is "
+            f"local to its tileset, not a gid -- gid {tile} in this map is "
+            f"tile {tile - ref.first_gid} of {label!r}",
+            verb=cmd.verb, first_gid=ref.first_gid)
+
+    declared = _declared_mask_reference(document, ref, cmd)
+    if wanted is None:
+        becomes = declared or _conventional_mask_reference(ref, cmd)
+        target = becomes
+    else:
+        if declared and wanted and declared != wanted:
+            raise PyoneerCommandArgumentError(
+                f"tileset {label!r} already declares {declared!r} and this "
+                f"would point it at {wanted!r}. Moving a tileset's masks is "
+                f"two edits, not one -- the cell in the old file and the cell "
+                f"in the new one cannot both be put back by a single inverse",
+                verb=cmd.verb)
+        target = wanted or declared
+        if not target:
+            raise PyoneerCommandArgumentError(
+                f"tileset {label!r} declares no masks and no `reference` was "
+                f"given, so there is no file to write the tile into",
+                verb=cmd.verb)
+        becomes = wanted
+
+    resolved = _mask_file_path(document, target, cmd)
+    existed = os.path.isfile(resolved)
+    found = _mask_grid(ref, resolved, cmd)
+    x, y = tile % ref.columns, tile // ref.columns
+    previous = found.at(x, y)
+    updated = _grown_to(found, y + 1).with_cell(x, y, mask)
+
+    if existed and updated == found and declared == becomes:
+        return None
+
+    # The file first. A refused write then leaves the document exactly as it
+    # was found, rather than leaving a declaration pointing at a file that is
+    # not there -- the one state `tileset_defaults` raises on, and one the
+    # author never authored.
+    updated.save(resolved)
+
+    if declared != becomes:
+        view = document.properties_of(ref.element)
+        if becomes:
+            view[DEFAULTS_PROPERTY] = becomes
+        else:
+            del view[DEFAULTS_PROPERTY]
+            # `MapProperties.__delitem__` drops an emptied `<properties>` and
+            # `_remove_child` hands its whitespace back to the OWNER, so an
+            # element the file wrote self-closing returns as
+            # `<tileset ...>\n</tileset>`. An embedded tileset always carries
+            # an `<image>` child, so this cannot bite today; it is the guard
+            # `map.object.action.unset` had to learn the hard way and it costs
+            # one line.
+            if not list(ref.element):
+                ref.element.text = None
+
+    return Command("map.tileset.mask.restore", cmd.scope, {
+        "name": cmd.args["name"], "first_gid": cmd.args["first_gid"],
+        "tile": tile, "mask": previous, "reference": declared})
+
+
+@command(
+    "map.tileset.mask.set",  # #TAG:map.tileset.mask.set
+    summary="Set one TILE's collision mask, once, for everywhere that tile "
+            "is ever stamped. It is stored in the tileset's own .blitmask "
+            "sidecar and declared on the <tileset> with pyoneer_collision, "
+            "which is the level the engine stacks UNDER every companion "
+            "layer -- so a cell painted in the collision overlay still "
+            "wins. The mask is the vocabulary the overlay paints: -1 no "
+            "opinion, 0 open, 1 down, 2 left, 4 right, 8 up, added together, "
+            "15 blocked on all four sides, 16 the star that abstains and "
+            "defers to the layer below. The sidecar is WRITTEN when it is "
+            "not there, sized to the sheet, and nothing asks first. Undo "
+            "restores the cell and the declaration exactly and leaves the "
+            "file on disk -- a grid of no-data reads as no masks at all.",
+    scopes=["map:*"],
+    params=[
+        Param("name", str, "tileset name; leave empty and pass first_gid for "
+                           "an external <tileset source=...>, which carries "
+                           "no name in this file",
+              required=False, default=""),
+        Param("first_gid", int, "address the tileset by its firstgid instead "
+                                "of its name", required=False, default=0),
+        Param("tile", int, "the tile's id WITHIN its tileset -- 0-based, "
+                           "row-major over the sheet, which is a gid minus "
+                           "the tileset's firstgid"),
+        Param("mask", int, "-1 for no opinion, 0..15 for the direction bits "
+                           "(1 down, 2 left, 4 right, 8 up), 16 for the star"),
+    ],
+    example='{"verb": "map.tileset.mask.set", "scope": "map:test", "args":'
+            ' {"name": "Dungeon", "tile": 7, "mask": 15}}',
+)
+def _tileset_mask_set(project: Project, cmd: Command) -> Command | None:
+    return _mask_edit(project, cmd, wanted=None)
+
+
+@command(
+    "map.tileset.mask.restore",  # #TAG:map.tileset.mask.restore
+    summary="Write one tile's mask back AND put the tileset's "
+            "pyoneer_collision declaration back to what it was, an empty "
+            "`reference` removing it. The exact inverse of "
+            "map.tileset.mask.set and of itself, and the only reason a set "
+            "that had to declare the sidecar can be undone without leaving "
+            "the .tmx one property heavier than it was found. Rarely written "
+            "by hand -- use map.tileset.mask.set, which derives the "
+            "reference and provisions the file.",
+    scopes=["map:*"],
+    params=[
+        Param("name", str, "tileset name; leave empty and pass first_gid",
+              required=False, default=""),
+        Param("first_gid", int, "address the tileset by its firstgid instead "
+                                "of its name", required=False, default=0),
+        Param("tile", int, "the tile's id within its tileset"),
+        Param("mask", int, "the opinion exactly as it was found; -1 is no "
+                           "opinion"),
+        Param("reference", str, "the pyoneer_collision value to leave on the "
+                                "tileset, spelled exactly as the file spells "
+                                "it. Empty removes the property, and the mask "
+                                "is then written into whatever the tileset "
+                                "declares now",
+              required=False, default=""),
+    ],
+    example='{"verb": "map.tileset.mask.restore", "scope": "map:test", "args":'
+            ' {"name": "Dungeon", "tile": 7, "mask": -1, "reference": ""}}',
+)
+def _tileset_mask_restore(project: Project, cmd: Command) -> Command | None:
+    return _mask_edit(project, cmd, wanted=cmd.args["reference"])
 
 
 # --------------------------------------------------------------------------

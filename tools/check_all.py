@@ -33,7 +33,9 @@ CHECKS = [
     ("singletons", "one CoreAssetManager, tmx cached until reload is asked for"),
     ("tmx_roundtrip", "byte-identical tmx save, minimal-diff tile and object edits"),
     ("tileset", "byte-exact tileset add/remove, gid-range and extent guards"),
-    ("tileset_verbs", "tileset add/remove/restore verbs with exact undo"),
+    ("tileset_verbs", "tileset add/remove/restore verbs with exact undo, and "
+                      "the tile-mask verb that writes a tileset's .blitmask "
+                      "and declares it"),
     ("blitmap", "the native .blitmap/.tileset format and the tmx converter"),
     ("blitmap_engine", "the engine loads a .blitmap equivalently to its tmx"),
     ("spawn", "object layer -> entity registry, depth resolution, y-origin"),
@@ -57,11 +59,14 @@ CHECKS = [
     ("autotile", "corner masks, terrain recovery, diagonal policy"),
     ("collision", "three-level resolution, .blitmask round trip, mask encoding"),
     ("collision_view", "collision overlay builds, glyphs distinguish direction "
-                       "bits, a read past a companion's edge abstains"),
+                       "bits, a read past a companion's edge abstains, and "
+                       "the level channel credits the tile or the paint"),
     ("map_events", "trigger vocabulary, collision filters, tmx round trip"),
     ("collision_mount", "the overlay, the mode, one stroke one transaction, "
-                        "a 4x map whose mask lands under the cursor, and the "
-                        "resolution a created companion is given"),
+                        "a 4x map whose mask lands under the cursor, the "
+                        "resolution a created companion is given, and the "
+                        "overlay agreeing with field_from_map cell for cell "
+                        "over a map whose tiles carry their own masks"),
     ("collision_runtime", "the engine reads a mask, stacks a tileset's own defaults under it, and gates movement"),
     ("collision_field", "map load bakes passability and every body is handed it"),
     ("actions_panel", "trigger authoring, action verbs, exact inverses"),

@@ -80,8 +80,10 @@ from scripts.core.collision_runtime import (  # noqa: F401  (re-exported)
     COLLISION_TILESET,
     COMPANION_SUFFIX,
     collision_first_gid as engine_collision_first_gid,
+    collision_layers,
     companion_name as engine_companion_name,
     depth_for_layer_name,
+    tileset_defaults,
 )
 from scripts.game.behavior.base import BEHAVIORS
 from scripts.loaders.map_document import tileset_geometry
@@ -95,7 +97,6 @@ from editor.core.collision import (
     field_subcell,
     gid_to_opinion,
     opinion_to_gid,
-    resolve,
 )
 from editor.core.commands import Command
 from editor.core.layers import BLOCK_ALL, describe_mask, read_profile
@@ -111,11 +112,12 @@ from editor.core.paint import (
 )
 from editor.core.scope import Scope
 from editor.ui.collision_view import (
+    LEVEL_NONE,
     MASK_DOMAIN,
     CollisionOverlay,
     glyph_pixmaps,
-    layer_from_companion,
     masks_from_layer,
+    resolve_cell,
 )
 from editor.ui.tileset import TilesetAtlas, gid_colour, render_layer
 
@@ -411,6 +413,15 @@ class MapCanvas(QGraphicsView):
         self.__overlay_geometry: tuple[int, int, int, int] | None = None
         self.__collision_stale = True
         self.__own_commit = False
+        #: Level one, memoised: `(defaults, refusal)` or None for "not read
+        #: yet". The only part of the collision stack that is cached, because
+        #: it is the only part that lives in a file -- see
+        #: `__tileset_defaults` for the key and why the rest is not cached.
+        self.__level_one: tuple[tuple, str | None] | None = None
+        #: Why the last stack BUILD came back empty, or None. Recorded rather
+        #: than recomputed: reproducing it on the mouse-move path would mean
+        #: snapshotting every layer's gids to find out.
+        self.__stack_build_refusal: str | None = None
 
         # The overlay is kept current cell by cell as strokes commit, so it
         # has to be told when the document moved some OTHER way -- an undo, a
@@ -821,61 +832,125 @@ class MapCanvas(QGraphicsView):
                 f"would land up to {drift}px from the cursor")
 
     def collision_stack(self, subcell: int | None = None) -> list[CollisionLayer]:
-        """Every layer that declares a companion, TOPMOST FIRST.
+        """The map's collision stack, TOPMOST FIRST -- THE ENGINE'S OWN.
 
-        Topmost first is `collision.resolve`'s contract and the reverse of a
-        tmx layer list, so the sort is by draw depth and then reversed.
+        `collision_layers`, called and not mirrored. This method used to
+        build its members here: one `CollisionLayer` per companion, ordered
+        by this canvas's own depth table, with `companion=` and nothing else.
+        Every word of that was true of the engine too until a tileset learned
+        to carry its own masks, and then it was three separate lies at once.
+        Measured at the commit that landed level one: an author painted a
+        mask, saw ONE level, and the player walked THREE -- so a wall the
+        author never painted stopped him, the overlay drew nothing there, and
+        the only way to find out was to walk into it.
 
-        Rebuilt whenever the stack is consulted rather than cached and
-        invalidated, which is affordable rather than free: each member costs
-        one flat snapshot of its companion's gids -- see
-        `layer_from_companion`, which explains why a snapshot and not the
-        closure it used to be. Measured on a 400x400 companion, the largest
-        this repository can currently produce: 0.78 ms for the whole stack,
-        against the 6.9 ms rebuild every command already pays and the
-        160,000-cell resolve a bake does with it. A cache keyed on nothing
-        reliable is how the readout comes to disagree with the map, which is
-        the worst failure an instrument has.
+        The three that diverged, and none of them announces itself:
+
+          * LEVEL ONE was absent. The engine stacks `tileset_defaults` under
+            every companion; this drew the companion alone.
+          * MEMBERSHIP was different. With defaults in play the engine puts
+            every non-companion tile layer at world coordinates into the
+            stack, because the whole value of a mask on the TILE is that
+            stamping the tile is the only authoring step -- a layer nobody
+            thought to give a companion is exactly the layer that would
+            otherwise be missed. This canvas required a companion.
+          * ORDER was different. `layer_rank` ranks by the engine's own
+            `layer_depth`; this ranked by `__depth_of`, which asks the GENRE
+            PACK first. The engine never reads a genre pack. `Resolution.layer`
+            is an INDEX, so one layer ranked differently renumbers every
+            answer the readout gives about who decided.
+
+        So membership, order, resolution and the levels themselves are the
+        engine's answer now, and this method's whole remaining job is to say
+        WHERE the answer is read from -- see `__collision_stack`, which holds
+        the two things a canvas has that a bake does not: level one memoised,
+        and a raise turned into a sentence instead of a dead editor.
 
         `subcell` is the resolution the STACK is read at, defaulting to the
         finest any of its members declares -- `field_subcell`, the same
-        function the engine's `field_from_map` calls, so a stack resolved here
-        and a field baked there index the same cells.
+        function `field_from_map` calls, so a stack resolved here and a field
+        baked there index the same cells. `collision_layers` scales every
+        member into it, which is what keeps a 1x companion on a mixed map
+        drawn over its own map tile rather than four times too close to the
+        origin -- measured on the engine side at 84px.
 
-        Every member is handed `scale`, the field's resolution divided by its
-        own, and that argument is the difference between a mixed stack being
-        readable and being wrong: asking a 1x companion for a sub-cell
-        coordinate does not lose that layer, it MOVES it. Measured on the
-        engine side before `companion_reader` took a scale -- a 1x wall on map
-        row 7, read at 4x, answered at pixel row 28 instead of 112. This
-        overlay is what an author reads to find out where a wall IS, so
-        dropping the scale here draws that same wall 84px from the truth.
+        Rebuilt whenever it is consulted rather than cached: a member costs
+        one flat snapshot of its layer's gids (`document_gid_reader`), 0.78 ms
+        for a whole stack over a 400x400 companion, against the 6.9 ms rebuild
+        every command already pays. A cache keyed on nothing reliable is how a
+        readout comes to disagree with the map, which is the worst failure an
+        instrument has. Level one is the one exception and it is keyed on
+        something real -- see `__tileset_defaults`.
         """
-        first_gid = self.collision_first_gid
-        if first_gid is None:
-            return []
-        document = self.document
+        return self.__collision_stack(subcell)[0]
+
+    def __collision_stack(self, subcell: int | None = None
+                          ) -> tuple[list[CollisionLayer], str | None]:
+        """(the stack, why it is empty) -- the raising call, made safe.
+
+        `collision_layers` RAISES on a map it cannot read, which is right for
+        the engine: law 7, and a map that raises at load is a map with no
+        collision rather than a map with some. A canvas cannot raise here.
+        This method sits under `rebuild`, under a mouse move and under a
+        stroke's own commit, and an exception on any of the three is the
+        editor going down over a map the author opened it to repair.
+
+        SO THE REFUSAL IS CARRIED, NEVER SWALLOWED, and the resolved view
+        goes DARK rather than degrading. That is the change of mind this pass
+        makes and it is worth stating plainly: the previous shape read a bad
+        companion at 1x and drew a plausible readout beside a warning, on the
+        argument that an editor which cannot draw a broken map cannot fix
+        one. But the map is still drawn, the single-layer collision view
+        still works, and the brush still paints -- it is only the ALL-LAYERS
+        view that goes dark, and that view's entire claim is "this is what
+        the player will feel". On a map the engine refuses there is no player
+        and no field, so every cell it could draw would be an invention.
+        Nothing plus a sentence beats a plausible picture plus a sentence.
+        """
         if subcell is None:
             subcell = self.stack_subcell()
-        names = document.tile_layer_names()
-        stack: list[CollisionLayer] = []
-        for name in sorted(names, key=self.__depth_of):
-            companion = self.companion_name(name)
-            if not companion or companion not in names or companion == name:
-                continue
+        defaults, refusal = self.__tileset_defaults()
+        if refusal is not None:
+            return [], refusal
+        try:
+            return collision_layers(self.document, subcell=subcell,
+                                    defaults=defaults), None
+        except PyoneerError as exc:
+            self.__stack_build_refusal = (
+                f"the resolved view is empty because this map's collision "
+                f"stack cannot be built: {exc}")
+            return [], self.__stack_build_refusal
+
+    def __tileset_defaults(self):
+        """(level one for this map, why it could not be read).
+
+        MEMOISED, unlike everything else the stack is made of, because this
+        is the one level that lives in a FILE. `stack_refusal` is consulted on
+        every mouse move; opening and parsing a `.blitmask` per pixel of
+        travel is not a cost worth paying for an answer that can only change
+        when the document does.
+
+        The key is the same one the overlay's own staleness uses: cleared by
+        `rebuild` and by every transaction, which between them cover every
+        way a `<tileset>`'s `pyoneer_collision` can appear, change or go. A
+        sidecar edited on disk behind the editor's back is stale until the
+        next command, exactly as `TilesetAtlas`'s art is.
+
+        MISSING IS NOT AN ERROR AND UNREADABLE IS. A tileset that declares no
+        masks contributes none and says nothing -- that is every map in this
+        repository, and it must stay free. A tileset that declares a
+        `.blitmask` which is absent, mis-shaped or names another sheet makes
+        `tileset_defaults` raise, and the engine raises on the same map at
+        load; the refusal is what carries that fact to the author instead of
+        letting the overlay imply the map is fine.
+        """
+        if self.__level_one is None:
             try:
-                own = companion_subcell(document, companion)
-            except PyoneerError:
-                # `field_subcell` already refused this map and said why; a
-                # second raise here would only replace that message with this
-                # one. Reading it at its declared 1x is what every map written
-                # before `pyoneer_subcell` existed means.
-                own = 1
-            stack.append(layer_from_companion(
-                document.tile_layer(companion), first_gid, name=name,
-                scale=max(1, subcell // own)))
-        stack.reverse()
-        return stack
+                self.__level_one = (tuple(tileset_defaults(self.document)), None)
+            except PyoneerError as exc:
+                self.__level_one = ((), f"this map's tileset masks could not "
+                                        f"be read: {exc}")
+        return self.__level_one
 
     def stack_subcell(self) -> int:
         """The finest resolution any companion on this map declares.
@@ -911,8 +986,18 @@ class MapCanvas(QGraphicsView):
         the cell readout under the cursor, and the moment All layers is
         switched on. Reported, never raised -- this sits on the same mouse
         move `paint_unit` does.
+
+        THREE WAYS TO BE UNREADABLE, in the order they are cheap to know:
+        a `pyoneer_subcell` the map cannot honour, a `.blitmask` a tileset
+        declares and this map cannot open, and anything else that made
+        `collision_layers` refuse the stack. The first two are answered from
+        state that is already computed or memoised, which is what lets this
+        be called on every mouse move; the third is recorded by the build
+        that hit it, because reproducing it here would mean snapshotting
+        every layer's gids to find out.
         """
-        return self.__field_subcell()[1]
+        return (self.__field_subcell()[1] or self.__tileset_defaults()[1]
+                or self.__stack_build_refusal)
 
     def __field_subcell(self) -> tuple[int, str | None]:
         """(the stack's resolution, why it could not be read).
@@ -925,7 +1010,7 @@ class MapCanvas(QGraphicsView):
         try:
             return field_subcell(self.document), None
         except PyoneerError as exc:
-            return 1, str(exc)
+            return 1, f"the readout is drawn at 1x cells: {exc}"
 
     def overlay_subcell(self) -> int:
         """The resolution the READOUT is drawn at.
@@ -950,19 +1035,23 @@ class MapCanvas(QGraphicsView):
     # -- building ----------------------------------------------------------
 
     def __depth_of(self, name: str) -> int:
-        """How high a layer draws, and therefore where it sits in the
-        collision stack.
+        """How high a layer DRAWS in this scene.
 
         The genre pack first, because that is the editor's authored contract
         with the author, then the ENGINE's table for anything it does not
         declare. The fallback used to be a bare 500, which meant a layer the
         renderer ranks (`ENTITY_1`, `FOREGROUND_2`, `UI_LAYER_1` -- all in
         `scripts/core/depth.MAP_DEPTH`, none in any genre pack) sorted here at
-        500 and there at 20, 90 or 100. `resolve` walks TOPMOST FIRST, so that
-        is a different DECIDING layer for the same cell in the overlay than in
-        the game. See UNRANKED_DEPTH in `scripts/core/collision_runtime.py`;
-        `tools/check_collision_runtime.py` asserts the two tables agree
-        wherever both rank a name.
+        500 and there at 20, 90 or 100.
+
+        DRAWING ONLY. It used to order the collision stack as well, and that
+        was a second table deciding which layer wins a cell: the engine ranks
+        collision through `layer_rank` -> `layer_depth` -> `MAP_DEPTH` and has
+        never read a genre pack. `collision_stack` delegates to
+        `collision_layers` now, so the two cannot differ by construction.
+        `tools/check_collision_runtime.py` still asserts the two tables agree
+        wherever both rank a name, which is what keeps the PIXELS and the
+        walls in the same order as well.
         """
         declared = self.session.project.genre.layer(name)
         if declared is not None:
@@ -970,6 +1059,11 @@ class MapCanvas(QGraphicsView):
         return depth_for_layer_name(name)
 
     def rebuild(self) -> None:
+        # Level one is re-read from here down, for `TilesetAtlas`'s reason
+        # and on the same beat: a rebuild is what follows every document
+        # change this canvas is told about, and a `<tileset>` declaration is
+        # a document change. See `__tileset_defaults`.
+        self.__refresh_level_one()
         scene = self.scene()
         # scene.clear() DELETES what it holds, C++ side and all, and the
         # overlay is meant to outlive a rebuild. removeItem hands ownership
@@ -1154,8 +1248,8 @@ class MapCanvas(QGraphicsView):
         if self.all_layers:
             refusal = self.stack_refusal()
             if refusal is not None:
-                self.status.emit(f"All layers is showing 1x cells and cannot "
-                                 f"be trusted: {refusal}")
+                self.status.emit(f"All layers cannot be trusted here: "
+                                 f"{refusal}")
         if self.overlay_geometry() != self.__overlay_geometry:
             self.rebuild()
             return
@@ -1235,26 +1329,78 @@ class MapCanvas(QGraphicsView):
 
     def __on_transaction(self, _transaction, action: str) -> None:
         """Anything that changed the project other than our own stroke."""
+        # BEFORE the early return, and deliberately. Our own stroke can carry
+        # a `map.tileset.add` in the same transaction as its cells, so "this
+        # commit was ours" is a reason not to re-bake the whole overlay and
+        # is not a reason to keep reading a tileset table from before it.
+        self.__forget_level_one()
         if action == "apply" and self.__own_commit:
             return          # our cells are written by __sync_overlay instead
         self.__collision_stale = True
 
+    def __forget_level_one(self) -> None:
+        """Drop the memoised tileset defaults and the last build's refusal.
+
+        Both are answers about a document that has just changed underneath
+        them. Kept as one call because forgetting one without the other is a
+        readout reporting last document's reason for this document's stack.
+        """
+        self.__level_one = None
+        self.__stack_build_refusal = None
+
+    def __refresh_level_one(self) -> None:
+        """Re-read level one, and mark the READOUT stale if it moved.
+
+        A `.blitmask` is the one input to this overlay that can change with
+        no command behind it: the refusal names a file, the author goes and
+        writes that file, and comes back. Nothing in the stream announces
+        that, so a rebuild re-reads the sidecar and compares.
+
+        MARKED STALE ONLY WHEN THE ANSWER REALLY CHANGED. Marking it on every
+        rebuild would pay a full bake per command and undo the entire reason
+        the overlay item is held across rebuilds -- 6 ms on top of the 26.9 ms
+        of layer rendering, on every click. And when a TRANSACTION cleared the
+        memo a moment ago there is nothing to compare against, which is
+        exactly right: `__on_transaction` has already decided whether that
+        change needs a bake, and it knows something this does not -- whether
+        the change was our own stroke, whose cells are written one at a time.
+        """
+        previous = self.__level_one
+        self.__forget_level_one()
+        if previous is not None and self.__tileset_defaults() != previous:
+            self.__collision_stale = True
+
     def __bake_overlay(self) -> None:
-        """The whole field, from the document. The expensive path."""
+        """The whole field, from the document. The expensive path.
+
+        THE RESOLVED VIEW IS ASKED FIRST, AND IS NOT GATED ON A COLLISION
+        TILESET. It used to be: no `collision` tileset meant no firstgid,
+        which meant no gid could encode a mask, which meant an empty bake.
+        That reasoning is exactly right about level TWO and false about level
+        one -- a tileset default is stored in a `.blitmask` beside the .tmx
+        and needs no firstgid at all, so the one map shape where the author
+        painted nothing and the tiles carry everything drew a blank overlay
+        over a map the player cannot cross. `field_from_map` has never had
+        that gate; it looks up level one "in the same breath" for this reason.
+
+        The single-layer view keeps the gate, and keeps it correctly: it shows
+        one companion's own gids, and without a firstgid there is no companion
+        and nothing to decode.
+        """
         overlay = self.__overlay
         if overlay is None:
             return
         self.__collision_stale = False
-        first_gid = self.collision_first_gid
-        if first_gid is None:
-            overlay.bake([])                  # pads with NO_DATA: draws nothing
-            return
         if self.all_layers:
             # At the overlay's OWN resolution, and every member scaled into
             # it -- see `collision_stack`. The overlay was sized from the
             # same number, so cell (x, y) here and cell (x, y) there are the
             # same square of the map.
             overlay.bake_resolved(self.collision_stack(self.overlay_subcell()))
+            return
+        first_gid = self.collision_first_gid
+        if first_gid is None:
+            overlay.bake([])                  # pads with NO_DATA: draws nothing
             return
         companion = self.companion_layer()
         overlay.bake(masks_from_layer(companion, first_gid)
@@ -1294,10 +1440,17 @@ class MapCanvas(QGraphicsView):
                 for offset_y in range(scale):
                     for offset_x in range(scale):
                         cx, cy = x * scale + offset_x, y * scale + offset_y
-                        answer = resolve(stack, cx, cy, undecided=NO_DATA)
-                        overlay.set_cell(cx, cy, answer.mask,
-                                         owner=answer.layer,
-                                         conflicted=answer.conflicted)
+                        # `resolve_cell`, which is what a full bake calls per
+                        # cell too. Spelling the four channels here a second
+                        # time is how a stroke comes to draw one thing and the
+                        # next bake another, in the same cells of the same
+                        # document -- and the level channel is exactly the
+                        # kind of addition that would have been made in one
+                        # of the two places.
+                        mask, owner, conflicted, level = resolve_cell(
+                            stack, cx, cy, undecided=NO_DATA)
+                        overlay.set_cell(cx, cy, mask, owner=owner,
+                                         conflicted=conflicted, level=level)
             return
         companion = self.companion_layer()
         if companion is None:
@@ -1520,9 +1673,8 @@ class MapCanvas(QGraphicsView):
             # nothing else overwrites.
             refusal = self.stack_refusal() if self.all_layers else None
             if refusal is not None:
-                self.status.emit(f"cell ({column}, {row})   All layers is "
-                                 f"showing 1x cells and cannot be trusted: "
-                                 f"{refusal}")
+                self.status.emit(f"cell ({column}, {row})   All layers cannot "
+                                 f"be trusted here: {refusal}")
                 super().mouseMoveEvent(event)
                 return
             # What the overlay is already showing, said in words -- including

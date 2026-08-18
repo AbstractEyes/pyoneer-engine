@@ -60,16 +60,29 @@ from editor.core.layers import (                                       # noqa: E
 )
 from editor.core.paint import Tool                                     # noqa: E402
 from editor.ui import collision_view as view                           # noqa: E402
+from editor.core.collision import (                                    # noqa: E402
+    companion_reader,
+)
+from scripts.core.collision_runtime import document_gid_reader         # noqa: E402
 from editor.ui.collision_view import (                                 # noqa: E402
+    LEVEL_COMPANION,
+    LEVEL_NAMES,
+    LEVEL_NONE,
+    LEVEL_OVERRIDE,
+    LEVEL_TILESET,
     MASK_DOMAIN,
     NO_DATA,
+    CollisionLayer,
     CollisionOverlay,
     EditMode,
     MaskPalette,
     build_mode_actions,
+    deciding_level,
+    describe_opinion,
     glyph_pixmaps,
     layer_from_masks,
     masks_from_layer,
+    resolve_cell,
     resolve_field,
 )
 
@@ -290,7 +303,7 @@ stack = [
     layer_from_masks([BLOCK_DOWN, BLOCK_LEFT, NO_DATA, STAR], 2, "middle"),
     layer_from_masks([BLOCK_LEFT, BLOCK_LEFT, BLOCK_RIGHT, NO_DATA], 2, "bottom"),
 ]
-masks, owners, conflicts = resolve_field(stack, 2, 2)
+masks, owners, conflicts, levels = resolve_field(stack, 2, 2)
 expect("the top-most layer that says something decides",
        masks, [BLOCK_UP, BLOCK_LEFT, BLOCK_RIGHT, NO_DATA])
 expect("and the view records which layer that was", owners, [0, 1, 2, -1])
@@ -305,7 +318,12 @@ expect("an unauthored cell is drawn as nothing, not as an assertion",
 expect("though the runtime's own default is still available",
        resolve_field(stack, 2, 2, undecided=PASS_ALL)[0][3], PASS_ALL)
 expect("no layers at all resolves to no data",
-       resolve_field([], 2, 1), ([NO_DATA, NO_DATA], [-1, -1], [False, False]))
+       resolve_field([], 2, 1),
+       ([NO_DATA, NO_DATA], [-1, -1], [False, False],
+        [LEVEL_NONE, LEVEL_NONE]))
+expect("...and every decided cell of a companion-only stack is attributed "
+       "to the paint",
+       levels, [LEVEL_COMPANION] * 3 + [LEVEL_NONE])
 expect("reversing the stack changes who decides -- order is a contract",
        resolve_field(list(reversed(stack)), 2, 2)[0][0], BLOCK_LEFT)
 
@@ -338,6 +356,261 @@ expect("a layer smaller than the map is padded rather than refused",
        [BLOCK_UP, NO_DATA, NO_DATA, NO_DATA])
 expect("an unbaked overlay says nothing anywhere",
        CollisionOverlay(2, 2, TILE, TILE).mask_at(1, 1), NO_DATA)
+
+
+# --------------------------------------------------------------------------
+print()
+print("WHICH LEVEL DECIDED -- the tile you stamped, or the mask you painted")
+# --------------------------------------------------------------------------
+# `Resolution.layer` answers "which LAYER", and until a tileset could carry a
+# `.blitmask` that was the whole of provenance, because a layer had one level
+# an author could reach. Now a blocked cell is either the TILE stamped there
+# or a mask painted over it, and the two want opposite repairs -- change the
+# tileset, or repaint the cell.
+#
+# `deciding_level` RESTATES `CollisionLayer.opinion_at`'s precedence, and a
+# duplication is not caught by asserting a hand-picked cell: reverse the walk
+# and any fixture with one level populated still passes. So this is the whole
+# truth table, generated rather than typed -- every combination of the three
+# levels being absent, present-and-silent, and present with each of three
+# DISTINCT loud answers. Each row asks the named level's OWN reader and
+# compares it to what `opinion_at` returned, which is the one statement of
+# the invariant that is not a second spelling of the code.
+
+STATES = {
+    "absent": None,          # the level is not on the layer at all
+    "silent": NO_DATA,       # present, and says nothing here
+    "left": BLOCK_LEFT,      # three loud answers, pairwise different, so a
+    "right": BLOCK_RIGHT,    # row where two levels both speak can tell which
+    "star": STAR,            # of them was the one credited
+}
+
+
+def one_cell(value):
+    """A level answering `value` everywhere, or None for a level that is not
+    there at all. The distinction is deliberate: `CollisionLayer` treats an
+    absent level and a level that answers NO_DATA alike in its ANSWER and not
+    in its cost, and the attribution has to agree with it on both."""
+    if value is None:
+        return None
+    return lambda _x, _y: value
+
+
+def row_layer(defaults_state, companion_state, override_state):
+    """One row of the table as a real `CollisionLayer`."""
+    layer = CollisionLayer(name="row",
+                           defaults=one_cell(STATES[defaults_state]),
+                           companion=one_cell(STATES[companion_state]))
+    value = STATES[override_state]
+    if value is not None and value != NO_DATA:
+        layer.set_override(0, 0, value)
+    return layer
+
+
+def spoken_by(layer, level):
+    """What the level `deciding_level` named actually answered at (0, 0).
+
+    Asked of the LEVEL, never of `opinion_at` -- this is the other side of
+    the comparison and reading it from the thing under test would make the
+    assertion vacuous.
+    """
+    if level == LEVEL_OVERRIDE:
+        return layer.override_at(0, 0)
+    if level == LEVEL_COMPANION:
+        return layer.companion(0, 0) if layer.companion is not None else NO_DATA
+    if level == LEVEL_TILESET:
+        return layer.defaults(0, 0) if layer.defaults is not None else NO_DATA
+    return NO_DATA
+
+
+mis_attributed = []
+discriminating = 0
+rows = 0
+for d_state in STATES:
+    for c_state in STATES:
+        for o_state in STATES:
+            layer = row_layer(d_state, c_state, o_state)
+            answer = layer.opinion_at(0, 0)
+            level = deciding_level(layer, 0, 0)
+            rows += 1
+            # A row is only evidence about ORDER when at least two levels are
+            # loud AND disagree; the rest prove the easier half. Counted so
+            # the table cannot quietly become one that agrees by accident.
+            loud = {v for v in (STATES[d_state], STATES[c_state],
+                                STATES[o_state]) if v not in (None, NO_DATA)}
+            if len(loud) > 1:
+                discriminating += 1
+            if spoken_by(layer, level) != answer:
+                mis_attributed.append((d_state, c_state, o_state, level,
+                                       spoken_by(layer, level), answer))
+
+expect(f"all {rows} level combinations credit the level that actually spoke",
+       mis_attributed, [])
+expect("...over a table that really does vary all three levels",
+       rows, len(STATES) ** 3)
+expect("...of which enough rows have two loud levels DISAGREEING to pin the "
+       "order rather than the walk",
+       discriminating > 50, True)
+
+# The refusing half: a layer where nothing spoke must name NOBODY. Naming
+# somebody is the failure that matters here -- a provenance mark drawn on a
+# cell no level decided.
+quiet = CollisionLayer(name="quiet", defaults=one_cell(NO_DATA),
+                       companion=one_cell(NO_DATA))
+expect("a layer where every level abstains names no level at all",
+       (quiet.opinion_at(0, 0), deciding_level(quiet, 0, 0)),
+       (NO_DATA, LEVEL_NONE))
+expect("...and so does a layer carrying no levels at all",
+       deciding_level(CollisionLayer(name="bare"), 0, 0), LEVEL_NONE)
+
+# Precedence in the words an author would use, both directions.
+tiled = CollisionLayer(name="tiled", defaults=one_cell(BLOCK_ALL))
+expect("a tile default alone is the TILESET's answer",
+       (tiled.opinion_at(0, 0), deciding_level(tiled, 0, 0)),
+       (BLOCK_ALL, LEVEL_TILESET))
+painted = CollisionLayer(name="painted", defaults=one_cell(BLOCK_ALL),
+                         companion=one_cell(PASS_ALL))
+expect("PAINTING OVER IT WINS, and is credited to the paint",
+       (painted.opinion_at(0, 0), deciding_level(painted, 0, 0)),
+       (PASS_ALL, LEVEL_COMPANION))
+starred = CollisionLayer(name="starred", defaults=one_cell(BLOCK_ALL),
+                         companion=one_cell(STAR))
+expect("a star over a default SUPPRESSES it and is still an authored answer",
+       (starred.opinion_at(0, 0), deciding_level(starred, 0, 0)),
+       (STAR, LEVEL_COMPANION))
+patched = CollisionLayer(name="patched", defaults=one_cell(BLOCK_ALL),
+                         companion=one_cell(PASS_ALL))
+patched.set_override(0, 0, BLOCK_UP)
+expect("and an override beats both",
+       (patched.opinion_at(0, 0), deciding_level(patched, 0, 0)),
+       (BLOCK_UP, LEVEL_OVERRIDE))
+
+
+# --------------------------------------------------------------------------
+print()
+print("...and the readout carries it, in pixels and in words")
+# --------------------------------------------------------------------------
+# Three stacks resolving to the SAME mask decided by the SAME layer with the
+# SAME conflict flag, differing only in which level spoke. Anything that
+# tells them apart in the readout is therefore this channel and nothing else.
+LEVEL_STACKS = {
+    LEVEL_TILESET: [CollisionLayer(name="a", defaults=one_cell(BLOCK_ALL))],
+    LEVEL_COMPANION: [CollisionLayer(name="a", companion=one_cell(BLOCK_ALL))],
+    LEVEL_OVERRIDE: [CollisionLayer(name="a")],
+}
+LEVEL_STACKS[LEVEL_OVERRIDE][0].set_override(0, 0, BLOCK_ALL)
+
+level_cells = {}
+for want_level, one_stack in LEVEL_STACKS.items():
+    item = CollisionOverlay(1, 1, TILE, TILE)
+    item.bake_resolved(one_stack)
+    level_cells[want_level] = item
+
+expect("the resolved field reports the level per cell",
+       [level_cells[k].level_at(0, 0)
+        for k in (LEVEL_TILESET, LEVEL_COMPANION, LEVEL_OVERRIDE)],
+       [LEVEL_TILESET, LEVEL_COMPANION, LEVEL_OVERRIDE])
+expect("...on cells that are identical in every OTHER channel",
+       {(level_cells[k].mask_at(0, 0), level_cells[k].owner_at(0, 0),
+         level_cells[k].conflicted_at(0, 0)) for k in level_cells},
+       {(BLOCK_ALL, 0, False)})
+
+
+def cell_bytes(item, x=0, y=0):
+    return item.cell_image(x, y).convertToFormat(
+        QImage.Format_ARGB32).bits().tobytes()
+
+
+def differing_pixels(left, right, size=TILE):
+    """Where two renderings of one cell disagree, as (x, y) pairs."""
+    a = left.cell_image(0, 0).convertToFormat(QImage.Format_ARGB32)
+    b = right.cell_image(0, 0).convertToFormat(QImage.Format_ARGB32)
+    return [(x, y) for y in range(size) for x in range(size)
+            if a.pixelColor(x, y) != b.pixelColor(x, y)]
+
+
+tile_vs_paint = differing_pixels(level_cells[LEVEL_TILESET],
+                                 level_cells[LEVEL_COMPANION])
+expect("A TILE-DEFAULT CELL AND A PAINTED ONE DO NOT LOOK THE SAME",
+       len(tile_vs_paint) > 0, True)
+# The wedge is a 3u corner triangle and the bars are inset 3u from every
+# corner, so the channel has to be invisible to the glyph. A mark that ate a
+# bar would read as a mask nobody authored.
+expect("...and the difference is confined to the top-right 3x3 corner",
+       [(x, y) for x, y in tile_vs_paint if not (x >= TILE - 3 and y < 3)], [])
+expect("an override is distinguishable from BOTH of the other two",
+       (len(differing_pixels(level_cells[LEVEL_OVERRIDE],
+                             level_cells[LEVEL_TILESET])) > 0,
+        len(differing_pixels(level_cells[LEVEL_OVERRIDE],
+                             level_cells[LEVEL_COMPANION])) > 0),
+       (True, True))
+
+# ABSENCE MEANS PAINTED. Turning the channel off has to leave the companion
+# case untouched, or the mark is on the common level and every fully-painted
+# map grows confetti.
+off = CollisionOverlay(1, 1, TILE, TILE)
+off.show_levels = False
+off.bake_resolved(LEVEL_STACKS[LEVEL_COMPANION])
+expect("a painted cell carries NO mark -- absence is the common case",
+       cell_bytes(off) == cell_bytes(level_cells[LEVEL_COMPANION]), True)
+off_tile = CollisionOverlay(1, 1, TILE, TILE)
+off_tile.show_levels = False
+off_tile.bake_resolved(LEVEL_STACKS[LEVEL_TILESET])
+expect("...which is the switch being real rather than vacuous: with it off "
+       "the tile cell loses its mark too",
+       cell_bytes(off_tile) == cell_bytes(level_cells[LEVEL_COMPANION]), True)
+
+# A single-layer bake has no stack to attribute and must not pretend it has.
+plain_level = CollisionOverlay(1, 1, TILE, TILE)
+plain_level.bake([BLOCK_ALL])
+expect("a single-layer bake reports no level anywhere",
+       plain_level.level_at(0, 0), LEVEL_NONE)
+expect("...and is still the glyph and nothing else",
+       cell_bytes(plain_level) == glyph_image(BLOCK_ALL).bits().tobytes(), True)
+
+# LOD: at a sub-cell the wedge is under a device pixel and drops out rather
+# than smearing over the colour channel, exactly as the provenance tick does.
+FINE = 4
+fine_cells = {}
+for want_level, one_stack in LEVEL_STACKS.items():
+    item = CollisionOverlay(1, 1, FINE, FINE)
+    item.bake_resolved(one_stack)
+    fine_cells[want_level] = item
+expect(f"at a {FINE}px cell the wedge drops out instead of eating the glyph",
+       cell_bytes(fine_cells[LEVEL_TILESET])
+       == cell_bytes(fine_cells[LEVEL_COMPANION]), True)
+expect("...while the level is still reportable in words at any size",
+       fine_cells[LEVEL_TILESET].level_at(0, 0), LEVEL_TILESET)
+
+# The words. This is the half that works at every zoom and is the answer the
+# author can act on: which file to go and change.
+expect("the status line names the layer AND the level",
+       level_cells[LEVEL_TILESET].describe(0, 0),
+       f"{describe_opinion(BLOCK_ALL)}  (layer 0, {LEVEL_NAMES[LEVEL_TILESET]})")
+expect("...and says the other one when the author painted it",
+       level_cells[LEVEL_COMPANION].describe(0, 0),
+       f"{describe_opinion(BLOCK_ALL)}  (layer 0, "
+       f"{LEVEL_NAMES[LEVEL_COMPANION]})")
+expect("...and an undecided cell still says only that",
+       CollisionOverlay(1, 1, TILE, TILE).describe(0, 0), "no opinion")
+
+# `resolve_cell` is what a STROKE calls and `resolve_field` is what a BAKE
+# calls. They are one function precisely so a stroke and the next bake of the
+# same cells cannot draw two different things.
+mixed = [
+    CollisionLayer(name="top", companion=layer_from_masks(
+        [NO_DATA, STAR, NO_DATA, NO_DATA], 2, "top").companion),
+    CollisionLayer(name="bottom", defaults=layer_from_masks(
+        [BLOCK_UP, BLOCK_DOWN, NO_DATA, BLOCK_LEFT], 2, "bottom").companion),
+]
+field_channels = resolve_field(mixed, 2, 2)
+expect("one cell and a whole field are the same answer, all four channels",
+       [resolve_cell(mixed, x, y) for y in range(2) for x in range(2)],
+       [tuple(channel[i] for channel in field_channels) for i in range(4)])
+expect("...and a star painted over a tile default falls through to the "
+       "layer below and is credited to ITS tileset",
+       (field_channels[0][1], field_channels[1][1], field_channels[3][1]),
+       (BLOCK_DOWN, 1, LEVEL_TILESET))
 
 
 # --------------------------------------------------------------------------
@@ -561,7 +834,7 @@ class _Cells:
     why the crash below shipped: the real layer RAISES out of range, so the
     check proved the scale arithmetic against a reader that behaves like
     nothing in production. `get_tile` raises here for the same reason, and
-    `layer_from_companion` is now asserted never to call it out of range.
+    `document_gid_reader` is now asserted never to call it out of range.
     """
 
     name = "ForegroundCollision"
@@ -594,8 +867,27 @@ def answers(layer, x, y):
         return type(exc).__name__
 
 
-scaled = view.layer_from_companion(_Cells(), FIRST_GID, scale=SUB)
-plain_layer = view.layer_from_companion(_Cells(), FIRST_GID)
+def stack_member(layer, first_gid, *, scale=1):
+    """One member of a collision stack, composed the way `collision_layers`
+    composes level TWO -- `companion_reader` over `document_gid_reader`, both
+    the engine's.
+
+    Spelled out here rather than taken from a helper on purpose. The editor
+    used to own a `layer_from_companion` that did exactly this, and once
+    `collision_stack` started delegating to `collision_layers` that helper
+    became a second way to build a member which no longer had to agree with
+    the first -- so a check written through it would keep passing on the day
+    the real composition changed. This fixture is two engine calls; if either
+    one moves, this moves with it or goes red.
+    """
+    return view.CollisionLayer(
+        name=getattr(layer, "name", ""),
+        companion=companion_reader(document_gid_reader(layer), first_gid,
+                                   scale=scale))
+
+
+scaled = stack_member(_Cells(), FIRST_GID, scale=SUB)
+plain_layer = stack_member(_Cells(), FIRST_GID)
 expect("a 1x companion read at 4x answers over its whole map tile",
        [answers(scaled, 0, y) for y in (11, 12, 15, 16)],
        [NO_DATA, BLOCK_ALL, BLOCK_ALL, NO_DATA])

@@ -37,7 +37,7 @@ dependency reports `SKIP` and never `PASS`.
 | `singletons` | one CoreAssetManager, tmx cached until reload is asked for | Verify CoreAssetManager is constructed once and never silently rebuilt. |
 | `tmx_roundtrip` | byte-identical tmx save, minimal-diff tile and object edits | Measure the .tmx write path against the shipped 133,940-byte map. |
 | `tileset` | byte-exact tileset add/remove, gid-range and extent guards | Measure MapDocument's tileset methods against BYTES, not against XML. |
-| `tileset_verbs` | tileset add/remove/restore verbs with exact undo | Verify the tileset verbs: exact inverses, and a refusal that survives. |
+| `tileset_verbs` | tileset add/remove/restore verbs with exact undo, and the tile-mask verb that writes a tileset's .blitmask and declares it | Verify the tileset verbs: exact inverses, and a refusal that survives. |
 | `blitmap` | the native .blitmap/.tileset format and the tmx converter | Measure the native .blitmap / .tileset formats and the tmx converter. |
 | `blitmap_engine` | the engine loads a .blitmap equivalently to its tmx | Measure the engine's .blitmap load path against the pytmx one it joins. |
 | `spawn` | object layer -> entity registry, depth resolution, y-origin | Verify the object-layer -> entity spawn path. |
@@ -56,9 +56,9 @@ dependency reports `SKIP` and never `PASS`.
 | `paint` | strokes, stamps, flood fill, one drag is one transaction | Verify the tile-painting logic. |
 | `autotile` | corner masks, terrain recovery, diagonal policy | Verify directional fill (autotile). |
 | `collision` | three-level resolution, .blitmask round trip, mask encoding | Verify the collision data model and the .blitmask format. |
-| `collision_view` | collision overlay builds, glyphs distinguish direction bits, a read past a companion's edge abstains | Verify the collision overlay, its glyphs and the mode switch. |
+| `collision_view` | collision overlay builds, glyphs distinguish direction bits, a read past a companion's edge abstains, and the level channel credits the tile or the paint | Verify the collision overlay, its glyphs and the mode switch. |
 | `map_events` | trigger vocabulary, collision filters, tmx round trip | Verify the map-event vocabulary: round trip, validation, filter semantics. |
-| `collision_mount` | the overlay, the mode, one stroke one transaction, a 4x map whose mask lands under the cursor, and the resolution a created companion is given | Assert the collision stack is actually WIRED to the canvas. |
+| `collision_mount` | the overlay, the mode, one stroke one transaction, a 4x map whose mask lands under the cursor, the resolution a created companion is given, and the overlay agreeing with field_from_map cell for cell over a map whose tiles carry their own masks | Assert the collision stack is actually WIRED to the canvas. |
 | `collision_runtime` | the engine reads a mask, stacks a tileset's own defaults under it, and gates movement | Verify that the engine reads authored masks and refuses a blocked step. |
 | `collision_field` | map load bakes passability and every body is handed it | Prove the map's passability actually reaches the bodies that move on it. |
 | `actions_panel` | trigger authoring, action verbs, exact inverses | Assert the two dormant things this pass wired are actually reachable. |

@@ -81,11 +81,15 @@ directions are asserted in `tools/check_collision_runtime.py`, because a
 precedence rule proved in one direction is half an invariant and half is the
 dominant failure shape in this tree.
 
-`MapCanvas.collision_stack()` still builds its `CollisionLayer`s with
-`companion=` alone, so the editor's OVERLAY does not yet show level one. That
-is a gap in the overlay, not in the model: the two call the same `resolve`
-over the same `CollisionLayer`, and the overlay starts agreeing the day it
-passes `defaults=tileset_defaults(document)` in.
+AND THE EDITOR'S OVERLAY WALKS THE SAME STACK. It did not, for one commit:
+`MapCanvas.collision_stack()` built its `CollisionLayer`s with `companion=`
+alone, so an author painted a mask, read ONE level, and the player obeyed
+three. It calls `collision_layers` now -- this function, with this document
+and this `defaults` -- so membership, order, resolution and the levels are
+one answer computed once rather than two that have to agree.
+`tools/check_collision_mount.py` asserts the overlay and `field_from_map`
+match cell for cell over a map that exercises all three levels, which is the
+form that stays true when either side changes.
 
 THE READ PATH, AND THE TWO pytmx TRAPS
 --------------------------------------
