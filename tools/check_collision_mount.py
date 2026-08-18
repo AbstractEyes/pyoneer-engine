@@ -59,6 +59,18 @@ end. Proved for the pre-made case, never for the created one, which is the
 same shape that let the 1,200px bug through one level down. The last section
 drives the created case at 1x, 4x and 16x from a companion-less map.
 
+AND A TILE THAT CARRIES ITS OWN MASK, from one pick in the palette. The
+verb that writes a tileset's `.blitmask` shipped, worked end to end, and was
+reachable from no click at all -- measured, `map.tileset.mask.set` appeared
+outside `editor/core/verbs.py` only in generated docs and in its own check.
+The last section drives the seam that closes it, `MapCanvas.set_stamp`: in
+collision mode a tile pick is not a brush, it is the TARGET the current mask
+is written onto. Both halves of the gate (a pick in tiles mode writes
+nothing), both halves of the readout (the resolved view moves, the
+single-layer view does not and says why), and the refusals -- an empty cell,
+a gid no tileset owns -- because a mask that lands nowhere and says nothing
+is the failure the whole feature is made of.
+
 Against its OWN fixture map, never `data/maps/test.tmx`. The author paints
 in that file constantly, and four red suites have come from a check that
 pinned its contents. The fixture here declares exactly what the feature
@@ -2305,6 +2317,247 @@ try:
            canvas.stack_refusal(), None)
     expect("...and the walls come back",
            canvas.overlay.mask_at(*TILE_WALL), BLOCK_ALL)
+    window.close()
+
+    # ----------------------------------------------------------------
+    print()
+    print("ONE PICK IN THE TILE PALETTE BAKES THAT TILE'S OWN MASK")
+    # ----------------------------------------------------------------
+    # THE CLICK THE VERB WAS MISSING. `map.tileset.mask.set` shipped, worked
+    # end to end and was reachable from nothing: measured at the commit
+    # before this one, the verb's name appeared in `editor/core/verbs.py`,
+    # in the generated docs and in `check_tileset_verbs.py`, and in NO
+    # surface an author can click. A verb no gesture reaches is the same
+    # half-delivery `check_collision_mount` was written for -- 2,794 lines
+    # of verified collision model with zero production importers.
+    #
+    # The gesture is the two-step the author already knows for CELLS, with
+    # the tileset palette standing in for the map: pick the mask, then pick
+    # what it applies to. `MapCanvas.set_stamp` is the whole seam, and it is
+    # what `EditorWindow.__on_stamp` calls for a real click on the palette
+    # -- driven for real, through the real window, in `check_editor_ui.py`.
+    #
+    # AND THE HALF A COMMAND-LEVEL CHECK CANNOT SEE. A mask set writes the
+    # SIDECAR and the tileset's declaration, so a check that stops at "the
+    # command was emitted" passes over an editor in which the author sets a
+    # mask and watches the readout not move. Every assertion below that
+    # names the overlay is there for that: the click has to reach the
+    # instrument, not just the file.
+    _ws, bake_path, baking = open_baked(reference=None, sidecar=None)
+    BAKE_ORIGINAL = baking.project.map("fixture").to_bytes()
+    sidecar = os.path.join(os.path.dirname(bake_path), "Art.blitmask")
+    window = collision_canvas(baking, layer="Floor", mask=BLOCK_ALL)
+    canvas = window.canvas
+    canvas.set_all_layers(True)
+    application.processEvents()
+    said: list[str] = []
+    canvas.status.connect(said.append)
+
+    expect("this map bakes nothing to begin with", canvas.tile_masks(), {})
+    expect("...and has no sidecar on disk", os.path.isfile(sidecar), False)
+    expect("...so the readout says nothing about the wall tile",
+           canvas.overlay.mask_at(*TILE_WALL), NO_DATA)
+    expect("...and the stack is the companion-carrying layer alone",
+           [layer.name for layer in canvas.collision_stack()], ["Floor"])
+    before = len(baking.history())
+
+    # THE CLICK.
+    canvas.set_stamp(Stamp.single(WALL_GID))
+    application.processEvents()
+
+    expect("ONE transaction for the whole gesture",
+           len(baking.history()) - before, 1)
+    # Hoisted, and compared as a WHOLE LIST rather than indexed. `[0]` on an
+    # empty history raises IndexError, and a check that turns a red line into
+    # a traceback hides every assertion after it -- measured here: with the
+    # bake mutated away, the two expects above reported honestly and this one
+    # crashed, taking the overlay-redrew assertion, the undo, the redo, the
+    # TILES-mode half and both refusals down with it.
+    baked_commands = last_commands(baking)
+    expect("...and it is the mask verb, once",
+           [c.verb for c in baked_commands], ["map.tileset.mask.set"])
+    expect("...addressing the ART tileset by name, by LOCAL tile id",
+           [{key: c.args.get(key) for key in ("name", "tile", "mask")}
+            for c in baked_commands],
+           [{"name": "Art", "tile": WALL_GID - 1, "mask": BLOCK_ALL}])
+    expect("THE MASK REACHED THE TILESET",
+           canvas.tile_masks(), {WALL_GID: BLOCK_ALL})
+    expect("...the sidecar was provisioned, nothing asked",
+           os.path.isfile(sidecar), True)
+    expect("...and the tmx declares it now",
+           b"pyoneer_collision" in baking.project.map("fixture").to_bytes(),
+           True)
+
+    # AND THE OVERLAY MOVED. This is the half that a check asserting the
+    # command was emitted cannot see, and the half the author meets first.
+    expect("AND THE OVERLAY REDREW, at the cell holding that tile",
+           (canvas.overlay.mask_at(*TILE_WALL),
+            canvas.overlay.level_at(*TILE_WALL)),
+           (BLOCK_ALL, LEVEL_TILESET))
+    expect("...EVERYWHERE it is stamped, including a layer with no companion",
+           canvas.overlay.mask_at(*ROOF_WALL), BLOCK_ALL)
+    expect("...which is the stack gaining every tile layer, as the engine's "
+           "does the moment a tileset carries masks",
+           sorted(layer.name for layer in canvas.collision_stack()),
+           ["Floor", "Roof"])
+    expect("...while a cell PAINTED open over that tile still wins",
+           (canvas.overlay.mask_at(*PAINTED_OPEN),
+            canvas.overlay.level_at(*PAINTED_OPEN)),
+           (PASS_ALL, LEVEL_COMPANION))
+    # A STAR painted over the same tile SUPPRESSES what the tile says and
+    # asks the layer below, where nothing answers -- the established
+    # semantics, asserted here because a baked tile is exactly the thing the
+    # star exists to be able to say "not here" about, and because it is the
+    # one cell where "the tileset now blocks this tile" must NOT propagate.
+    expect("...and a STAR painted over it still suppresses it",
+           (canvas.overlay.mask_at(*STARRED),
+            canvas.overlay.level_at(*STARRED)),
+           (NO_DATA, LEVEL_NONE))
+    expect("...and a tile nobody masked is untouched",
+           canvas.overlay.mask_at(*TILE_LEDGE), NO_DATA)
+    differ, _field = disagreements(canvas, baking.project.map("fixture"))
+    expect("...AND THE READOUT AGREES WITH THE ENGINE, cell for cell",
+           differ, [])
+    expect("...with no dialog anywhere on the path", modals, [])
+    expect("the author was told what changed, and how far it reaches",
+           (among("blocked", said), among("everywhere", said)), (True, True))
+
+    # UNDO. Both halves come back: the cell in the sidecar and the
+    # declaration on the tileset, which is why `map.tileset.mask.restore`
+    # exists as a separate verb at all.
+    window.undo()
+    application.processEvents()
+    expect("UNDO TAKES THE MASK BACK OUT", canvas.tile_masks(), {})
+    expect("...and the readout with it",
+           (canvas.overlay.mask_at(*TILE_WALL),
+            canvas.overlay.mask_at(*ROOF_WALL)), (NO_DATA, NO_DATA))
+    expect("...and the tmx byte for byte, declaration included",
+           baking.project.map("fixture").to_bytes() == BAKE_ORIGINAL, True)
+    expect("...leaving the file it wrote on disk, which reads as no masks",
+           os.path.isfile(sidecar), True)
+    window.redo()
+    application.processEvents()
+    expect("...and redo puts both back",
+           (canvas.tile_masks(), canvas.overlay.mask_at(*TILE_WALL)),
+           ({WALL_GID: BLOCK_ALL}, BLOCK_ALL))
+
+    # THE OTHER HALF OF THE MODE GATE. The same pick in TILES mode is a
+    # BRUSH and must write nothing -- an editor that baked a mask every time
+    # the author chose a tile to paint with would be unusable, and proving
+    # only the permissive direction is the dominant failure shape here.
+    canvas.set_mode(EditMode.TILES)
+    application.processEvents()
+    quiet = len(baking.history())
+    canvas.set_stamp(Stamp.single(LEDGE_GID))
+    application.processEvents()
+    expect("a tile picked in TILES mode writes nothing at all",
+           len(baking.history()), quiet)
+    expect("...it is the brush, exactly as it always was",
+           canvas.stamp.primary, LEDGE_GID)
+    expect("...and the tileset still says only what collision mode said",
+           canvas.tile_masks(), {WALL_GID: BLOCK_ALL})
+    canvas.set_mode(EditMode.COLLISION)
+    canvas.set_all_layers(True)
+    application.processEvents()
+    expect("...and the stamp survived the mode switch, so the next pick "
+           "does not have to be made twice", canvas.stamp.primary, LEDGE_GID)
+
+    # NOTHING SILENTLY DOES NOTHING. An empty cell is not a tile; the
+    # refusal is one line in the channel the author is looking at, and no
+    # command at all rather than a `map.tileset.mask.set` for gid 0.
+    said.clear()
+    quiet = len(baking.history())
+    canvas.set_stamp(Stamp.single(0))
+    application.processEvents()
+    expect("an empty cell cannot carry a mask, so nothing is written",
+           len(baking.history()), quiet)
+    expect("...and it says so rather than failing quietly",
+           among("pick a tile", said), True)
+    expect("...with no dialog", modals, [])
+
+    # A RECTANGLE DRAGGED OUT OF THE PALETTE IS STILL ONE CTRL+Z, and the
+    # two tiles it covers had DIFFERENT previous masks -- which is the only
+    # shape in which "the inverse carries what it found" can be told apart
+    # from "the inverse re-derives a plausible value".
+    said.clear()
+    before = len(baking.history())
+    canvas.set_mask(BLOCK_UP)
+    canvas.set_stamp(Stamp.from_rows([[WALL_GID, LEDGE_GID]]))
+    application.processEvents()
+    expect("a two-tile pick is TWO commands in ONE transaction",
+           (len(baking.history()) - before,
+            [c.verb for c in last_commands(baking)]),
+           (1, ["map.tileset.mask.set", "map.tileset.mask.set"]))
+    expect("...and both tiles took the mask",
+           (canvas.tile_masks().get(WALL_GID),
+            canvas.tile_masks().get(LEDGE_GID)), (BLOCK_UP, BLOCK_UP))
+    expect("...the readout following both",
+           (canvas.overlay.mask_at(*TILE_WALL),
+            canvas.overlay.mask_at(*TILE_LEDGE)), (BLOCK_UP, BLOCK_UP))
+    window.undo()
+    application.processEvents()
+    expect("...and ONE undo puts each back to ITS OWN previous answer",
+           (canvas.tile_masks().get(WALL_GID),
+            canvas.tile_masks().get(LEDGE_GID)), (BLOCK_ALL, None))
+
+    # THE SINGLE-LAYER READOUT DOES NOT MOVE, AND SAYS SO. A tile's mask is
+    # level ONE and this view draws one companion's own gids -- level two.
+    # Drawing it here would be the instrument reporting an answer the layer
+    # it claims to be showing does not hold; staying silent about it would
+    # be the exact "I set a mask and nothing happened" this section exists
+    # to close. So: unchanged, and one line saying where to look.
+    canvas.set_all_layers(False)
+    application.processEvents()
+    said.clear()
+    canvas.set_mask(BLOCK_ALL)
+    canvas.set_stamp(Stamp.single(PLAIN_GID))
+    application.processEvents()
+    expect("the mask still landed on the tile",
+           canvas.tile_masks().get(PLAIN_GID), BLOCK_ALL)
+    expect("...but the single-layer view is unmoved, because level one is "
+           "not what it draws", canvas.overlay.mask_at(0, 0), NO_DATA)
+    expect("...and it says where to look instead of looking broken",
+           among("All layers", said), True)
+    canvas.set_all_layers(True)
+    application.processEvents()
+    expect("...and turning it on shows what was there all along",
+           canvas.overlay.mask_at(0, 0), BLOCK_ALL)
+    window.close()
+
+    # ----------------------------------------------------------------
+    print()
+    print("a tileset the mask cannot be stored against is REFUSED, in words")
+    # ----------------------------------------------------------------
+    # Law 7 from the palette's end. The canvas refuses what it can answer
+    # for -- a gid belonging to no tileset -- and leaves the rest to the
+    # verb, which states it better; either way the gesture ends with a
+    # sentence and an unchanged document, never with a mask stored somewhere
+    # the engine will not look.
+    _ws, _path, plainest = open_baked(reference=None, sidecar=None,
+                                      with_collision_tileset=False)
+    window = collision_canvas(plainest, layer="Floor", mask=BLOCK_ALL)
+    canvas = window.canvas
+    said = []
+    canvas.status.connect(said.append)
+    UNTOUCHED = plainest.project.map("fixture").to_bytes()
+    quiet = len(plainest.history())
+    canvas.set_stamp(Stamp.single(9999))
+    application.processEvents()
+    expect("a gid no tileset owns writes nothing",
+           len(plainest.history()), quiet)
+    expect("...and names the gid it could not place",
+           among("9999", said), True)
+    expect("...leaving the document exactly as it was found",
+           plainest.project.map("fixture").to_bytes() == UNTOUCHED, True)
+    expect("...with no dialog", modals, [])
+    # The permissive half on the same canvas: a gid that IS owned still
+    # goes through, so the refusal above is a guard rather than a wall.
+    canvas.set_stamp(Stamp.single(WALL_GID))
+    application.processEvents()
+    expect("...while a real tile on the same map is still baked",
+           canvas.tile_masks().get(WALL_GID), BLOCK_ALL)
+    expect("...on a map with no collision tileset at all, which needs none",
+           canvas.collision_first_gid, None)
     window.close()
 
 finally:

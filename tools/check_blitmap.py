@@ -34,8 +34,9 @@ import time
 import warnings
 import xml.etree.ElementTree as ElementTree
 
-from scripts.core import layer_profile
+from scripts.core import collision_runtime, layer_profile
 from scripts.core.errors import PyoneerContentWarning
+from scripts.loaders import blitmap
 from scripts.loaders.blitmap import (
     Blitmap,
     Conversion,
@@ -47,6 +48,7 @@ from scripts.loaders.blitmap import (
     Shape,
     TileLayer,
     TilesetLink,
+    declared_collision,
     from_tmx,
     tileset_reference,
     write_conversion,
@@ -415,6 +417,110 @@ expect("a collision reference that is not a .blitmask says so out loud",
        [w.category.__name__ for w in caught
         if issubclass(w.category, PyoneerContentWarning)],
        ["PyoneerContentWarning"])
+
+# ---------------------------------------------------------------------------
+# A tmx that DECLARES its own masks, which is what `map.tileset.mask.set`
+# leaves behind the first time an author paints a tile.
+#
+# Its own fixture rather than a property bolted onto FIXTURE_TMX, because
+# FIXTURE_TMX is the "declares nothing" control for every assertion below and
+# the two halves of this invariant have to be two different documents. A
+# second `<tileset>` declaring nothing sits beside the first, so "carried"
+# and "absent" are measured in ONE conversion and a converter that stamped
+# every tileset with the same reference could not pass both.
+#
+# The `license` property is a DECOY and is load-bearing. Measured: with the
+# collision property alone, a converter reading the FIRST property rather
+# than the NAMED one passed every assertion here -- the check could not tell
+# "reads pyoneer_collision" from "reads whatever is first". Its value ends in
+# .blitmask on purpose, so "grab anything that looks like a mask" dies too.
+MASKED_TMX = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" orientation="orthogonal" width="1" height="1" tilewidth="16" tileheight="16">
+ <tileset firstgid="1" name="Painted" tilewidth="16" tileheight="16" tilecount="4" columns="2">
+  <properties>
+   <property name="license" value="decoy.blitmask"/>
+   <property name="%s" value="../art/Painted.blitmask"/>
+  </properties>
+  <image source="../art/painted.png" width="32" height="32"/>
+ </tileset>
+ <tileset firstgid="5" name="Plain" tilewidth="16" tileheight="16" tilecount="4" columns="2">
+  <image source="../art/plain.png" width="32" height="32"/>
+ </tileset>
+ <layer id="1" name="A" width="1" height="1"><data encoding="csv">1</data></layer>
+</map>
+""" % collision_runtime.DEFAULTS_PROPERTY
+
+
+def masked_conversion(**kwargs) -> Conversion:
+    return from_tmx(MapDocument.from_bytes(
+        MASKED_TMX.encode("utf-8"),
+        path=os.path.join(ROOT, "masked.tmx")), **kwargs)
+
+
+# The property name is spelled ONCE, in the runtime, and read here from the
+# same constant the converter imports. A file-format string retyped in the
+# converter would pass a check that retyped it too, and law 8's whole cost is
+# that a renamed token looks exactly like the feature working.
+expect("the converter reads the runtime's own property name, not a copy",
+       blitmap.DEFAULTS_PROPERTY is collision_runtime.DEFAULTS_PROPERTY, True)
+expect("and that name is the one an author's .tmx actually spells",
+       collision_runtime.DEFAULTS_PROPERTY in MASKED_TMX, True)
+
+declared = masked_conversion()
+expect("a tileset's OWN pyoneer_collision reaches the .tileset",
+       declared.tileset("Painted").collision, "../art/Painted.blitmask")
+# The other half. Without it the assertion above passes for a converter that
+# writes a reference onto every tileset it sees.
+expect("...and a tileset that declares none still has none",
+       declared.tileset("Plain").collision, "")
+expect("a map with no masks at all converts with nothing dropped",
+       list(declared.dropped), [])
+
+# Both spellings of one fact, and they agree. `collision` is the modelled
+# declaration this format's readers consult; the property rides along in the
+# passthrough bag like every other tmx property. Populating one and leaving
+# the other stale is the divergence this pins.
+painted = declared.tileset("Painted")
+expect("the modelled line and the carried property say the same thing",
+       ([p.value for p in painted.properties
+         if p.name == collision_runtime.DEFAULTS_PROPERTY], painted.collision),
+       (["../art/Painted.blitmask"], "../art/Painted.blitmask"))
+
+# Round trip, for the reason the injected case round trips: a value handed
+# to a constructor is true by construction until it survives render/parse.
+expect_returns("a declared reference survives render/parse",
+               lambda: TilesetFile.parse(painted.render()).collision,
+               "../art/Painted.blitmask")
+
+# The injection is an OVERRIDE, and the two directions are separate claims.
+overridden = masked_conversion(collision_for=lambda name: "beside/art.blitmask")
+expect("a caller with an answer beats the declaration",
+       overridden.tileset("Painted").collision, "beside/art.blitmask")
+deferred = masked_conversion(collision_for=lambda name: "")
+expect("a caller with nothing to say cannot unpaint the declaration",
+       deferred.tileset("Painted").collision, "../art/Painted.blitmask")
+expect("...and still adds nothing to a tileset that declared nothing",
+       deferred.tileset("Plain").collision, "")
+
+# A tileset declaring an EMPTY pyoneer_collision is a tileset declaring
+# nothing -- `map.tileset.mask.restore` removes the property, but a hand
+# edit that blanks the value must not become a reference to a file named "".
+blank = from_tmx(MapDocument.from_bytes(
+    MASKED_TMX.replace("../art/Painted.blitmask", "  ").encode("utf-8"),
+    path=os.path.join(ROOT, "masked.tmx")))
+expect("a blank declaration is not a reference to a file named ''",
+       blank.tileset("Painted").collision, "")
+
+# `declared_collision` reads an element directly, so it is asserted directly
+# too: the converter path above cannot distinguish "read the wrong element"
+# from "read no element" once both answer "".
+masked_root = MapDocument.from_bytes(
+    MASKED_TMX.encode("utf-8"),
+    path=os.path.join(ROOT, "masked.tmx")).root
+tileset_elements = masked_root.findall("tileset")
+expect("declared_collision reads the element it is handed",
+       [declared_collision(element) for element in tileset_elements],
+       ["../art/Painted.blitmask", ""])
 
 # What did NOT survive is a value, not a log line. `<editorsettings>` is
 # Tiled's export target -- editor state, not map data -- and a per-tile

@@ -79,6 +79,14 @@ _OBJECT_CLASSES = (
     "GameBackgroundEntity", "GameForegroundEntity", "GameUIEntity",
 )
 
+#: The Tiles dock's tab label, in each mode. It changes because what a click
+#: in that palette DOES changes: in collision mode the brush is a mask and a
+#: tile pick is the target that mask is written onto. `objectName` -- which is
+#: what Qt saves and restores dock state by -- is deliberately NOT this, so
+#: the label can move without moving the layout the author arranged.
+TILES_TITLE = "Tiles"
+TILES_AS_MASK_TARGET = "Tiles → mask"
+
 _TOOL_SHORTCUTS = {
     Tool.BRUSH: "B",
     Tool.FILLED_RECT: "R",
@@ -177,7 +185,7 @@ class EditorWindow(QMainWindow):
     # -- construction ------------------------------------------------------
 
     def __build_palette(self) -> QDockWidget:
-        dock = QDockWidget("Tiles", self)
+        dock = QDockWidget(TILES_TITLE, self)
         dock.setObjectName("Tiles")
         self.palette = TilePalette(dock)
         self.palette.stamp_picked.connect(self.__on_stamp)
@@ -198,6 +206,12 @@ class EditorWindow(QMainWindow):
         The palette emits a MASK; turning it into a gid needs the companion
         layer's firstgid, which is the canvas's business, so `set_mask` takes
         it raw.
+
+        ONE MASK, TWO TARGETS, and this widget knows about neither. A mask
+        picked here is written into a map CELL by a canvas stroke, or onto a
+        TILE by a pick in the palette next door -- see `MapCanvas.set_stamp`.
+        Both are the same value from the same seventeen swatches, which is
+        the whole reason there is no second mask-picking control.
         """
         dock = QDockWidget("Collision", self)
         dock.setObjectName("Collision")
@@ -428,6 +442,23 @@ class EditorWindow(QMainWindow):
     def refresh_all(self) -> None:
         self.canvas.set_selection(self.selection.scope)
         if self.canvas.atlas is not None:
+            # BEFORE the atlas, so the sheet is drawn once with its badges
+            # on rather than drawn and then drawn again. `set_masks` does not
+            # repaint at all -- `set_atlas` rebuilds unconditionally on the
+            # next line, so the ORDER is what makes this one draw, and
+            # swapping these two lines would draw the sheet without badges.
+            #
+            # AFTER `set_selection`, which rebuilds the canvas and therefore
+            # re-reads level one. Asking first would hand the palette the
+            # masks from before the command that just landed, which on a bake
+            # is the one command whose whole effect is the answer.
+            #
+            # It costs at most ONE `.blitmask` read per command, and only on
+            # a map that declares one: `tile_masks` goes through the canvas's
+            # memo, which the resolved overlay already pays for on every
+            # rebuild in collision mode. A map that declares no masks -- every
+            # map in this repository -- reads nothing at all.
+            self.palette.set_masks(self.canvas.tile_masks())
             self.palette.set_atlas(self.canvas.atlas)
         for dock in self.docks:
             self.__safely(dock.refresh, dock.base_title)
@@ -542,7 +573,22 @@ class EditorWindow(QMainWindow):
             f"than 1 would change nothing.")
 
     def __on_stamp(self, stamp) -> None:
-        self.canvas.stamp = stamp
+        """A tile picked in the palette. In collision mode it is a TARGET.
+
+        `set_stamp` rather than assigning `canvas.stamp`, because what a tile
+        pick MEANS is the canvas's business and it is not one thing: in tiles
+        mode it is the brush, and in collision mode the brush is already a
+        mask, so the tile is what that mask gets written onto. The readout
+        follows the same split -- calling a tile "brush" while the brush is a
+        mask is the toolbar disagreeing with the click that just happened.
+        """
+        self.canvas.set_stamp(stamp)
+        if self.canvas.mode is EditMode.COLLISION:
+            target = (f"gid {stamp.primary}" if stamp.is_single
+                      else f"{stamp.width}×{stamp.height} tiles")
+            self.stamp_label.setText(
+                f"  {describe_mask(self.canvas.mask)} → {target}  ")
+            return
         self.stamp_label.setText(
             f"  brush: gid {stamp.primary}  " if stamp.is_single
             else f"  brush: {stamp.width}×{stamp.height} stamp  ")
@@ -571,6 +617,19 @@ class EditorWindow(QMainWindow):
         self.__sync_size_control()
         dock = self.mask_dock if mode is EditMode.COLLISION else self.palette_dock
         dock.raise_()
+        # THE TAB SAYS WHAT A CLICK IN IT DOES. In collision mode a tile pick
+        # writes that tile's own mask instead of setting a brush the mode
+        # cannot paint with, and a control whose meaning changed while its
+        # label did not is the shape this editor keeps paying for. The tab is
+        # the one place the label is visible the whole time, so it carries it
+        # -- and the status line below teaches the gesture once, on the
+        # switch, rather than interrupting to explain it later.
+        self.palette_dock.setWindowTitle(
+            TILES_AS_MASK_TARGET if mode is EditMode.COLLISION else TILES_TITLE)
+        if mode is EditMode.COLLISION:
+            self.statusBar().showMessage(
+                f"{mode.tip} · picking a tile in the Tiles palette gives "
+                f"that TILE the current mask, everywhere it is stamped", 8000)
 
     def __on_picked_mask(self, mask: int) -> None:
         """The canvas picked a mask off the map (alt-click, or the picker)."""

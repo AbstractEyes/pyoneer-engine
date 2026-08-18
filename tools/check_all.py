@@ -66,13 +66,16 @@ CHECKS = [
                         "a 4x map whose mask lands under the cursor, the "
                         "resolution a created companion is given, and the "
                         "overlay agreeing with field_from_map cell for cell "
-                        "over a map whose tiles carry their own masks"),
+                        "over a map whose tiles carry their own masks, and a "
+                        "tile picked in the palette baking its own mask into "
+                        "the tileset"),
     ("collision_runtime", "the engine reads a mask, stacks a tileset's own defaults under it, and gates movement"),
     ("collision_field", "map load bakes passability and every body is handed it"),
     ("actions_panel", "trigger authoring, action verbs, exact inverses"),
     ("behavior_ui", "behavior checklist from the registry, refusals at "
                     "authoring time, exact undo"),
-    ("editor_ui", "panels build, canvas edits are commands, responses apply"),
+    ("editor_ui", "panels build, canvas edits are commands, a palette click "
+                  "in collision mode masks the tile, responses apply"),
     ("demos", "three prototype games boot headless and answer injected input"),
     ("prototype", "the design form resolves against the registries, and its "
                   "worked example boots"),

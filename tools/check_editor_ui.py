@@ -9,6 +9,11 @@ actually break:
     makes undo usable
   * the terrain tool re-tiles cells the cursor never touched
   * selecting anything re-aims the hierarchy, the inspector and the prompt
+  * a click on the TILE palette means a brush in tiles mode and a baked
+    collision mask in collision mode -- the one surface that reaches
+    `map.tileset.mask.set`, which shipped reachable from nothing -- and the
+    palette draws which tiles are already masked, including the one whose
+    glyph is deliberately blank
   * a rejected edit reaches the user as a message, not a traceback
   * a response comes back through the same door a click does
 
@@ -43,6 +48,9 @@ import _bootstrap  # noqa: F401
 
 import dataclasses
 import importlib.util
+import ast
+import inspect
+import textwrap
 import json
 import os
 import re
@@ -57,7 +65,7 @@ if importlib.util.find_spec("PySide6") is None:
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QPointF, Qt                          # noqa: E402
+from PySide6.QtCore import QEvent, QPointF, QRect, Qt                   # noqa: E402
 from PySide6.QtGui import QAction, QMouseEvent                          # noqa: E402
 from PySide6.QtWidgets import (                                         # noqa: E402
     QApplication,
@@ -68,13 +76,19 @@ from PySide6.QtWidgets import (                                         # noqa: 
 from editor.core import genre as genre_module                          # noqa: E402
 from editor.core.autotile import TerrainSet                             # noqa: E402
 from editor.core.commands import Command                                # noqa: E402
-from editor.core.paint import Stamp, Tool, grid_lines                   # noqa: E402
+from editor.core.layers import BLOCK_ALL, PASS_ALL                      # noqa: E402
+from editor.core.paint import EditMode, Stamp, Tool, grid_lines         # noqa: E402
 from editor.core.scope import Scope                                     # noqa: E402
 from editor.core.session import Session                                 # noqa: E402
 from scripts.game.behavior.base import BEHAVIORS                        # noqa: E402
 from editor.ui import ask as ask_module                                 # noqa: E402
 from editor.ui.actions_panel import NOT_WIRED                           # noqa: E402
-from editor.ui.main_window import EditorWindow                          # noqa: E402
+from editor.ui.collision_view import MASK_DOMAIN, MaskPalette            # noqa: E402
+from editor.ui.main_window import (                                      # noqa: E402
+    TILES_AS_MASK_TARGET,
+    TILES_TITLE,
+    EditorWindow,
+)
 
 REPO = _bootstrap.REPO_ROOT
 failures: list[str] = []
@@ -206,6 +220,82 @@ def select_layer(window, name):
     window.selection.select(
         Scope.of(("map", window.map_name), ("layer", name)))
     application.processEvents()
+
+# --------------------------------------------------------------------------
+# The tile-mask fixture, and the two palette clicks
+# --------------------------------------------------------------------------
+# Its own map, because baking a tile mask WRITES: a `.blitmask` beside the
+# .tmx and a `pyoneer_collision` property on the `<tileset>`. Doing that to a
+# copy of `data/maps/test.tmx` would pin the author's tileset names and their
+# geometry into this file, which is law 4 and four red suites.
+#
+# Two columns and four tiles, so a tile id, a grid position and a gid are all
+# small enough to name: gid 2 is column 1 of row 0.
+
+MASKED_GID = 2
+MASKED_TMX = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.2" tiledversion="1.3.1" orientation="orthogonal" \
+renderorder="right-down" compressionlevel="-1" width="4" height="3" \
+tilewidth="16" tileheight="16" infinite="0" nextlayerid="2" nextobjectid="1">
+ <tileset firstgid="1" name="Art" tilewidth="16" tileheight="16" \
+tilecount="4" columns="2">
+  <image source="art.png" width="32" height="32"/>
+ </tileset>
+ <layer id="1" name="Floor" width="4" height="3">
+  <data encoding="csv">
+2,0,0,1,
+0,0,2,0,
+1,0,0,0
+</data>
+ </layer>
+</map>
+"""
+
+
+def pick_tile(window, column, row):
+    """Press and release on one cell of the TILE palette, as a mouse does."""
+    surface = window.palette.surface
+    cell = window.palette.cell
+    point = QPointF(column * cell + cell / 2, row * cell + cell / 2)
+    for kind, handler in ((QEvent.Type.MouseButtonPress,
+                           surface.mousePressEvent),
+                          (QEvent.Type.MouseButtonRelease,
+                           surface.mouseReleaseEvent)):
+        handler(QMouseEvent(kind, point, Qt.LeftButton, Qt.LeftButton,
+                            Qt.NoModifier))
+    application.processEvents()
+
+
+def pick_mask(window, mask):
+    """Press on one swatch of the MASK palette, addressed by its value."""
+    surface = window.mask_palette.surface
+    step = window.mask_palette.cell + 6
+    index = MASK_DOMAIN.index(mask)
+    column, row = index % MaskPalette.COLUMNS, index // MaskPalette.COLUMNS
+    point = QPointF(column * step + step / 2, row * step + step / 2)
+    surface.mousePressEvent(
+        QMouseEvent(QEvent.Type.MouseButtonPress, point, Qt.LeftButton,
+                    Qt.LeftButton, Qt.NoModifier))
+    application.processEvents()
+
+
+def sheet_cells(palette):
+    """Each tile's own patch of the DRAWN sheet, keyed by grid position.
+
+    The composited pixmap rather than a widget grab, and that is the whole
+    reason this helper exists: the selection rectangle is painted OVER the
+    sheet and moves on every pick, so a grab would report "the palette
+    changed" for the click itself and never for the badge -- an assertion
+    that cannot fail, which is not an assertion.
+    """
+    image = palette.surface._PaletteSurface__pixmap.toImage()
+    cell = palette.cell
+    return {(column, row): image.copy(QRect(column * cell, row * cell,
+                                            cell, cell))
+            for row in range(palette.rows)
+            for column in range(palette.columns)}
+
+
 
 
 try:
@@ -1536,6 +1626,163 @@ try:
     window.undo()
     expect("and the edit F5 saved still undoes byte-identically",
            session.project.map("test").to_bytes() == ORIGINAL, True)
+
+    # ----------------------------------------------------------------
+    print()
+    print("a tile picked in the palette carries its own collision mask")
+    # ----------------------------------------------------------------
+    # THE CLICK, THROUGH THE REAL WINDOW. `map.tileset.mask.set` shipped and
+    # worked end to end while NOTHING in `editor/ui` called it -- measured,
+    # the verb's name appeared outside `verbs.py` only in generated docs and
+    # in its own check. `check_collision_mount.py` drives the canvas seam;
+    # what only this file can see is the half between a real mouse press on
+    # a real `TilePalette` and that seam: the signal, the mode-dependent
+    # meaning, and the palette being told the answer afterwards.
+    #
+    # AGAINST ITS OWN FIXTURE, never `data/maps/test.tmx`. Baking a mask
+    # writes a `.blitmask` beside the map and adds `pyoneer_collision` to a
+    # `<tileset>`, so doing it on the author's canvas would pin both the
+    # tileset's name and its geometry -- law 4, and four red suites.
+    masked_root = os.path.join(workspace, "tilemask")
+    os.makedirs(os.path.join(masked_root, "config"))
+    os.makedirs(os.path.join(masked_root, "data", "maps"))
+    with open(os.path.join(masked_root, "data", "maps", "masked.tmx"), "w",
+              encoding="utf-8", newline="") as handle:
+        handle.write(MASKED_TMX)
+    with open(os.path.join(masked_root, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": [{"name": "masked", "identifier": "masked",
+                             "file": "data/maps/masked.tmx"}]}, handle)
+    masked_session = Session.open(masked_root, genre_id="topdown_rpg")
+    MASKED_ORIGINAL = masked_session.project.map("masked").to_bytes()
+
+    masked = EditorWindow(masked_session)
+    masked.settings = _Settings(FakeStore())
+    masked.show()
+    application.processEvents()
+    palette = masked.palette
+    no_modals()
+
+    expect("the fixture's one tileset is in the palette",
+           (len(masked.canvas.atlas.entries), palette.entry.name), (1, "Art"))
+    expect("...and nothing is baked yet, so the palette badges nothing",
+           palette.masks, {})
+    # Compared as a BOOLEAN rather than printed: the collision title carries
+    # an arrow, and a check that cannot print its own failure on a cp1252
+    # console is a check that turns a red line into a traceback.
+    expect("the Tiles tab says Tiles while a tile pick means a brush",
+           masked.palette_dock.windowTitle() == TILES_TITLE, True)
+
+    # A REAL PRESS ON THE PALETTE, in tiles mode: a brush, and no command.
+    quiet = len(masked_session.history())
+    pick_tile(masked, 1, 0)
+    expect("a palette click in TILES mode sets the brush",
+           masked.canvas.stamp.primary, MASKED_GID)
+    expect("...and writes nothing", len(masked_session.history()), quiet)
+    expect("...and the toolbar calls it a brush",
+           "brush: gid" in masked.stamp_label.text(), True)
+
+    # THE MODE SWITCH, through the toolbar action a click would trigger.
+    masked.modes.actions[EditMode.COLLISION].trigger()
+    application.processEvents()
+    expect("collision mode reaches the canvas",
+           masked.canvas.mode, EditMode.COLLISION)
+    expect("...and the Tiles tab now says what a click in it DOES",
+           masked.palette_dock.windowTitle() == TILES_AS_MASK_TARGET, True)
+    expect("...and the gesture is taught once, in the status bar",
+           "Tiles palette" in masked.statusBar().currentMessage(), True)
+
+    # A REAL PRESS ON THE MASK PALETTE. Same seventeen swatches, same
+    # values: there is no second mask-picking control anywhere in this
+    # window, which is the whole reason a tile mask needed no new vocabulary.
+    pick_mask(masked, BLOCK_ALL)
+    expect("the mask palette still sets the brush mask",
+           masked.canvas.mask, BLOCK_ALL)
+    expect("...and picking a mask on its own writes nothing",
+           len(masked_session.history()), quiet)
+
+    before_sheet = sheet_cells(palette)
+    pick_tile(masked, 1, 0)
+
+    # Every command since the baseline, not `history()[-1]`: a wire that
+    # went dead leaves the history EMPTY, and indexing it then raises a
+    # traceback where the suite should be printing a red line naming this.
+    expect("A PALETTE CLICK IN COLLISION MODE REACHES THE VERB",
+           [c.verb for t in masked_session.history()[quiet:]
+            for c in t.commands],
+           ["map.tileset.mask.set"])
+    expect("...as ONE transaction", len(masked_session.history()) - quiet, 1)
+    expect("...and the mask reached the tileset",
+           masked.canvas.tile_masks(), {MASKED_GID: BLOCK_ALL})
+    expect("...the palette was handed the answer, not left to guess",
+           palette.masks, {MASKED_GID: BLOCK_ALL})
+    # A palette that knows and does not draw is the same as not knowing.
+    changed = [key for key, image in sheet_cells(palette).items()
+               if image != before_sheet[key]]
+    expect("...AND THE SHEET REDREW, at that tile and at no other",
+           changed, [(1, 0)])
+
+    # THE ORDER IS THE MECHANISM, so it is pinned. `set_masks` deliberately
+    # does not repaint -- `set_atlas` rebuilds unconditionally on the next
+    # line of `refresh_all` -- which means the sheet above was drawn ONCE,
+    # already carrying its badge. Swap the two calls and it is drawn without
+    # one, then not drawn again, and the badge simply never appears.
+    # Measured before this was pinned: an earlier `set_masks` rebuilt behind a
+    # memo justified as saving a repaint per drag click, and it saved nothing
+    # -- five unrelated edits still cost five rebuilds -- while BOTH halves of
+    # the memo could be deleted with the suite green.
+    _order = inspect.getsource(type(window).refresh_all)
+    expect("refresh_all hands the palette its masks BEFORE its atlas",
+           _order.index("set_masks") < _order.index("set_atlas"), True)
+    # Parsed, not grepped: the docstring above explains the rebuild it does
+    # NOT do, so a text search over the source matches its own explanation.
+    # The CODE is what is being asserted, so the docstring is stripped first.
+    _fn = ast.parse(textwrap.dedent(
+        inspect.getsource(type(palette).set_masks))).body[0]
+    if (_fn.body and isinstance(_fn.body[0], ast.Expr)
+            and isinstance(_fn.body[0].value, ast.Constant)):
+        _fn.body = _fn.body[1:]
+    expect("...and set_masks leaves the one repaint to set_atlas",
+           [n.attr for n in ast.walk(ast.Module(body=_fn.body, type_ignores=[]))
+            if isinstance(n, ast.Attribute) and n.attr == "rebuild"], [])
+    expect("...with the caption naming what the tile now carries",
+           "blocked" in palette.caption.text(), True)
+    expect("...and the toolbar reading as a target, not as a brush",
+           ("blocked" in masked.stamp_label.text(),
+            "brush" in masked.stamp_label.text()), (True, False))
+    expect("...and no dialog anywhere on that path", modals(), [])
+
+    masked.undo()
+    application.processEvents()
+    expect("UNDO takes the mask, the badge and the declaration back",
+           (masked.canvas.tile_masks(), palette.masks), ({}, {}))
+    expect("...the sheet with them",
+           sheet_cells(palette) == before_sheet, True)
+    expect("...and the tmx byte for byte",
+           masked_session.project.map("masked").to_bytes() == MASKED_ORIGINAL,
+           True)
+
+    # THE OTHER HALF OF THE BADGE. `PASS_ALL`'s glyph is deliberately EMPTY
+    # -- an open cell is more than half of a map -- so a tile baked OPEN
+    # would look exactly like a tile nobody has touched if the badge were
+    # the glyph alone. "Open" and "nothing said" are the one distinction
+    # level one exists to make.
+    pick_mask(masked, PASS_ALL)
+    pick_tile(masked, 1, 0)
+    expect("a tile baked OPEN is stored as open, not as nothing",
+           masked.canvas.tile_masks(), {MASKED_GID: PASS_ALL})
+    changed = [key for key, image in sheet_cells(palette).items()
+               if image != before_sheet[key]]
+    expect("...and the palette SHOWS it, though its glyph draws nothing",
+           changed, [(1, 0)])
+    expect("...still with no dialog", modals(), [])
+    masked.undo()
+    application.processEvents()
+    expect("...and it undoes like any other edit",
+           (masked.canvas.tile_masks(),
+            masked_session.project.map("masked").to_bytes() == MASKED_ORIGINAL),
+           ({}, True))
+    masked.close()
 
     # ----------------------------------------------------------------
     print()

@@ -58,12 +58,12 @@ dependency reports `SKIP` and never `PASS`.
 | `collision` | three-level resolution, .blitmask round trip, mask encoding | Verify the collision data model and the .blitmask format. |
 | `collision_view` | collision overlay builds, glyphs distinguish direction bits, a read past a companion's edge abstains, and the level channel credits the tile or the paint | Verify the collision overlay, its glyphs and the mode switch. |
 | `map_events` | trigger vocabulary, collision filters, tmx round trip | Verify the map-event vocabulary: round trip, validation, filter semantics. |
-| `collision_mount` | the overlay, the mode, one stroke one transaction, a 4x map whose mask lands under the cursor, the resolution a created companion is given, and the overlay agreeing with field_from_map cell for cell over a map whose tiles carry their own masks | Assert the collision stack is actually WIRED to the canvas. |
+| `collision_mount` | the overlay, the mode, one stroke one transaction, a 4x map whose mask lands under the cursor, the resolution a created companion is given, and the overlay agreeing with field_from_map cell for cell over a map whose tiles carry their own masks, and a tile picked in the palette baking its own mask into the tileset | Assert the collision stack is actually WIRED to the canvas. |
 | `collision_runtime` | the engine reads a mask, stacks a tileset's own defaults under it, and gates movement | Verify that the engine reads authored masks and refuses a blocked step. |
 | `collision_field` | map load bakes passability and every body is handed it | Prove the map's passability actually reaches the bodies that move on it. |
 | `actions_panel` | trigger authoring, action verbs, exact inverses | Assert the two dormant things this pass wired are actually reachable. |
 | `behavior_ui` | behavior checklist from the registry, refusals at authoring time, exact undo | The editor's behavior surface: the checklist, the refusals, the undo. |
-| `editor_ui` | panels build, canvas edits are commands, responses apply | Drive the editor's Qt window offscreen and assert it holds together. |
+| `editor_ui` | panels build, canvas edits are commands, a palette click in collision mode masks the tile, responses apply | Drive the editor's Qt window offscreen and assert it holds together. |
 | `demos` | three prototype games boot headless and answer injected input | Boot every demo headless, drive it with injected input, and assert what it |
 | `prototype` | the design form resolves against the registries, and its worked example boots | Resolve every field the design template names, then boot its worked example. |
 | `docs` | the doc spine: navigation, #TAG anchors, the generated code map, fact drift | Verify the documentation SPINE, and generate the parts that can be generated. |

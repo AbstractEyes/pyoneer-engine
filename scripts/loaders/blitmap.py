@@ -118,6 +118,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, ClassVar, Iterator, Union
 
+from scripts.core.collision_runtime import DEFAULTS_PROPERTY
 from scripts.core.errors import PyoneerConfigError
 from scripts.loaders.map_document import MapDocument
 from scripts.loaders.map_document import TileLayer as TmxTileLayer
@@ -171,7 +172,7 @@ __all__ = [
     "LayerGroup", "TilesetLink", "Blitmap", "Conversion",
     "LinkedTileset", "TileAddress", "LoadedMap", "load_map",
     "MapObjectRecord", "object_records", "layer_object_records",
-    "from_tmx", "write_conversion",
+    "declared_collision", "from_tmx", "write_conversion",
 ]
 
 
@@ -1312,6 +1313,32 @@ def tileset_reference(name: str, directory: str = "tilesets") -> str:
     return "%s/%s" % (directory.rstrip("/"), reference) if directory else reference
 
 
+def declared_collision(element) -> str:
+    """The `.blitmask` a tmx `<tileset>` declares about ITSELF, or "".
+
+    `pyoneer_collision` is written onto the `<tileset>` element by
+    `map.tileset.mask.set` the first time an author paints a tile mask, so
+    for any map authored with that verb this -- not an injection -- is where
+    the reference lives. Reading it is the difference between converting
+    that map and quietly converting everything except the masks.
+
+    Empty means the tileset declares nothing, which is the ordinary case and
+    stays free: every map authored before tile masks existed converts exactly
+    as it did before. That is not law 7's plausible default -- it is the
+    documented meaning of an absent property, the same line
+    `collision_runtime.tileset_defaults` draws between "not authored" and
+    "authored wrong".
+
+    `_properties_of` rather than a second walk over `<properties>`: the
+    multi-line-body case it handles is one pytmx raises on, and a converter
+    with its own property reader is a converter missing that guard.
+    """
+    for prop in _properties_of(element):
+        if prop.name == DEFAULTS_PROPERTY:
+            return (prop.value or "").strip()
+    return ""
+
+
 def from_tmx(document: MapDocument, *, tileset_dir: str = "tilesets",
              collision_for=None) -> Conversion:
     """Convert a loaded .tmx into a .blitmap plus one .tileset per tileset.
@@ -1321,11 +1348,33 @@ def from_tmx(document: MapDocument, *, tileset_dir: str = "tilesets",
     inversion is needed and no property can make the load fail by shadowing
     a reader's attribute name.
 
-    `collision_for(tileset_name) -> str` supplies each tileset's `.blitmask`
-    reference, if the caller has one. Injected rather than discovered
-    because the mask lives beside the ART, which is a directory this module
-    has no business guessing at -- and because `scripts/` may never import
-    the editor code that reads the mask.
+    WHERE A TILESET'S `.blitmask` REFERENCE COMES FROM
+    --------------------------------------------------
+    From the `<tileset>` itself, and from `collision_for` only when a caller
+    supplies one. That order is a correction, not a preference. This
+    argument was originally the ONLY source, justified by "`scripts/` may
+    never import the editor code that reads the mask" -- a reason that
+    stopped being true when the reader moved into `scripts/` at `6794bde`,
+    while the `<tileset>` being converted carried `pyoneer_collision` on it
+    the whole time. A caller who did not know to inject one therefore
+    converted a map and silently lost the masks its author had painted: the
+    `Paralax` shape, one format conversion later. What made it invisible is
+    that the reference was never truly gone -- it rode along in the
+    unmodelled property bag, so the .tileset still SAID `Art.blitmask`
+    somewhere, on a line no reader of this format consults.
+
+    `collision_for(tileset_name) -> str` therefore OVERRIDES the
+    declaration, and returning "" defers to it rather than erasing it. The
+    caller is the half that knows a base this module does not -- the mask
+    sits beside the ART -- so a caller with an answer wins, and a caller
+    with nothing to say about this particular tileset must not be able to
+    silently unpaint it.
+
+    Both spellings survive into the .tileset: `collision` is the modelled
+    declaration this format's readers consult, and the `pyoneer_collision`
+    property rides along in the passthrough bag exactly as every other tmx
+    property does. They agree because one is derived from the other here,
+    in one place, and `tools/check_blitmap.py` asserts they still do.
     """
     dropped: list[str] = []
     tilesets: list[TilesetLink] = []
@@ -1340,8 +1389,9 @@ def from_tmx(document: MapDocument, *, tileset_dir: str = "tilesets",
         if tag == "properties":
             continue                      # read from the root below
         if tag == "tileset":
-            collision = "" if collision_for is None else (
+            supplied = "" if collision_for is None else (
                 collision_for(child.get("name", "")) or "")
+            collision = supplied or declared_collision(child)
             built = from_tmx_tileset(child, dropped=dropped, collision=collision)
             first_gid = _int_attribute(child, "firstgid", 1)
             tilesets.append(TilesetLink(first_gid, built.name,
@@ -1369,7 +1419,12 @@ def from_tmx(document: MapDocument, *, tileset_dir: str = "tilesets",
 
 def convert_file(tmx_path: str, *, tileset_dir: str = "tilesets",
                  collision_for=None) -> Conversion:
-    """Load a .tmx from disk and convert it. Writes nothing."""
+    """Load a .tmx from disk and convert it. Writes nothing.
+
+    `collision_for` is optional for the reason `from_tmx` spells out: a
+    tileset that declares `pyoneer_collision` carries its own mask
+    reference across without a caller having to know to ask for it.
+    """
     return from_tmx(MapDocument.load(tmx_path), tileset_dir=tileset_dir,
                     collision_for=collision_for)
 

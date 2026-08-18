@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every item below was re-measured against d8c303f on 2026-08-16 by the command printed beside it. The genre-pack default behavior list shipped afterwards and left this list; see CLAUDE.md's Known gaps. -->
+<!-- pyoneer-stamp: hand-written; items 1, 2, 4 and 5 were re-measured against d8c303f on 2026-08-16 by the command printed beside each. Item 3 was replaced on 2026-08-18: the old item 3 said nothing read the actors table, which shipped at 6794bde -- `scripts/loaders/table_file.py`, `#TAG:actor_row` and `#TAG:resolve_params`, assigned in `main.py` as `LayerRenderer.tables`. The genre-pack default behavior list also shipped after d8c303f and left this list; see CLAUDE.md's Known gaps. -->
 
 # Next — what is open, ranked, and the command that measured it
 
@@ -58,12 +58,21 @@ Measured: `grep -rn "tile_collision" scripts/game/behavior/` — three sites, al
 prose. `tools/check_docs.py` pins the string so it cannot get worse, and the
 pin must be deleted in the same change that fixes it.
 
-**3. Ten behavior parameters declare `source="actors"` and nothing reads the
-table.** Step 2 of the parameter chain — the actors row — can never fire, so a
-`hp` or `move_speed` column in `data/project/tables/actors.json` reaches no
-entity. Cost: a parameter that looks authored and is silently the default.
-Measured: `grep -rn 'source="actors"' scripts/ | wc -l` → 10, against
-`grep -rn "tables/" scripts/ --include=*.py` → one comment and no reader.
+**3. A native `.blitmap` gets no collision at all, and now it is dropping a
+declaration it carries.** `field_from_map` answers None for any source that
+serves its own `object_records`, so every body on a native map is ungated. That
+was the true answer while the format said nothing about masks; it no longer is.
+`#TAG:declared_collision` lifts a tmx `<tileset>`'s `pyoneer_collision` into
+`TilesetFile.collision`, so a converted map's `.tileset` now carries
+`collision <ref>` on its own line and nothing opens it. Cost: a map converted
+away from .tmx walks differently from the map it was converted from — the
+Paralax shape, one format later, and silent in the direction that looks like it
+works. Level one is the only level worth building here: a `.blitmap` has no
+companion layers either.
+Measured at `8915ee0` + this pass: `grep -rn "collision" scripts/loaders/`
+names `tileset_file.py`'s own field and nothing that opens it, and
+`grep -n "A NATIVE .blitmap ANSWERS None" scripts/core/collision_runtime.py`
+is the refusal that says so.
 
 **4. Four `GameEventType` members are not named anywhere in `scripts/` outside
 their own definition.** `POST_DISPOSE`, `PARENT_RESIZED`, `QUIT` and

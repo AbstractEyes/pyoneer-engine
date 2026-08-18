@@ -42,6 +42,13 @@ exactly what erasing collision should mean, and is NOT the same claim as
 "open". Committing is the same `map.tile.set_many`, so a collision stroke
 inherits one-transaction undo and an exact inverse for free.
 
+The mode reaches the PALETTE by the same rule, and that is the one place it
+did not used to. A tile picked in collision mode set a brush the mode cannot
+paint with -- a live control that did nothing -- so it now writes that tile's
+own mask instead, everywhere the tile is ever stamped. Same two-step as a
+cell: pick the mask, then pick what it applies to. See `set_stamp` and
+`bake_tile_mask`.
+
 The companion layer is created by the FIRST stroke that needs it, inside the
 same transaction as the tiles. Three commands land together or none do, and
 one undo takes the layer, its declaration and its tiles back out in reverse.
@@ -129,6 +136,16 @@ _GHOST_Z = 2000
 #: draw no glyph at all -- still shows you where the brush is.
 _MASK_GHOST_FILL = QColor(120, 200, 255, 60)
 _MASK_GHOST_PEN = QColor(120, 200, 255, 140)
+#: The tile palette's marker for "this tile carries its own mask".
+#:
+#: A GLYPH ALONE CANNOT CARRY IT, and that is the whole reason this colour
+#: exists rather than just drawing the overlay's glyph. `PASS_ALL`'s glyph is
+#: deliberately EMPTY -- an open cell is more than half of a map and absence
+#: is the cheapest possible signal -- so a tile baked OPEN would look exactly
+#: like a tile nobody has ever touched. "Open" and "nobody said anything" are
+#: the one distinction level one exists to make, and a palette that cannot
+#: show it is a palette the author cannot use to find their own work.
+_BAKED_PEN = QColor(255, 206, 74)
 
 # COLLISION_TILESET and COMPANION_SUFFIX are imported from
 # `scripts/core/collision_runtime.py` above and re-exported here, because
@@ -1260,6 +1277,152 @@ class MapCanvas(QGraphicsView):
         """The mask a collision stroke writes -- what `stamp` is to tiles."""
         self.mask = int(mask)
 
+    # -- a mask on the TILE, not on the cell -------------------------------
+    #
+    # THE MODE ALREADY MEANT THIS, ONE SURFACE FURTHER OUT. `EditMode
+    # .COLLISION` has always meant "a click writes a mask instead of a tile"
+    # -- that is the sentence at the top of this module -- and until this
+    # section it was true of the CANVAS and false of the palette. In
+    # collision mode a tile pick set `stamp`, a brush that mode cannot paint
+    # with, so the Tiles palette was a live control that did nothing at all.
+    # It now does the only thing a tile can mean beside a mask: give that
+    # TILE this mask, once, for everywhere it is ever stamped.
+    #
+    # So the two-step is the one the author already learned for cells -- pick
+    # the mask in the palette, then pick what it applies to -- with the
+    # tileset palette standing in for the map. No second mask vocabulary, no
+    # second widget, and nothing new to learn except which of the two tabs
+    # the second click lands in.
+    #
+    # WHERE THE ANSWER SHOWS UP, AND WHERE IT DOES NOT.       #TAG:tile_mask_is_level_one
+    # A tile's mask is LEVEL ONE. The single-layer readout draws one
+    # companion's own gids -- level two -- so it cannot show a tile mask and
+    # must not pretend to; the resolved All-layers view is where level one
+    # lives, and `__on_transaction` marks the overlay stale for this
+    # transaction like any other, so the next rebuild re-bakes it. Measured
+    # on the fixture in `tools/check_collision_mount.py`: one palette pick,
+    # and every cell holding that tile changes in the readout, on layers
+    # that have no companion at all. The single-layer case is not silently
+    # wrong -- it says in one line where to look.
+
+    def set_stamp(self, stamp: Stamp) -> None:
+        """A tile picked in the palette. What it MEANS is the mode's answer.
+
+        In TILES mode it is the brush, exactly as it has always been. In
+        COLLISION mode the brush is a MASK, so the tile is the TARGET and the
+        pick writes that mask onto the tile itself.
+
+        The stamp is remembered EITHER WAY, and that is not incidental: a
+        mode switch must not lose the author's tile, and the palette's own
+        highlight does not move back.
+        """
+        self.stamp = stamp
+        if self.mode is EditMode.COLLISION:
+            self.bake_tile_mask(stamp)
+
+    def bake_tile_mask(self, stamp: Stamp | None = None) -> bool:
+        """Give every tile in `stamp` the collision brush's mask, for good.
+
+        ONE TRANSACTION, one `map.tileset.mask.set` per distinct tile, each
+        carrying the exact `map.tileset.mask.restore` the verb hands back --
+        so a rectangle dragged out of the palette is still one Ctrl+Z, and it
+        puts back both the cells and the `pyoneer_collision` declaration a
+        first bake had to add.
+
+        REFUSALS ARE SAID, NEVER GUESSED AROUND (law 7). An empty pick, an
+        atlas that has not loaded, a gid belonging to no tileset this map
+        declares: each ends the gesture with one status line and no command
+        at all, so nothing is half-written. The verb's OWN refusals -- an
+        external tileset whose extent lives in a .tsx, a tileset with no name
+        to derive a sidecar from -- are left to the verb, which states them
+        far better than a second guess here could and reaches the author
+        through `run`'s rejection report. Nothing on this path opens a
+        dialog; a palette click is as routine as a paint stroke.
+
+        A TILESET THAT CARRIES NO MASKS STAYS FREE. This writes the sidecar
+        the first time and declares it in the same transaction, exactly as
+        the first collision stroke provisions `Collision.png` -- and a map
+        nobody has ever baked a tile on declares nothing, opens nothing and
+        costs nothing, which is every map in this repository.
+        """
+        if self.atlas is None:
+            self.status.emit("no tilesets are loaded yet, so there is no "
+                             "tile to give a mask to")
+            return False
+        stamp = self.stamp if stamp is None else stamp
+        mask = self.mask
+        # Distinct, and in the order the palette laid them out: a 2x2 pick of
+        # one repeated tile is ONE mask edit, not four commands writing the
+        # same cell whose inverses would then undo each other in sequence.
+        gids: list[int] = []
+        for gid in stamp.gids:
+            # -1 is `Stamp`'s "leave this cell alone" hole and 0 is the empty
+            # cell. Neither is a tile, so neither can carry a mask.
+            if gid > 0 and gid not in gids:
+                gids.append(gid)
+        if not gids:
+            self.status.emit("pick a tile in the Tiles palette to give it "
+                             "this mask")
+            return False
+
+        map_scope = Scope.of(("map", self.map_name))
+        commands: list[Command] = []
+        for gid in gids:
+            entry = self.atlas.entry_for(gid)
+            if entry is None:
+                self.status.emit(
+                    f"gid {gid} belongs to no tileset this map declares, so "
+                    f"there is nowhere to store its mask — nothing changed")
+                return False
+            commands.append(Command("map.tileset.mask.set", map_scope, {
+                # A name when there is one, the firstgid when there is not:
+                # an external `<tileset source=...>` carries no name in this
+                # file, and `_tileset_key` takes either.
+                "name": entry.name,
+                "first_gid": 0 if entry.name else entry.first_gid,
+                "tile": gid - entry.first_gid,
+                "mask": mask,
+            }))
+
+        what = f"tile {gids[0]}" if len(gids) == 1 else f"{len(gids)} tiles"
+        if not self.window().run(commands,
+                                 label=f"{what} {describe_mask(mask)}"):
+            return False
+        # AFTER run(), which writes its own line to the same status bar. The
+        # author is left looking at what the click did, not at the verb that
+        # did it -- `__commit_collision` makes the same argument.
+        note = ""
+        if self.mode is EditMode.COLLISION and not self.all_layers:
+            note = (" — turn All layers on to see it: this view draws one "
+                    "companion's own cells, and a tile's mask is not one")
+        self.status.emit(
+            f"{what}: {describe_mask(mask)}, everywhere "
+            f"{'it is' if len(gids) == 1 else 'they are'} stamped{note}")
+        return True
+
+    def tile_masks(self) -> dict[int, int]:
+        """gid -> the mask its TILESET carries, for every tile that has one.
+
+        Level one, read through the SAME memo the resolved overlay resolves
+        against -- `__tileset_defaults` -- so the badge the palette draws and
+        the glyph the overlay draws cannot come to disagree. Two reads of one
+        `.blitmask` is how the palette would come to say a tile is baked over
+        a map on which it is not.
+
+        MISSING IS NOT AN ERROR. A tileset that declares no masks contributes
+        none, which is every map in this repository and must stay free; a
+        declaration that cannot be honoured answers an empty mapping here and
+        leaves the shouting to `stack_refusal`, which is already saying it in
+        the status bar and on every mouse move.
+        """
+        found: dict[int, int] = {}
+        defaults, _refusal = self.__tileset_defaults()
+        for tileset in defaults:
+            for local, opinion in enumerate(tileset.opinions):
+                if opinion != NO_DATA:
+                    found[tileset.first_gid + local] = opinion
+        return found
+
     def __detach_overlay(self) -> None:
         if self.__overlay is not None and self.__overlay.scene() is not None:
             self.__overlay.scene().removeItem(self.__overlay)
@@ -2195,6 +2358,14 @@ class TilePalette(QWidget):
         self.atlas: TilesetAtlas | None = None
         self.entry = None
         self.cell = 16
+        #: gid -> the mask its TILESET bakes in, from `MapCanvas.tile_masks`.
+        #: Drawn over the sheet so an author can SEE which tiles are already
+        #: baked. Without it the feature is invisible until you walk into a
+        #: wall: level one is stored in a file beside the .tmx, nothing in
+        #: the map names it per tile, and the only other readout is the
+        #: All-layers overlay, which answers about map cells rather than
+        #: about the tile you are holding.
+        self.masks: dict[int, int] = {}
         self.__anchor: tuple[int, int] | None = None
         self.__current: tuple[int, int] | None = None
 
@@ -2230,6 +2401,30 @@ class TilePalette(QWidget):
                                                 self.chooser.count() - 1)))
         self.chooser.blockSignals(False)
         self.__on_choose(self.chooser.currentIndex())
+
+    def set_masks(self, masks: dict[int, int]) -> None:
+        """Which gids their own tileset already masks. See `masks`.
+
+        DOES NOT REBUILD, and that is the whole point of where it sits. Its
+        one caller is `EditorWindow.refresh_all`, which calls `set_atlas` on
+        the very NEXT line -- and `set_atlas` rebuilds the sheet
+        unconditionally, through `__on_choose`. So this method setting the
+        masks and leaving the repaint to its neighbour is what actually makes
+        the ordering comment there true: the sheet is drawn ONCE, with its
+        badges already on.
+
+        An earlier version rebuilt here behind a `masks == self.masks` memo,
+        justified as saving a repaint on every click of a drag. Measured, it
+        saved nothing: one unrelated tile edit rebuilt the sheet once, five
+        rebuilt it five times, because the unconditional rebuild on the next
+        line was paying regardless. Both halves of that memo were also
+        unasserted -- deleting the rebuild and deleting the comparison each
+        left the suite green. A guard that cannot be observed is not a guard.
+
+        If a second caller ever uses this alone, it must rebuild itself; that
+        is cheaper than a memo nobody can see working.
+        """
+        self.masks = dict(masks)
 
     def __on_choose(self, index: int) -> None:
         if self.atlas is None or not (0 <= index < len(self.atlas.entries)):
@@ -2287,10 +2482,20 @@ class TilePalette(QWidget):
         if not rows or not rows[0]:
             return
         stamp = Stamp.from_rows(rows)
-        self.caption.setText(
-            f"gid {stamp.primary}" if stamp.is_single
-            else f"{stamp.width}×{stamp.height} stamp from gid {stamp.primary}")
         self.stamp_picked.emit(stamp)
+        # CAPTIONED AFTER THE EMIT, deliberately. In collision mode that
+        # signal is what writes the mask, and `refresh_all` hands this widget
+        # the new mapping on its way back -- so captioning first would show
+        # the author the mask their own click had just replaced.
+        self.caption.setText(self.describe(stamp))
+
+    def describe(self, stamp: Stamp) -> str:
+        """The caption for a pick: what it is, and what it already carries."""
+        head = (f"gid {stamp.primary}" if stamp.is_single
+                else f"{stamp.width}×{stamp.height} stamp from gid "
+                     f"{stamp.primary}")
+        mask = self.masks.get(stamp.primary)
+        return head if mask is None else f"{head}  ·  {describe_mask(mask)}"
 
     def selection_rect(self) -> tuple[int, int, int, int] | None:
         if self.__anchor is None or self.__current is None:
@@ -2310,7 +2515,7 @@ class TilePalette(QWidget):
                 offset = gid - entry.first_gid
                 self.__anchor = self.__current = (offset % entry.columns,
                                                   offset // entry.columns)
-                self.caption.setText(f"gid {gid}")
+                self.caption.setText(self.describe(Stamp.single(gid)))
                 self.surface.update()
                 return
 
@@ -2335,6 +2540,12 @@ class _PaletteSurface(QWidget):
         pixmap = QPixmap(self.palette.columns * cell, self.palette.rows * cell)
         pixmap.fill(QColor(20, 20, 24))
         painter = QPainter(pixmap)
+        masks = self.palette.masks
+        # The overlay's OWN glyphs, at this palette's cell size. A second
+        # drawing of "blocks left and right" is a second thing to keep in
+        # step with the mask palette and the readout, and the author would
+        # meet the drift as two pictures of one mask.
+        glyphs = glyph_pixmaps(cell, cell) if masks else {}
         for index in range(entry.tile_count):
             gid = entry.first_gid + index
             x = (index % self.palette.columns) * cell
@@ -2344,6 +2555,16 @@ class _PaletteSurface(QWidget):
                 painter.drawPixmap(x, y, tile)
             else:
                 painter.fillRect(x, y, cell, cell, gid_colour(gid))
+            mask = masks.get(gid)
+            if mask is None:
+                continue
+            glyph = glyphs.get(mask)
+            if glyph is not None:
+                painter.drawPixmap(x, y, glyph)
+            # And the frame, whatever the glyph drew -- see `_BAKED_PEN`.
+            painter.setPen(QPen(_BAKED_PEN, 1))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(x, y, cell - 1, cell - 1)
         painter.end()
         self.__pixmap = pixmap
         self.resize(pixmap.size())

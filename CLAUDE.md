@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L0 -->
-<!-- pyoneer-stamp: hand-written; every claim below re-measured against d8c303f on 2026-08-16 -->
+<!-- pyoneer-stamp: hand-written; every claim below re-measured against d8c303f on 2026-08-16, EXCEPT the last ACTIVE WARNINGS entry and the `.blitmap` collision gap, measured on 2026-08-18 by the greps they name. The tile-mask click was absent at 8915ee0 and landed mid-pass; that is why it is in `Landed recently` and not in the gap list -->
 
 # Pyoneer — read this first
 
@@ -296,6 +296,34 @@ of repetition.
   not know they existed and the next agent's `check_docs` run would have been
   red for someone else's change. Counter-move: it is one command, it belongs in
   the same change as the rename, and it names the first differing line.
+- **You will ship your own layer and leave the wire to whoever owns the next
+  file.** The move that looks responsible is to land the engine read, the
+  model, the verb and the check, then stop at the file a sibling agent is
+  holding: the seam is one line, you wrote it down in the handoff, and not
+  causing an edit conflict is good manners. Three sightings. Sub-cell collision
+  landed in the engine at `b438c85` and a click could not address a sub-cell
+  until the very next commit, `62c5677`. The editor's Database window has
+  authored `data/project/tables/` since `2ddee3d` (2026-08-08) and no
+  `scripts/` reader existed until `6794bde` (2026-08-18), so for ten days
+  seventeen `source="actors"` parameters looked authored and were silently the
+  declared default. And tile masks took FOUR passes to reach a click: the
+  engine read at `6794bde`, then the overlay and a working
+  `map.tileset.mask.set` at `8915ee0` -- where
+  `grep -rn "map.tileset.mask" editor/ui/` still returned nothing, so the one
+  thing the author had asked for could not be done -- and only the pass after
+  that wired `Canvas.bake_tile_mask`. Note that the middle sighting runs the
+  other way round: this is not "the editor lags the engine", it is that NOBODY
+  owns a seam, so each pass ships a layer that is complete, checked, and
+  unreachable by the person who asked for it.
+  Counter-move: before you call a pass done, grep for a caller from the layer
+  ABOVE the thing you just built -- zero hits means the capability exists and
+  the author cannot get at it. When the file really is held, the unwired seam
+  goes into [`docs/NEXT.md`](docs/NEXT.md) as an entry carrying that grep as
+  its command, not into a commit message nobody greps. And run the grep again
+  before you write the entry: this one was written naming the tile-mask click
+  as missing, and re-measuring one minute later found `bake_tile_mask` landed
+  in a sibling's working tree. A gap you did not re-measure is a gap you are
+  about to file twice.
 
 ## Known gaps — fill on sight
 
@@ -317,6 +345,16 @@ Each address below is a tag, so it stays true when the code moves.
 - **No `needs_art` flag on the check roster.** `docs/ASSETS.md` names seven
   art-dependent checks measured against an older, smaller roster; nothing
   re-measures it.
+- **A native `.blitmap` gets no collision at all.** `field_from_map` returns
+  None for any source answering its own `object_records`, so every body on a
+  native map is ungated -- stated in its own docstring as the true answer, and
+  it was, while the format carried no mask declaration to read. It carries one
+  now: `#TAG:declared_collision` lifts a tmx `<tileset>`'s `pyoneer_collision`
+  into `TilesetFile.collision`, so a converted map's `.tileset` says
+  `collision <ref>` on its own line and nothing opens it. Level one is the only
+  level the native path could serve today -- there are no companion layers in a
+  `.blitmap` either. Measured: `grep -rn "collision" scripts/loaders/` names
+  `tileset_file.py`'s own field and nothing that opens it.
 - **~~No genre-pack default behavior list~~ — paid off.** `GenreLayer` now
   carries `object_classes`, both packs declare a real list for `GamePlayer` on
   their entity layer, and `map.object.add` MATERIALISES it into
@@ -364,8 +402,10 @@ Each address below is a tag, so it stays true when the code moves.
   suite; [`docs/CHECKS.md`](docs/CHECKS.md) is the index for that half of the
   tree, and it is generated too.
 - **Landed recently, so verify before trusting a doc that says otherwise:** an
-  action router assigned as `entity.action_sink`, `LayerRenderer.unbind`, and an
-  editor behavior panel. Three of this list's entries died in one afternoon.
+  action router assigned as `entity.action_sink`, `LayerRenderer.unbind`, an
+  editor behavior panel, and `Canvas.bake_tile_mask` -- the palette click that
+  finally calls `map.tileset.mask.set`. Four of this list's entries died in
+  one afternoon; the last one died DURING the pass that was writing it down.
   **Re-measure this section; do not cite it.**
 
 ## TODO-VERIFY
