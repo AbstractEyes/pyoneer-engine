@@ -1,80 +1,52 @@
 """The engine's one host for `entity.action_sink`, and it CALLS.
 
-WHAT THIS MOUNTS
-----------------
 `action_relay` reads an entity's action record and calls
-`entity.action_sink(entity, fired)`. That behavior has shipped complete,
-checked and documented, and `git grep action_sink` across `scripts/`,
-`main.py`, `demos/`, `config/` and `editor/` returned eight hits, every one of
-them inside `action.py` itself -- prose, or the `getattr` that reads it.
-Nothing has ever assigned one, which is why its registry status was
-`needs-host`. `SceneManager` assigns THIS, on both binding routes, and that is
-the whole change: the runtime end of the `use` trigger kind, of GUI window
-flow, and of scene-driven action flow, all at once.
+`entity.action_sink(entity, fired)`. `SceneManager` assigns one of these on
+both binding routes, so an entity carrying that token reaches a real sink with
+no game code -- which is the runtime end of the `use` trigger kind, of GUI
+window flow, and of scene-driven action flow.
 
-WHY THIS IS NOT AN EVENT TYPE, AND CANNOT BECOME ONE BY ACCIDENT
-----------------------------------------------------------------
-It is a plain callable. It constructs no `PyoneerEvent`, calls no `handle()`,
-binds no listener and imports no event module -- `tools/check_flow.py` proves
-all four from this module's PARSE TREE, and proves the scan can find a bus
-call when one is there, because a scan with a wrong name list looks exactly
-like a clean pass.
+NOT AN EVENT TYPE, AND IT CANNOT BECOME ONE BY ACCIDENT
+-------------------------------------------------------
+A plain callable: it constructs no `PyoneerEvent`, calls no `handle()`, binds
+no listener and imports no event module. `tools/check_flow.py` proves all four
+from this module's PARSE TREE.
 
-The reason is the asymmetry in `GameScene` that `action.py` already documents:
-`core_frame_update` builds a fresh event per bound object, while
-`core_input_receive` hands every bound object -- including the entire UI tree,
-since `bind()` accepts a `GameComponent` -- THE SAME event. Consumption in
-this engine is not type-gated, so one `handle()` reached from an entity on the
-input path silences every sibling for the rest of that pyo-event. A router
-that can never reach the bus can never do that, and this one is reached from
-`action_relay.update` at order 90, on the frame path, where the event object
-is already per-object.
+`GameScene.core_input_receive` hands every bound object -- including the whole
+UI tree, since `bind()` accepts a `GameComponent` -- THE SAME event, and
+consumption is not type-gated, so one `handle()` reached from an entity there
+silences every sibling for the rest of that pyo-event. This router is reached
+instead from `action_relay.update` at order 90, on the frame path, where the
+event object is already per-object. The payoff: N handlers may read one firing
+and none can stop the others, so a dialogue box, a quest log and an
+achievement counter can all want the same `interact_action`.
 
-What that buys is the property the bus cannot give here: N handlers may read
-one firing and none of them can stop the others. A dialogue box, a quest log
-and an achievement counter all want the same `interact_action`, and on a bus
-the first one to consume it wins.
-
-THE ROUTING KEY IS THE AUTHORED VOCABULARY, NOT A NEW ONE
-----------------------------------------------------------
+THE ROUTING KEY IS THE AUTHORED VOCABULARY
+------------------------------------------
 A route is keyed by `(token, payload)`:
 
     token     `ActionFired.name` -- the BEHAVIOR TOKEN (`interact_action`),
               which is what a tmx object's `pyoneer_behaviors` list spells
     payload   `ActionFired.payload` -- the opaque key from
-              `pyoneer_param_payload`, which is the same word, the same
-              meaning and the same "deliberately not interpreted" contract as
-              `pyoneer_payload` on a map trigger
-              (`editor/core/map_events.py`)
+              `pyoneer_param_payload`, carrying the same "not interpreted"
+              contract as `pyoneer_payload` on a map trigger
 
-Most specific first, the same shape as `resolve_depth` and as behavior
-parameter resolution:
+Most specific first, the same shape as `resolve_depth`:
 
     1. a route registered for exactly this (token, payload)
     2. a route registered for the token with payload ""  -- "any payload"
     3. nothing, and the firing is dropped in silence
 
-Silence is correct for step 3 and is not a swallow: `action_relay` hands over
-every firing the entity produced, and a game that routes `interact_action` has
-not thereby promised to care about `attack_action`. What is NOT silent is a
-malformed ROUTE -- an empty token or a non-callable handler raises at
-`route()`, at wiring time, where the caller is.
+Step 3 is not a swallow: `action_relay` hands over every firing an entity
+produced, and routing `interact_action` is no promise to care about
+`attack_action`. A malformed ROUTE is not silent -- an empty token or a
+non-callable handler raises at `route()`, at wiring time.
 
-WHAT THIS DELIBERATELY DOES NOT DO
------------------------------------
-  * **No `args`.** `editor/core/map_events.py` declares `pyoneer_args` with a
-    round-trip-checked `parse_args`/`format_args` pair, and `scripts/` may
-    never import `editor/`. Re-spelling those two functions here would be the
-    second implementation of one vocabulary across the fence a previous pass
-    already broke. When that module moves to
-    `scripts/core/trigger_profile.py`, this file gains argument routing by
-    calling its parser and by nothing else.
-  * **No filtering by class or tags.** `MapEvent.accepts` is the trigger side's
-    job and needs `entity.tags` / `entity.type_name`, neither of which exists
-    yet. A handler that cares reads the entity it was handed.
-  * **No clock and no fired-set.** `cooldown_ms` and `once` are already owned
-    by the action behavior, per action, and a second copy here would be two
-    clocks disagreeing about the same authored number.
+There is no `args` routing (`parse_args` lives in
+`editor/core/map_events.py`, which `scripts/` may never import), no filtering
+by class or tag (a handler reads the entity it was handed), and no clock:
+`cooldown_ms` and `once` belong to the action behavior, and a second copy
+would be two clocks disagreeing about one authored number.
 """
 from __future__ import annotations
 
@@ -95,14 +67,12 @@ which is the common case and costs no branch.
 class ActionRouter:
     """Token -> handler, and the `entity.action_sink` callable itself.
 
-    One object plays both parts on purpose. A separate "sink adapter" would be
-    a second thing to wire and a second place for a game to get the wiring
-    wrong, and there is nothing for it to do that `__call__` does not.
+    One object plays both parts: `__call__` IS the sink, so there is nothing
+    extra to wire.
 
     Handlers take `(entity, fired)` -- the same two arguments `action_relay`
-    passes -- so a method on a scene, a flow, a quest log or a bound function
-    is a handler with no adapter. `SceneFlow.on_action` is exactly that shape
-    and exists for exactly this reason.
+    passes -- so a method on a scene, a flow or a quest log is a handler with
+    no adapter. `SceneFlow.on_action` is that shape.
     """
 
     __slots__ = ("_routes",)
@@ -120,10 +90,8 @@ class ActionRouter:
         one direction.
 
         Registering the same (token, payload) twice ADDS a second handler
-        rather than replacing the first: the property this router exists for
-        is that N consumers may read one firing. A caller that wants
-        replacement calls `clear` first, which is one visible line rather than
-        a silent overwrite.
+        rather than replacing the first, because N consumers may read one
+        firing. A caller that wants replacement calls `clear` first.
         """
         if not isinstance(token, str) or not token:
             raise PyoneerConfigError(
@@ -150,9 +118,8 @@ class ActionRouter:
               payload: str = ANY_PAYLOAD) -> int:
         """Forget routes. Returns how many handlers were dropped.
 
-        `clear()` with no arguments forgets everything -- which is what a
-        scene teardown wants, and is the only reason this takes an optional
-        token rather than requiring one.
+        `clear()` with no arguments forgets everything, which is what a scene
+        teardown wants.
         """
         if token is None:
             dropped = sum(len(v) for v in self._routes.values())
@@ -164,10 +131,8 @@ class ActionRouter:
     def routes(self) -> Tuple[Tuple[str, str, int], ...]:
         """(token, payload, handler count) for every route. SORTED.
 
-        Sorted rather than in registration order, for the reason
-        `ActionIntent.fired_names` is: two scenes wired the same way must
-        report themselves the same way regardless of the sequence the wiring
-        happened to run in.
+        Sorted rather than in registration order, so two scenes wired the same
+        way report themselves the same way.
         """
         return tuple(sorted((token, payload, len(handlers))
                             for (token, payload), handlers
@@ -188,12 +153,10 @@ class ActionRouter:
                      payload: str = ANY_PAYLOAD) -> Tuple[Callable[[Any, Any], Any], ...]:
         """Which handlers a firing of (token, payload) would reach.
 
-        The resolution rule in one place, so `__call__` and any caller asking
-        "would this be routed?" cannot answer differently. A SNAPSHOT: a
-        handler that routes or clears from inside its own call must not mutate
-        the list the dispatch loop is walking, which is the same hazard
-        `EntityBehaviors.update` snapshots against and the same one that makes
-        an entity unbinding itself skip its neighbour.
+        The resolution rule in one place, so `__call__` and a caller asking
+        "would this be routed?" cannot answer differently. Returns a SNAPSHOT,
+        so a handler that routes or clears from inside its own call does not
+        mutate the list the dispatch loop is walking.
         """
         if payload:
             exact = self._routes.get((token, payload))
@@ -204,12 +167,9 @@ class ActionRouter:
     def __call__(self, entity: Any, fired: Any) -> int:
         """The `action_sink` itself. Returns how many handlers ran.
 
-        Duck-typed on `fired`, deliberately: `ActionFired` is a frozen
-        dataclass in `scripts.game.behavior.action`, and importing it here
-        would drag the behavior package into `scripts/core/scene/`'s import of
-        this module for a type annotation that adds nothing. `getattr` with a
-        default also means a game that hands its own record-shaped object to a
-        route is not refused by the transport.
+        Duck-typed on `fired`: importing `ActionFired` would drag the behavior
+        package into `scripts/core/scene/`'s import of this module, and the
+        `getattr` reads also let a game route its own record-shaped object.
         """
         token = getattr(fired, "name", "")
         if not token:

@@ -18,10 +18,9 @@ Thirteen of the sixteen masks have art. The other three:
     1001   terrain on TL+BR only \\  the two diagonals. No RPG Maker sheet
     0110   terrain on TR+BL only /   draws these; see `Diagonal`.
 
-An orthogonal 16-value bitmask (N/E/S/W) was the obvious alternative and is
-wrong here: it cannot address the four concave/inner corner quadrants the
-block ships, so every inside corner and T-junction would render with a hard
-seam -- the exact defect the feature exists to remove.
+Corners rather than an orthogonal N/E/S/W bitmask, which cannot address the
+four concave quadrants the block ships: every inside corner and T-junction
+would render with a hard seam.
 
 A TERRAIN IS ONE INTEGER
 ------------------------

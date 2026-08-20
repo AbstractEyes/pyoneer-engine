@@ -3,9 +3,9 @@
 
 # `scripts/game/entity/game_player.py` — tier 2 #TAG:scripts/game/entity/game_player.py
 
-> The controllable entity -- which is now the same class as an uncontrolled one.
+> The controllable entity -- the same class as an uncontrolled one.
 
-`scripts.game.entity.game_player` · 231 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.entity.game_player` · 130 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,13 +15,13 @@
 
 ### `class GamePlayer(GameAnimatedEntity)` #TAG:GamePlayer
 
-`scripts/game/entity/game_player.py:113`–`230`
+`scripts/game/entity/game_player.py:52`–`129`
 
-- `scripts/game/entity/game_player.py:115` `core_input_receive(self, events: list[pygame.event.Event] | pygame.event.Event)` #TAG:GamePlayer.core_input_receive
-  - Nothing, and that is the honest state rather than a missing feature.
-- `scripts/game/entity/game_player.py:132` `__init__(self, input_: InputActionManager=None, movement_config=None, world_transform=Transform(), animation_config: DataAnimationCategory | None=None, behaviors: str | Mapping[str, Any] | None=None)` #TAG:GamePlayer.__init__
-  - `behaviors` is the same declaration a `<object>` carries, or None.
-- `scripts/game/entity/game_player.py:188` `core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:GamePlayer.core_lifecycle_build
-- `scripts/game/entity/game_player.py:195` `input_move(self, event: Optional[PyoneerEvent]=None)` #TAG:GamePlayer.input_move
+- `scripts/game/entity/game_player.py:54` `core_input_receive(self, events: list[pygame.event.Event] | pygame.event.Event)` #TAG:GamePlayer.core_input_receive
+  - Do nothing. Movement is polled, not event-driven.
+- `scripts/game/entity/game_player.py:65` `__init__(self, input_: InputActionManager=None, movement_config=None, world_transform=Transform(), animation_config: DataAnimationCategory | None=None, behaviors: str | Mapping[str, Any] | None=None)` #TAG:GamePlayer.__init__
+  - `behaviors` is the same declaration an `<object>` carries, or None.
+- `scripts/game/entity/game_player.py:103` `core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:GamePlayer.core_lifecycle_build
+- `scripts/game/entity/game_player.py:106` `input_move(self, event: Optional[PyoneerEvent]=None)` #TAG:GamePlayer.input_move
   - Advance this player's composed behaviors by exactly one frame.
-- `scripts/game/entity/game_player.py:214` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:GamePlayer.core_frame_update
+- `scripts/game/entity/game_player.py:119` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:GamePlayer.core_frame_update

@@ -127,10 +127,9 @@ expect("removing the consuming route restores delivery", len(motion_hits), 1)
 print()
 print("resize actually reconfigures the engine")
 # Wrap the engine's own route rather than replacing it, so the resize is
-# PROVED to have been delivered. Without this the section could report ok on
-# a run where no WINDOWRESIZED ever reached the route -- which is what the
-# previous "20 further frames run clean" line did: it caught an exception and
-# nothing else, so it printed ok whether or not the resize happened.
+# PROVED to have been delivered. Without this the section reports ok on a run
+# where no WINDOWRESIZED ever reached the route: catching no exception is not
+# the same as the resize having happened.
 resize_seen = []
 engine_route = game.scene.routes[GameEventType.WINDOW_RESIZE]
 

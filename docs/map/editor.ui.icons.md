@@ -5,39 +5,39 @@
 
 > Tool icons, drawn in code.
 
-`editor.ui.icons` · 250 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.icons` · 248 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
-- `editor/ui/icons.py:40` `BRUSH_WOOD` #TAG:BRUSH_WOOD
-- `editor/ui/icons.py:41` `BRUSH_TIP` #TAG:BRUSH_TIP
-- `editor/ui/icons.py:42` `SHAPE` #TAG:SHAPE
-- `editor/ui/icons.py:43` `BUCKET` #TAG:BUCKET
-- `editor/ui/icons.py:44` `BUCKET_DROP` #TAG:BUCKET_DROP
-- `editor/ui/icons.py:45` `ERASER` #TAG:ERASER
-- `editor/ui/icons.py:46` `PICKER` #TAG:PICKER
-- `editor/ui/icons.py:47` `TERRAIN` #TAG:TERRAIN
-- `editor/ui/icons.py:48` `TERRAIN_DIM` #TAG:TERRAIN_DIM
+- `editor/ui/icons.py:38` `BRUSH_WOOD` #TAG:BRUSH_WOOD
+- `editor/ui/icons.py:39` `BRUSH_TIP` #TAG:BRUSH_TIP
+- `editor/ui/icons.py:40` `SHAPE` #TAG:SHAPE
+- `editor/ui/icons.py:41` `BUCKET` #TAG:BUCKET
+- `editor/ui/icons.py:42` `BUCKET_DROP` #TAG:BUCKET_DROP
+- `editor/ui/icons.py:43` `ERASER` #TAG:ERASER
+- `editor/ui/icons.py:44` `PICKER` #TAG:PICKER
+- `editor/ui/icons.py:45` `TERRAIN` #TAG:TERRAIN
+- `editor/ui/icons.py:46` `TERRAIN_DIM` #TAG:TERRAIN_DIM
 
 ## Functions
 
-- `editor/ui/icons.py:51` `_ink() -> QColor` #TAG:_ink
+- `editor/ui/icons.py:49` `_ink() -> QColor` #TAG:_ink
   - The outline colour: whatever this theme uses for button text, at
-- `editor/ui/icons.py:66` `tool_icon(name: str, size: int=22) -> QIcon` #TAG:tool_icon
+- `editor/ui/icons.py:64` `tool_icon(name: str, size: int=22) -> QIcon` #TAG:tool_icon
   - A cached icon by tool name. Unknown names get a neutral square.
-- `editor/ui/icons.py:75` `clear_cache() -> None` #TAG:icons.clear_cache
+- `editor/ui/icons.py:73` `clear_cache() -> None` #TAG:icons.clear_cache
   - Drop cached icons, e.g. after a palette change.
-- `editor/ui/icons.py:80` `_build(name: str, size: int, ink: QColor) -> QIcon` #TAG:icons._build
-- `editor/ui/icons.py:90` `_pen(width: float, colour: QColor) -> QPen` #TAG:_pen
-- `editor/ui/icons.py:102` `_draw_brush(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_brush
-- `editor/ui/icons.py:117` `_draw_rectangle(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_rectangle
-- `editor/ui/icons.py:124` `_draw_filled_rect(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_filled_rect
-- `editor/ui/icons.py:131` `_draw_fill(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_fill
+- `editor/ui/icons.py:78` `_build(name: str, size: int, ink: QColor) -> QIcon` #TAG:icons._build
+- `editor/ui/icons.py:88` `_pen(width: float, colour: QColor) -> QPen` #TAG:_pen
+- `editor/ui/icons.py:100` `_draw_brush(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_brush
+- `editor/ui/icons.py:115` `_draw_rectangle(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_rectangle
+- `editor/ui/icons.py:122` `_draw_filled_rect(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_filled_rect
+- `editor/ui/icons.py:129` `_draw_fill(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_fill
   - A tipped bucket pouring, with a handle -- the flood-fill glyph.
-- `editor/ui/icons.py:177` `_draw_eraser(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_eraser
-- `editor/ui/icons.py:192` `_draw_picker(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_picker
+- `editor/ui/icons.py:175` `_draw_eraser(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_eraser
+- `editor/ui/icons.py:190` `_draw_picker(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_picker
   - An eyedropper.
-- `editor/ui/icons.py:211` `_draw_autotile(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_autotile
+- `editor/ui/icons.py:209` `_draw_autotile(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_autotile
   - Four quadrants with one corner missing -- the corner-set idea itself.
-- `editor/ui/icons.py:229` `_draw_unknown(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_unknown
-- `editor/ui/icons.py:248` `available() -> list[str]` #TAG:icons.available
+- `editor/ui/icons.py:227` `_draw_unknown(painter: QPainter, size: int, ink: QColor) -> None` #TAG:_draw_unknown
+- `editor/ui/icons.py:246` `available() -> list[str]` #TAG:icons.available

@@ -5,22 +5,22 @@
 
 > Edge anchoring: how a child reacts when its parent resizes.
 
-`scripts.core.ui.anchor` · 114 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.anchor` · 98 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
-- `scripts/core/ui/anchor.py:77` `DEFAULT_ANCHOR` #TAG:DEFAULT_ANCHOR
+- `scripts/core/ui/anchor.py:60` `DEFAULT_ANCHOR` #TAG:DEFAULT_ANCHOR
 
 ## Functions
 
-- `scripts/core/ui/anchor.py:80` `reflow(local_bounds: Rect, anchor: Anchor, delta_width: int, delta_height: int, minimum: tuple[int, int]=(1, 1)) -> Rect` #TAG:reflow
+- `scripts/core/ui/anchor.py:63` `reflow(local_bounds: Rect, anchor: Anchor, delta_width: int, delta_height: int, minimum: tuple[int, int]=(1, 1)) -> Rect` #TAG:reflow
   - A child's new local rect after its parent changed size.
 
 ## Classes
 
 ### `class Anchor(IntFlag)` #TAG:Anchor
 
-`scripts/core/ui/anchor.py:54`–`74`
+`scripts/core/ui/anchor.py:37`–`57`
 
 > Which parent edges a child keeps its distance to.
 

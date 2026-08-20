@@ -1,10 +1,4 @@
-"""Per-channel debug tracing.
-
-The engine used to trace with bare `print()`. That has two problems: it is
-all-or-nothing (you get every mouse motion across every component or you get
-nothing), and turning it off means editing source.
-
-This gives the same visibility on a switch, per subsystem:
+"""Per-channel debug tracing, switchable per subsystem:
 
     PYONEER_DEBUG=mouse python main.py
     PYONEER_DEBUG=mouse,events python main.py

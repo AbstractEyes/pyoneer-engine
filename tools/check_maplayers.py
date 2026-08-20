@@ -323,12 +323,12 @@ expect("partial onto partial still loses pixels",
 
 print()
 print("invalidate() re-rasterizes sources, so a content edit reaches the screen")
-# The live-edit spine: MapDocument writes tiles, load_assets(reload=True) reparses,
-# then the renderer has to actually re-rasterize. An earlier version skipped the
-# rebake on the invalidate() path to avoid a boot-time double-rasterization,
-# which left the BROADEST call doing less than a band call -- a tile edit then
-# rendered stale pixels with no error. Assert the rebake happens rather than
-# re-testing it through a real file edit, which is slow and touches the map.
+# The live-edit spine: MapDocument writes tiles, load_assets(reload=True)
+# reparses, then the renderer has to actually re-rasterize. Skipping the rebake
+# on the invalidate() path -- to avoid a boot-time double-rasterization -- would
+# leave the BROADEST call doing less than a band call, and a tile edit would
+# render stale pixels with no error. Asserted directly rather than through a
+# real file edit, which is slow and touches the map.
 import main as main_module
 
 game = main_module.MainGame(autostart=False)

@@ -5,7 +5,7 @@
 
 > Read `data/project/tables/*.json` -- the engine side of the Database.
 
-`scripts.loaders.table_file` · 359 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.loaders.table_file` · 323 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,47 +13,47 @@
 
 ## Module constants
 
-- `scripts/loaders/table_file.py:80` `TABLES_DIR` #TAG:table_file.TABLES_DIR
-- `scripts/loaders/table_file.py:88` `ACTORS` #TAG:ACTORS
-- `scripts/loaders/table_file.py:183` `EMPTY` #TAG:table_file.EMPTY
+- `scripts/loaders/table_file.py:62` `TABLES_DIR` #TAG:table_file.TABLES_DIR
+- `scripts/loaders/table_file.py:69` `ACTORS` #TAG:ACTORS
+- `scripts/loaders/table_file.py:161` `EMPTY` #TAG:table_file.EMPTY
 
 ## Functions
 
-- `scripts/loaders/table_file.py:101` `default_tables_dir() -> str` #TAG:default_tables_dir
+- `scripts/loaders/table_file.py:81` `default_tables_dir() -> str` #TAG:default_tables_dir
   - `data/project/tables` under the repo root, absolute.
-- `scripts/loaders/table_file.py:198` `_bad(path: str, message: str, **context: Any) -> PyoneerConfigError` #TAG:_bad
-- `scripts/loaders/table_file.py:203` `load_table(path: str) -> ProjectTable` #TAG:load_table
+- `scripts/loaders/table_file.py:174` `_bad(path: str, message: str, **context: Any) -> PyoneerConfigError` #TAG:_bad
+- `scripts/loaders/table_file.py:179` `load_table(path: str) -> ProjectTable` #TAG:load_table
   - Read one table file, or raise saying which file and what is wrong.
-- `scripts/loaders/table_file.py:270` `load_tables(directory: str | None=None) -> ProjectTables` #TAG:load_tables
+- `scripts/loaders/table_file.py:243` `load_tables(directory: str | None=None) -> ProjectTables` #TAG:load_tables
   - Every `*.json` in a tables directory. A missing directory is empty.
-- `scripts/loaders/table_file.py:298` `row_id(value: Any, where: str='') -> str` #TAG:row_id
+- `scripts/loaders/table_file.py:269` `row_id(value: Any, where: str='') -> str` #TAG:row_id
   - `pyoneer_actor`'s value as a row id, or raise saying why it is not one.
-- `scripts/loaders/table_file.py:321` `actor_row(tables: ProjectTables | None, properties: Mapping[str, Any] | None, where: str='') -> Mapping[str, Any] | None` #TAG:actor_row
+- `scripts/loaders/table_file.py:290` `actor_row(tables: ProjectTables | None, properties: Mapping[str, Any] | None, where: str='') -> Mapping[str, Any] | None` #TAG:actor_row
   - The actors row a tmx object names, or None when it names none.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class ProjectTable` #TAG:ProjectTable
 
-`scripts/loaders/table_file.py:116`–`149`
+`scripts/loaders/table_file.py:95`–`127`
 
 > One `data/project/tables/<name>.json`, read.
 
-- `scripts/loaders/table_file.py:130` `has(self, row_id: str) -> bool` #TAG:ProjectTable.has
-- `scripts/loaders/table_file.py:133` `row(self, row_id: str, where: str='') -> Mapping[str, Any]` #TAG:ProjectTable.row
+- `scripts/loaders/table_file.py:108` `has(self, row_id: str) -> bool` #TAG:ProjectTable.has
+- `scripts/loaders/table_file.py:111` `row(self, row_id: str, where: str='') -> Mapping[str, Any]` #TAG:ProjectTable.row
   - One row, or raise naming the row, the table and the asker.
-- `scripts/loaders/table_file.py:148` `__len__(self) -> int` #TAG:ProjectTable.__len__
+- `scripts/loaders/table_file.py:126` `__len__(self) -> int` #TAG:ProjectTable.__len__
 
 ### `@dataclass(frozen=True) class ProjectTables` #TAG:ProjectTables
 
-`scripts/loaders/table_file.py:153`–`180`
+`scripts/loaders/table_file.py:131`–`158`
 
 > Every table in one `tables/` directory. Possibly none of them.
 
-- `scripts/loaders/table_file.py:159` `__contains__(self, name: str) -> bool` #TAG:ProjectTables.__contains__
-- `scripts/loaders/table_file.py:162` `__iter__(self) -> Iterator[str]` #TAG:ProjectTables.__iter__
-- `scripts/loaders/table_file.py:165` `__len__(self) -> int` #TAG:ProjectTables.__len__
-- `scripts/loaders/table_file.py:168` `names(self) -> list[str]` #TAG:ProjectTables.names
-- `scripts/loaders/table_file.py:171` `table(self, name: str, where: str='') -> ProjectTable` #TAG:ProjectTables.table
-- `scripts/loaders/table_file.py:178` `row(self, table: str, row_id: str, where: str='') -> Mapping[str, Any]` #TAG:ProjectTables.row
+- `scripts/loaders/table_file.py:137` `__contains__(self, name: str) -> bool` #TAG:ProjectTables.__contains__
+- `scripts/loaders/table_file.py:140` `__iter__(self) -> Iterator[str]` #TAG:ProjectTables.__iter__
+- `scripts/loaders/table_file.py:143` `__len__(self) -> int` #TAG:ProjectTables.__len__
+- `scripts/loaders/table_file.py:146` `names(self) -> list[str]` #TAG:ProjectTables.names
+- `scripts/loaders/table_file.py:149` `table(self, name: str, where: str='') -> ProjectTable` #TAG:ProjectTables.table
+- `scripts/loaders/table_file.py:156` `row(self, table: str, row_id: str, where: str='') -> Mapping[str, Any]` #TAG:ProjectTables.row
   - A row from a named table. Raises if either half is absent.

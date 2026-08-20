@@ -5,7 +5,7 @@
 
 > What a body IS right now: the shared state record every behavior reads.
 
-`scripts.game.behavior.state` · 532 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.behavior.state` · 414 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,60 +13,60 @@
 
 ## Module constants
 
-- `scripts/game/behavior/state.py:109` `PHASE_IDLE` #TAG:PHASE_IDLE
-- `scripts/game/behavior/state.py:112` `PHASE_MOVING` #TAG:PHASE_MOVING
-- `scripts/game/behavior/state.py:115` `PHASES` #TAG:PHASES
-- `scripts/game/behavior/state.py:125` `SUPPORT_GROUNDED` #TAG:SUPPORT_GROUNDED
-- `scripts/game/behavior/state.py:128` `SUPPORT_AIRBORNE` #TAG:SUPPORT_AIRBORNE
-- `scripts/game/behavior/state.py:131` `SUPPORTS` #TAG:SUPPORTS
-- `scripts/game/behavior/state.py:141` `LIFE_ALIVE` #TAG:LIFE_ALIVE
-- `scripts/game/behavior/state.py:144` `LIFE_GONE` #TAG:LIFE_GONE
-- `scripts/game/behavior/state.py:160` `LIVES` #TAG:LIVES
-- `scripts/game/behavior/state.py:171` `FACING_DEFAULT` #TAG:FACING_DEFAULT
+- `scripts/game/behavior/state.py:58` `PHASE_IDLE` #TAG:PHASE_IDLE
+- `scripts/game/behavior/state.py:61` `PHASE_MOVING` #TAG:PHASE_MOVING
+- `scripts/game/behavior/state.py:64` `PHASES` #TAG:PHASES
+- `scripts/game/behavior/state.py:71` `SUPPORT_GROUNDED` #TAG:SUPPORT_GROUNDED
+- `scripts/game/behavior/state.py:74` `SUPPORT_AIRBORNE` #TAG:SUPPORT_AIRBORNE
+- `scripts/game/behavior/state.py:77` `SUPPORTS` #TAG:SUPPORTS
+- `scripts/game/behavior/state.py:85` `LIFE_ALIVE` #TAG:LIFE_ALIVE
+- `scripts/game/behavior/state.py:88` `LIFE_GONE` #TAG:LIFE_GONE
+- `scripts/game/behavior/state.py:102` `LIVES` #TAG:LIVES
+- `scripts/game/behavior/state.py:110` `FACING_DEFAULT` #TAG:FACING_DEFAULT
 
 ## Functions
 
-- `scripts/game/behavior/state.py:497` `state_of(entity: Any) -> Optional[BodyState]` #TAG:state_of
+- `scripts/game/behavior/state.py:385` `state_of(entity: Any) -> Optional[BodyState]` #TAG:state_of
   - The entity's own `BodyState`, or None when it carries none.
-- `scripts/game/behavior/state.py:512` `ensure_state(entity: Any) -> BodyState` #TAG:ensure_state
+- `scripts/game/behavior/state.py:396` `ensure_state(entity: Any) -> BodyState` #TAG:ensure_state
   - The entity's `BodyState`, allocating one if it has none.
 
 ## Classes
 
 ### `class BodyState` #TAG:BodyState
 
-`scripts/game/behavior/state.py:189`–`494`
+`scripts/game/behavior/state.py:121`–`382`
 
 > The per-entity record of what a body currently IS.
 
-- `scripts/game/behavior/state.py:211` `__init__(self) -> None` #TAG:BodyState.__init__
-- `scripts/game/behavior/state.py:302` `@property phase(self) -> str` #TAG:BodyState.phase
+- `scripts/game/behavior/state.py:138` `__init__(self) -> None` #TAG:BodyState.__init__
+- `scripts/game/behavior/state.py:208` `@property phase(self) -> str` #TAG:BodyState.phase
   - What this body is doing: one of `PHASES`.
-- `scripts/game/behavior/state.py:307` `@phase.setter phase(self, value: str) -> None` #TAG:BodyState.phase.setter
-- `scripts/game/behavior/state.py:319` `@property facing(self) -> str` #TAG:BodyState.facing
+- `scripts/game/behavior/state.py:213` `@phase.setter phase(self, value: str) -> None` #TAG:BodyState.phase.setter
+- `scripts/game/behavior/state.py:225` `@property facing(self) -> str` #TAG:BodyState.facing
   - Which way this body is pointed. An OPEN token, never empty.
-- `scripts/game/behavior/state.py:335` `@facing.setter facing(self, value: str) -> None` #TAG:BodyState.facing.setter
-- `scripts/game/behavior/state.py:346` `@property support(self) -> str` #TAG:BodyState.support
+- `scripts/game/behavior/state.py:241` `@facing.setter facing(self, value: str) -> None` #TAG:BodyState.facing.setter
+- `scripts/game/behavior/state.py:252` `@property support(self) -> str` #TAG:BodyState.support
   - Whether something is holding this body up: one of `SUPPORTS`.
-- `scripts/game/behavior/state.py:362` `@support.setter support(self, value: str) -> None` #TAG:BodyState.support.setter
-- `scripts/game/behavior/state.py:373` `@property life(self) -> str` #TAG:BodyState.life
+- `scripts/game/behavior/state.py:262` `@support.setter support(self, value: str) -> None` #TAG:BodyState.support.setter
+- `scripts/game/behavior/state.py:273` `@property life(self) -> str` #TAG:BodyState.life
   - Whether this body is still part of the world: one of `LIVES`.
-- `scripts/game/behavior/state.py:406` `@life.setter life(self, value: str) -> None` #TAG:BodyState.life.setter
-- `scripts/game/behavior/state.py:417` `@property gone(self) -> bool` #TAG:BodyState.gone
+- `scripts/game/behavior/state.py:301` `@life.setter life(self, value: str) -> None` #TAG:BodyState.life.setter
+- `scripts/game/behavior/state.py:312` `@property gone(self) -> bool` #TAG:BodyState.gone
   - `life is LIFE_GONE`. The reaper's question, spelled once.
-- `scripts/game/behavior/state.py:428` `@property moving(self) -> bool` #TAG:BodyState.moving
-  - `phase is PHASE_MOVING`. Was the stored boolean.
-- `scripts/game/behavior/state.py:433` `@property move_direction(self) -> str` #TAG:BodyState.move_direction
+- `scripts/game/behavior/state.py:322` `@property moving(self) -> bool` #TAG:BodyState.moving
+  - `phase is PHASE_MOVING`.
+- `scripts/game/behavior/state.py:327` `@property move_direction(self) -> str` #TAG:BodyState.move_direction
   - The direction this body is displacing in, or `"none"` when idle.
-- `scripts/game/behavior/state.py:448` `@property last_direction(self) -> str` #TAG:BodyState.last_direction
-  - Was the second copy of `facing`. Now an alias for it.
-- `scripts/game/behavior/state.py:453` `@last_direction.setter last_direction(self, value: str) -> None` #TAG:BodyState.last_direction.setter
-- `scripts/game/behavior/state.py:457` `@property active(self) -> bool` #TAG:BodyState.active
-  - Was the name of `simulated`.
-- `scripts/game/behavior/state.py:462` `@active.setter active(self, value: bool) -> None` #TAG:BodyState.active.setter
-- `scripts/game/behavior/state.py:466` `@property can_move(self) -> bool` #TAG:BodyState.can_move
-  - Was the name of `steerable`.
-- `scripts/game/behavior/state.py:471` `@can_move.setter can_move(self, value: bool) -> None` #TAG:BodyState.can_move.setter
-- `scripts/game/behavior/state.py:477` `@property axes(self) -> dict[str, Any]` #TAG:BodyState.axes
+- `scripts/game/behavior/state.py:337` `@property last_direction(self) -> str` #TAG:BodyState.last_direction
+  - Alias for `facing`.
+- `scripts/game/behavior/state.py:342` `@last_direction.setter last_direction(self, value: str) -> None` #TAG:BodyState.last_direction.setter
+- `scripts/game/behavior/state.py:346` `@property active(self) -> bool` #TAG:BodyState.active
+  - Alias for `simulated`.
+- `scripts/game/behavior/state.py:351` `@active.setter active(self, value: bool) -> None` #TAG:BodyState.active.setter
+- `scripts/game/behavior/state.py:355` `@property can_move(self) -> bool` #TAG:BodyState.can_move
+  - Alias for `steerable`.
+- `scripts/game/behavior/state.py:360` `@can_move.setter can_move(self, value: bool) -> None` #TAG:BodyState.can_move.setter
+- `scripts/game/behavior/state.py:366` `@property axes(self) -> dict[str, Any]` #TAG:BodyState.axes
   - Every axis by name, for a trace, an editor row or a check.
-- `scripts/game/behavior/state.py:492` `__repr__(self) -> str` #TAG:BodyState.__repr__
+- `scripts/game/behavior/state.py:380` `__repr__(self) -> str` #TAG:BodyState.__repr__

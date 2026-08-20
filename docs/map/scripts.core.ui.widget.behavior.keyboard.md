@@ -3,7 +3,7 @@
 
 # `scripts/core/ui/widget/behavior/keyboard.py` — tier 2 #TAG:scripts/core/ui/widget/behavior/keyboard.py
 
-`scripts.core.ui.widget.behavior.keyboard` · 189 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.widget.behavior.keyboard` · 186 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -29,7 +29,7 @@
 
 ### `class KeyboardComponentAsync(AsyncEventComponent)` #TAG:KeyboardComponentAsync
 
-`scripts/core/ui/widget/behavior/keyboard.py:47`–`187`
+`scripts/core/ui/widget/behavior/keyboard.py:47`–`184`
 
 > Accepts and processes keyboard events.
 

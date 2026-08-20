@@ -5,43 +5,43 @@
 
 > What a map layer declares about itself, read at load time.
 
-`scripts.core.layer_profile` · 161 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.layer_profile` · 156 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
-- `scripts/core/layer_profile.py:24` `PREFIX` #TAG:layer_profile.PREFIX
-- `scripts/core/layer_profile.py:26` `DEPTH` #TAG:layer_profile.DEPTH
-- `scripts/core/layer_profile.py:27` `MOTION` #TAG:MOTION
-- `scripts/core/layer_profile.py:28` `PARALLAX_X` #TAG:PARALLAX_X
-- `scripts/core/layer_profile.py:29` `PARALLAX_Y` #TAG:PARALLAX_Y
-- `scripts/core/layer_profile.py:30` `OPACITY` #TAG:OPACITY
-- `scripts/core/layer_profile.py:31` `OCCLUDES` #TAG:OCCLUDES
-- `scripts/core/layer_profile.py:32` `PASSABILITY` #TAG:PASSABILITY
-- `scripts/core/layer_profile.py:33` `RENDERS` #TAG:RENDERS
-- `scripts/core/layer_profile.py:39` `KNOWN` #TAG:layer_profile.KNOWN
-- `scripts/core/layer_profile.py:42` `STATIC` #TAG:STATIC
-- `scripts/core/layer_profile.py:43` `DYNAMIC` #TAG:DYNAMIC
-- `scripts/core/layer_profile.py:76` `DEFAULT` #TAG:DEFAULT
+- `scripts/core/layer_profile.py:19` `PREFIX` #TAG:layer_profile.PREFIX
+- `scripts/core/layer_profile.py:21` `DEPTH` #TAG:layer_profile.DEPTH
+- `scripts/core/layer_profile.py:22` `MOTION` #TAG:MOTION
+- `scripts/core/layer_profile.py:23` `PARALLAX_X` #TAG:PARALLAX_X
+- `scripts/core/layer_profile.py:24` `PARALLAX_Y` #TAG:PARALLAX_Y
+- `scripts/core/layer_profile.py:25` `OPACITY` #TAG:OPACITY
+- `scripts/core/layer_profile.py:26` `OCCLUDES` #TAG:OCCLUDES
+- `scripts/core/layer_profile.py:27` `PASSABILITY` #TAG:PASSABILITY
+- `scripts/core/layer_profile.py:28` `RENDERS` #TAG:RENDERS
+- `scripts/core/layer_profile.py:34` `KNOWN` #TAG:layer_profile.KNOWN
+- `scripts/core/layer_profile.py:37` `STATIC` #TAG:STATIC
+- `scripts/core/layer_profile.py:38` `DYNAMIC` #TAG:DYNAMIC
+- `scripts/core/layer_profile.py:71` `DEFAULT` #TAG:DEFAULT
 
 ## Functions
 
-- `scripts/core/layer_profile.py:79` `_number(properties: dict, key: str, fallback: float) -> float` #TAG:layer_profile._number
-- `scripts/core/layer_profile.py:91` `_flag(properties: dict, key: str, fallback: bool) -> bool` #TAG:layer_profile._flag
-- `scripts/core/layer_profile.py:98` `read(layer) -> LayerProfile` #TAG:layer_profile.read
+- `scripts/core/layer_profile.py:74` `_number(properties: dict, key: str, fallback: float) -> float` #TAG:layer_profile._number
+- `scripts/core/layer_profile.py:86` `_flag(properties: dict, key: str, fallback: bool) -> bool` #TAG:layer_profile._flag
+- `scripts/core/layer_profile.py:93` `read(layer) -> LayerProfile` #TAG:layer_profile.read
   - Read a pytmx layer's declared profile. Never raises.
-- `scripts/core/layer_profile.py:111` `read_properties(properties: dict) -> LayerProfile` #TAG:read_properties
+- `scripts/core/layer_profile.py:106` `read_properties(properties: dict) -> LayerProfile` #TAG:read_properties
   - The same reading, from a plain mapping rather than from a layer.
-- `scripts/core/layer_profile.py:142` `parallax_view(view, parallax: tuple[float, float], full_width: int, full_height: int)` #TAG:parallax_view
+- `scripts/core/layer_profile.py:137` `parallax_view(view, parallax: tuple[float, float], full_width: int, full_height: int)` #TAG:parallax_view
   - Where a parallaxed layer should sample from, clamped to its surface.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class LayerProfile` #TAG:layer_profile.LayerProfile
 
-`scripts/core/layer_profile.py:47`–`73`
+`scripts/core/layer_profile.py:42`–`68`
 
 > A layer's declared behaviour, with defaults already applied.
 
-- `scripts/core/layer_profile.py:59` `@property static(self) -> bool` #TAG:layer_profile.LayerProfile.static
+- `scripts/core/layer_profile.py:54` `@property static(self) -> bool` #TAG:layer_profile.LayerProfile.static
   - May this layer be flattened into the map plane with its neighbours?
-- `scripts/core/layer_profile.py:72` `@property parallaxed(self) -> bool` #TAG:layer_profile.LayerProfile.parallaxed
+- `scripts/core/layer_profile.py:67` `@property parallaxed(self) -> bool` #TAG:layer_profile.LayerProfile.parallaxed

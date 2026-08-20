@@ -3,7 +3,7 @@
 
 # `scripts/core/ui/widget/draw.py` — tier 2 #TAG:scripts/core/ui/widget/draw.py
 
-`scripts.core.ui.widget.draw` · 212 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.widget.draw` · 178 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,18 +13,18 @@
 
 ### `class DrawComponent(GameComponent)` #TAG:DrawComponent
 
-`scripts/core/ui/widget/draw.py:14`–`188`
+`scripts/core/ui/widget/draw.py:14`–`175`
 
 - `scripts/core/ui/widget/draw.py:16` `__init__(self, image_in: Surface | None=None, camera: GameCamera | None=None, view_offset: Vector2 | None=None, *args, **kwargs)` #TAG:DrawComponent.__init__
 - `scripts/core/ui/widget/draw.py:42` `__make(self)` #TAG:DrawComponent.__make
-- `scripts/core/ui/widget/draw.py:48` `@staticmethod allocate_surface(width: int | float, height: int | float) -> Surface` #TAG:DrawComponent.allocate_surface
+- `scripts/core/ui/widget/draw.py:47` `@staticmethod allocate_surface(width: int | float, height: int | float) -> Surface` #TAG:DrawComponent.allocate_surface
   - Allocate a blank, FULLY TRANSPARENT surface of at least 1x1.
-- `scripts/core/ui/widget/draw.py:65` `resize(self, width: int | float, height: int | float, repaint: bool=True) -> bool` #TAG:DrawComponent.resize
+- `scripts/core/ui/widget/draw.py:58` `resize(self, width: int | float, height: int | float, repaint: bool=True) -> bool` #TAG:DrawComponent.resize
   - REALLOCATE this component's surface at a new pixel size.
-- `scripts/core/ui/widget/draw.py:89` `_on_size_changed(self, width: int | float, height: int | float)` #TAG:DrawComponent._on_size_changed
+- `scripts/core/ui/widget/draw.py:81` `_on_size_changed(self, width: int | float, height: int | float)` #TAG:DrawComponent._on_size_changed
   - A drawable's surface follows its bounds. See GameComponent.
-- `scripts/core/ui/widget/draw.py:93` `scale_surface(self, width: int, height: int, destination: Surface | None=None)` #TAG:DrawComponent.scale_surface
+- `scripts/core/ui/widget/draw.py:85` `scale_surface(self, width: int, height: int, destination: Surface | None=None)` #TAG:DrawComponent.scale_surface
   - Stretch this component's surface to a new pixel size.
-- `scripts/core/ui/widget/draw.py:110` `dispose_drawable(self)` #TAG:DrawComponent.dispose_drawable
-- `scripts/core/ui/widget/draw.py:114` `image_snip(self, area: Rect) -> surface.Surface` #TAG:DrawComponent.image_snip
-- `scripts/core/ui/widget/draw.py:120` `__blits(self, event: Optional[PyoneerEvent]=None)` #TAG:DrawComponent.__blits
+- `scripts/core/ui/widget/draw.py:98` `dispose_drawable(self)` #TAG:DrawComponent.dispose_drawable
+- `scripts/core/ui/widget/draw.py:102` `image_snip(self, area: Rect) -> surface.Surface` #TAG:DrawComponent.image_snip
+- `scripts/core/ui/widget/draw.py:108` `__blits(self, event: Optional[PyoneerEvent]=None)` #TAG:DrawComponent.__blits

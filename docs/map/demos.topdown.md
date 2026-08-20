@@ -5,7 +5,7 @@
 
 > Top-down demo: six identical objects, one of which is the player.
 
-`demos.topdown` · 51 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.topdown` · 38 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,6 +15,6 @@
 
 ### `class TopDownDemo(DemoGame)` #TAG:TopDownDemo
 
-`demos/topdown.py:42`–`43`
+`demos/topdown.py:30`–`31`
 
 - (no methods)

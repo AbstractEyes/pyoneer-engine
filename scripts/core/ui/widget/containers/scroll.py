@@ -177,12 +177,6 @@ class ScrollComponent(GameComponent):
         self.bind_component("arrow_1", self.arrow_1)
         self.bind_component("arrow_2", self.arrow_2)
         self.bind_component("thumb", self.scroll_thumb)
-        # NOTE: there was a second bind of scroll_thumb here under the key
-        # "scroll_bar". The real bar is already bound as "bar", so that line
-        # registered the thumb twice: it and its three children received every
-        # event twice (a listener on the thumb fired twice per dispatch) and
-        # queued duplicate blit tokens, compositing the thumb on top of itself.
-        #self.bind_sync_listener(GameEventType.UPDATE, self.__update_scroll)
         self.arrow_1.mouse.bind_mouse_listener(GameEventType.MOUSE_CLICK_INSIDE, self.__event__arrow_click_scroll_up)
         self.arrow_2.mouse.bind_mouse_listener(GameEventType.MOUSE_CLICK_INSIDE, self.__event__arrow_click_scroll_down)
         self.arrow_1.use_immediate_viewport = False
@@ -198,33 +192,23 @@ class ScrollComponent(GameComponent):
     def __event__update_scroll(self, event: Optional[PyoneerEvent] = None):
         """Recompute the bar and thumb geometry for the current scroll state.
 
-        These two assignments are the reason the bounds cascade exists. The
-        thumb's height is a function of `scrollable_bounds`, so it changes
-        whenever the scrolled content changes size -- and before the cascade
-        landed, writing `local_bounds` here updated a Rect and nothing else:
-        the thumb's world bounds and the surface of the shape it actually
-        draws both kept whatever size they were built with. Measured on a
-        Panel(300x200, working_area 300x210): drive scrollable_bounds to
-        h=4000 and local_bounds became h=6 while the surface stayed h=118.
-
-        `local_bounds` now routes through GameComponent._on_bounds_changed,
-        which rebases world bounds, walks the children and lands on
-        DrawComponent.resize() for each surface. Nothing extra is needed
-        here; the assignments below are the trigger.
+        The thumb's height is a function of `scrollable_bounds`, so it changes
+        whenever the scrolled content does. Writing `local_bounds` is enough:
+        it routes through `GameComponent._on_bounds_changed`, which rebases
+        world bounds, walks the children and lands on `DrawComponent.resize()`
+        for each surface. The assignments below are the trigger; nothing else
+        is needed here.
         """
         self.scroll_bar.local_bounds = self.__scroll_bar_with_offsets()
         self.scroll_thumb.local_bounds = self.__scroll_thumb_bounds()
-        #self.parent.send_event(GameEventType.TRANSFORM, PyoneerEvent(GameEventType.TRANSFORM, sender=self))
 
     def relayout(self):
         """Re-place the bar, thumb and BOTH ARROWS against the current bounds.
 
-        Every one of those rects is derived from `world_bounds`, and nothing
-        recomputed the arrows when the ScrollComponent itself was resized --
-        __event__update_scroll only ever moved the bar and thumb, and only on a
-        scroll event. Shrinking a window therefore left the arrows at their
-        construction coordinates: measured x=362 in a panel that had shrunk to
-        216 wide, so they hung off the right-hand edge of the frame.
+        Every one of those rects is derived from `world_bounds`.
+        `__event__update_scroll` moves only the bar and thumb, and only on a
+        scroll event, so without this the arrows keep their construction
+        coordinates and hang off the edge of a shrunken window.
         """
         if self.scroll_bar is None:
             return
@@ -294,7 +278,6 @@ class ScrollComponent(GameComponent):
             scroll_ratio = thumb_position / travel if travel > 0 else 0.0
             self.scroll_position = scroll_ratio * max(0, max_scroll_position)
 
-            #self.__clamp_scroll()
             self.__event__update_scroll()
             self.__send_panel_scrolled_event()
             self.parent.force_update_transforms()
@@ -337,7 +320,6 @@ class ScrollComponent(GameComponent):
     def __send_panel_scrolled_event(self, sender: Optional[PyoneerGameObject] = None):
         """Send the panel scrolled event."""
         if self.parent is not None:
-            #self.parent.force_update_transforms()
             self.__event__update_scroll()
             self.parent.send_event_advanced(event_type=GameEventType.VIEWPORT_SCROLLED,
                                             event=PyoneerEvent(GameEventType.VIEWPORT_SCROLLED,

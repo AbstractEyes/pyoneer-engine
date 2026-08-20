@@ -71,21 +71,17 @@ class InspectionView(QScrollArea):
     def show_inspection(self, inspection: Inspection) -> None:
         """Rebuild the form.
 
-        The whole body is REPLACED rather than emptied. The first version
-        cleared the layout with `widget.setParent(None); widget.deleteLater()`,
-        and `setParent(None)` does not merely detach a widget -- it promotes
-        it to a **top-level window**. So every refresh briefly created one
-        orphaned window per row, which on Windows flashed visibly: about
-        twenty little windows appearing and vanishing on every Ctrl+Z.
+        The whole body is REPLACED rather than emptied, because clearing a
+        layout with `widget.setParent(None)` does not detach a widget -- it
+        promotes it to a **top-level window**. That makes one orphaned window
+        per row on every refresh (about twenty flashing on each Ctrl+Z), and
+        they accumulate: `deleteLater()` only runs when the event loop
+        unwinds to the level that queued it. Measured, 59 top-level widgets
+        at rest became 85 after a single undo and stayed there.
 
-        Worse, they did not go away. `deleteLater()` only runs when the event
-        loop unwinds to the level that queued it, so the orphans accumulated:
-        measured 59 top-level widgets at rest, 85 after a single undo, and
-        still 85 afterwards.
-
-        `QScrollArea.setWidget()` deletes the widget it replaces, and does it
-        without ever detaching the children -- so nothing is momentarily
-        parentless and nothing leaks.
+        `QScrollArea.setWidget()` deletes the widget it replaces without ever
+        detaching the children, so nothing is momentarily parentless and
+        nothing leaks.
         """
         self.inspection = inspection
         body = QWidget()
@@ -115,8 +111,7 @@ class InspectionView(QScrollArea):
         #
         # deleteLater() defers the free until the event loop unwinds, which
         # is exactly when it is safe. Re-parenting to `self` first keeps it
-        # from becoming a top-level window in the meantime -- the defect the
-        # previous version of this code was written to fix.
+        # from becoming a top-level window in the meantime.
         old = self.takeWidget()  # #TAG:qt_takewidget_sequence
         if old is not None:
             old.setParent(self)

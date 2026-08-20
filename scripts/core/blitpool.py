@@ -18,12 +18,8 @@ class BlitToken:
         self.priority: int = priority
         self.sender: object | None = sender
         self.copy(blit)
-        #if self.image is not None and self.area.width == 0 and self.area.height == 0:
-        #    self.area = self.image.get_rect() # default to the image size if we have no defined bounds
 
     def pygame_blit(self) -> tuple[Surface, tuple[int, int], Rect]:
-        #if self.draw_area.width == 0 and self.draw_area.height == 0:
-        #    return self.image, self.destination
         return self.image, self.destination, self.draw_area
 
 

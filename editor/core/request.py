@@ -16,8 +16,6 @@ THE LOOP
 
 WHY A BUNDLE AND NOT A PROMPT STRING
 ------------------------------------
-Three reasons, all learned the hard way in this repo:
-
   * **Location.** A note carries a scope, and the bundle turns that scope
     into concrete file paths. The responder does not have to guess where
     "the actors list" lives.

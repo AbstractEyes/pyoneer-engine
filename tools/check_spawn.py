@@ -16,8 +16,7 @@ THE FIXTURE IS THIS FILE'S OWN
 Everything is spawned from a .tmx written into a temp directory by
 `write_fixture` below. `data/maps/test.tmx` is painted in constantly and is
 never read here: a check that pins map CONTENT goes red the next time the
-author paints, while the code it guards is working perfectly. That has cost
-this repo four red suites.
+author paints, while the code it guards is working perfectly (law 4).
 
 The fixture needs no art. Its tileset points at a PNG that does not exist,
 which both pytmx and MapDocument parse happily as long as no tile image is

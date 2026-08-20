@@ -1,8 +1,7 @@
 """Verify InputActionManager edge semantics by driving synthetic key state.
 
-Regression guard for the latch bug: `released()` used to return True on the
-very first frame and stay True forever, so there was no working edge trigger
-anywhere in the engine.
+`pressed()` and `released()` must be true EDGES -- one frame each, at the
+transition -- or there is no working edge trigger anywhere in the engine.
 """
 from __future__ import annotations
 
@@ -131,11 +130,11 @@ expect("sprinting multiplies by sprint_mult", dx_fast, dx_slow * 3)
 
 print()
 print("the player still reads the sprint binding")
-# Everything above this line passes with the consumer deleted. move_direction
-# takes sprint= as an argument, so the multiplier keeps working perfectly
-# while nothing ever asks for it -- the binding resolves, the key reads as
-# down, and the player walks. The only way to catch that is to run a real
-# GamePlayer for one input frame and measure how far it moved.
+# Everything above this line passes with the consumer deleted: move_direction
+# takes sprint= as an argument, so the multiplier keeps working while nothing
+# asks for it -- the binding resolves, the key reads as down, and the player
+# walks. The only way to catch that is to run a real GamePlayer for one input
+# frame and measure how far it moved.
 from config.managers.core_asset_manager import CoreAssetManager   # noqa: E402
 from scripts.core.event_manager import PyoneerEvent               # noqa: E402
 from scripts.core.event_types import GameEventType                # noqa: E402
@@ -169,14 +168,11 @@ def after_one_frame(down):
     """A composed player that has processed one input frame with `down` HELD.
 
     `behaviors=` is not decoration. Polling the keyboard, displacing the
-    entity and naming the animation are three composed behaviors now
+    entity and naming the animation are three composed behaviors
     (`scripts/game/behavior/`), and a GamePlayer that composes none of them is
-    inert BY DESIGN -- the class no longer decides what an entity does, the
-    declaration does. So the fixture has to declare the same list a .tmx
-    object would, and this string is exactly what one carries in its
-    `pyoneer_behaviors` property. Without it the two assertions below measure
-    an entity nothing is driving, which is a true fact about a differently
-    configured player and not the claim this section makes.
+    inert BY DESIGN. So the fixture declares the same list a .tmx object
+    would, spelled exactly as a `pyoneer_behaviors` property; without it the
+    two assertions below measure an entity nothing is driving.
     """
     manager = after_holding(down)
     player = GamePlayer(input_=manager, movement_config=MOVEMENT,

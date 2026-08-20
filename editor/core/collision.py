@@ -2,11 +2,10 @@
 
 WHY
 ---
-`editor/core/layers.py` already says what a passability mask IS -- four
-direction bits in RPG Maker's order, set means blocked, plus a star that
-abstains -- and how one mask is stored as a gid in a companion tile layer.
-What it does not say is where a mask COMES FROM, and that is the whole
-problem:
+`editor/core/layers.py` says what a passability mask IS -- four direction
+bits in RPG Maker's order, set means blocked, plus a star that abstains --
+and how one mask is stored as a gid in a companion tile layer. This module
+says where a mask COMES FROM:
 
   * painting a mask per cell per layer is correct and unbearable. A wall
     tile is a wall everywhere it is stamped; saying so four hundred times
@@ -36,11 +35,10 @@ empty cell as `PASS_ALL` and `tools/check_editor.py` pins that return value,
 so this module does not touch it. It adds `NO_DATA` and a sibling pair of
 converters beside it.
 
-The difference is not academic. A collision layer is empty almost
-everywhere. If empty meant open, stacking a second collision layer over the
-first would unblock the entire map except where the upper layer happened to
-be painted, and a region of blocked water would silently become walkable.
-That is a reproduced failure, not a hypothetical.
+A collision layer is empty almost everywhere, so if empty meant open,
+stacking a second collision layer over the first would unblock the entire
+map except where the upper layer happened to be painted, and a region of
+blocked water would silently become walkable.
 
 NO_DATA IS ALSO NOT STAR
 ------------------------
@@ -56,14 +54,6 @@ default, which `NO_DATA` cannot do. Within a layer, star decides; between
 layers, star defers. `resolve` treats star and no-data alike only at the
 last step, when walking the layer stack, and that is on purpose.
 
-THE .blitmask FORMAT
---------------------
-`Blitmask` and its grammar are `scripts/core/collision_runtime.py`'s now and
-are re-exported below; that module's THE .blitmask FORMAT section is the
-spec. It was authored here and moved the day `field_from_map` grew a reader
-for it, because a format with two parsers is a format with one parser that
-is wrong.
-
 THE RUNTIME SHAPE
 -----------------
 `CollisionField` is the answer, not the question: bake once at load, then
@@ -73,32 +63,22 @@ where NO_DATA collapses to a decision, which is why it takes an explicit
 walkable are both reasonable, and neither should be a silent default buried
 in a resolver.
 
-Measured on this machine over 10,000 cells (100x100) and a three-layer
-stack -- overrides on top, a companion in the middle, tileset defaults read
-through the art layer at the bottom -- baking costs 24.6 ms once, and after
-it `mask_at` is 0.31 us and `can_move` 0.72 us. Resolving the same stack
-per query instead of baking it costs 35.7 ms per full pass, so the bake
-pays for itself before the first frame finishes. Storage is 10,000 bytes
-flat: no per-cell object, no dict, nothing to traverse.
+Measured over 10,000 cells (100x100) and a three-layer stack, baking costs
+24.6 ms once, after which `mask_at` is 0.31 us and `can_move` 0.72 us;
+resolving the same stack per query costs 35.7 ms per full pass. Storage is
+10,000 bytes flat.
 
 WHAT IS HERE AND WHAT IS IMPORTED
 ---------------------------------
-Almost nothing is defined here any more, and that is the point. The opinion
-vocabulary, `CollisionLayer`, `resolve`, `Resolution`, `CollisionField`, the
-tmx gid encoding, the flip arithmetic, `TilesetDefaults`, `tileset_reader`
-and the whole `.blitmask` format are defined once in
-`scripts/core/collision_runtime.py` and imported below. `editor/` may import
-`scripts/` and never the reverse, and the editor's overlay and the player's
-movement gate answering the same question from two hand-kept copies is the
-one bug this whole feature is supposed to make impossible. The names are
-re-exported from here because every caller in `editor/` already imports them
-from this module.
-
-The last three of those moved late. The argument for keeping them was that
-the runtime had no use for a sidecar parser -- true until `field_from_map`
-started reading level one, at which point the choice was to move 250 lines
-or to write them a second time. Law 2's corollary already priced that at 425
-duplicate lines, so they moved.
+The opinion vocabulary, `CollisionLayer`, `resolve`, `Resolution`,
+`CollisionField`, the tmx gid encoding, the flip arithmetic,
+`TilesetDefaults`, `tileset_reader` and the whole `.blitmask` format are
+defined once in `scripts/core/collision_runtime.py` -- whose THE .blitmask
+FORMAT section is that format's spec -- and imported below. `editor/` may
+import `scripts/` and never the reverse, and the editor's overlay and the
+player's movement gate must never answer the same question from two
+hand-kept copies. The names are re-exported from here because every caller
+in `editor/` already imports them from this module.
 
 What stays is what only an AUTHORING tool asks for: conversions between a
 `Blitmask` and the two things the editor holds -- a baked `CollisionField`
@@ -119,8 +99,7 @@ from editor.core.layers import (  # the vocabulary; never redefined here
 )
 from editor.core.paint import Reader  # (x, y) -> gid; same idea, same name
 
-# The model AND the format, defined once on the engine side. Re-exported
-# rather than re-stated -- see WHAT IS HERE AND WHAT IS IMPORTED above.
+# The model AND the format, defined once on the engine side and re-exported.
 from scripts.core.collision_runtime import (  # noqa: F401
     DEFAULTS_PROPERTY,
     FLIP_DIAGONAL,
@@ -169,12 +148,9 @@ def field_from_blitmask(blitmask: Blitmask, *, tile_width: int = 16,
     """A field straight from a file. NO_DATA cells become `undecided`, so
     this is a lossy direction on purpose -- see `CollisionField.bake`.
 
-    A function rather than the `CollisionField.from_blitmask` classmethod it
-    replaces. `CollisionField` is `scripts/core/collision_runtime.py`'s and
-    the engine never opens a `.blitmask`, so a constructor for it that names
-    an editor-only type would be the fence pointing the wrong way -- the
-    engine importing an authoring format it has no reader for. The two
-    directions live here, next to the format they belong to.
+    A function rather than a `CollisionField` constructor: the class belongs
+    to `scripts/`, which never opens a `.blitmask`, so both directions of the
+    conversion live on the editor side.
     """
     if not 0 <= undecided <= STAR:
         raise ValueError(f"undecided must be a mask, got {undecided}")

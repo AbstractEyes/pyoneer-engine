@@ -1,9 +1,8 @@
 """Measure the engine's .blitmap load path against the pytmx one it joins.
 
-`scripts/loaders/blitmap.py` and `tileset_file.py` shipped a format, a
-converter and 745 lines of check, and nothing in the running engine read
-them. `config/managers/map_data.py` now resolves either extension out of
-config/maps.json. Four claims:
+`config/managers/map_data.py` resolves either extension out of
+config/maps.json, so `scripts/loaders/blitmap.py` and `tileset_file.py` are on
+the running engine's path rather than beside it. Four claims:
 
     the LOOKUP dispatches on the extension, refuses one it does not know,
         and keeps the tmx path bit for bit what it was
@@ -23,9 +22,9 @@ The fidelity run reads a COPY of data/maps/test.tmx and compares
 derived-against-derived: every number on the tmx side is recovered from
 pytmx (undoing its gid renumbering with `tiledgidmap` and `imagemap`), every
 number on the native side from the converted file, and the two are compared
-to each other. Nothing asserts what the map CONTAINS -- the author repaints
-that file constantly and five red suites have come from checks that froze
-its contents.
+to each other. Nothing asserts what the map CONTAINS: the author repaints that
+file constantly, and a check that froze its contents would go red for a
+repaint (law 4).
 
 The claims that need a specific SHAPE to have any teeth -- flipped gids,
 every property type, a hidden layer, an object with a gid, a nested group --

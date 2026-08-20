@@ -5,7 +5,7 @@
 
 > `patrol_input`: a scripted producer of MoveIntent, registered from a GAME.
 
-`demos.behaviors` · 187 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.behaviors` · 143 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,19 +13,19 @@
 
 ## Module constants
 
-- `demos/behaviors.py:157` `PATROL_INPUT` #TAG:PATROL_INPUT
+- `demos/behaviors.py:114` `PATROL_INPUT` #TAG:PATROL_INPUT
 
 ## Classes
 
 ### `class GamePatrolInputBehavior(EntityBehavior)` #TAG:GamePatrolInputBehavior
 
-`demos/behaviors.py:50`–`154`
+`demos/behaviors.py:29`–`111`
 
 > Hold one direction at a time, on a clock, forever.
 
-- `demos/behaviors.py:63` `__init__(self, route: str='right,left', leg_ms: int=600)` #TAG:GamePatrolInputBehavior.__init__
-- `demos/behaviors.py:70` `attach(self, entity: Any) -> None` #TAG:GamePatrolInputBehavior.attach
+- `demos/behaviors.py:40` `__init__(self, route: str='right,left', leg_ms: int=600)` #TAG:GamePatrolInputBehavior.__init__
+- `demos/behaviors.py:47` `attach(self, entity: Any) -> None` #TAG:GamePatrolInputBehavior.attach
   - Allocate the intent, and refuse a route this vocabulary cannot walk.
-- `demos/behaviors.py:104` `detach(self, entity: Any) -> None` #TAG:GamePatrolInputBehavior.detach
-  - Hand back a fresh, empty intent -- `player_input.detach`'s reason.
-- `demos/behaviors.py:113` `update(self, entity: Any, event: Any) -> None` #TAG:GamePatrolInputBehavior.update
+- `demos/behaviors.py:79` `detach(self, entity: Any) -> None` #TAG:GamePatrolInputBehavior.detach
+  - Hand back a fresh, empty intent.
+- `demos/behaviors.py:87` `update(self, entity: Any, event: Any) -> None` #TAG:GamePatrolInputBehavior.update

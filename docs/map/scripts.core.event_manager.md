@@ -3,7 +3,7 @@
 
 # `scripts/core/event_manager.py` — tier 2 #TAG:scripts/core/event_manager.py
 
-`scripts.core.event_manager` · 168 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.event_manager` · 166 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -18,11 +18,11 @@
 ## Functions
 
 - `scripts/core/event_manager.py:80` `update(delta: float=pygame.time.Clock().tick(60) / 1000)` #TAG:update
-- `scripts/core/event_manager.py:91` `queue()` #TAG:queue
+- `scripts/core/event_manager.py:89` `queue()` #TAG:queue
   - Queues another event to the next frame's pyo queue.
-- `scripts/core/event_manager.py:100` `get(event: pygame.event.EventType | int | None=None, consume: bool=False) -> list[pygame.event.Event] | pygame.event.Event | None` #TAG:get
-- `scripts/core/event_manager.py:118` `pump_pyo()` #TAG:pump_pyo
-- `scripts/core/event_manager.py:138` `get_pyo(event: pygame.event.Event | int | None=None, consume: bool=False) -> list[PyoneerEvent] | PyoneerEvent` #TAG:get_pyo
+- `scripts/core/event_manager.py:98` `get(event: pygame.event.EventType | int | None=None, consume: bool=False) -> list[pygame.event.Event] | pygame.event.Event | None` #TAG:get
+- `scripts/core/event_manager.py:116` `pump_pyo()` #TAG:pump_pyo
+- `scripts/core/event_manager.py:136` `get_pyo(event: pygame.event.Event | int | None=None, consume: bool=False) -> list[PyoneerEvent] | PyoneerEvent` #TAG:get_pyo
 
 ## Classes
 

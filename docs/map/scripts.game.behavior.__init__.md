@@ -5,7 +5,7 @@
 
 > Behavior components: what an entity DOES, composed from data.
 
-`scripts.game.behavior.__init__` · 120 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.behavior.__init__` · 108 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 

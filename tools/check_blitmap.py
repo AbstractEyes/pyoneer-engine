@@ -403,10 +403,9 @@ expect("a supplied .blitmask reference is carried, not parsed",
 # writes `collision` AND a parse that never reads it. The .blitmask
 # reference is the whole engine/editor collision seam; assert the ROUND TRIP.
 #
-# expect_returns rather than expect, because the two mutations this covers
-# fail in two different ways: a render that drops the line comes back as ""
-# and a parse that no longer knows the keyword RAISES, and only one of those
-# is a comparison. See expect_returns for what the raw raise used to cost.
+# expect_returns rather than expect, because the two failures this covers look
+# different: a render that drops the line comes back as "", and a parse that
+# no longer knows the keyword RAISES. Only one of those is a comparison.
 expect_returns("a .blitmask reference survives render/parse",
                lambda: TilesetFile.parse(masked.render()).collision,
                "Fixture.blitmask")

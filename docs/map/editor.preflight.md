@@ -5,32 +5,32 @@
 
 > Check the engine is loadable BEFORE the editor imports any of it.
 
-`editor.preflight` · 211 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.preflight` · 205 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
-- `editor/preflight.py:54` `ENGINE_CONTRACT` #TAG:ENGINE_CONTRACT
-- `editor/preflight.py:67` `EXIT_ENGINE_BROKEN` #TAG:EXIT_ENGINE_BROKEN
+- `editor/preflight.py:49` `ENGINE_CONTRACT` #TAG:ENGINE_CONTRACT
+- `editor/preflight.py:62` `EXIT_ENGINE_BROKEN` #TAG:EXIT_ENGINE_BROKEN
 
 ## Functions
 
-- `editor/preflight.py:86` `top_level_names(tree: ast.Module) -> set[str]` #TAG:top_level_names
+- `editor/preflight.py:81` `top_level_names(tree: ast.Module) -> set[str]` #TAG:top_level_names
   - Every name a module binds at module scope.
-- `editor/preflight.py:109` `check(root: str, contract: dict[str, tuple[str, ...]] | None=None) -> list[Problem]` #TAG:check
+- `editor/preflight.py:104` `check(root: str, contract: dict[str, tuple[str, ...]] | None=None) -> list[Problem]` #TAG:check
   - Everything wrong with the engine, without importing any of it.
-- `editor/preflight.py:142` `report(problems: list[Problem]) -> str` #TAG:report
-- `editor/preflight.py:161` `enforce(root: str, *, skip: bool=False) -> None` #TAG:enforce
+- `editor/preflight.py:137` `report(problems: list[Problem]) -> str` #TAG:report
+- `editor/preflight.py:156` `enforce(root: str, *, skip: bool=False) -> None` #TAG:enforce
   - Stop the process with a readable message if the engine is broken.
-- `editor/preflight.py:200` `_can_show_a_dialog() -> bool` #TAG:_can_show_a_dialog
+- `editor/preflight.py:194` `_can_show_a_dialog() -> bool` #TAG:_can_show_a_dialog
   - Is there a human to dismiss a modal dialog?
 
 ## Classes
 
 ### `class Problem` #TAG:Problem
 
-`editor/preflight.py:70`–`83`
+`editor/preflight.py:65`–`78`
 
 > One reason the editor cannot start.
 
-- `editor/preflight.py:73` `__init__(self, path: str, message: str, line: int | None=None, detail: str='')` #TAG:Problem.__init__
-- `editor/preflight.py:80` `__str__(self) -> str` #TAG:Problem.__str__
+- `editor/preflight.py:68` `__init__(self, path: str, message: str, line: int | None=None, detail: str='')` #TAG:Problem.__init__
+- `editor/preflight.py:75` `__str__(self) -> str` #TAG:Problem.__str__

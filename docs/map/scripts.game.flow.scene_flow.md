@@ -5,7 +5,7 @@
 
 > A step sequencer for narrative: what step we are on, and who may act.
 
-`scripts.game.flow.scene_flow` · 432 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.flow.scene_flow` · 365 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,53 +13,53 @@
 
 ## Module constants
 
-- `scripts/game/flow/scene_flow.py:108` `ADVANCE_ACTION` #TAG:ADVANCE_ACTION
-- `scripts/game/flow/scene_flow.py:117` `ADVANCE_TRIGGER_KIND` #TAG:ADVANCE_TRIGGER_KIND
+- `scripts/game/flow/scene_flow.py:68` `ADVANCE_ACTION` #TAG:ADVANCE_ACTION
+- `scripts/game/flow/scene_flow.py:74` `ADVANCE_TRIGGER_KIND` #TAG:ADVANCE_TRIGGER_KIND
 
 ## Classes
 
 ### `@dataclass(frozen=True) class FlowStep` #TAG:FlowStep
 
-`scripts/game/flow/scene_flow.py:131`–`188`
+`scripts/game/flow/scene_flow.py:84`–`136`
 
 > One beat of a flow: a name, a thing to show, and how it ends.
 
-- `scripts/game/flow/scene_flow.py:170` `__post_init__(self) -> None` #TAG:FlowStep.__post_init__
+- `scripts/game/flow/scene_flow.py:118` `__post_init__(self) -> None` #TAG:FlowStep.__post_init__
 
 ### `class SceneFlow` #TAG:SceneFlow
 
-`scripts/game/flow/scene_flow.py:191`–`428`
+`scripts/game/flow/scene_flow.py:139`–`361`
 
 > An ordered run of steps, and the agency it borrows while it runs.
 
-- `scripts/game/flow/scene_flow.py:201` `__init__(self, steps: Sequence[FlowStep], bodies: Iterable[Any]=(), *, name: str='flow', steerable: Optional[bool]=False, enabled_inputs: Optional[bool]=None, simulated: Optional[bool]=None)` #TAG:SceneFlow.__init__
+- `scripts/game/flow/scene_flow.py:148` `__init__(self, steps: Sequence[FlowStep], bodies: Iterable[Any]=(), *, name: str='flow', steerable: Optional[bool]=False, enabled_inputs: Optional[bool]=None, simulated: Optional[bool]=None)` #TAG:SceneFlow.__init__
   - `bodies` are the entities whose agency this flow borrows.
-- `scripts/game/flow/scene_flow.py:249` `@property index(self) -> int` #TAG:SceneFlow.index
+- `scripts/game/flow/scene_flow.py:195` `@property index(self) -> int` #TAG:SceneFlow.index
   - Which step is current. -1 before `begin()` and after `end()`.
-- `scripts/game/flow/scene_flow.py:254` `@property current(self) -> Optional[FlowStep]` #TAG:SceneFlow.current
+- `scripts/game/flow/scene_flow.py:200` `@property current(self) -> Optional[FlowStep]` #TAG:SceneFlow.current
   - The step being held, or None when the flow is not running.
-- `scripts/game/flow/scene_flow.py:261` `@property running(self) -> bool` #TAG:SceneFlow.running
-- `scripts/game/flow/scene_flow.py:265` `@property done(self) -> bool` #TAG:SceneFlow.done
+- `scripts/game/flow/scene_flow.py:207` `@property running(self) -> bool` #TAG:SceneFlow.running
+- `scripts/game/flow/scene_flow.py:211` `@property done(self) -> bool` #TAG:SceneFlow.done
   - True once the flow has run off the end. False before it begins.
-- `scripts/game/flow/scene_flow.py:275` `@property elapsed_ms(self) -> float` #TAG:SceneFlow.elapsed_ms
+- `scripts/game/flow/scene_flow.py:220` `@property elapsed_ms(self) -> float` #TAG:SceneFlow.elapsed_ms
   - Milliseconds spent on the current step. Reset on every entry.
-- `scripts/game/flow/scene_flow.py:280` `@property held_bodies(self) -> Tuple[Any, ...]` #TAG:SceneFlow.held_bodies
+- `scripts/game/flow/scene_flow.py:225` `@property held_bodies(self) -> Tuple[Any, ...]` #TAG:SceneFlow.held_bodies
   - The bodies whose agency this flow is currently holding.
-- `scripts/game/flow/scene_flow.py:298` `begin(self) -> bool` #TAG:SceneFlow.begin
+- `scripts/game/flow/scene_flow.py:238` `begin(self) -> bool` #TAG:SceneFlow.begin
   - Take the agency, enter step 0. False if it was already running.
-- `scripts/game/flow/scene_flow.py:316` `advance(self) -> bool` #TAG:SceneFlow.advance
+- `scripts/game/flow/scene_flow.py:255` `advance(self) -> bool` #TAG:SceneFlow.advance
   - Leave the current step for the next one.
-- `scripts/game/flow/scene_flow.py:333` `update(self, delta: float) -> None` #TAG:SceneFlow.update
+- `scripts/game/flow/scene_flow.py:271` `update(self, delta: float) -> None` #TAG:SceneFlow.update
   - Advance the clock by one frame. `delta` is the ENGINE's delta.
-- `scripts/game/flow/scene_flow.py:350` `end(self) -> bool` #TAG:SceneFlow.end
+- `scripts/game/flow/scene_flow.py:286` `end(self) -> bool` #TAG:SceneFlow.end
   - Stop here, close the open window, give the agency back exactly.
-- `scripts/game/flow/scene_flow.py:366` `on_action(self, entity: Any, fired: Any) -> None` #TAG:SceneFlow.on_action
+- `scripts/game/flow/scene_flow.py:301` `on_action(self, entity: Any, fired: Any) -> None` #TAG:SceneFlow.on_action
   - Advance on a firing. Shaped as an `ActionRouter` handler.
-- `scripts/game/flow/scene_flow.py:379` `_enter(self) -> None` #TAG:SceneFlow._enter
-- `scripts/game/flow/scene_flow.py:385` `_leave(self) -> None` #TAG:SceneFlow._leave
-- `scripts/game/flow/scene_flow.py:390` `_finish(self) -> None` #TAG:SceneFlow._finish
-- `scripts/game/flow/scene_flow.py:397` `_borrow(self) -> None` #TAG:SceneFlow._borrow
+- `scripts/game/flow/scene_flow.py:313` `_enter(self) -> None` #TAG:SceneFlow._enter
+- `scripts/game/flow/scene_flow.py:319` `_leave(self) -> None` #TAG:SceneFlow._leave
+- `scripts/game/flow/scene_flow.py:324` `_finish(self) -> None` #TAG:SceneFlow._finish
+- `scripts/game/flow/scene_flow.py:331` `_borrow(self) -> None` #TAG:SceneFlow._borrow
   - Record each body's current agency, then apply this flow's.
-- `scripts/game/flow/scene_flow.py:417` `_restore(self) -> None` #TAG:SceneFlow._restore
+- `scripts/game/flow/scene_flow.py:350` `_restore(self) -> None` #TAG:SceneFlow._restore
   - Put back what was taken, value by value. Never `True`.
-- `scripts/game/flow/scene_flow.py:424` `__repr__(self) -> str` #TAG:SceneFlow.__repr__
+- `scripts/game/flow/scene_flow.py:357` `__repr__(self) -> str` #TAG:SceneFlow.__repr__

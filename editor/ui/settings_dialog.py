@@ -86,11 +86,10 @@ class SettingsDialog(QDialog):
 
         combo = QComboBox()
         for value, label in choices:
-            # A choice is authored as a string because that is what a label
-            # table wants, but `EditorSettings.get` hands back the SETTING's
-            # type. Carrying the raw string as item data made findData miss
-            # for an int setting, so reopening the dialog showed the first
-            # entry however the preference was actually set.
+            # Item data carries the SETTING's type, not the authored string:
+            # `EditorSettings.get` returns typed values, and a raw string
+            # here makes `findData` miss for an int setting, so the dialog
+            # would reopen on the first entry whatever the preference is.
             combo.addItem(label, int(value) if setting.type == "int" else value)
         index = combo.findData(current)
         combo.setCurrentIndex(index if index >= 0 else 0)

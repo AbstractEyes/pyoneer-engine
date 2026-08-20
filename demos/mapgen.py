@@ -1,45 +1,29 @@
 """The demo maps and their art, written to disk once and then left alone.
 
-WHY GENERATED AND NOT CHECKED IN AS A BLOB
--------------------------------------------
-A `.tmx` is the demo. Hiding one inside a Python string would make the point
-of these demos unreadable, so this module WRITES a real file into
-`demos/maps/` and the demo then loads it from disk like any other map. Open
-`demos/maps/demo_sidestep.tmx` in Tiled and it is an ordinary map; repaint
-it and the demo plays your version.
+Each demo is a real `.tmx` file in `demos/maps/`, loaded from disk like any
+other map: open one in Tiled, repaint it, and the demo plays your version.
+The placeholder tilesets are generated the same way, being four lines of
+colour swatches.
 
-WRITE-ONCE, DELIBERATELY
-------------------------
-`ensure_map` writes only when the file is ABSENT. Regenerating on every boot
-would silently discard an author's repaint, which is the single failure this
-repository is most careful about -- `data/maps/test.tmx` is repainted
-constantly and no check may pin its content. Delete a file here to get the
-generated version back; nothing else ever overwrites it.
-
-The tileset PNGs are generated the same way and for a duller reason: they are
-binary, they are placeholder colour swatches, and they are derivable from
-four lines of code.
+WRITE-ONCE
+----------
+`ensure_map` writes only when the file is ABSENT, so a boot can never discard
+an author's repaint. Delete a file to get the generated version back;
+`regenerate` is the explicit way to ask for it.
 
 THE COLLISION TILESET IS NOT DECORATION
 ----------------------------------------
 `scripts/core/collision_runtime.py` reads a mask as a gid relative to the
 firstgid of a tileset NAMED `collision` (case-insensitively), so the mask
-vocabulary needs a real 17-tile tileset in the map even though nothing ever
-draws it. Tile index N in that tileset IS mask N: 0 is PASS_ALL, 15 is
-BLOCK_ALL, 16 is STAR. The masks are written into a companion tile layer
-named by the art layer's `pyoneer_passability` property.
+vocabulary needs a real 17-tile tileset in the map even though nothing draws
+it. Tile index N in that tileset IS mask N: 0 is PASS_ALL, 15 is BLOCK_ALL,
+16 is STAR. The masks go in a companion tile layer named by the art layer's
+`pyoneer_passability` property.
 
-WHAT THE ENGINE WILL SAY ABOUT THE COMPANION LAYER, AND WHY IT IS FINE
------------------------------------------------------------------------
-`LayerRenderer.__prepare_map_layers` warns once per boot that
-`'FloorCollision'` has no depth mapping in `scripts/core/depth.py` and will
-NOT be drawn -- which is exactly what a mask layer wants. `LayerProfile`
-declares a `renders` flag for saying so properly and nothing in the engine
-reads it (`grep -rn '\\.renders' scripts/` finds no consumer), so today the
-mask layer is kept off the screen by the accident of its name being
-unmapped. Do NOT act on the warning's advice and add `FloorCollision` to
-`MAP_DEPTH`: that is the change that makes the masks draw on top of the
-floor.
+The engine warns once per boot that `'FloorCollision'` has no depth mapping
+in `scripts/core/depth.py` and will not be drawn. That is what a mask layer
+wants: do NOT follow the warning's advice and add it to `MAP_DEPTH`, which
+would draw the masks on top of the floor.
 """
 from __future__ import annotations
 
@@ -53,8 +37,7 @@ TILE = 32
 """Pixels per cell in every demo map. One number, so a position written in a
 demo's docstring means the same thing in all three."""
 
-# The visible tileset: four flat colours, because a demo that needed art
-# would be a demo about art.  index -> (name, colour)
+# The visible tileset: four flat colours.  index -> (name, colour)
 ART_TILES = (
     ("sky",   (104, 152, 208)),
     ("grass", (86, 140, 78)),
@@ -70,10 +53,8 @@ MARK = ART_FIRST_GID + 3
 # The mask tileset. 17 tiles because the vocabulary is 0..STAR inclusive, and
 # tile index N in it IS mask N -- so `COLLISION_FIRST_GID + 0` is PASS_ALL,
 # `+ 0xF` is BLOCK_ALL and `+ 0x10` is STAR. Only the solid one is named
-# below, because an EMPTY companion cell already means "no opinion", which
-# `CollisionField.bake` resolves with `undecided` -- PASS_ALL by default. A
-# map that painted every open cell explicitly would say the same thing in
-# 1200 more numbers.
+# below: an EMPTY companion cell already means "no opinion", which
+# `CollisionField.bake` resolves with `undecided` -- PASS_ALL by default.
 COLLISION_FIRST_GID = ART_FIRST_GID + len(ART_TILES)
 MASK_COUNT = 17
 SOLID_GID = COLLISION_FIRST_GID + 0xF     # BLOCK_ALL
@@ -89,9 +70,8 @@ COLLISION_IMAGE = "demo_collision.png"
 def ensure_art() -> None:
     """Write the two placeholder tilesets if they are not already there.
 
-    Needs a pygame display only in the sense that `pygame.image.save` does
-    not -- but `pygame.Surface` does need `pygame.init()`, which every entry
-    point into this package has already called.
+    Needs `pygame.init()` to have run, for `pygame.Surface`; every entry
+    point into this package has already called it.
     """
     os.makedirs(MAPS_DIR, exist_ok=True)
     art_path = os.path.join(MAPS_DIR, ART_IMAGE)
@@ -103,10 +83,9 @@ def ensure_art() -> None:
 
     mask_path = os.path.join(MAPS_DIR, COLLISION_IMAGE)
     if not os.path.exists(mask_path):
-        # A readable-at-a-glance swatch: the four direction bits are drawn as
-        # bars on the edges they block, in the engine's own bit order (down 1,
-        # left 2, right 4, up 8). Nothing renders this; it is for the human
-        # who opens the tileset in Tiled and wants to know which tile is which.
+        # The four direction bits drawn as bars on the edges they block, in the
+        # engine's bit order (down 1, left 2, right 4, up 8). Nothing renders
+        # this; it is for whoever opens the tileset in Tiled.
         sheet = pygame.Surface((TILE * MASK_COUNT, TILE), pygame.SRCALPHA)
         edges = ((0x1, (0, TILE - 6, TILE, 6)), (0x2, (0, 0, 6, TILE)),
                  (0x4, (TILE - 6, 0, 6, TILE)), (0x8, (0, 0, TILE, 6)))
@@ -141,9 +120,7 @@ def _properties(pairs: dict[str, tuple[str, str]], indent: str) -> str:
 
     A type of "" writes no `type=` attribute, which is what Tiled does for a
     string -- and is what `pytmx` needs in order not to hand an int property
-    back as the string it was written as. `MapDocument` applies the same
-    typing rules from the same attribute, which is why the engine reads
-    properties through it rather than through pytmx.
+    back as the string it was written as.
     """
     if not pairs:
         return ""
@@ -177,8 +154,7 @@ def build_tmx(width: int, height: int,
     `collision=None` writes NO companion layer and no `pyoneer_passability`
     property, which is how a demo says "this map declares no collision".
     `field_from_map` returns None for such a map and every body on it is
-    ungated -- deliberate for the two top-down demos, and the reason they
-    boot identically whether or not the engine's collision wiring exists.
+    ungated -- what the top-down demos want.
     """
     passability = ({"pyoneer_passability": ("", "FloorCollision")}
                    if collision is not None else {})
@@ -261,14 +237,10 @@ BOTTOM-left instead and lifted by `map_loader.object_top_left`.
 # ---------------------------------------------------------------------------
 # The geometry, named.
 #
-# EVERY number a check would otherwise have to write as a literal lives here,
-# so `tools/check_demos.py` can DERIVE what it expects -- "the body rests at
-# the top of the ground, minus its feet offset, minus one EDGE_INSET" -- from
-# the same constants that built the map, and never from a number typed twice.
-# That is also what lets the check generate its own copy of these maps into a
-# temp directory rather than reading `demos/maps/`: the shipped .tmx files are
-# the AUTHOR's to repaint, and a check that pinned their content would go red
-# the first time somebody did.
+# Every number a map is built from lives here, so `tools/check_demos.py` can
+# derive what it expects from the same constants rather than from a literal
+# typed twice -- and can generate its own copy of these maps into a temp
+# directory instead of reading the author's `demos/maps/`.
 # ---------------------------------------------------------------------------
 
 TOPDOWN_DECOY_IDS = (1, 2, 3, 4, 5)
@@ -328,8 +300,7 @@ def _topdown_source() -> str:
 
     Same type, same size, same object layer, same depth. Five of them omit
     `player_input`, so nothing polls a keyboard on their behalf and they
-    stand still by construction rather than by a flag. This is `main.py`'s
-    `load_test_objects` with the Python removed.
+    stand still by construction rather than by a flag.
     """
     width, height = TOPDOWN_SIZE
     art = _grid(width, height, GRASS)
@@ -387,9 +358,7 @@ def _sidestep_source() -> str:
                  "pyoneer_param_jump_velocity": ("float", "360"),
                  "pyoneer_param_gravity": ("float", "900")}),
         # Clear of the platform columns, so this body falls all the way to the
-        # ground and rests at the SAME y as the driven one. That equality is
-        # the demo's claim: `player_input` is the only difference between
-        # them, and it is about being steered, not about being simulated.
+        # ground and rests at the SAME y as the driven one.
         _object(SIDESTEP_FALLER_ID, "faller", "GamePlayer",
                 SIDESTEP_FALLER_SPAWN[0], SIDESTEP_FALLER_SPAWN[1],
                 SPRITE[0], SPRITE[1],
@@ -404,8 +373,7 @@ def _patrol_source() -> str:
     """One scripted body and one driven body, sharing `topdown_move`.
 
     The only difference between them is which behavior sits at order 10 and
-    writes the `MoveIntent`. `scripts/game/behavior/input.py` claims that seam
-    exists; this map is what exercises it.
+    writes the `MoveIntent`.
     """
     width, height = PATROL_SIZE
     art = _grid(width, height, GRASS)
@@ -427,14 +395,12 @@ def _story_source() -> str:
 
     The hero's list is the top-down one plus two tokens: `interact_action`,
     which fires on the rising edge of the `action` verb, and `action_relay`,
-    which hands that firing to `entity.action_sink`. `SceneManager` assigns
-    the sink -- it is the scene's `ActionRouter` -- so the map is the whole
-    declaration of "this body can advance a conversation" and the game only
-    has to say what the conversation IS.
+    which hands that firing to `entity.action_sink` -- the scene's
+    `ActionRouter`, assigned by `SceneManager`. So the map declares that this
+    body can advance a conversation, and the game says what it IS.
 
-    The keeper carries neither, so it is the negative control: it stands in
-    the same room, on the same class, at the same depth, and pressing the
-    action verb next to it does nothing at all.
+    The keeper carries neither token: same class, same room, same depth, and
+    pressing the action verb beside it does nothing.
     """
     width, height = STORY_SIZE
     art = _grid(width, height, GRASS)
@@ -484,8 +450,8 @@ def ensure_map(name: str) -> str:
 
 def regenerate(name: str) -> str:
     """Overwrite `name`'s map from source. For a check that wants a known map,
-    and for an author who wants the shipped version back. `ensure_map` never
-    does this; the two are separated so no boot path can call this one."""
+    and for an author who wants the shipped version back. Separate from
+    `ensure_map` so that no boot path can discard a repaint."""
     path = map_path(name)
     if os.path.exists(path):
         os.remove(path)

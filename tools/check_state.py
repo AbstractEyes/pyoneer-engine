@@ -34,14 +34,8 @@ THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
 Every collision field is built here from a few lines of ASCII and every body
 is constructed in this file. `data/maps/test.tmx` is never read: a check that
-pins map CONTENT goes red the next time the author paints, and that has cost
-this repo five red suites.
-
-WHAT WAS MUTATED TO PROVE THESE HAVE TEETH
--------------------------------------------
-Reported in the summary of the change that added this file, not here, because
-a list of mutations in a docstring rots the moment someone edits the code and
-nothing checks it.
+pins map CONTENT goes red the next time the author paints, while the code it
+guards is working perfectly (law 4).
 
     .venv/Scripts/python.exe tools/check_state.py
 """
@@ -649,11 +643,10 @@ expect("...which is support, its grace, and the same motion pair",
        sorted(declared(PLATFORMER_MOVE)),
        ["state.facing", "state.phase", "state.support", "state.support_grace"])
 
-# THE IDLE HALF. `movement.py:327` sets PHASE_MOVING if horizontal else
-# PHASE_IDLE, and only the MOVING branch was covered: deleting the else made
-# no check red, so a side-on body that stopped kept playing its walk cycle
-# forever -- which is the exact bug `phase` exists to make impossible. The
-# top-down twin of this assertion already lives in check_movement.
+# THE IDLE HALF. `platformer_move` sets PHASE_MOVING if horizontal else
+# PHASE_IDLE, and covering only the MOVING branch leaves a side-on body that
+# stopped playing its walk cycle forever -- the exact bug `phase` exists to
+# make impossible. The top-down twin of this assertion lives in check_movement.
 _idle_probe = Body()
 _idle_probe.intent = MoveIntent()
 _idle_probe.collision_field = FLOOR
@@ -901,9 +894,9 @@ expect("...while BOTH still report input as permitted, which is the point",
        (_unwired.state.enabled_inputs, _wired.state.enabled_inputs),
        (True, True))
 
-# Before this change the line above read (False, True): "no manager" and
-# "input taken away" were one bit, so a narrative system could not tell
-# RESTORING input from GRANTING it to a body that never had any.
+# Two bits, not one: collapse "no manager" and "input taken away" into a
+# single flag and a narrative system cannot tell RESTORING input from GRANTING
+# it to a body that never had any.
 
 _bound = Body()
 _bound.action_manager = Keys(*ALL_VERBS).hold("right")

@@ -25,12 +25,11 @@ class TextBox(DrawComponent):
                  *args, **kwargs):
         """A single-line text field with placeholder semantics.
 
-        `default_text` is a PLACEHOLDER, not a value. It used to be assigned
-        straight into self.text, which made it indistinguishable from typed
-        content: focusing the box and typing appended to it, and an "empty"
-        box reported its prompt as its value.
+        `default_text` is a PLACEHOLDER, not a value: assigning it into the
+        text would make it indistinguishable from typed content, so an "empty"
+        box would report its prompt as its value.
 
-        Now `value` is what the user typed and `placeholder` is what is shown
+        `value` is what the user typed and `placeholder` is what is shown
         while `value` is empty and the box is not focused. Focusing shows the
         real value -- blank if there is none -- and typing continues from it.
         Blurring an empty box brings the placeholder back.
@@ -113,10 +112,9 @@ class TextBox(DrawComponent):
                                     background_color=WidgetColor(10, 10, 10, 255, 1),
                                     border_color=WidgetColor(255, 255, 255, 255, 1))
         background.anchor = Anchor.ALL
-        # Fills the box and auto-fits. It used to be built at
-        # Rect(20, 20, w - 10, h - 10) with a hardcoded font_size of 24 -- a
-        # 20px inset on a 32px-tall box pushed the text almost entirely out of
-        # frame, and 24pt could not fit regardless of how the box was resized.
+        # Fills the box and auto-fits, rather than a fixed inset and a
+        # hardcoded font size, either of which pushes the text out of frame
+        # on a short box.
         self.text_display = TextComponent(
             parent=self,
             depth=2,
@@ -209,19 +207,12 @@ class TextBox(DrawComponent):
                 self.send_event_advanced(GameEventType.USE, None)
         elif len(self.__value) < self.max_length:
             character = str(event.event.unicode)
-            # Printable only: control keys arrive with unicode set to things
-            # like '' and used to be appended verbatim into the value.
+            # Printable only: control keys arrive with unicode set to
+            # a control character, which must not land in the value.
             if character and character.isprintable():
                 self.value = self.__value + character
         return True
 
     def key_up(self, event: Optional[PyoneerEvent]) -> bool:
-        #"""Our test keyboard listener, meant to test the input buffer"""
-        #keys = self.__unpack_keys(event_args)
-        #if len(keys) > 0:
-        #    for key in keys:
-        #        if key in self.keys_down:
-        #            del self.keys_down[key]
-        #            return True
         return False
 

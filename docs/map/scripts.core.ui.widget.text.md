@@ -3,7 +3,7 @@
 
 # `scripts/core/ui/widget/text.py` — tier 2 #TAG:scripts/core/ui/widget/text.py
 
-`scripts.core.ui.widget.text` · 165 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.widget.text` · 164 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -18,7 +18,7 @@
 
 ### `class TextComponent(DrawComponent)` #TAG:TextComponent
 
-`scripts/core/ui/widget/text.py:33`–`164`
+`scripts/core/ui/widget/text.py:33`–`163`
 
 > A line of text drawn into its own bounds.
 
@@ -31,4 +31,4 @@
   - The largest font at or below base_font_size whose text fits, and its size.
 - `scripts/core/ui/widget/text.py:130` `text_position(self, rendered: pygame.Surface) -> tuple[int, int]` #TAG:TextComponent.text_position
   - Where the rendered text goes inside this component's surface.
-- `scripts/core/ui/widget/text.py:148` `prepare_text(self, sender: Optional[PyoneerGameObject]=None)` #TAG:TextComponent.prepare_text
+- `scripts/core/ui/widget/text.py:147` `prepare_text(self, sender: Optional[PyoneerGameObject]=None)` #TAG:TextComponent.prepare_text

@@ -1,17 +1,12 @@
 """What a map layer declares about itself, read at load time.
 
-WHY THIS IS IN THE ENGINE
--------------------------
 The editor writes these as tmx custom properties and the engine reads them,
-so the names have to be shared. The dependency only runs one way -- the
-editor may import `scripts/`, never the reverse -- so the vocabulary lives
-here and `editor/core/layers.py` imports it. Two hand-kept copies of a
-string like `pyoneer_parallax_x` would drift, and the failure would be
-silent: a property written under one name and read under another simply
-does nothing, which is exactly the bug this module exists to end.
+so the names are shared: the vocabulary lives here and `editor/core/layers.py`
+imports it, because two hand-kept copies of a string like
+`pyoneer_parallax_x` would drift and a property written under one name and
+read under another silently does nothing.
 
-THE PREFIX IS LOAD-BEARING
---------------------------
+THE PREFIX IS LOAD-BEARING.
 pytmx RAISES and makes the whole map unloadable if a custom property  #TAG:pyoneer_prefix_pytmx
 shadows one of its own attribute names (`opacity`, `visible`, `offsetx`,
 `name`, `data`, ...). `opacity` is both a natural capability name and one of

@@ -3,22 +3,22 @@
 
 # `scripts/core/log.py` — tier 2 #TAG:scripts/core/log.py
 
-> Per-channel debug tracing.
+> Per-channel debug tracing, switchable per subsystem:
 
-`scripts.core.log` · 119 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.log` · 113 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
-- `scripts/core/log.py:43` `CHANNELS` #TAG:CHANNELS
+- `scripts/core/log.py:37` `CHANNELS` #TAG:CHANNELS
 
 ## Functions
 
-- `scripts/core/log.py:49` `_configure_once()` #TAG:_configure_once
-- `scripts/core/log.py:62` `channel(name: str) -> logging.Logger` #TAG:channel
+- `scripts/core/log.py:43` `_configure_once()` #TAG:_configure_once
+- `scripts/core/log.py:56` `channel(name: str) -> logging.Logger` #TAG:channel
   - The logger for one channel. Unknown names are rejected loudly.
-- `scripts/core/log.py:72` `enable(*names: str)` #TAG:enable
+- `scripts/core/log.py:66` `enable(*names: str)` #TAG:enable
   - Turn on one or more channels, or 'all'.
-- `scripts/core/log.py:80` `disable(*names: str)` #TAG:disable
-- `scripts/core/log.py:87` `enabled(name: str) -> bool` #TAG:enabled
-- `scripts/core/log.py:91` `_enable_from_environment()` #TAG:_enable_from_environment
+- `scripts/core/log.py:74` `disable(*names: str)` #TAG:disable
+- `scripts/core/log.py:81` `enabled(name: str) -> bool` #TAG:enabled
+- `scripts/core/log.py:85` `_enable_from_environment()` #TAG:_enable_from_environment
   - Read PYONEER_DEBUG at import so `PYONEER_DEBUG=mouse python main.py` works.

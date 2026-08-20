@@ -20,13 +20,11 @@ there is a decision in it:
                         Problems row that stays until its situation ends.
     self.ask / .confirm a real decision, and only ever the author's to make.
 
-A rejected command used to be a modal titled "Rejected" whose body was verb
-names, scope syntax, an args dict and an exception class -- a box to dismiss
-in order to learn that nothing had changed. It is the second channel now.
-The two dialogs left in this file are the two that carry a choice: which
-genre pack, and whether to apply an AI's command list to the project.
-`QMessageBox.critical` survives in three places, all of them an unexpected
-exception at a point where the alternative is losing work.
+A rejected command goes down the second channel: nothing changed, so there
+is no decision to interrupt for. The two dialogs in this file are the two
+that carry a choice -- which genre pack, and whether to apply an AI's
+command list -- and `QMessageBox.critical` survives in three places, all of
+them an unexpected exception where the alternative is losing work.
 """
 from __future__ import annotations
 
@@ -108,7 +106,7 @@ class EditorWindow(QMainWindow):
         self.ask = ask_form
         self.confirm = confirm
         #: The last response file that arrived on disk and has not been
-        #: applied. It used to interrupt with a modal the moment it landed.
+        #: applied. Surfaced in the status bar, never as a modal.
         self.pending_response: str | None = None
         self.setWindowTitle(self.__title())
         self.resize(1600, 1000)
@@ -141,10 +139,8 @@ class EditorWindow(QMainWindow):
         # -- the same argument, and the same fix, as the collision palette.
         self.addDockWidget(Qt.RightDockWidgetArea, self.behaviors)
         self.tabifyDockWidget(self.inspector, self.behaviors)
-        # Actions was written, checked by the suite, and mounted NOWHERE: 353
-        # lines and a passing check for a surface no click could reach, which
-        # is the exact failure its own docstring is about. It answers "what is
-        # this selected thing", so it tabs with the Inspector like Behaviors.
+        # Actions answers "what is this selected thing", so it tabs with the
+        # Inspector, like Behaviors.
         self.addDockWidget(Qt.RightDockWidgetArea, self.actions)
         self.tabifyDockWidget(self.inspector, self.actions)
         self.inspector.raise_()
@@ -196,22 +192,19 @@ class EditorWindow(QMainWindow):
     def __build_mask_palette(self) -> QDockWidget:
         """The collision brush: what the tile palette becomes in that mode.
 
-        Tabified onto `palette_dock` rather than given its own strip. It
+        Tabified onto `palette_dock` rather than given its own strip: it
         answers the SAME question -- what am I painting with -- and only one
-        of the two can be the answer at a time, so two side-by-side palettes
-        would be two-thirds of the left column spent saying nothing.
-        `palette_dock` is raised again afterwards because tabifyDockWidget
-        leaves the newcomer on top, and the editor opens in tile mode.
+        of the two can be the answer at a time. `palette_dock` is raised
+        again afterwards because `tabifyDockWidget` leaves the newcomer on
+        top, and the editor opens in tile mode.
 
         The palette emits a MASK; turning it into a gid needs the companion
         layer's firstgid, which is the canvas's business, so `set_mask` takes
         it raw.
 
-        ONE MASK, TWO TARGETS, and this widget knows about neither. A mask
+        ONE MASK, TWO TARGETS, and this widget knows about neither: a mask
         picked here is written into a map CELL by a canvas stroke, or onto a
-        TILE by a pick in the palette next door -- see `MapCanvas.set_stamp`.
-        Both are the same value from the same seventeen swatches, which is
-        the whole reason there is no second mask-picking control.
+        TILE by a pick in the palette next door (`MapCanvas.set_stamp`).
         """
         dock = QDockWidget("Collision", self)
         dock.setObjectName("Collision")
@@ -395,10 +388,9 @@ class EditorWindow(QMainWindow):
         rather than stacking -- and is what `clear` names when the situation
         it described is over.
 
-        This is what the "Rejected" modal became. A rejection is a normal
-        outcome (a verb refusing an edit that would corrupt gids is the
-        system working), and a normal outcome that stops the hand and takes
-        the keyboard is the defect the author reported on a paint click.
+        A rejection comes down this channel, not a dialog: a verb refusing an
+        edit that would corrupt gids is the system working, and a normal
+        outcome must not stop the hand and take the keyboard.
         """
         self.notify(message, seconds=seconds)
         self.problems.post(
@@ -442,22 +434,17 @@ class EditorWindow(QMainWindow):
     def refresh_all(self) -> None:
         self.canvas.set_selection(self.selection.scope)
         if self.canvas.atlas is not None:
-            # BEFORE the atlas, so the sheet is drawn once with its badges
-            # on rather than drawn and then drawn again. `set_masks` does not
-            # repaint at all -- `set_atlas` rebuilds unconditionally on the
-            # next line, so the ORDER is what makes this one draw, and
-            # swapping these two lines would draw the sheet without badges.
+            # BEFORE the atlas: `set_masks` does not repaint, and `set_atlas`
+            # rebuilds unconditionally on the next line, so this order is
+            # what draws the sheet once with its badges on.
             #
-            # AFTER `set_selection`, which rebuilds the canvas and therefore
-            # re-reads level one. Asking first would hand the palette the
-            # masks from before the command that just landed, which on a bake
-            # is the one command whose whole effect is the answer.
+            # AFTER `set_selection`, which rebuilds the canvas and so re-reads
+            # level one -- asking first would hand the palette the masks from
+            # before the command that just landed, which on a bake is the one
+            # command whose whole effect is the answer.
             #
-            # It costs at most ONE `.blitmask` read per command, and only on
-            # a map that declares one: `tile_masks` goes through the canvas's
-            # memo, which the resolved overlay already pays for on every
-            # rebuild in collision mode. A map that declares no masks -- every
-            # map in this repository -- reads nothing at all.
+            # It costs at most ONE `.blitmask` read per command, through the
+            # canvas's memo, and nothing at all on a map that declares none.
             self.palette.set_masks(self.canvas.tile_masks())
             self.palette.set_atlas(self.canvas.atlas)
         for dock in self.docks:
@@ -472,10 +459,8 @@ class EditorWindow(QMainWindow):
     def __sync_actions(self) -> None:
         """A menu entry that cannot act is greyed and says why.
 
-        Every one of these used to be permanently enabled and to answer with
-        a modal: "Nothing staged", "No art brief", "No response". A control
-        that is present and refusing is worse than one that is greyed with a
-        reason -- the click has already been spent by the time the refusal
+        A control that is present and refusing is worse than one greyed with
+        a reason: the click has already been spent by the time the refusal
         arrives.
         """
         staged = not self.session.manifest.empty
@@ -546,20 +531,18 @@ class EditorWindow(QMainWindow):
         """Lit for the tools a footprint reaches, greyed WITH A REASON for
         the rest.
 
-        Measured, and this is the whole justification for `Tool.uses_size`:
-        a rectangle, a filled rectangle and a flood fill read the stamp as
-        a repeating pattern keyed on map coordinates, so a uniform 3x3
-        produces bit-identical edits to a 1x1. Leaving the spinner live for
+        A rectangle, a filled rectangle and a flood fill read the stamp as a
+        repeating pattern keyed on map coordinates, so a uniform 3x3 produces
+        bit-identical edits to a 1x1 (`Tool.uses_size`). A live spinner for
         those three would be a control the author turns and watches do
-        nothing -- the exact shape the last pass spent itself removing.
+        nothing.
         """
         tool = self.canvas.tool
         live = tool.uses_size
         self.size_spin.setEnabled(live)
         size = self.canvas.brush_size
-        # The unit, spelled out. A size is in CELLS, and how big a cell is
-        # depends on what is being painted -- which is the confusion this
-        # whole control exists to end.
+        # The unit, spelled out: a size is in CELLS, and how big a cell is
+        # depends on what is being painted.
         try:
             unit = f"{self.canvas.paint_width}px"
         except Exception:                                       # noqa: BLE001
@@ -576,11 +559,9 @@ class EditorWindow(QMainWindow):
         """A tile picked in the palette. In collision mode it is a TARGET.
 
         `set_stamp` rather than assigning `canvas.stamp`, because what a tile
-        pick MEANS is the canvas's business and it is not one thing: in tiles
-        mode it is the brush, and in collision mode the brush is already a
-        mask, so the tile is what that mask gets written onto. The readout
-        follows the same split -- calling a tile "brush" while the brush is a
-        mask is the toolbar disagreeing with the click that just happened.
+        pick MEANS is the canvas's business: in tiles mode it is the brush,
+        and in collision mode the brush is already a mask, so the tile is
+        what that mask gets written onto. The readout follows the same split.
         """
         self.canvas.set_stamp(stamp)
         if self.canvas.mode is EditMode.COLLISION:
@@ -678,13 +659,10 @@ class EditorWindow(QMainWindow):
     def play(self) -> None:
         """Save, then launch the game as a subprocess. Not the runtime.
 
-        It used to ask "The game reads files from disk. Save before
-        playing?" on the most repeated action in the loop -- an unanchored
-        question, no default button, and the same answer every single time.
-        The editor knows the game reads from disk and knows the session is
-        dirty, so it saves: if the editor can do the thing, it does the
-        thing. Nothing is lost by it, because a save writes what undo can
-        still take back byte-for-byte, and the status line says it happened.
+        Saves without asking. The game reads files from disk and the editor
+        knows whether the session is dirty, so there is no decision to make;
+        nothing is lost, because a save writes what undo can still take back
+        byte-for-byte, and the status line says it happened.
         """
         saved = 0
         if self.session.dirty:
@@ -861,9 +839,7 @@ class EditorWindow(QMainWindow):
     def ship(self) -> None:
         if self.session.manifest.empty:
             # The menu entry is greyed and the dock's Ship button disables
-            # itself, so this is only reachable by calling it. It used to be
-            # a modal on an always-enabled action, next to a button that was
-            # already doing the right thing.
+            # itself, so this is only reachable by calling it directly.
             self.notify("nothing is staged — type a note under any panel "
                         "first, and its scope comes with it")
             return
@@ -884,9 +860,7 @@ class EditorWindow(QMainWindow):
         self.refresh_manifest()
         self.__watch_requests()
         relative = os.path.relpath(bundle.directory, self.session.project.root)
-        # A four-line modal to be told a file was written is a report with an
-        # OK button. The row stays until the response lands, which is longer
-        # than any dialog would have.
+        # A report, not a dialog: the row stays until the response lands.
         self.report(f"wrote {relative} — hand it over with: Read "
                     f"{relative}/BRIEF.md and do the work",
                     key=f"request:{bundle.identifier}", severity="soft",
@@ -960,14 +934,12 @@ class EditorWindow(QMainWindow):
     def __offer(self, path: str) -> None:
         """A file appeared on disk. That is news, not a question.
 
-        This was the only modal in the tree that could open with NO gesture
-        from the author at all -- a filesystem watcher fired it, so it could
-        land on top of an in-progress stroke and take the mouse button with
-        it. Nothing about focus, drag state or consent was consulted.
-
-        So it announces itself instead. `confirm_response` unticked means
-        the author already said "apply as soon as it arrives", and that is
-        the one case where arriving is enough to act on.
+        A filesystem watcher fires this, with no gesture from the author, so
+        it must never open a dialog: one would land on top of an in-progress
+        stroke and take the mouse button with it. It announces itself
+        instead. `confirm_response` unticked means the author already said
+        "apply as soon as it arrives", which is the one case where arriving
+        is enough to act on.
         """
         name = os.path.basename(os.path.dirname(path))
         self.pending_response = path

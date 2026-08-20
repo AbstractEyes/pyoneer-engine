@@ -133,15 +133,10 @@ class MainGame:
         an authored `<object type="GamePlayer">` gets exactly what this file
         hands a GamePlayer it builds itself.
 
-        THE OPEN QUESTION THAT USED TO LIVE HERE IS ANSWERED. It was: nothing
-        in the map format says which object the human drives, and handing the
-        live manager to every spawned player would move all of them at once
-        with one key press. That was true while `core_frame_update` polled the
-        keyboard itself. It is not any more -- polling is the `player_input`
-        behavior's job, and an entity that does not carry it never reads the
-        manager it was handed. So every spawned player may safely have one,
-        and the map decides which of them is the player by listing
-        `player_input` in its `pyoneer_behaviors` property.
+        EVERY spawned player may safely hold the live manager: polling is
+        `player_input`'s job, and an entity without that token never reads the
+        manager it was handed. The map decides which one the human drives by
+        listing `player_input` in its `pyoneer_behaviors` property.
 
         `behaviors` is deliberately NOT among these defaults. A default here
         would be a per-CLASS list -- every object of a type composed the same

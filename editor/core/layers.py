@@ -2,19 +2,16 @@
 
 WHY
 ---
-A tile layer in this engine currently carries exactly one piece of authored
-state: its NAME, which `scripts/core/depth.py` maps to a draw depth. Everything
-else about how it behaves is inferred:
+Without this, the only authored state a tile layer carries is its NAME,
+which `scripts/core/depth.py` maps to a draw depth; everything else about
+how it behaves is inferred -- "static" from Python type plus depth adjacency
+plus a measured alpha proof, none of which the author controls, and opacity,
+visibility and offsets parsed by pytmx and read by nobody.
 
-  * "static" is inferred from Python type plus depth adjacency plus a
-    measured alpha proof, none of which the author controls
-  * opacity, visibility and offsets are parsed by pytmx and read by nobody
-  * passability does not exist
-
-So a layer cannot be TOLD anything. This module is the vocabulary for
-telling it, stored as tmx layer custom properties -- which means Tiled shows
-them, a human edits them in the same dialog they already use, `MapDocument`
-writes them with a byte-minimal diff, and pytmx hands them back typed.
+This module is the vocabulary for TELLING a layer things, stored as tmx
+layer custom properties -- so Tiled shows them, a human edits them in the
+dialog they already use, `MapDocument` writes them with a byte-minimal diff,
+and pytmx hands them back typed.
 
 The point is not these six properties. It is that adding a seventh is a
 one-line entry here plus whatever reads it -- no editor code, no UI code,

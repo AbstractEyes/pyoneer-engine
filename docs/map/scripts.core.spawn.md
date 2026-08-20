@@ -5,7 +5,7 @@
 
 > Which tmx object type becomes which class, and at what depth.
 
-`scripts.core.spawn` · 236 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.spawn` · 201 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,22 +13,22 @@
 
 ## Module constants
 
-- `scripts/core/spawn.py:61` `SPAWN_REGISTRY` #TAG:SPAWN_REGISTRY
-- `scripts/core/spawn.py:64` `DEFAULT_OBJECT_DEPTH` #TAG:DEFAULT_OBJECT_DEPTH
-- `scripts/core/spawn.py:76` `DEPTH_PROPERTY` #TAG:DEPTH_PROPERTY
-- `scripts/core/spawn.py:78` `DEPTH_PROPERTY_PLAIN` #TAG:DEPTH_PROPERTY_PLAIN
+- `scripts/core/spawn.py:37` `SPAWN_REGISTRY` #TAG:SPAWN_REGISTRY
+- `scripts/core/spawn.py:40` `DEFAULT_OBJECT_DEPTH` #TAG:DEFAULT_OBJECT_DEPTH
+- `scripts/core/spawn.py:51` `DEPTH_PROPERTY` #TAG:DEPTH_PROPERTY
+- `scripts/core/spawn.py:53` `DEPTH_PROPERTY_PLAIN` #TAG:DEPTH_PROPERTY_PLAIN
 
 ## Functions
 
-- `scripts/core/spawn.py:93` `register(name: str, factory: Callable[..., Any], registry: dict[str, Callable[..., Any]] | None=None) -> Callable[..., Any]` #TAG:spawn.register
+- `scripts/core/spawn.py:67` `register(name: str, factory: Callable[..., Any], registry: dict[str, Callable[..., Any]] | None=None) -> Callable[..., Any]` #TAG:spawn.register
   - Bind one tmx type name to the callable that builds it.
-- `scripts/core/spawn.py:107` `register_all(entries, registry: dict[str, Callable[..., Any]] | None=None) -> None` #TAG:spawn.register_all
+- `scripts/core/spawn.py:80` `register_all(entries, registry: dict[str, Callable[..., Any]] | None=None) -> None` #TAG:spawn.register_all
   - Register a sequence of (name, factory) pairs. Mirrors ComponentFactory.
-- `scripts/core/spawn.py:113` `resolve_factory(type_name: str, registry: Mapping[str, Callable[..., Any]] | None=None) -> Callable[..., Any]` #TAG:resolve_factory
+- `scripts/core/spawn.py:86` `resolve_factory(type_name: str, registry: Mapping[str, Callable[..., Any]] | None=None) -> Callable[..., Any]` #TAG:resolve_factory
   - The callable for `type_name`, or raise naming it and the whole registry.
-- `scripts/core/spawn.py:136` `_declared_depth(properties: Mapping[str, Any] | None, where: str) -> int | None` #TAG:_declared_depth
+- `scripts/core/spawn.py:108` `_declared_depth(properties: Mapping[str, Any] | None, where: str) -> int | None` #TAG:_declared_depth
   - The depth an object declares in its own custom properties, if any.
-- `scripts/core/spawn.py:163` `resolve_depth(type_name: str, properties: Mapping[str, Any] | None=None, layer_name: str | None=None, class_name: str | None=None, where: str='object') -> int` #TAG:resolve_depth
+- `scripts/core/spawn.py:134` `resolve_depth(type_name: str, properties: Mapping[str, Any] | None=None, layer_name: str | None=None, class_name: str | None=None, where: str='object') -> int` #TAG:resolve_depth
   - Which render depth an object belongs at.
-- `scripts/core/spawn.py:206` `spawn(type_name: str, registry: Mapping[str, Callable[..., Any]] | None=None, **kwargs: Any) -> Any` #TAG:spawn
+- `scripts/core/spawn.py:176` `spawn(type_name: str, registry: Mapping[str, Callable[..., Any]] | None=None, **kwargs: Any) -> Any` #TAG:spawn
   - Build one entity of `type_name`. Raises if the type is unknown.

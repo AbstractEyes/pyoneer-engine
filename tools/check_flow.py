@@ -11,7 +11,7 @@ permanently unable to walk:
         the parse tree of BOTH modules, with a decoy that proves the scan
         can find one -- and imports nothing from `editor/`; and what the
         package COSTS to import is measured in a subprocess rather than
-        argued, because a docstring in `SceneManager` argued it wrong
+        argued in prose
      3. `SceneManager` assigns `entity.action_sink` on BOTH binding routes,
         so `missing_requirements()` reports it before the bind and nothing
         after -- for a hand-built entity AND for one a map spawned

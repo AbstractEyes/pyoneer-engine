@@ -1,4 +1,4 @@
-# Used to grab from the tiled map, but not really necessary for anything else.
+# Layer name -> render depth, for the layers a .tmx may declare.
 MAP_DEPTH = {
     "Parallax":         1,  # the parallax background
     "Floor":            10, # the floor layer
@@ -34,11 +34,9 @@ OBJECT_CONVERTER = {
 DEPTH = MAP_DEPTH | OBJECT_DEPTH | OBJECT_CONVERTER
 
 LAYER_NAME_ALIASES = {
-    # data/maps/test.tmx spells this layer "Paralax" (one L). The layer holds
-    # 39 real tiles that were silently dropped for as long as the renderer
-    # looked up the correctly-spelled name. Aliasing rather than renaming the
-    # layer keeps the .tmx byte-identical for Tiled; rename it in Tiled and
-    # delete this entry whenever convenient.
+    # data/maps/test.tmx spells this layer "Paralax" (one L), and its 39
+    # tiles draw nothing unless the misspelling resolves. Aliasing rather
+    # than renaming keeps the .tmx byte-identical.
     "Paralax": "Parallax",
 }
 

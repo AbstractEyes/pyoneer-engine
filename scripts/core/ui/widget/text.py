@@ -18,9 +18,9 @@ _FONT_CACHE: dict[tuple[str, int, bool, bool], pygame.font.Font] = {}
 def get_font(name: str, size: int, bold: bool = False, italic: bool = False) -> pygame.font.Font:
     """A SysFont, built once per (name, size, style).
 
-    prepare_text used to call pygame.font.SysFont on EVERY text change, which
-    walks the system font list and re-parses the face each time. Auto-fitting
-    makes that far worse, since fitting probes several sizes per resize.
+    `pygame.font.SysFont` walks the system font list and re-parses the face,
+    and auto-fitting probes several sizes per resize, so an uncached call per
+    text change is expensive.
     """
     key = (name, int(size), bool(bold), bool(italic))
     font = _FONT_CACHE.get(key)
@@ -130,8 +130,7 @@ class TextComponent(DrawComponent):
     def text_position(self, rendered: pygame.Surface) -> tuple[int, int]:
         """Where the rendered text goes inside this component's surface.
 
-        Measured against the DESTINATION, which is what the old code failed to
-        do: it used the text's own centerx as an x coordinate.
+        Measured against the DESTINATION rect, not the text's own.
         """
         area = self.image.get_rect()
         pad_x, pad_y = self.padding

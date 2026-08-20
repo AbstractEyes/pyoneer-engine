@@ -15,11 +15,8 @@ class GameAnimation:
     """One named sequence ("walk_left") with its frames pre-sliced.
 
     Frames are cut from the spritesheet ONCE at construction into
-    `self.surfaces`. Previously each frame was re-subsurfaced on demand and
-    gated behind a self-consuming `_frame_changed` dirty flag, which is what
-    made a switched-to animation render the previous animation's sprite: the
-    flag had already been consumed, so nothing re-sliced. With the slices
-    precomputed there is no dirty flag and no stale-frame failure mode.
+    `self.surfaces`, so `image()` is an index and there is no dirty flag that
+    can leave a switched-to sequence showing the previous one's sprite.
     """
 
     def __init__(self, animation_data: DataAnimation = None,
@@ -102,11 +99,10 @@ class GameAnimationHandler:
     def __init__(self, animation_data: DataAnimationCategory):
         self._data = animation_data
         # convert_alpha() matches the sheet to the display's pixel format.
-        # Without it every sprite blit takes SDL's per-pixel conversion path:
-        # measured 36.3us vs 2.31us for a 44x64 sprite, a 15.7x penalty on the
-        # single hottest operation in the entity render path. Subsurfaces
-        # inherit the parent's format and cannot be converted individually,
-        # so this must happen before any slicing.
+        # Without it every sprite blit takes SDL's per-pixel conversion path,
+        # measured at 36.3us against 2.31us for a 44x64 sprite. Subsurfaces
+        # inherit the parent's format and cannot be converted individually, so
+        # this must happen before any slicing.
         try:
             sheet = pygame.image.load(self._data.file)
         except FileNotFoundError as exc:
@@ -154,12 +150,12 @@ class GameAnimationHandler:
     def start(self, name: str | None = None, from_beginning: bool = True):
         """Switch to `name`, restarting it from frame 0 by default.
 
-        This used to set `active = True` on the target directly, bypassing
-        GameAnimation.start(), so the frame counter and timer of the previous
-        run were left in place and the sprite on screen did not change. The
-        concrete symptom: releasing the movement keys called
-        start('idle_down') and the player kept rendering the walk frame, for
-        up to a full second, because idle_down's frame duration is 1000.
+        Goes through `GameAnimation.start`, so the target's frame counter and
+        timer are reset: setting `active` directly instead leaves the previous
+        run's frame on screen for up to a whole frame duration, and
+        `idle_down`'s is 1000ms.
+
+        RAISES for a sequence this category does not have.
         """
         self.stop()
         if not name:
@@ -192,12 +188,7 @@ class GameAnimationHandler:
             self._active.stop(reset=False)
 
     def resume(self):
-        """Resume the paused sequence at the exact frame it stopped on.
-
-        This was a byte-for-byte copy of pause() and could never resume
-        anything: both called stop(False), and the paused sequence was already
-        unreachable because the lookup only ever returned *active* sequences.
-        """
+        """Resume the paused sequence at the exact frame it stopped on."""
         if self._paused is not None:
             self._paused.start(from_beginning=False)
             self._active = self._paused

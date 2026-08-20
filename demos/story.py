@@ -1,11 +1,5 @@
 """Story demo: an opening cutscene, advanced by the player, then handed back.
 
-WHAT THIS PROVES
-----------------
-That `SceneFlow` is mounted -- that a beat of narrative can take the player's
-steering, drive a real `GameWindow` through the engine's own frame, advance on
-the player's own action verb, and give the steering back EXACTLY.
-
 `demo_story.tmx` places two `GamePlayer` objects that differ by two tokens:
 
     hero     player_input,topdown_move,animation_drive,interact_action,action_relay
@@ -13,30 +7,23 @@ the player's own action verb, and give the steering back EXACTLY.
 
 `interact_action` fires on the rising edge of the `action` verb;
 `action_relay` hands the firing to `entity.action_sink`, which `SceneManager`
-has already assigned as the scene's `ActionRouter`; the game routes that token
-to `SceneFlow.on_action`. Nothing here dispatches an event and nothing here
-was added to the event system -- the whole chain is calls, which is why N
-handlers may read one firing and none of them can silence the others.
+has already assigned as the scene's `ActionRouter`; `demos/narrative.py`
+routes that token to `SceneFlow.on_action`. The chain is calls, not events,
+so any number of handlers may read one firing and none can silence another.
 
-The keeper is the negative control: same class, same depth, same room, no
-action tokens. Pressing the verb next to it does nothing, because what makes a
-body able to advance a conversation is its behavior list and not its position.
+The keeper carries no action tokens, so pressing the verb beside it does
+nothing: what advances a conversation is a body's behavior list, not its
+position.
 
-The hero's object also carries `pyoneer_param_payload="keeper"`, and the route
-is registered for that payload rather than for any payload. A route is keyed
-by (token, payload), so this is how ONE body with ONE action verb opens a
-different conversation in a different room -- no second token, no second verb,
-no `if` in the handler. A firing with a different payload reaches this flow's
-route not at all, which is the half worth measuring.
+The hero's object also carries `pyoneer_param_payload="keeper"`, and the
+route is registered for that payload. A route is keyed by (token, payload),
+so one body with one action verb can open a different conversation in a
+different room without a second token or an `if` in the handler.
 
-THE HALF THAT IS EASY TO GET WRONG, AND IS THE POINT
------------------------------------------------------
-While the cutscene runs the hero cannot WALK and can still PRESS CONTINUE.
-Those are two different axes -- `steerable` and `enabled_inputs` -- and the
-obvious wrong move is `begin_text_capture`, which makes every verb read False
-and locks a dialogue out of its own advance button. `SceneFlow`'s default hold
-clears `steerable` and leaves `enabled_inputs`, and `tools/check_prototype.py`
-presses movement and the action verb on the SAME frames to measure both.
+While the cutscene holds, the hero cannot WALK and can still PRESS CONTINUE:
+`steerable` and `enabled_inputs` are separate axes, and `SceneFlow`'s default
+hold clears only the first. (`begin_text_capture` makes every verb read False
+and would lock a dialogue out of its own advance button.)
 
     .venv/Scripts/python.exe -m demos.story
 

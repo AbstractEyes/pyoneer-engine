@@ -82,10 +82,8 @@ def update(delta: float = pygame.time.Clock().tick(60) / 1000):
     global PYO_QUEUE
     global FRAME_DELTA
     FRAME_DELTA = delta
-    #pygame.event.pump()
     QUEUE = pygame.event.get(pump=True)
     pump_pyo()
-    #PYO_QUEUE = get_pyo()
 
 
 def queue():

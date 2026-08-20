@@ -2,11 +2,10 @@
 
 `tools/check_collision_runtime.py` proves the mask vocabulary, the boundary
 walk and `allowed_distance`. `tools/check_movement.py` proves the two movement
-behaviors call the gate. Neither of them proves anything is CONNECTED: until
-this commit `GameEntity.collision_field` was assigned by nothing in the engine,
-so every body in the shipped game was ungated -- `move_direction` walked
-through painted walls and a `platformer_move` body accelerated downward
-forever and never landed. That is the wire under test here, and it has exactly
+behaviors call the gate. Neither proves anything is CONNECTED: with
+`GameEntity.collision_field` assigned by nothing, `move_direction` walks
+through painted walls and a `platformer_move` body accelerates downward
+forever and never lands. That wire is what this file tests, and it has exactly
 three claims:
 
     a body on a map WITH a mask is stopped by it
@@ -36,10 +35,9 @@ the file, next to the claim, and both are printed.
 THE FIXTURES ARE THIS FILE'S OWN, ART INCLUDED
 -----------------------------------------------
 `data/maps/test.tmx` is repainted constantly and is never read here. It also
-declares no collision at all, which is precisely why this defect survived: the
-shipped map cannot exercise the gate in either direction. Five maps are written
-into a temp directory together with the two PNGs pytmx opens eagerly during the
-parse.
+declares no collision at all, so it cannot exercise the gate in either
+direction. Five maps are written into a temp directory together with the two
+PNGs pytmx opens eagerly during the parse.
 
     .venv/Scripts/python.exe tools/check_collision_field.py
 """
@@ -297,8 +295,7 @@ FIXTURES = {
     # field and there is NO floor, so the body falls to the world edge and
     # still reports grounded.
     "nofloor.tmx": (all_open, body_objects()),
-    # No companion at all: the ungated body, which is what the whole engine
-    # shipped before this wire existed.
+    # No companion at all: the ungated body.
     "ungated.tmx": (None, body_objects()),
 }
 
@@ -560,8 +557,8 @@ try:
     # ------------------------------------------------------- the gate, walking
     print()
     print("a body on a mask is stopped by it; the same body without one is not")
-    # move_direction is what topdown_move calls, verbatim (movement.py:117),
-    # with move_speed * delta as the distance. 100 * 1.0 = 100 pixels asked
+    # move_direction is what topdown_move calls, verbatim, with
+    # move_speed * delta as the distance. 100 * 1.0 = 100 pixels asked
     # for, which crosses the wall and would leave the map if nothing refused.
     for label, renderer, want_right, want_down in (
             ("walled", walled, WALL_EDGE - EDGE_INSET, WALL_EDGE - EDGE_INSET),

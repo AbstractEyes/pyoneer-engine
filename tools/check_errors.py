@@ -1,9 +1,8 @@
 """Verify the exception hierarchy, the naming schema, and the image contract.
 
 Three things this guards:
-  1. Failures that used to be silent now raise something typed and specific.
-  2. The core_<domain>_<action>[_<phase>] schema is complete and consistent,
-     with no stragglers from the old naming.
+  1. Every failure that could be silent raises something typed and specific.
+  2. The core_<domain>_<action>[_<phase>] schema is complete and consistent.
   3. There is exactly ONE image slot in the hierarchy.
 """
 from __future__ import annotations

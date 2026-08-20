@@ -1,44 +1,28 @@
 """Who is driving, and what they asked for: the input behavior and its intent.
 
-THIS IS THE ANSWER TO "WHICH SPAWNED OBJECT IS THE PLAYER"
-----------------------------------------------------------
-`main.py`'s `spawn_arguments` used to carry the question in a docstring:
-nothing in the map format said which authored `<object type="GamePlayer">`
-the human drives, and handing the live `InputActionManager` to every spawned
-player would move all of them at once with one key press. So `input_` was
-None and the object layer spawned scenery.
+WHICH SPAWNED OBJECT IS THE PLAYER
+----------------------------------
+Whichever entity carries `player_input`. Every spawned player may hold the
+same live `InputActionManager`, because holding one is not what makes an
+entity controllable -- reading it is, and only this behavior reads it. An
+entity without it is inert by construction rather than by a special case.
 
-The answer is composition, and it needs no new property and no marker flag:
-**the player is whichever entity carries `player_input`.** Every spawned
-player may now be handed the same manager, because holding a manager is not
-what makes an entity controllable -- reading it is, and only this behavior
-reads it. An entity without it is inert by construction rather than by a
-special case, which is the property the whole behavior system exists for.
-
-WHY AN INTENT INSTEAD OF MOVING THE ENTITY HERE
------------------------------------------------
-`GamePlayer.input_move` used to poll a verb and move the entity on the same
-line. That is what made the controller top-down: the verb vocabulary, the
-displacement and the animation naming were one function, so a platformer
-could not reuse any third of it.
-
+INTENT, NOT DISPLACEMENT
+------------------------
 This behavior polls and publishes a `MoveIntent`; a movement behavior reads
 the intent and decides what a body does with it. `topdown_move` walks four
-ways, `platformer_move` walks two and jumps, and NEITHER of them knows a key
-exists. That split is also what lets a movement behavior be driven by
-something that is not a keyboard -- a replay, a network peer, an AI -- by
-attaching a different producer at `order` 10 and changing nothing else.
+ways, `platformer_move` walks two and jumps, and NEITHER knows a key exists.
+The same split lets a replay, a network peer or an AI drive a movement
+behavior by attaching a different producer at `order` 10.
 
 THE UNGUARDED DICT INDEX, AND WHERE IT IS CAUGHT
 ------------------------------------------------
-`InputActionManager.held()` is `self.actions[name].held` -- an unguarded
-index. A behavior polling a verb absent from `config/inputs.json` raises
-`KeyError` from inside `core_frame_update`, which kills the frame for every
-sibling in that scene bucket and names nothing useful. So every declared verb
-is checked ONCE, in `attach`, against the manager's own table, and a missing
-one raises there: naming the verb, the behavior and every verb that IS bound.
-That is the difference between "KeyError: 'jump'" on frame 400 and a message
-at composition time saying which of the six verb parameters is wrong.
+`InputActionManager.held()` is `self.actions[name].held`, an unguarded index.
+Polling a verb absent from `config/inputs.json` raises `KeyError` from inside
+`core_frame_update`, which kills the frame for every sibling in that scene
+bucket. So every declared verb is checked ONCE, in `attach`, against the
+manager's own table, and a missing one raises there naming the verb, the
+behavior and every verb that IS bound.
 """
 from __future__ import annotations
 
@@ -53,18 +37,11 @@ from scripts.game.behavior.state import state_of
 class MoveIntent:
     """What an entity has been ASKED to do this frame, in device-free terms.
 
-    The four directions are kept as SEPARATE booleans rather than collapsed
-    into an (x, y) pair, and that is not tidiness -- it is required to keep
-    the top-down controller byte-identical. `GamePlayer.input_move` applied a
-    move for each held verb independently, so holding left AND right ran two
-    gated moves in one frame. Collapsed to `x = right - left` that becomes a
-    single zero-length move, which is the same thing only while the entity is
-    ungated: with a wall on the left, two moves travel right and one travels
-    nowhere.
-
-    `x` and `y` are derived for the behaviors that genuinely want an axis --
-    a platformer body has no use for "up" -- so both readings are available
-    and only one of them is stored.
+    The four directions are SEPARATE booleans rather than an (x, y) pair,
+    because `topdown_move` runs one gated move per held verb: with a wall on
+    the left, holding left AND right travels right, where a collapsed
+    `x = right - left` would travel nowhere. `x` is derived for the behaviors
+    that want an axis, so both readings are available and only one is stored.
     """
 
     __slots__ = ("up", "down", "left", "right", "sprint", "jump", "_locked")
@@ -77,10 +54,9 @@ class MoveIntent:
     def __setattr__(self, name: str, value: Any) -> None:
         """Refuse every write once locked. `NO_INTENT` is the only locked one.
 
-        Without this the shared inert intent is one careless `intent.jump =
-        True` away from making every entity on the map jump at once, and the
-        symptom would appear on entities that have no input behavior at all --
-        which is the last place anyone would look for an input bug.
+        Without it, one careless `intent.jump = True` on the shared inert
+        intent would make every entity on the map jump -- on entities that
+        have no input behavior at all.
         """
         if getattr(self, "_locked", False):
             raise PyoneerConfigError(
@@ -104,14 +80,11 @@ class MoveIntent:
         """-1, 0 or +1. Both horizontal verbs held cancel, as a stick would."""
         return (1 if self.right else 0) - (1 if self.left else 0)
 
-    # There is deliberately no vertical counterpart to `x`. One was written
-    # and removed: nothing consumed it -- `topdown_move` reads the four
-    # booleans and `platformer_move` reads `x` alone, because vertical motion
-    # there comes from gravity and the jump edge, not from a held verb. An
-    # unconsumed axis is an untestable sign convention, and this repo has a
-    # documented history of exactly that kind of finished-but-unattached code.
-    # A ladder, a swim state or a twin-stick shooter wants it; add it back
-    # WITH its consumer, in the same change.
+    # There is no vertical counterpart to `x`, because nothing would consume
+    # it: `topdown_move` reads the four booleans and `platformer_move` reads
+    # `x` alone, its vertical motion coming from gravity and the jump edge. A
+    # ladder or a twin-stick shooter wants one; add it WITH its consumer, so
+    # the sign convention is testable.
 
     @property
     def moving(self) -> bool:
@@ -126,9 +99,9 @@ class MoveIntent:
 NO_INTENT = MoveIntent(locked=True)
 """The intent an entity that publishes none is read as: nothing held, ever.
 
-Locked, so the entity that borrows it cannot alter what every other borrower
-sees. This is what makes "no input behavior" mean inert rather than crash: a
-movement behavior always has an intent to read, and reading is all it does.
+Locked, so one borrower cannot alter what every other borrower sees. It is
+what makes "no input behavior" mean inert rather than crash -- a movement
+behavior always has an intent to read.
 """
 
 
@@ -136,8 +109,7 @@ def intent_of(entity: Any) -> MoveIntent:
     """The entity's own intent, or the shared inert one.
 
     The single reader used by every movement behavior, so "what happens to an
-    entity with no input" is answered in one place rather than by four
-    slightly different `getattr` calls that will eventually disagree.
+    entity with no input" is answered in one place.
     """
     found = getattr(entity, "intent", None)
     return found if isinstance(found, MoveIntent) else NO_INTENT
@@ -148,13 +120,10 @@ class GamePlayerInputBehavior(EntityBehavior):
 
     Every verb is a parameter, so the same class serves a top-down player
     reading `sprint` and a platformer reading `jump`. An EMPTY verb name means
-    "this body has no such input" and is not polled at all -- that is how a
-    top-down entity avoids paying for a jump verb it will never use, without
-    a second class.
+    "this body has no such input" and is not polled at all.
 
-    Requires `entity.action_manager`. A None manager is a legal configuration
-    and stays legal: five of the six demo players are built with `input_=None`
-    and must remain scenery, so this reports itself as unsatisfied through
+    Requires `entity.action_manager`, but a None manager is a legal
+    configuration: this reports itself as unsatisfied through
     `EntityBehaviors.missing_requirements()` and does nothing per frame,
     rather than refusing to attach.
     """
@@ -191,18 +160,17 @@ class GamePlayerInputBehavior(EntityBehavior):
     def attach(self, entity: Any) -> None:
         """Allocate the intent, and prove every declared verb is bound.
 
-        The verb check is the whole reason this behavior has an `attach`. It
-        turns `KeyError: 'jump'` raised from inside a frame -- which takes
-        down every sibling entity in the same scene bucket and blames the
-        movement code -- into one message at composition time that names the
+        The verb check turns `KeyError: 'jump'` raised mid-frame -- which
+        takes down every sibling entity in the same scene bucket and blames
+        the movement code -- into one message at composition time naming the
         verb, the parameter that declared it and everything that IS bound.
         """
         entity.intent = MoveIntent()
         manager = getattr(entity, "action_manager", None)
         if manager is None:
-            # Legal, and deliberately not a refusal: `input_=None` is how the
-            # demo's five decoys stay inert, and an entity spawned before its
-            # manager exists is a normal boot order, not a mistake.
+            # Legal, not a refusal: `input_=None` is how a decoy stays inert,
+            # and an entity spawned before its manager exists is a normal boot
+            # order.
             return
         bound = getattr(manager, "actions", {})
         for verb in self.held_verbs + self.edge_verbs:
@@ -217,12 +185,11 @@ class GamePlayerInputBehavior(EntityBehavior):
                        ", ".join(sorted(bound)) or "<none>"))
 
     def detach(self, entity: Any) -> None:
-        """Hand back the inert intent, so a movement sibling reads zeroes.
+        """Hand back a cleared intent, so a movement sibling reads zeroes.
 
-        Not `del entity.intent`: a movement behavior left attached after this
-        one is removed would otherwise keep reading the LAST intent this
-        behavior published and walk forever in the direction the key was held
-        when it left.
+        Not `del entity.intent`: a movement behavior left attached would keep
+        reading the LAST intent published here and walk forever in the
+        direction the key was held.
         """
         entity.intent = MoveIntent()
 
@@ -238,23 +205,15 @@ class GamePlayerInputBehavior(EntityBehavior):
         state = state_of(entity)
         if state is not None and not (state.input_bound and state.enabled_inputs
                                       and state.steerable):
-            # The gate `GamePlayer.core_frame_update` used to apply around the
-            # whole of input_move. It belongs HERE and not around the movement
-            # behavior: an entity that may not be steered should stop being
-            # steered, not stop being simulated -- a platformer body still has
-            # to fall while the player is in a menu. Measured: a side-on body
-            # with `steerable=False` still fell 13.772px in 10 frames.
+            # The steering gate sits on the PRODUCER, not around the movement
+            # behavior: an ungated body stops being steered, not simulated, so
+            # a platformer body still falls while the player is in a menu
+            # (measured at 13.772px over 10 frames).
             #
-            # THREE terms where there were two, and the third is the
-            # de-conflation rather than a new gate. `enabled_inputs` used to
-            # carry two questions at once -- `GamePlayer.__init__` cleared it
-            # whenever `input_` was None -- so a narrative system could not
-            # tell "restore this body's input" from "grant input to a body
-            # that never had any". `input_bound` is now the wiring question
-            # and `enabled_inputs` is the authored one. Note this is the
-            # BEHAVIOR-NEUTRAL split: an entity with no manager already
-            # returned two lines above, so the entities whose `input_bound` is
-            # False for wiring reasons never reach this line at all.
+            # The three terms are distinct questions: `input_bound` is the
+            # wiring one, `enabled_inputs` the authored one, `steerable`
+            # whether this body may walk. An entity with no manager returned
+            # two lines above and never reaches here.
             return
         if self.up_verb:
             intent.up = manager.held(self.up_verb)
@@ -267,8 +226,8 @@ class GamePlayerInputBehavior(EntityBehavior):
         if self.sprint_verb:
             intent.sprint = manager.held(self.sprint_verb)
         if self.jump_verb:
-            # pressed(), not held(): a jump is an edge. held() here is the
-            # classic infinite-hover bug, and it looks like a physics fault.
+            # pressed(), not held(): a jump is an edge, and held() here is the
+            # infinite-hover bug, which looks like a physics fault.
             intent.jump = manager.pressed(self.jump_verb)
         if state is not None:
             state.sprinting = intent.sprint

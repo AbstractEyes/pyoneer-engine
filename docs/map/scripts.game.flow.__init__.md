@@ -5,7 +5,7 @@
 
 > Scene and GUI flow: where a firing goes, and what step the story is on.
 
-`scripts.game.flow.__init__` · 68 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.flow.__init__` · 54 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 

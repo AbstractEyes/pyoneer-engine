@@ -1,51 +1,27 @@
 """Which tmx object type becomes which class, and at what depth.
 
-WHY THIS IS A HAND-WRITTEN TABLE
---------------------------------
-A tmx `<object type="GamePlayer">` names a class in a string. Turning that
-string into a constructor is a lookup, and there are exactly two ways to
-build the table: scan the package and register whatever looks like an
-entity, or write the entries down. This module writes them down, for the
-same reason `ComponentFactory` does.
+THE TABLE IS HAND-WRITTEN, not scanned, for the same reason
+`ComponentFactory`'s is. A scan would register `GameEntity`,
+`GameAnimatedEntity` and `GameEntitySimple`, which are `ABC` subclasses with
+unimplemented abstract methods, so constructing one raises `TypeError:
+Can't instantiate abstract class` -- at spawn time, on the author's map,
+rather than here in a file a human reads. `tools/check_spawn.py` falsifies
+the written entries instead.
 
-Scanning would have shipped a registry containing `GameEntity`,
-`GameAnimatedEntity` and `GameEntitySimple` -- all three are `ABC`
-subclasses with unimplemented abstract methods, so constructing any of them
-raises `TypeError: Can't instantiate abstract class`. A scan cannot tell
-that apart from a class it simply has not seen yet, so the failure would
-land at spawn time on the author's map rather than here, in a file a human
-reads. An explicit table is a list of claims that are true when written and
-falsifiable by `tools/check_spawn.py` afterwards.
+`scripts/core/depth.py`'s `OBJECT_CONVERTER` names six classes and only
+`GamePlayer` can be built: `GameEntity` is abstract and the other four exist
+nowhere in the tree. It is therefore a DEPTH table that happens to be keyed
+by class name, useful for depth resolution and useless as a source of
+constructors.
 
-WHAT IS ACTUALLY CONCRETE, MEASURED
------------------------------------
-`scripts/core/depth.py`'s `OBJECT_CONVERTER` names six classes. Only one of
-them can be built:
+An unknown type RAISES, listing the registry, and never falls back to a
+default class: a spawn that silently becomes the wrong entity looks like it
+worked.
 
-    GamePlayer               concrete                       registered
-    GameEntity               abstract (core_lifecycle_build,
-                             core_input_receive)            NOT registered
-    GameFloorEntity          does not exist                 NOT registered
-    GameBackgroundEntity     does not exist                 NOT registered
-    GameForegroundEntity     does not exist                 NOT registered
-    GameUIEntity             does not exist                 NOT registered
-
-`OBJECT_CONVERTER` is therefore a DEPTH table that happens to be keyed by
-class name, not a class list -- four of its six keys have no class anywhere
-in the tree. It stays useful for depth resolution and is useless as a
-source of constructors. Registering from it would have produced five
-entries out of six that raise or `NameError` the moment a map used them.
-
-An unknown type RAISES, listing the registry. It never falls back to a
-default class: a spawn that silently becomes the wrong entity is the
-"plausible wrong value" failure this codebase is built to refuse, and unlike
-a missing entity it looks like it worked.
-
-DEPTH IS THE LAYER TO BIND INTO, NOT `entity.depth`
----------------------------------------------------
+DEPTH IS THE LAYER TO BIND INTO, NOT `entity.depth`.
 `EntityLayer.core_render_blits` queues at `entity.depth + self.layer_depth`,
-so `entity.depth` is an offset WITHIN a layer. Nothing here assigns it.
-A resolved depth of 50 means "bind this into depth 50", and writing it onto
+so `entity.depth` is an offset WITHIN a layer and nothing here assigns it. A
+resolved depth of 50 means "bind this into depth 50"; writing it onto
 `entity.depth` as well would draw the entity at 100.
 """
 from __future__ import annotations
@@ -64,10 +40,9 @@ SPAWN_REGISTRY: dict[str, Callable[..., Any]] = {}
 DEFAULT_OBJECT_DEPTH: int = OBJECT_DEPTH["ENTITY"]
 """Where an object lands when nothing else says.
 
-`OBJECT_DEPTH["ENTITY"]` (50) rather than 0 or -1, because 0 is under the
-floor and a depth the renderer has never heard of draws nothing. An entity
-whose author gave no depth signal at all should still be visible and should
-still sort against the player, and 50 is the depth that means exactly that.
+`OBJECT_DEPTH["ENTITY"]` (50) rather than 0 or -1: 0 is under the floor and
+a depth the renderer has never heard of draws nothing. An entity with no
+depth signal should still be visible and still sort against the player.
 """
 
 # The house-safe spelling, shared with the layer vocabulary rather than
@@ -78,11 +53,10 @@ DEPTH_PROPERTY: str = layer_profile.DEPTH          # "pyoneer_depth"
 DEPTH_PROPERTY_PLAIN: str = "depth"
 """The unprefixed spelling, accepted second.
 
-Measured on the pytmx installed here (3.32): `depth` is NOT one of
-`TiledObject`'s reserved attribute names, so an object carrying it loads
-fine, while `visible` or `gid` make the whole map raise. So this one is safe
-ON OBJECTS specifically -- it is not a licence to drop the prefix elsewhere,
-and a layer's depth is still `pyoneer_depth`.
+`depth` is not one of `TiledObject`'s reserved attribute names in pytmx
+3.32, so an object carrying it loads fine where `visible` or `gid` would
+make the whole map raise. Safe ON OBJECTS specifically -- not a licence to
+drop the prefix elsewhere; a layer's depth is still `pyoneer_depth`.
 """
 
 
@@ -94,10 +68,9 @@ def register(name: str, factory: Callable[..., Any],
              registry: dict[str, Callable[..., Any]] | None = None) -> Callable[..., Any]:
     """Bind one tmx type name to the callable that builds it.
 
-    Re-registering a name replaces it, deliberately: a test that swaps a
-    class in and puts the original back is the only sanctioned way to drive
-    the spawn path without art, and refusing the second call would make that
-    impossible rather than safe.
+    Re-registering a name replaces it, deliberately: swapping a class in and
+    putting the original back is how a check drives the spawn path without
+    art.
     """
     target = SPAWN_REGISTRY if registry is None else registry
     target[name] = factory
@@ -114,9 +87,8 @@ def resolve_factory(type_name: str,
                     registry: Mapping[str, Callable[..., Any]] | None = None) -> Callable[..., Any]:
     """The callable for `type_name`, or raise naming it and the whole registry.
 
-    The error carries the registry because "GamePlayr is not a spawn type"
-    without the list is a message the author has to go read source to act
-    on, and the list is three entries long at most.
+    The error carries the registry because a bare "not a spawn type" leaves
+    the author reading source to find the spelling.
     """
     table = SPAWN_REGISTRY if registry is None else registry
     factory = table.get(type_name)
@@ -137,10 +109,9 @@ def _declared_depth(properties: Mapping[str, Any] | None, where: str) -> int | N
     """The depth an object declares in its own custom properties, if any.
 
     Checked, never coerced. `MapProperties` returns a real `int` only when
-    the property carries `type="int"`; without it Tiled writes a bare string
-    and the value arrives as `'50'`. Coercing would work right up until
-    someone typed `5o`, so a wrongly-typed depth raises and says which
-    object and what to fix.
+    the property carries `type="int"`; without it the value arrives as the
+    string `'50'`. A wrongly-typed depth raises, naming the object and the
+    fix, rather than being coerced until someone types `5o`.
     """
     if properties is None:
         return None
@@ -181,12 +152,11 @@ def resolve_depth(type_name: str,
     GamePlayer) or a factory function, and the depth table is keyed by class.
 
     Step 3 reads `DEPTH`, which is `MAP_DEPTH | OBJECT_DEPTH |
-    OBJECT_CONVERTER`, so an object group named "PlayerDepth", "ENTITY" or
-    "UI_ENTITY" all resolve. An object group named for nothing in that table
-    (the shipped map's is called "entity", lowercase, and is in none of
-    them) falls through to step 4 rather than raising: an unmapped LAYER
-    drops authored tiles and must warn, but an unmapped object group is just
-    a group the author never gave a depth to, and 50 is a truthful answer.
+    OBJECT_CONVERTER`, so object groups named "PlayerDepth", "ENTITY" or
+    "UI_ENTITY" all resolve. One named for nothing in that table falls
+    through to step 4 rather than raising: an unmapped LAYER drops authored
+    tiles and must warn, but an unmapped object group is simply one the
+    author never gave a depth to.
     """
     declared = _declared_depth(properties, where)
     if declared is not None:
@@ -210,11 +180,8 @@ def spawn(type_name: str,
 
     No position is applied here. `GameEntity.__init__` takes a `transform`
     keyword and THROWS IT AWAY -- `GameEntitySimple.__init__` builds a fresh
-    `Transform` from its own `position`/`rotation`/`scale` arguments and
-    never looks at the one it was handed -- so placing an entity is a
-    `moveto()` call after construction, exactly as `main.py` does it. Doing
-    that here would make this function silently position-aware; the caller
-    that knows the map does it instead. See `scripts/loaders/map_loader.py`.
+    `Transform` from its own arguments and never looks at the one it was
+    handed -- so placing an entity is a `moveto()` call after construction.
     """
     factory = resolve_factory(type_name, registry)
     entity = factory(**kwargs)
@@ -225,11 +192,9 @@ def spawn(type_name: str,
 # ---------------------------------------------------------------------------
 # The table
 #
-# One line per concrete class, written by hand. No scan, no importlib. The
-# module docstring records why the other five OBJECT_CONVERTER names are not
-# here, and tools/check_spawn.py asserts that reasoning still holds -- so
-# the day GameFloorEntity is written, that check fails and points at this
-# line rather than at a map that mysteriously will not load.
+# One line per concrete class, written by hand. No scan, no importlib.
+# tools/check_spawn.py asserts the module docstring's reasoning still holds,
+# so the day GameFloorEntity is written that check fails and points here.
 # ---------------------------------------------------------------------------
 
 register("GamePlayer", GamePlayer)

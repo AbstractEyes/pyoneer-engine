@@ -19,14 +19,10 @@ WHAT SECTION 10 IS FOR
 ----------------------
 Level one -- the mask a tileset carries for each of its own tiles -- is the
 weakest of the three levels and the only one an author never repeats. It is
-also a PRECEDENCE change, and precedence is where this repository's assertions
-have historically been half-written: proved to apply, never proved to be
-overridden. So section 10 states every claim twice, in opposite directions,
-and the mutation battery behind it confirms that all eighteen ways of getting
-it wrong turn this file red -- including the four that only one direction
-would have caught (a merge instead of a replacement, a default that outranks
-the paint, a parallaxed layer joining the stack, and the sidecar being
-addressed by its own firstgid rather than by the map's).
+also a PRECEDENCE claim, and a precedence rule proved to APPLY but never
+proved to be OVERRIDDEN passes just as happily when the levels are merged, or
+reordered, or when the weakest one quietly wins. So section 10 states every
+claim twice, in opposite directions.
 
 Every fixture is written into a temp directory of its own, sidecar included,
 for the reason THE FIXTURE IS THIS FILE'S OWN gives below -- and one extra:
@@ -42,9 +38,9 @@ pinned or the migration is a hope. Section 9 asserts, on its own fixtures:
     size, and two sub-cells inside ONE map tile hold different masks -- which
     is the thing a whole-tile field cannot say. A body is stopped by one of
     them and passes through the other, one sub-cell apart.
-  * an UNDECLARED oversized companion RAISES naming both shapes. At HEAD
-    before this section, that map baked a truncated field and dropped 100% of
-    the authored sub-cells with no exception and no warning.
+  * an UNDECLARED oversized companion RAISES naming both shapes, rather than
+    baking a truncated field and dropping every sub-cell outside the top-left
+    corner in silence.
   * a 1x companion bakes the SAME BYTES it baked before any of this existed,
     and declaring `pyoneer_subcell="1"` explicitly changes nothing. That is
     the migration guarantee and it is the one that will actually break.
@@ -57,8 +53,7 @@ THE FIXTURE IS THIS FILE'S OWN
 Everything is read from a .tmx written into a temp directory by `FIXTURE`
 below. `data/maps/test.tmx` is repainted constantly and declares no
 passability at all; a check that pinned map CONTENT would go red the next
-time the author paints, while the code it guards worked perfectly. That has
-cost this repository five red suites.
+time the author paints, while the code it guards worked perfectly (law 4).
 
 The fixture needs no art. Its tilesets point at PNGs that do not exist, which
 both pytmx and MapDocument parse happily as long as no tile IMAGE is
@@ -69,19 +64,16 @@ WHAT SECTION 8 IS FOR
 `scripts/core/collision_runtime.py` is the ONLY definition of the mask
 vocabulary, the layer stack, `resolve` and `CollisionField`;
 `editor/core/layers.py` and `editor/core/collision.py` import it and
-re-export what their own callers name. Section 8 used to be a DIFFERENTIAL
-between two copies -- and a differential is only ever as complete as the copy
-it guards, which is why that one missed `OPPOSITE`, `can_move`, `blocks` and
-`mask_at_pixel` and let four mutations through. It asserts IDENTITY now: the
-editor's names must BE these objects, and neither editor module may bind any
-shared name in its own source. A re-pasted copy is equal on the day it is
-pasted; it is never identical.
+re-export what their own callers name. Section 8 asserts IDENTITY rather than
+equality: the editor's names must BE these objects, and neither editor module
+may bind any shared name in its own source. A re-pasted copy is equal on the
+day it is pasted; it is never identical.
 
-Section 8 also asserts the thing the collapse cannot fix by itself -- that
-the editor's genre packs and `scripts/core/depth.MAP_DEPTH` rank a layer at
-the same height. Those are two authored tables by design, and `resolve`
-walks topmost first, so disagreeing about one layer means a different
-deciding layer in the overlay than in the game.
+Section 8 also asserts that the editor's genre packs and
+`scripts/core/depth.MAP_DEPTH` rank a layer at the same height. Those are two
+authored tables by design, and `resolve` walks topmost first, so disagreeing
+about one layer means a different deciding layer in the overlay than in the
+game.
 
     .venv/Scripts/python.exe tools/check_collision_runtime.py
 """
@@ -847,27 +839,15 @@ expect_close("and a sprint is gated by the same wall",
 # ---------------------------------------------------------------------------
 # 8. One implementation: the editor's names ARE these objects
 # ---------------------------------------------------------------------------
-# This was a DIFFERENTIAL -- two copies of the vocabulary, imported side by
-# side and compared constant for constant and cell for cell. It caught
-# nothing it was pointed at and missed `OPPOSITE`, `can_move`, `blocks` and
-# `mask_at_pixel` entirely, which is the trouble with guarding a duplicate
-# instead of removing it: the guard has to be as complete as the copy, and it
-# never is.
+# There is one implementation. `editor/core/layers.py` and
+# `editor/core/collision.py` import it from here, so the question is not "do
+# the two agree" but "is there still only one" -- which is an IDENTITY test,
+# not a value test. A pasted-back copy of `OPPOSITE` is a different dict
+# object with equal contents; `==` sails straight past that and `is` cannot.
 #
-# There is one implementation now. `editor/core/layers.py` and
-# `editor/core/collision.py` import it from here, so the interesting question
-# stopped being "do the two agree" and became "is there still only one" --
-# which is an IDENTITY test, not a value test. A pasted-back copy of
-# `OPPOSITE` is a different dict object with equal contents; `==` would sail
-# straight past it and `is` cannot.
-#
-# What the collapse means for coverage, confirmed by re-running the mutations
-# that escaped the differential: `blocks() -> return False` and an x/y
-# transpose in `mask_at_pixel` now fail section 4 above AND
-# `tools/check_collision.py`; an `OPPOSITE` that stops mirroring left/right
-# fails `check_collision`'s one-sided-collision assertions; a `mask_to_gid`
-# off by one fails `check_editor`. Three suites see one change because there
-# is one thing to change.
+# A differential between two copies is only ever as complete as the copy it
+# guards, which is why the one that stood here missed `OPPOSITE`, `can_move`,
+# `blocks` and `mask_at_pixel`.
 print("\nthe editor imports this module rather than copying it")
 
 try:
@@ -876,10 +856,9 @@ try:
     from editor.core import layers as editor_layers
 except Exception as exc:                                        # noqa: BLE001
     # A FAILURE, not a skip. All three modules are pure Python -- no Qt, no
-    # pygame, nothing optional -- so an import error here is a broken editor.
-    # Printing SKIP and carrying on deleted the only guard standing between
-    # two copies of one vocabulary while this file still printed OK and
-    # exited 0, which is the worst of the three possible outcomes.
+    # pygame, nothing optional -- so an import error here is a broken editor,
+    # and skipping would delete the only guard against two copies of one
+    # vocabulary while still printing OK and exiting 0.
     print(f"  FAIL {'the editors collision modules did not import':<58} {exc}")
     failures.append("editor/core/collision.py and layers.py must import")
     editor_collision = None
@@ -954,9 +933,9 @@ if editor_collision is not None:
            sorted(module_level_bindings(editor_collision) & vocabulary), [])
     expect("...and this module defines all of it",
            sorted(vocabulary - module_level_bindings(runtime)), [])
-    # canvas.py held a third copy of the tileset name and the companion
-    # suffix, and hand-mirrored `collision_first_gid` and `companion_name`
-    # beside them. Checked by source rather than by importing the canvas,
+    # canvas.py is the third module that could hold its own copy of the
+    # tileset name, the companion suffix, `collision_first_gid` and
+    # `companion_name`. Checked by source rather than by importing it,
     # because that module needs Qt and this file must run without it.
     canvas_source = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -999,8 +978,8 @@ if editor_collision is not None:
                 disagreements.append((genre_id, layer.name, layer.depth, engine))
     expect("every tile layer a pack declares sits where the renderer puts it",
            disagreements, [])
-    # And the reverse direction, which is the one that used to be silent: a
-    # name MAP_DEPTH ranks and no pack declares. It is not an error -- the
+    # And the reverse direction: a name MAP_DEPTH ranks and no pack declares.
+    # It is not an error -- the
     # packs describe what a genre EXPECTS, not everything a map may hold --
     # but the canvas has to answer with the renderer's number for it, not 500.
     unpacked = sorted(set(MAP_DEPTH) - declared_names)
@@ -1161,9 +1140,9 @@ expect("its cells decide, and past its edge nothing does",
        (small.mask_at(0, 0), small.mask_at(3, 3)), (BLOCK_ALL, PASS_ALL))
 
 # --- the silent drop, now loud -----------------------------------------
-# The failure this section exists for. Measured at HEAD before it: a 16x16
-# companion on a 4x4 map baked a 4x4 field, discarded every sub-cell outside
-# the top-left corner, raised nothing and warned nothing.
+# The failure this section exists for: a 16x16 companion on a 4x4 map that
+# declares nothing bakes a 4x4 field, discarding every sub-cell outside the
+# top-left corner without raising or warning.
 UNDECLARED_PATH = write("undeclared.tmx", subcell_fixture(declare=None))
 expect_raises("an oversized companion that declares nothing is refused",
               PyoneerConfigError,

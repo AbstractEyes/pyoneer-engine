@@ -10,8 +10,7 @@ looking correct in the history panel:
         A `<tileset>` may carry `<tile>` children -- animations, terrains,
         per-tile collision shapes. An inverse rebuilt from a TilesetRef's
         ten attributes would put back a plausible tileset with all of that
-        silently gone. That is exactly how map.object.remove once destroyed
-        polygons, and the byte assertions below are what catch it.
+        silently gone. The byte assertions below are what catch it.
 
     the refusal is not swallowed
         Removing a tileset that tiles still point into raises NOWHERE at

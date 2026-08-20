@@ -37,9 +37,7 @@ class PyoneerGameObject(ABC):
         core_lifecycle_dispose         > teardown
         core_lifecycle_dispose_post   /
 
-    The phase is a SUFFIX so autocomplete groups each family together;
-    `core_pre_prepare` and `core_post_prepare` used to sort apart from
-    `core_prepare`, which hid the relationship.
+    The phase is a SUFFIX so autocomplete groups each family together.
 
     WHO MAY OVERRIDE THESE
     ----------------------
@@ -61,14 +59,9 @@ class PyoneerGameObject(ABC):
         self._image: surface.Surface | None = image
         """The object's surface, if it owns one.
 
-        Single-underscore and declared exactly once in the hierarchy. There
-        used to be three name-mangled slots down one MRO --
-        _PyoneerGameObject__image, _GameComponent__image and
-        _DrawComponent__image -- so `image` meant a different variable
-        depending on which class's code was executing, and
-        GameComponent.image read a slot that was never assigned
-        anywhere and raised AttributeError for any subclass that did not
-        override it.
+        Single-underscore and declared exactly once in the hierarchy.
+        Name-mangled slots per class would make `image` mean a different
+        variable depending on which class's code is executing.
         """
         self.__depth: int = depth
         self.__priority: int = priority

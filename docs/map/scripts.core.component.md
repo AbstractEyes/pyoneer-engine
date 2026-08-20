@@ -3,7 +3,7 @@
 
 # `scripts/core/component.py` — tier 2 #TAG:scripts/core/component.py
 
-`scripts.core.component` · 1026 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.component` · 964 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -11,151 +11,151 @@
 
 ## Module constants
 
-- `scripts/core/component.py:25` `INPUT_EVENT_TYPES` #TAG:INPUT_EVENT_TYPES
+- `scripts/core/component.py:24` `INPUT_EVENT_TYPES` #TAG:INPUT_EVENT_TYPES
 
 ## Classes
 
 ### `class GameComponent(PyoneerGameObject, ABC)` #TAG:GameComponent
 
-`scripts/core/component.py:46`–`1024`
+`scripts/core/component.py:45`–`962`
 
 > A simple component that can be used to build more complex components.
 
-- `scripts/core/component.py:62` `__init__(self, parent: GameComponent | None=None, bounds: Rect | None=None, screen_area: Rect | None=None, working_area: Rect | None=None, visible: bool=True, focused: bool=False, active: bool=True, clickable: bool=False, draggable: bool=True, *args, **kwargs)` #TAG:GameComponent.__init__
-- `scripts/core/component.py:148` `core_lifecycle_prepare(self, event: PyoneerEvent | None=None)` #TAG:GameComponent.core_lifecycle_prepare
+- `scripts/core/component.py:61` `__init__(self, parent: GameComponent | None=None, bounds: Rect | None=None, screen_area: Rect | None=None, working_area: Rect | None=None, visible: bool=True, focused: bool=False, active: bool=True, clickable: bool=False, draggable: bool=True, *args, **kwargs)` #TAG:GameComponent.__init__
+- `scripts/core/component.py:145` `core_lifecycle_prepare(self, event: PyoneerEvent | None=None)` #TAG:GameComponent.core_lifecycle_prepare
   - Populate the events for the component.
-- `scripts/core/component.py:157` `core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_lifecycle_build
+- `scripts/core/component.py:154` `core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_lifecycle_build
   - Build the component.
-- `scripts/core/component.py:164` `@property transform(self) -> Transform2D` #TAG:GameComponent.transform
+- `scripts/core/component.py:161` `@property transform(self) -> Transform2D` #TAG:GameComponent.transform
   - This component's placement state.
-- `scripts/core/component.py:174` `@property offset(self) -> Vector2` #TAG:GameComponent.offset
-- `scripts/core/component.py:178` `@offset.setter offset(self, value: Vector2)` #TAG:GameComponent.offset.setter
-- `scripts/core/component.py:182` `@property use_immediate_viewport(self) -> bool` #TAG:GameComponent.use_immediate_viewport
-- `scripts/core/component.py:186` `@use_immediate_viewport.setter use_immediate_viewport(self, value: bool)` #TAG:GameComponent.use_immediate_viewport.setter
-- `scripts/core/component.py:192` `@property depth(self) -> int` #TAG:GameComponent.depth
+- `scripts/core/component.py:171` `@property offset(self) -> Vector2` #TAG:GameComponent.offset
+- `scripts/core/component.py:175` `@offset.setter offset(self, value: Vector2)` #TAG:GameComponent.offset.setter
+- `scripts/core/component.py:179` `@property use_immediate_viewport(self) -> bool` #TAG:GameComponent.use_immediate_viewport
+- `scripts/core/component.py:183` `@use_immediate_viewport.setter use_immediate_viewport(self, value: bool)` #TAG:GameComponent.use_immediate_viewport.setter
+- `scripts/core/component.py:189` `@property depth(self) -> int` #TAG:GameComponent.depth
   - This component's depth, accumulated through the parent chain.
-- `scripts/core/component.py:200` `@depth.setter depth(self, value: int) -> None` #TAG:GameComponent.depth.setter
+- `scripts/core/component.py:197` `@depth.setter depth(self, value: int) -> None` #TAG:GameComponent.depth.setter
   - Set this component's OWN depth contribution.
-- `scripts/core/component.py:214` `@property parent(self) -> GameComponent | None` #TAG:GameComponent.parent
-- `scripts/core/component.py:218` `@parent.setter parent(self, parent_in: GameComponent | None=None)` #TAG:GameComponent.parent.setter
-- `scripts/core/component.py:221` `move(self, x: int | float, y: int | float, sender: GameComponent | None=None)` #TAG:GameComponent.move
+- `scripts/core/component.py:211` `@property parent(self) -> GameComponent | None` #TAG:GameComponent.parent
+- `scripts/core/component.py:215` `@parent.setter parent(self, parent_in: GameComponent | None=None)` #TAG:GameComponent.parent.setter
+- `scripts/core/component.py:218` `move(self, x: int | float, y: int | float, sender: GameComponent | None=None)` #TAG:GameComponent.move
   - Move to local position (x, y), then tell the subtree to re-resolve.
-- `scripts/core/component.py:239` `scale(self, scale: Vector2 | None=Vector2(1, 1), sender: GameComponent | None=None)` #TAG:GameComponent.scale
-- `scripts/core/component.py:244` `rotate(self, rotation: float, sender: GameComponent | None=None)` #TAG:GameComponent.rotate
-- `scripts/core/component.py:250` `@property world_bounds(self) -> Rect` #TAG:GameComponent.world_bounds
+- `scripts/core/component.py:236` `scale(self, scale: Vector2 | None=Vector2(1, 1), sender: GameComponent | None=None)` #TAG:GameComponent.scale
+- `scripts/core/component.py:241` `rotate(self, rotation: float, sender: GameComponent | None=None)` #TAG:GameComponent.rotate
+- `scripts/core/component.py:247` `@property world_bounds(self) -> Rect` #TAG:GameComponent.world_bounds
   - Returns a prepared bounds object based on the parent component hierarchy.
-- `scripts/core/component.py:254` `__transform_component(self, event: PyoneerEvent | None=None)` #TAG:GameComponent.__transform_component
+- `scripts/core/component.py:251` `__transform_component(self, event: PyoneerEvent | None=None)` #TAG:GameComponent.__transform_component
   - Handle the parent moved event.
-- `scripts/core/component.py:297` `force_update_transforms(self)` #TAG:GameComponent.force_update_transforms
-- `scripts/core/component.py:302` `__update_world_bounds(self, event: PyoneerEvent | None=None)` #TAG:GameComponent.__update_world_bounds
+- `scripts/core/component.py:288` `force_update_transforms(self)` #TAG:GameComponent.force_update_transforms
+- `scripts/core/component.py:293` `__update_world_bounds(self, event: PyoneerEvent | None=None)` #TAG:GameComponent.__update_world_bounds
   - Update the world bounds of the component.
-- `scripts/core/component.py:309` `@property adjusted_bounds(self) -> Rect` #TAG:GameComponent.adjusted_bounds
+- `scripts/core/component.py:300` `@property adjusted_bounds(self) -> Rect` #TAG:GameComponent.adjusted_bounds
   - Returns the adjusted bounds of the component by using the adjusted position.
-- `scripts/core/component.py:316` `@world_bounds.setter world_bounds(self, bounds: Rect)` #TAG:GameComponent.world_bounds.setter
+- `scripts/core/component.py:307` `@world_bounds.setter world_bounds(self, bounds: Rect)` #TAG:GameComponent.world_bounds.setter
   - Accepts an unfiltered bounds object and sets the bounds of the component.
-- `scripts/core/component.py:321` `@property viewport(self) -> Rect | None` #TAG:GameComponent.viewport
+- `scripts/core/component.py:312` `@property viewport(self) -> Rect | None` #TAG:GameComponent.viewport
   - Returns a filtered bounds object based on the parent component hierarchy.
-- `scripts/core/component.py:336` `@property screen_area(self) -> Rect` #TAG:GameComponent.screen_area
+- `scripts/core/component.py:327` `@property screen_area(self) -> Rect` #TAG:GameComponent.screen_area
   - Returns the direct screen display area of the component.
-- `scripts/core/component.py:346` `@screen_area.setter screen_area(self, bounds: Rect)` #TAG:GameComponent.screen_area.setter
+- `scripts/core/component.py:337` `@screen_area.setter screen_area(self, bounds: Rect)` #TAG:GameComponent.screen_area.setter
   - Sets the screen area of the component, directly connected with viewport.
-- `scripts/core/component.py:351` `@property working_area(self) -> Rect` #TAG:GameComponent.working_area
+- `scripts/core/component.py:342` `@property working_area(self) -> Rect` #TAG:GameComponent.working_area
   - Returns the working area of the component.
-- `scripts/core/component.py:356` `@working_area.setter working_area(self, bounds: Rect)` #TAG:GameComponent.working_area.setter
+- `scripts/core/component.py:347` `@working_area.setter working_area(self, bounds: Rect)` #TAG:GameComponent.working_area.setter
   - Sets the working area of the component.
-- `scripts/core/component.py:361` `@property clipped_working_area(self) -> Rect` #TAG:GameComponent.clipped_working_area
+- `scripts/core/component.py:352` `@property clipped_working_area(self) -> Rect` #TAG:GameComponent.clipped_working_area
   - Returns the CLIPPED working area of the component using the viewport.
-- `scripts/core/component.py:370` `@property get_viewport_component(self) -> GameComponent | None` #TAG:GameComponent.get_viewport_component
+- `scripts/core/component.py:361` `@property get_viewport_component(self) -> GameComponent | None` #TAG:GameComponent.get_viewport_component
   - Finds the viewport defining the draw bounds of this component.
-- `scripts/core/component.py:399` `@property local_bounds(self) -> Rect` #TAG:GameComponent.local_bounds
+- `scripts/core/component.py:390` `@property local_bounds(self) -> Rect` #TAG:GameComponent.local_bounds
   - Returns the raw bounds of the component.
-- `scripts/core/component.py:404` `@local_bounds.setter local_bounds(self, bounds: Rect | Vector2)` #TAG:GameComponent.local_bounds.setter
+- `scripts/core/component.py:395` `@local_bounds.setter local_bounds(self, bounds: Rect | Vector2)` #TAG:GameComponent.local_bounds.setter
   - Assign local bounds and cascade the consequences.
-- `scripts/core/component.py:430` `_on_bounds_changed(self, previous: Rect, current: Rect)` #TAG:GameComponent._on_bounds_changed
+- `scripts/core/component.py:418` `_on_bounds_changed(self, previous: Rect, current: Rect)` #TAG:GameComponent._on_bounds_changed
   - React to a change of THIS component's local bounds.
-- `scripts/core/component.py:459` `reflow_children(self, previous: Rect, current: Rect)` #TAG:GameComponent.reflow_children
+- `scripts/core/component.py:446` `reflow_children(self, previous: Rect, current: Rect)` #TAG:GameComponent.reflow_children
   - Apply each child's anchors after this component changed size.
-- `scripts/core/component.py:480` `notify_parent_bounds_changed(self, parent: GameComponent)` #TAG:GameComponent.notify_parent_bounds_changed
+- `scripts/core/component.py:464` `notify_parent_bounds_changed(self, parent: GameComponent)` #TAG:GameComponent.notify_parent_bounds_changed
   - A parent moved or resized; rebase this subtree onto it.
-- `scripts/core/component.py:492` `_on_size_changed(self, width: int | float, height: int | float)` #TAG:GameComponent._on_size_changed
+- `scripts/core/component.py:476` `_on_size_changed(self, width: int | float, height: int | float)` #TAG:GameComponent._on_size_changed
   - This component's pixel size changed.
-- `scripts/core/component.py:499` `__resync_world_bounds(self, local: Rect)` #TAG:GameComponent.__resync_world_bounds
+- `scripts/core/component.py:483` `__resync_world_bounds(self, local: Rect)` #TAG:GameComponent.__resync_world_bounds
   - Recompute world bounds from local bounds and the parent chain.
-- `scripts/core/component.py:517` `bind_parent(self, parent: GameComponent | None, preserve_world_bounds: bool=True, bind_manager: bool=False)` #TAG:GameComponent.bind_parent
+- `scripts/core/component.py:501` `bind_parent(self, parent: GameComponent | None, preserve_world_bounds: bool=True, bind_manager: bool=False)` #TAG:GameComponent.bind_parent
   - Bind a parent component component.
-- `scripts/core/component.py:527` `bind_component(self, name: str, component_in: GameComponent, commands: list | None=('pre_prepare', 'prepare', 'post_prepare', 'build'))` #TAG:GameComponent.bind_component
+- `scripts/core/component.py:511` `bind_component(self, name: str, component_in: GameComponent, commands: list | None=('pre_prepare', 'prepare', 'post_prepare', 'build'))` #TAG:GameComponent.bind_component
   - Bind a component to the component container.
-- `scripts/core/component.py:555` `unbind_component(self, identifier: str)` #TAG:GameComponent.unbind_component
+- `scripts/core/component.py:539` `unbind_component(self, identifier: str)` #TAG:GameComponent.unbind_component
   - Unbind a component from the component container.
-- `scripts/core/component.py:565` `adjusted_position(self, point: Vector2 | Rect | tuple[int | float, int | float]) -> Vector2` #TAG:GameComponent.adjusted_position
+- `scripts/core/component.py:549` `adjusted_position(self, point: Vector2 | Rect | tuple[int | float, int | float]) -> Vector2` #TAG:GameComponent.adjusted_position
   - Adjust the point based on the scroll position, default there is no scroll position so it simply type shifts.
-- `scripts/core/component.py:573` `get_component(self, identifier: str) -> GameComponent | None` #TAG:GameComponent.get_component
+- `scripts/core/component.py:557` `get_component(self, identifier: str) -> GameComponent | None` #TAG:GameComponent.get_component
   - Get a specific component.
-- `scripts/core/component.py:580` `get_components_at(self, bounds: Rect | Vector2 | tuple[int | float, int | float]) -> list[GameComponent]` #TAG:GameComponent.get_components_at
+- `scripts/core/component.py:564` `get_components_at(self, bounds: Rect | Vector2 | tuple[int | float, int | float]) -> list[GameComponent]` #TAG:GameComponent.get_components_at
   - Get components at a specific location.
-- `scripts/core/component.py:593` `get_clickable_components_at(self, bounds: Rect | Vector2 | tuple[int | float, int | float]) -> list[GameComponent]` #TAG:GameComponent.get_clickable_components_at
+- `scripts/core/component.py:577` `get_clickable_components_at(self, bounds: Rect | Vector2 | tuple[int | float, int | float]) -> list[GameComponent]` #TAG:GameComponent.get_clickable_components_at
   - Get components at a specific location.
-- `scripts/core/component.py:606` `get_components(self, identifiers: list[str]=[], exceptions: list=[], ordered: bool=True) -> list[GameComponent]` #TAG:GameComponent.get_components
+- `scripts/core/component.py:590` `get_components(self, identifiers: list[str]=[], exceptions: list=[], ordered: bool=True) -> list[GameComponent]` #TAG:GameComponent.get_components
   - Get specific components.
-- `scripts/core/component.py:618` `get_component_by_type(self, component_type: Type | str) -> GameComponent | None` #TAG:GameComponent.get_component_by_type
+- `scripts/core/component.py:602` `get_component_by_type(self, component_type: Type | str) -> GameComponent | None` #TAG:GameComponent.get_component_by_type
   - Get a specific component by type.
-- `scripts/core/component.py:625` `get_components_by_type(self, component_type: Type, ordered: bool=True) -> list[GameComponent]` #TAG:GameComponent.get_components_by_type
+- `scripts/core/component.py:609` `get_components_by_type(self, component_type: Type, ordered: bool=True) -> list[GameComponent]` #TAG:GameComponent.get_components_by_type
   - Get a specific component by type.
-- `scripts/core/component.py:635` `bind_sync_listener(self, typ: GameEventType, callback: Callable)` #TAG:GameComponent.bind_sync_listener
+- `scripts/core/component.py:619` `bind_sync_listener(self, typ: GameEventType, callback: Callable)` #TAG:GameComponent.bind_sync_listener
   - Bind a callback to a component event.
-- `scripts/core/component.py:643` `has_event_type(self, typ: GameEventType) -> bool` #TAG:GameComponent.has_event_type
-- `scripts/core/component.py:656` `@staticmethod event_listener(typ: GameEventType) -> Callable` #TAG:GameComponent.event_listener
+- `scripts/core/component.py:627` `has_event_type(self, typ: GameEventType) -> bool` #TAG:GameComponent.has_event_type
+- `scripts/core/component.py:631` `@staticmethod event_listener(typ: GameEventType) -> Callable` #TAG:GameComponent.event_listener
   - Decorator for binding a callback to a component event type.
-- `scripts/core/component.py:672` `unbind_event_listener(self, typ: GameEventType, callback: Callable)` #TAG:GameComponent.unbind_event_listener
+- `scripts/core/component.py:639` `unbind_event_listener(self, typ: GameEventType, callback: Callable)` #TAG:GameComponent.unbind_event_listener
   - Unbind a callback from a component event.
-- `scripts/core/component.py:681` `__send_event(self, typ: GameEventType, event: Optional[PyoneerEvent], *args, **kwargs)` #TAG:GameComponent.__send_event
-- `scripts/core/component.py:715` `__invoke_listener(self, typ: GameEventType, callback: Callable, event: Optional[PyoneerEvent], *args, **kwargs)` #TAG:GameComponent.__invoke_listener
+- `scripts/core/component.py:648` `__send_event(self, typ: GameEventType, event: Optional[PyoneerEvent], *args, **kwargs)` #TAG:GameComponent.__send_event
+- `scripts/core/component.py:678` `__invoke_listener(self, typ: GameEventType, callback: Callable, event: Optional[PyoneerEvent], *args, **kwargs)` #TAG:GameComponent.__invoke_listener
   - Call one listener, attaching dispatch context to anything it raises.
-- `scripts/core/component.py:751` `@property accepts_input(self) -> bool` #TAG:GameComponent.accepts_input
+- `scripts/core/component.py:713` `@property accepts_input(self) -> bool` #TAG:GameComponent.accepts_input
   - Whether input-class events reach this component and its children.
-- `scripts/core/component.py:759` `@property accepts_focus(self) -> bool` #TAG:GameComponent.accepts_focus
+- `scripts/core/component.py:721` `@property accepts_focus(self) -> bool` #TAG:GameComponent.accepts_focus
   - Whether clicking this component should move keyboard focus to it.
-- `scripts/core/component.py:764` `@property focused(self) -> bool` #TAG:GameComponent.focused
+- `scripts/core/component.py:726` `@property focused(self) -> bool` #TAG:GameComponent.focused
   - Whether this component holds keyboard focus.
-- `scripts/core/component.py:774` `@focused.setter focused(self, value: bool)` #TAG:GameComponent.focused.setter
-- `scripts/core/component.py:781` `_on_focus_changed(self, focused: bool)` #TAG:GameComponent._on_focus_changed
+- `scripts/core/component.py:735` `@focused.setter focused(self, value: bool)` #TAG:GameComponent.focused.setter
+- `scripts/core/component.py:742` `_on_focus_changed(self, focused: bool)` #TAG:GameComponent._on_focus_changed
   - Called when focus is gained or lost. Override in subclasses.
-- `scripts/core/component.py:788` `__get_callback(self, typ: GameEventType)` #TAG:GameComponent.__get_callback
-- `scripts/core/component.py:796` `__create_event(self, event_type: GameEventType, data: PyoneerEvent | dict, sender: GameComponent | None=None) -> PyoneerEvent` #TAG:GameComponent.__create_event
-- `scripts/core/component.py:803` `send_pygame_event(self, event: PyoneerEvent, *args, **kwargs)` #TAG:GameComponent.send_pygame_event
+- `scripts/core/component.py:749` `__get_callback(self, typ: GameEventType)` #TAG:GameComponent.__get_callback
+- `scripts/core/component.py:757` `__create_event(self, event_type: GameEventType, data: PyoneerEvent | dict, sender: GameComponent | None=None) -> PyoneerEvent` #TAG:GameComponent.__create_event
+- `scripts/core/component.py:760` `send_pygame_event(self, event: PyoneerEvent, *args, **kwargs)` #TAG:GameComponent.send_pygame_event
   - Send a PyoneerEvent to the component.
-- `scripts/core/component.py:807` `send_event(self, event_type: GameEventType, data: {}, *args, **kwargs)` #TAG:GameComponent.send_event
+- `scripts/core/component.py:764` `send_event(self, event_type: GameEventType, data: {}, *args, **kwargs)` #TAG:GameComponent.send_event
   - Send an event to the component.
-- `scripts/core/component.py:811` `send_event_to_children(self, event_type: GameEventType, data: {}, *args, **kwargs)` #TAG:GameComponent.send_event_to_children
+- `scripts/core/component.py:768` `send_event_to_children(self, event_type: GameEventType, data: {}, *args, **kwargs)` #TAG:GameComponent.send_event_to_children
   - Send an event to all children of the component.
-- `scripts/core/component.py:815` `send_event_advanced(self, event_type: GameEventType=None, event: Optional[PyoneerEvent] | dict=None, *args, **kwargs)` #TAG:GameComponent.send_event_advanced
+- `scripts/core/component.py:772` `send_event_advanced(self, event_type: GameEventType=None, event: Optional[PyoneerEvent] | dict=None, *args, **kwargs)` #TAG:GameComponent.send_event_advanced
   - Call a component directly from anywhere in the program.
-- `scripts/core/component.py:879` `send_event_to_self(self, event_type: GameEventType, event: Optional[PyoneerEvent]=None, *args, **kwargs)` #TAG:GameComponent.send_event_to_self
+- `scripts/core/component.py:828` `send_event_to_self(self, event_type: GameEventType, event: Optional[PyoneerEvent]=None, *args, **kwargs)` #TAG:GameComponent.send_event_to_self
   - Invoke THIS component's listeners for `event_type`; no fan-out.
-- `scripts/core/component.py:912` `send_event_to_children_advanced(self, event_type: GameEventType=None, event: Optional[PyoneerEvent]=None, *args, **kwargs)` #TAG:GameComponent.send_event_to_children_advanced
+- `scripts/core/component.py:860` `send_event_to_children_advanced(self, event_type: GameEventType=None, event: Optional[PyoneerEvent]=None, *args, **kwargs)` #TAG:GameComponent.send_event_to_children_advanced
   - Send an event to all children of the component.
-- `scripts/core/component.py:936` `send_empty_event(self, event_type: GameEventType, to_self: bool=True, to_children: bool=True)` #TAG:GameComponent.send_empty_event
+- `scripts/core/component.py:884` `send_empty_event(self, event_type: GameEventType, to_self: bool=True, to_children: bool=True)` #TAG:GameComponent.send_empty_event
   - Send an empty event to the component or the children of the component.
-- `scripts/core/component.py:943` `mark_event_handled(self, event: PyoneerEvent | list[PyoneerEvent] | None=None)` #TAG:GameComponent.mark_event_handled
+- `scripts/core/component.py:891` `mark_event_handled(self, event: PyoneerEvent | list[PyoneerEvent] | None=None)` #TAG:GameComponent.mark_event_handled
   - Flags the event or list of events as handled.
-- `scripts/core/component.py:958` `core_input_receive(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_input_receive
+- `scripts/core/component.py:906` `core_input_receive(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_input_receive
   - Buffer the component.
-- `scripts/core/component.py:962` `events(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.events
+- `scripts/core/component.py:910` `events(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.events
   - Buffer the component.
-- `scripts/core/component.py:966` `rebuild(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.rebuild
+- `scripts/core/component.py:914` `rebuild(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.rebuild
   - Rebuild the component.
-- `scripts/core/component.py:975` `core_frame_update_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_frame_update_pre
+- `scripts/core/component.py:923` `core_frame_update_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_frame_update_pre
   - Pre-update the component.
-- `scripts/core/component.py:979` `core_frame_update_post(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_frame_update_post
+- `scripts/core/component.py:927` `core_frame_update_post(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_frame_update_post
   - Post-update the component.
-- `scripts/core/component.py:983` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_frame_update
+- `scripts/core/component.py:931` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_frame_update
   - Update the component.
-- `scripts/core/component.py:987` `core_lifecycle_dispose(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_lifecycle_dispose
+- `scripts/core/component.py:935` `core_lifecycle_dispose(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_lifecycle_dispose
   - Dispose of the component.
-- `scripts/core/component.py:991` `__has_callback(self, typ: GameEventType) -> bool` #TAG:GameComponent.__has_callback
-- `scripts/core/component.py:994` `core_render_blits(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_render_blits
+- `scripts/core/component.py:939` `__has_callback(self, typ: GameEventType) -> bool` #TAG:GameComponent.__has_callback
+- `scripts/core/component.py:942` `core_render_blits(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.core_render_blits
   - Blit the component.
-- `scripts/core/component.py:1004` `is_clickable(self) -> bool` #TAG:GameComponent.is_clickable
-- `scripts/core/component.py:1007` `__str__(self)` #TAG:GameComponent.__str__
-- `scripts/core/component.py:1015` `__on_parent_changed(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.__on_parent_changed
+- `scripts/core/component.py:948` `is_clickable(self) -> bool` #TAG:GameComponent.is_clickable
+- `scripts/core/component.py:951` `__str__(self)` #TAG:GameComponent.__str__
+- `scripts/core/component.py:959` `__on_parent_changed(self, event: Optional[PyoneerEvent]=None)` #TAG:GameComponent.__on_parent_changed
   - When the parent is changed, this is deployed to components.

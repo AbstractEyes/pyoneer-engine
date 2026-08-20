@@ -1,43 +1,30 @@
 """Triggers on the selected object -- and, on screen, the fact that none run.
 
-`editor/core/map_events.py` has been complete and tested since it was
-written and had ZERO importers: 843 lines and a 497-line check verifying a
-vocabulary nothing in the application could reach. This panel is the
+`editor/core/map_events.py` owns the trigger vocabulary; this panel is its
 surface. It shows the declaration on the selected object, edits every field
-of it through `map.object.action.*`, and deletes it -- all of it as commands,
-so it inherits undo, rollback, the history panel and the generated
-`COMMANDS.md` without asking for any of them.
+of it through `map.object.action.*`, and deletes it -- all as commands, so it
+inherits undo, rollback, the history panel and the generated `COMMANDS.md`.
 
 THE BANNER IS THE POINT
 -----------------------
-The engine cannot execute one of these. Not "not completely" -- there is no
-collision detection at all, entities derive `PyoneerGameObject` rather than
-`GameComponent` and so are not on the event bus, no `MAP_TRIGGER_*` event
-type exists, and the renderer skips `<objectgroup>` entirely. A map authored
-here plays exactly as it did before.
-
-`PLAN_EDITOR.md` argued from that to "do not build the panel yet", and the
-argument was right about one thing: a feature that LOOKS complete and does
-nothing is the failure this project exists to avoid. But the fix for looking
-complete is saying so, and the cost of not building it was 843 lines nobody
-could reach. So the panel exists and it carries `NOT_WIRED` above every
-field, in the widget tree rather than in a docstring or a tooltip -- because
-the author reading a docstring is not the author who is about to spend an
-afternoon wondering why the door does nothing.
+The engine cannot execute one of these: no `MAP_TRIGGER_*` event type
+exists, nothing under `scripts/` reads `pyoneer_trigger`, and the renderer
+skips `<objectgroup>` entirely. A map authored here plays exactly as it did
+before. A feature that LOOKS complete and does nothing is the failure this
+project exists to avoid, so the panel carries `NOT_WIRED` above every field,
+in the widget tree rather than in a docstring or a tooltip -- whoever reads
+a docstring is not whoever is about to wonder why the door does nothing.
 
 WHY THE DESCRIPTION IS DATA
 ---------------------------
-`describe_actions` returns an `Inspection`, the same structure
-`editor/core/inspect.py` returns and the same one `fields.InspectionView`
-renders. That buys typed editors, per-field remove buttons and
-command emission for free, and -- more to the point -- it means a check can
-assert "editing the trigger kind produces `map.object.action.set`" without
-opening a window. The first run of the equivalent check on the Inspector
-found two fields wired to the wrong verb.
+`describe_actions` returns an `Inspection`, the structure
+`editor/core/inspect.py` returns and `fields.InspectionView` renders. That
+buys typed editors, per-field remove buttons and command emission, and lets
+a check assert "editing the trigger kind produces `map.object.action.set`"
+without opening a window.
 
-It belongs in `editor/core/inspect.py` beside the other describers, and is
-here because this pass owned this path. The move is mechanical: nothing in
-`describe_actions` touches Qt.
+It belongs in `editor/core/inspect.py` beside the other describers; nothing
+in `describe_actions` touches Qt, so the move is mechanical.
 """
 from __future__ import annotations
 

@@ -5,7 +5,7 @@
 
 > What is currently selected, shared by every panel that cares.
 
-`editor.ui.selection` · 91 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.selection` · 90 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,17 +15,17 @@
 
 ### `class Selection(QObject)` #TAG:Selection
 
-`editor/ui/selection.py:39`–`90`
+`editor/ui/selection.py:38`–`89`
 
 > The one global cursor into the project.
 
-- `editor/ui/selection.py:44` `__init__(self, initial: Scope, parent: QObject | None=None)` #TAG:Selection.__init__
-- `editor/ui/selection.py:52` `@property scope(self) -> Scope` #TAG:Selection.scope
-- `editor/ui/selection.py:56` `@property kind(self) -> str` #TAG:Selection.kind
-- `editor/ui/selection.py:59` `history(self) -> list[Scope]` #TAG:Selection.history
-- `editor/ui/selection.py:64` `select(self, scope: Scope | str) -> bool` #TAG:Selection.select
+- `editor/ui/selection.py:43` `__init__(self, initial: Scope, parent: QObject | None=None)` #TAG:Selection.__init__
+- `editor/ui/selection.py:51` `@property scope(self) -> Scope` #TAG:Selection.scope
+- `editor/ui/selection.py:55` `@property kind(self) -> str` #TAG:Selection.kind
+- `editor/ui/selection.py:58` `history(self) -> list[Scope]` #TAG:Selection.history
+- `editor/ui/selection.py:63` `select(self, scope: Scope | str) -> bool` #TAG:Selection.select
   - Point at something. Returns True if this was a change.
-- `editor/ui/selection.py:75` `reselect(self) -> None` #TAG:Selection.reselect
+- `editor/ui/selection.py:74` `reselect(self) -> None` #TAG:Selection.reselect
   - Re-emit without changing. Used after a command rebuilds a document
-- `editor/ui/selection.py:80` `select_parent(self) -> bool` #TAG:Selection.select_parent
-- `editor/ui/selection.py:84` `back(self) -> bool` #TAG:Selection.back
+- `editor/ui/selection.py:79` `select_parent(self) -> bool` #TAG:Selection.select_parent
+- `editor/ui/selection.py:83` `back(self) -> bool` #TAG:Selection.back

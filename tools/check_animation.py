@@ -1,9 +1,9 @@
 """Verify GameAnimationHandler switching, pausing and resuming.
 
-Regression guard for the stale-frame bug: start(name) used to set
-`active = True` directly instead of calling GameAnimation.start(), so the
-previous sequence's frame counter survived and image() kept returning the
-old sprite -- for up to a second, since idle_down's frame duration is 1000ms.
+`start(name)` must go through `GameAnimation.start()` rather than setting
+`active = True`: the previous sequence's frame counter would survive and
+`image()` would keep returning the old sprite -- for up to a second, since
+idle_down's frame duration is 1000ms.
 """
 from __future__ import annotations
 

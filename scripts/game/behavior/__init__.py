@@ -1,11 +1,9 @@
 """Behavior components: what an entity DOES, composed from data.
 
-The author's goal, in his words: "the system needs to be
-component-modularized and documented as well for quick AI creation,
-modification, and usage changing." Read as: movement, input and collision
-response are COMPOSED onto an entity as swappable behaviors declared in a
-map, not baked into a subclass. A platformer player is the same `GamePlayer`
-class as a top-down one carrying a different behavior list.
+Movement, input and action response are COMPOSED onto an entity as swappable
+behaviors declared per tmx object, not baked into a subclass. A platformer
+player is the same `GamePlayer` class as a top-down one carrying a different
+behavior list; an entity with an empty list runs no behavior code at all.
 
 WHAT IS HERE
 ------------
@@ -14,19 +12,17 @@ WHAT IS HERE
                   tmx vocabulary, and the ordered per-frame drive
                   (`EntityBehaviors`)
     state.py      `BodyState` -- what a body IS: phase, facing, support and
-                  agency. The third record beside `MoveIntent` (what it was
-                  ASKED to do) and `ActionIntent` (what it DID), and the one
-                  a behavior declares in `writes` as `state.<axis>` so two
-                  writers of one axis are refused at attach.
+                  agency. A behavior declares an axis it writes as
+                  `state.<axis>`, so two writers of one axis are refused at
+                  attach.
     registry.py   the hand-written token table, the map read path, and the
                   generator for docs/BEHAVIORS.md
     input.py      `player_input` -- polls the bound InputActionManager and
                   publishes a `MoveIntent`. The entity carrying this one is
-                  the entity the human drives; that is the whole marker.
-    movement.py   `topdown_move` (the demo's controller, moved out of
-                  `GamePlayer.input_move` unchanged), `platformer_move`
-                  (gravity, jump, coyote time, air control) and
-                  `animation_drive` (sequence naming as parameters).
+                  the entity the human drives.
+    movement.py   `topdown_move`, `platformer_move` (gravity, jump, coyote
+                  time, air control) and `animation_drive` (sequence naming
+                  as parameters).
     action.py     `attack_action`, `interact_action`, `pause_action` and
                   `action_relay` -- an occurrence rather than a value, with
                   the relay as the one behavior that reaches outward, by
@@ -35,14 +31,6 @@ WHAT IS HERE
                   else. `SceneManager.reap()` is what removes; a behavior
                   that unbound its own entity would make the scene fan-out
                   skip the next sibling.
-
-WHAT IS DELIBERATELY NOT HERE
------------------------------
-Anything that decides a behavior list from a CLASS. A list keyed by class
-name is the subclass shape wearing a dict as a disguise, and it cannot let
-two objects of one type on one map differ. The list is authored per tmx
-object, and an entity with an empty one runs exactly the code it ran before
-this package existed -- which is why landing it moved no frame.
 
 THE ONE-MINUTE VERSION
 ----------------------

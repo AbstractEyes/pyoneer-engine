@@ -17,14 +17,12 @@ actually break:
   * a rejected edit reaches the user as a message, not a traceback
   * a response comes back through the same door a click does
 
-AND WHAT THE AUTHOR ACTUALLY COMPLAINED ABOUT
----------------------------------------------
-"By clicking a debug tile it should have triggered debug ... Make the
-interaction reasonable." The modal he hit was one of eleven of the same
-shape: a box with an OK button, opened on a routine path, to tell him that
-nothing had happened. Four properties are asserted here, each in BOTH
-directions, because the dominant failure in this tree is proving one half
-of an invariant:
+AND FOUR PROPERTIES ABOUT DIALOGS
+---------------------------------
+A box with an OK button, opened on a routine path to say that nothing
+happened, is the shape this section is against. Each property is asserted in
+BOTH directions, because the dominant failure in this tree is proving one
+half of an invariant:
 
   * a routine outcome opens NO dialog -- and every dialog is recorded
     rather than silenced, so "nothing opened" is a measurement. A modal on
@@ -39,8 +37,7 @@ of an invariant:
     the defect, so the refusals are read back off the status bar and out of
     the Problems dock.
 
-Skips cleanly when PySide6 is not installed; the engine does not depend on
-it and a bare clone should not fail here.
+Skips cleanly when PySide6 is not installed.
 """
 from __future__ import annotations
 
@@ -101,14 +98,10 @@ def expect(label, got, want):
         failures.append(label)
 
 
-# RECORD every modal, do not merely silence it.
-#
-# Silencing was the old shape and it proved nothing in either direction: a
-# box that opened was invisible to the suite, and a box that stopped opening
-# was invisible too. These four lists are the instrument for "this path
-# asked nothing", which is the assertion that would have caught the modal
-# the author reported -- stronger than "the author was asked", because being
-# asked was never the point.
+# RECORD every modal, do not merely silence it. Silencing proves nothing in
+# either direction -- a box that opens is invisible to the suite, and so is a
+# box that stops opening. These four lists are the instrument for "this path
+# asked nothing", which is the stronger of the two claims.
 warned: list[str] = []
 asked: list[str] = []
 informed: list[str] = []
@@ -227,7 +220,7 @@ def select_layer(window, name):
 # Its own map, because baking a tile mask WRITES: a `.blitmask` beside the
 # .tmx and a `pyoneer_collision` property on the `<tileset>`. Doing that to a
 # copy of `data/maps/test.tmx` would pin the author's tileset names and their
-# geometry into this file, which is law 4 and four red suites.
+# geometry into this file (law 4).
 #
 # Two columns and four tiles, so a tile id, a grid position and a gid are all
 # small enough to name: gid 2 is column 1 of row 0.
@@ -572,11 +565,10 @@ try:
     print("the terrain tool re-tiles cells the cursor never touched")
     # ----------------------------------------------------------------
     # Paint on a layer this check CREATES, so the fixture is guaranteed
-    # empty. Using a shipped layer failed as soon as the author painted in
-    # it, and Floor cannot be used at all: it is filled with gid 65, a real
-    # quadrant of the grass autotile block, so the terrain recogniser
-    # correctly reads most of it as already-grass and a small stroke changes
-    # almost nothing. Right behaviour, useless fixture.
+    # empty. A shipped layer is repainted by the author, and Floor cannot be
+    # used at all: it is filled with gid 65, a real quadrant of the grass
+    # autotile block, so the terrain recogniser reads most of it as
+    # already-grass and a small stroke changes almost nothing.
     window.run(Command("map.layer.add", Scope.of(("map", "test")),
                        {"name": "TerrainProbe", "kind": "tile"}))
     select_layer(window, "TerrainProbe")
@@ -675,11 +667,9 @@ try:
                                      ("object", str(objects[0].id))))
     application.processEvents()
 
-    # The Actions panel: 353 lines and a passing check in the roster, mounted
-    # NOWHERE -- `window.docks` was Hierarchy, Inspector, Behaviors,
-    # Problems, Manifest, History and no click could open it. Proving a
-    # surface the author cannot reach is the failure its own docstring is
-    # about.
+    # The Actions panel has to be IN `window.docks`, or no click can open it
+    # -- a panel with its own passing check and no door is a surface the
+    # author cannot reach.
     from PySide6.QtWidgets import QLabel                          # noqa: E402
     expect("the Actions panel is mounted", window.actions in window.docks, True)
     expect("in the window, not floating free",
@@ -709,8 +699,8 @@ try:
            .find(objects[0].id).x, 128.0)
     window.undo()
 
-    # Adding a property was two QInputDialogs in a row -- name, then type --
-    # and cancelling the second threw away the name typed into the first.
+    # Adding a property is ONE form. Two QInputDialogs in a row -- name, then
+    # type -- throws away the name when the second is cancelled.
     property_forms: list = []
     window.inspector.view.ask = lambda _p, title, rows, **k: (
         property_forms.append([f.key for f in rows])
@@ -741,11 +731,9 @@ try:
     print()
     print("a rejected edit is reported where it can be read, and asks nothing")
     # ----------------------------------------------------------------
-    # It used to be a QMessageBox.warning titled "Rejected" whose body was
-    # "command 1 of 1 failed: ... via verb=..., scope=..., args={...},
-    # cause=PyoneerConfigError" -- a box to dismiss in order to learn that
-    # nothing had changed -- AND a status line saying the same thing. A
-    # rejection is a designed outcome here, so it is now a report.
+    # A rejection is a designed outcome here, so it is a REPORT: the Problems
+    # dock and the status line, and no box to dismiss in order to learn that
+    # nothing changed.
     def problem_rows():
         widget = window.problems.list
         return [widget.item(i).text() for i in range(widget.count())]
@@ -783,12 +771,10 @@ try:
     print()
     print("the hierarchy's add buttons are live or greyed, never silent")
     # ----------------------------------------------------------------
-    # Reported from a real run, twice: '+ tile layer' and '+ object layer'
-    # were enabled, carried no tooltip, and returned silently when the
-    # panel's scope had no map. The Database's three row buttons were fixed
-    # for exactly this a pass earlier; this is the same fix, and both
-    # directions are asserted because only asserting the greyed half is how
-    # it survived the first time.
+    # '+ tile layer' and '+ object layer' must not be enabled while the
+    # panel's scope has no map, or the click returns silently. Both
+    # directions are asserted, because only asserting the greyed half is how
+    # the same bug survived in the Database.
     hierarchy = window.hierarchy
     select_layer(window, "Floor")
     expect("live on a map, both of them",
@@ -816,11 +802,10 @@ try:
     print()
     print("adding a layer is ONE dialog, and it speaks the author's language")
     # ----------------------------------------------------------------
-    # It was two QInputDialogs in a row -- name, then group -- and cancelling
-    # the second discarded the name typed into the first. The name prompt
-    # read "the engine resolves this to a draw depth through
-    # scripts/core/depth.py", a repo-relative Python path shown to someone
-    # who asked to name a layer.
+    # ONE form, in the author's language: two dialogs in a row -- name, then
+    # group -- discard the name when the second is cancelled, and a prompt
+    # naming a repo-relative Python path says nothing to someone who asked to
+    # name a layer.
     forms: list = []
 
     def fake_ask(_parent, title, rows, **_kwargs):
@@ -853,11 +838,9 @@ try:
     print()
     print("removing a layer acts, and says how to take it back")
     # ----------------------------------------------------------------
-    # The confirmation this replaces asked "Remove 'Roof' and everything on
-    # it?" and then reassured, in the same box, that "undo restores the layer
-    # byte-for-byte" -- a dialog whose body is the argument that the dialog
-    # is unnecessary. Undo reaches this exactly, so by this editor's own
-    # definition it is not destructive.
+    # Undo restores a removed layer byte-for-byte, so by this editor's own
+    # definition removing one is not destructive and asks nothing. It says
+    # how to take it back instead.
     window.run(Command("map.layer.add", Scope.of(("map", "test")),
                        {"name": "Doomed", "kind": "tile"}))
     select_layer(window, "Doomed")
@@ -911,12 +894,10 @@ try:
     # back: a check can only watch a seam it can replace, and every hard
     # `QMessageBox.x(...)` in a panel is a dialog no check can see.
     def modal_calls(relative: str) -> list[str]:
-        # BOTH ways to block, not just the obvious one. `QMessageBox.x(...)`
-        # was the only shape watched, and it is blind to `dialog.exec()` --
-        # so a panel could grow a fully blocking QDialog and the guard that
-        # exists to stop exactly this pattern returning would not see it.
-        # Measured: `.exec()` appears at four sites in editor/ today, and the
-        # old regex matched none of them.
+        # BOTH ways to block, not just the obvious one. Watching only
+        # `QMessageBox.x(...)` is blind to `dialog.exec()`, so a panel could
+        # grow a fully blocking QDialog and the guard that exists to stop
+        # exactly this pattern returning would not see it.
         with open(os.path.join(REPO, relative), encoding="utf-8") as handle:
             text = handle.read()
         return (re.findall(r"QMessageBox\.(\w+)\(", text)
@@ -942,13 +923,12 @@ try:
            modal_calls("editor/ui/ask.py"), ["question", "exec:dialog"])
     # THE EARNED HALF of the exclusion. A dialog module is exempt from the
     # census because a check can substitute its opener; that is a claim, so
-    # it is asserted rather than trusted. Without this, "it is a dialog
-    # module" becomes a way to smuggle an unreplaceable modal back in.
-    # Named explicitly, because the two seams have different SHAPES -- ask.py
-    # exposes module-level functions that panels call, tileset_dialog.py a
-    # classmethod that check_editor_ui already patches at :1137. A generic
-    # "has something callable" probe would pass for any module and prove
-    # nothing, which is the toothless shape this suite keeps finding.
+    # it is asserted rather than trusted, or "it is a dialog module" becomes
+    # a way to smuggle an unreplaceable modal back in. Named explicitly,
+    # because the two seams have different SHAPES -- ask.py exposes
+    # module-level functions that panels call, tileset_dialog.py a
+    # classmethod -- and a generic "has something callable" probe would pass
+    # for any module and prove nothing.
     SEAMS = {"ask.py": ("editor.ui.ask", None, ("ask_form", "confirm")),
              "tileset_dialog.py": ("editor.ui.tileset_dialog",
                                    "TilesetImportDialog", ("ask",))}
@@ -1006,10 +986,9 @@ try:
     page = window.database.pages["actors"]
     expect("an uncreated table says so", page.exists, False)
 
-    # Reported from a real run: "the database + buttons don't do anything."
-    # They early-returned when the table did not exist -- which on a fresh
-    # project is always -- so all three were dead clicks with no feedback.
-    # A button that cannot act must LOOK like it cannot act.
+    # A button that cannot act must LOOK like it cannot act. All three row
+    # buttons early-return when the table does not exist -- which on a fresh
+    # project is always -- so enabled, they are dead clicks with no feedback.
     expect("+ is disabled before the table exists",
            page.add_button.isEnabled(), False)
     expect("and its tooltip says why",
@@ -1059,8 +1038,7 @@ try:
     expect("and no message box was involved", modals(), [])
     window.undo()
 
-    # Deleting a row used to ask "Delete 'hero' from actors?" and answer its
-    # own question with "This is undoable." The button is already disabled
+    # Deleting a row asks nothing: it is undoable, and the button is disabled
     # unless a row is selected, so the click cannot be a slip.
     statuses: list[str] = []
     page.status_requested.connect(statuses.append)
@@ -1110,10 +1088,9 @@ try:
     print()
     print("shipping and applying a response use the same door")
     # ----------------------------------------------------------------
-    # The menu entry was ALWAYS enabled and answered with a "Nothing staged"
-    # modal, while the Manifest dock's own Ship button correctly disabled
-    # itself in the same state: two doors onto one action, one greyed and
-    # one arguing.
+    # Two doors onto one action, so they must agree: the menu entry greys
+    # itself in the state the Manifest dock's own Ship button does, rather
+    # than staying enabled and answering with a "Nothing staged" box.
     session.manifest.clear()
     window.refresh_manifest()
     expect("Ship is greyed with nothing staged",
@@ -1181,9 +1158,8 @@ try:
     expect("as did the pending path", window.pending_response, None)
     window.undo()
 
-    # `confirm_response` was declared in settings.py, rendered in the
-    # settings dialog, documented as "untick to apply a response as soon as
-    # it arrives" -- and read by nothing whatsoever. Both halves, since a
+    # `confirm_response` is declared in settings.py and rendered in the
+    # settings dialog, so it has to be READ here. Both halves, since a
     # preference that changes nothing is the same disease one layer down.
     window.settings.set("confirm_response", False)
     questions.clear()
@@ -1229,16 +1205,11 @@ try:
     print()
     print("refreshing never orphans a widget into a top-level window")
     # ----------------------------------------------------------------
-    # Reported from a real run: Ctrl+Z made "like 20 miniature windows"
-    # appear and disappear. Cause was `widget.setParent(None)` while
-    # clearing the inspector's layout -- in Qt that does not detach a widget,
-    # it PROMOTES it to a top-level window, and `deleteLater()` only runs
-    # once the event loop unwinds, so the orphans both flashed and
-    # accumulated. Measured before the fix: 59 top-level widgets at rest,
-    # 85 after one undo, and still 85 afterwards.
-    #
-    # Counting top-levels is the cheapest way to make that impossible to
-    # reintroduce, and it catches the same mistake in any panel.
+    # `widget.setParent(None)` does not detach a widget in Qt, it PROMOTES it
+    # to a top-level window, and `deleteLater()` only runs once the event loop
+    # unwinds -- so clearing a layout that way both flashes orphan windows and
+    # accumulates them (law 12). Counting top-levels is the cheapest way to
+    # make that impossible to reintroduce, in any panel.
     def top_levels():
         return len([w for w in QApplication.topLevelWidgets()
                     if w is not window and w.parent() is None])
@@ -1255,10 +1226,8 @@ try:
     after_undo = top_levels()
     window.redo()
     application.processEvents()
-    # The three measurements the original bug was found with: 59 at rest, 85
-    # after one undo, still 85 afterwards. They have to be the same number,
-    # and printing all three is what makes a regression readable rather than
-    # a bare False.
+    # All three have to be the same number, and printing all three is what
+    # makes a regression readable rather than a bare False.
     print(f"       top-level widgets: at rest {at_rest}, after an edit "
           f"{after_edit}, after an undo {after_undo}")
     expect("an edit orphans nothing", after_edit, at_rest)
@@ -1295,16 +1264,12 @@ try:
     print()
     print("a field never outlives its own signal (heap-corruption guard)")
     # ----------------------------------------------------------------
-    # Reported from a real run as exit code 0xC0000374,
-    # STATUS_HEAP_CORRUPTION, after toggling a layer capability. The fix for
-    # the orphan-window bug above replaced the inspector body with
-    # setWidget(), which DELETES the old one synchronously -- so toggling a
-    # checkbox emitted a command, which refreshed, which freed that very
-    # checkbox while its `toggled` signal was still on the stack. Qt then
-    # returned into freed memory.
-    #
-    # Deferring the free with deleteLater() is the fix; this asserts it, and
-    # asserts the two are compatible, since the naive cure for either one is
+    # `setWidget()` DELETES the old body synchronously, so toggling a
+    # checkbox emits a command, which refreshes, which frees that very
+    # checkbox while its `toggled` signal is still on the stack -- Qt then
+    # returns into freed memory (0xC0000374, STATUS_HEAP_CORRUPTION; law 12).
+    # Deferring the free with deleteLater() is the fix. Asserted together with
+    # the orphan-window guard above, since the naive cure for either one is
     # the cause of the other.
     from PySide6.QtWidgets import QCheckBox                       # noqa: E402
 
@@ -1354,11 +1319,10 @@ try:
     store.set("theme", "banana")
     expect("a value outside the choices falls back to the default",
            store.get("theme"), "system")
-    # An INT setting used to validate nothing at all: the `choices` guard sat
-    # inside the str branch, so any stored number came straight back --
-    # including 0, which is a ZeroDivisionError in the code that turns a
-    # pixel into a cell. Both halves, because a fallback that cannot fire is
-    # not a fallback.
+    # An INT setting is validated against its choices too, not just a str
+    # one: any number coming straight back includes 0, which is a
+    # ZeroDivisionError in the code that turns a pixel into a cell. Both
+    # halves, because a fallback that cannot fire is not a fallback.
     store.set("grid_step", 4)
     expect("an int choice round-trips as an int", store.get("grid_step"), 4)
     store._backend.setValue("grid_step", 0)
@@ -1397,9 +1361,9 @@ try:
         print("  ok   an unknown setting raises rather than returning None")
 
     # The dialog is generated from SETTINGS, so an int setting has to survive
-    # the trip through a combo box's item data as an INT: it was authored as
-    # a string, and findData against an int missed, which showed the first
-    # entry however the preference was actually set.
+    # the trip through a combo box's item data as an INT: authored as a
+    # string, `findData` against an int misses and the combo shows its first
+    # entry however the preference is actually set.
     from editor.ui.settings_dialog import SettingsDialog            # noqa: E402
     from PySide6.QtWidgets import QComboBox                         # noqa: E402
 
@@ -1437,10 +1401,8 @@ try:
     # And the sub-cell control, which is the OPPOSITE of the line above and
     # deliberately so: it is the resolution a companion CREATED by the next
     # collision stroke is given, so it has to reach `paint_unit` and move
-    # what a click addresses. Until it existed, `map.layer.add subcell=N` was
-    # reachable only through the AI response path -- a human who only clicks
-    # could not make a 4x companion at all, and there is no verb to re-scale
-    # one afterwards.
+    # what a click addresses. It is also the only human route to
+    # `map.layer.add subcell=N`, and no verb re-scales a companion afterwards.
     expect("the dialog offers the collision resolution as a real field",
            shown("collision_subcell"), 1)
     window.canvas.collision_subcell = 1
@@ -1451,9 +1413,9 @@ try:
     expect("and back down again", window.canvas.collision_subcell, 1)
 
     # AND IT HAS TO BE READ AT BOOT, which is a separate wire from the one
-    # above and was the half nothing covered: a preference the dialog can
-    # change and the next launch forgets is a preference that works exactly
-    # once. Driven by constructing a SECOND window against a store that
+    # above: a preference the dialog can change and the next launch forgets
+    # is a preference that works exactly once. Driven by constructing a
+    # SECOND window against a store that
     # already holds the value, because `EditorSettings()` is built inside
     # `__init__` and there is no other seam onto that moment.
     import editor.ui.main_window as main_window_module               # noqa: E402
@@ -1507,9 +1469,8 @@ try:
 
     expect("the window palette actually darkened", dark_window < light_window,
            True)
-    # This is the bug that prompted the whole thing: icons were a hardcoded
-    # near-white, invisible on the author's light theme. Ink must move the
-    # OPPOSITE way to the background or the glyphs vanish on one of them.
+    # Ink must move the OPPOSITE way to the background, or a hardcoded
+    # near-white glyph vanishes on a light theme.
     expect("and the icon ink moved the other way", dark_ink > light_ink, True)
     expect("dark mode uses a style that honours the palette",
            application.style().objectName(), "fusion")
@@ -1524,9 +1485,10 @@ try:
     print()
     print("a menu entry that cannot act is greyed with a reason")
     # ----------------------------------------------------------------
-    # "Copy the art brief" answered with a modal for a genre that ships no
-    # ART.md. Both directions, because a control asserted only in its
-    # disabled state is how the Database's buttons shipped broken.
+    # "Copy the art brief" greys itself for a genre that ships no ART.md
+    # rather than answering with a modal. Both directions, because a control
+    # asserted only in its disabled state is how the Database's buttons
+    # shipped broken.
     pack = session.project.genre
     expect("live for a genre that ships one",
            window.art_action.isEnabled(), True)
@@ -1546,10 +1508,9 @@ try:
     print()
     print("a tileset can be added from the GUI at all")
     # ----------------------------------------------------------------
-    # `TilesetImportDialog` was finished, had a complete `ask()` whose
-    # docstring says "so the menu action stays two lines", and NO menu
-    # action existed -- so `map.tileset.add` had no door in the whole
-    # editor, which is why the collision path grew its own modal importer.
+    # `TilesetImportDialog.ask()` needs a menu action, or `map.tileset.add`
+    # has no door in the editor at all and every path that needs a tileset
+    # grows its own importer.
     from editor.ui import tileset_dialog                          # noqa: E402
     import editor.ui.main_window as main_window_module            # noqa: E402
 
@@ -1631,18 +1592,16 @@ try:
     print()
     print("a tile picked in the palette carries its own collision mask")
     # ----------------------------------------------------------------
-    # THE CLICK, THROUGH THE REAL WINDOW. `map.tileset.mask.set` shipped and
-    # worked end to end while NOTHING in `editor/ui` called it -- measured,
-    # the verb's name appeared outside `verbs.py` only in generated docs and
-    # in its own check. `check_collision_mount.py` drives the canvas seam;
-    # what only this file can see is the half between a real mouse press on
-    # a real `TilePalette` and that seam: the signal, the mode-dependent
-    # meaning, and the palette being told the answer afterwards.
+    # THE CLICK, THROUGH THE REAL WINDOW, onto `map.tileset.mask.set`.
+    # `check_collision_mount.py` drives the canvas seam; what only this file
+    # can see is the half between a real mouse press on a real `TilePalette`
+    # and that seam: the signal, the mode-dependent meaning, and the palette
+    # being told the answer afterwards.
     #
-    # AGAINST ITS OWN FIXTURE, never `data/maps/test.tmx`. Baking a mask
-    # writes a `.blitmask` beside the map and adds `pyoneer_collision` to a
-    # `<tileset>`, so doing it on the author's canvas would pin both the
-    # tileset's name and its geometry -- law 4, and four red suites.
+    # AGAINST ITS OWN FIXTURE, never `data/maps/test.tmx` (law 4). Baking a
+    # mask writes a `.blitmask` beside the map and adds `pyoneer_collision`
+    # to a `<tileset>`, so doing it on the author's canvas would pin both the
+    # tileset's name and its geometry.
     masked_root = os.path.join(workspace, "tilemask")
     os.makedirs(os.path.join(masked_root, "config"))
     os.makedirs(os.path.join(masked_root, "data", "maps"))
@@ -1727,10 +1686,6 @@ try:
     # line of `refresh_all` -- which means the sheet above was drawn ONCE,
     # already carrying its badge. Swap the two calls and it is drawn without
     # one, then not drawn again, and the badge simply never appears.
-    # Measured before this was pinned: an earlier `set_masks` rebuilt behind a
-    # memo justified as saving a repaint per drag click, and it saved nothing
-    # -- five unrelated edits still cost five rebuilds -- while BOTH halves of
-    # the memo could be deleted with the suite green.
     _order = inspect.getsource(type(window).refresh_all)
     expect("refresh_all hands the palette its masks BEFORE its atlas",
            _order.index("set_masks") < _order.index("set_atlas"), True)

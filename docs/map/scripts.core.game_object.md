@@ -3,7 +3,7 @@
 
 # `scripts/core/game_object.py` — tier 2 #TAG:scripts/core/game_object.py
 
-`scripts.core.game_object` · 189 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.game_object` · 182 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,45 +13,45 @@
 
 ### `class PyoneerGameObject(ABC)` #TAG:PyoneerGameObject
 
-`scripts/core/game_object.py:20`–`188`
+`scripts/core/game_object.py:20`–`181`
 
 > Root of everything the engine drives.
 
-- `scripts/core/game_object.py:57` `__init__(self, image: surface.Surface | None=None, depth: int=0, priority: int=0)` #TAG:PyoneerGameObject.__init__
-- `scripts/core/game_object.py:79` `@property flags(self)` #TAG:PyoneerGameObject.flags
+- `scripts/core/game_object.py:55` `__init__(self, image: surface.Surface | None=None, depth: int=0, priority: int=0)` #TAG:PyoneerGameObject.__init__
+- `scripts/core/game_object.py:72` `@property flags(self)` #TAG:PyoneerGameObject.flags
   - Return the flags for the object.
-- `scripts/core/game_object.py:84` `@flags.setter flags(self, value: dict[str, bool])` #TAG:PyoneerGameObject.flags.setter
+- `scripts/core/game_object.py:77` `@flags.setter flags(self, value: dict[str, bool])` #TAG:PyoneerGameObject.flags.setter
   - Set the flags for the object.
-- `scripts/core/game_object.py:89` `@property depth(self) -> int` #TAG:PyoneerGameObject.depth
-- `scripts/core/game_object.py:93` `@depth.setter depth(self, value: int) -> None` #TAG:PyoneerGameObject.depth.setter
-- `scripts/core/game_object.py:97` `@property priority(self) -> int` #TAG:PyoneerGameObject.priority
-- `scripts/core/game_object.py:101` `@priority.setter priority(self, value: int) -> None` #TAG:PyoneerGameObject.priority.setter
-- `scripts/core/game_object.py:105` `@abstractmethod core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_lifecycle_build
+- `scripts/core/game_object.py:82` `@property depth(self) -> int` #TAG:PyoneerGameObject.depth
+- `scripts/core/game_object.py:86` `@depth.setter depth(self, value: int) -> None` #TAG:PyoneerGameObject.depth.setter
+- `scripts/core/game_object.py:90` `@property priority(self) -> int` #TAG:PyoneerGameObject.priority
+- `scripts/core/game_object.py:94` `@priority.setter priority(self, value: int) -> None` #TAG:PyoneerGameObject.priority.setter
+- `scripts/core/game_object.py:98` `@abstractmethod core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_lifecycle_build
   - Called when the object is created.
-- `scripts/core/game_object.py:109` `core_frame_update_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_frame_update_pre
+- `scripts/core/game_object.py:102` `core_frame_update_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_frame_update_pre
   - Called before the update method.
-- `scripts/core/game_object.py:115` `@abstractmethod core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_frame_update
+- `scripts/core/game_object.py:108` `@abstractmethod core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_frame_update
   - Called every frame. dt is the time in seconds since the last frame.
-- `scripts/core/game_object.py:118` `core_frame_update_post(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_frame_update_post
+- `scripts/core/game_object.py:111` `core_frame_update_post(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_frame_update_post
   - Called after the update method.
-- `scripts/core/game_object.py:123` `core_lifecycle_dispose_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_lifecycle_dispose_pre
+- `scripts/core/game_object.py:116` `core_lifecycle_dispose_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_lifecycle_dispose_pre
   - Called before the dispose method.
-- `scripts/core/game_object.py:129` `@abstractmethod core_lifecycle_dispose(self, event: Optional[PyoneerEvent]=None) -> bool` #TAG:PyoneerGameObject.core_lifecycle_dispose
+- `scripts/core/game_object.py:122` `@abstractmethod core_lifecycle_dispose(self, event: Optional[PyoneerEvent]=None) -> bool` #TAG:PyoneerGameObject.core_lifecycle_dispose
   - Called when the object is destroyed.
-- `scripts/core/game_object.py:133` `core_lifecycle_dispose_post(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_lifecycle_dispose_post
+- `scripts/core/game_object.py:126` `core_lifecycle_dispose_post(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_lifecycle_dispose_post
   - Called after the dispose method.
-- `scripts/core/game_object.py:138` `core_lifecycle_prepare_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_lifecycle_prepare_pre
+- `scripts/core/game_object.py:131` `core_lifecycle_prepare_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_lifecycle_prepare_pre
   - Called before the prepare method.
-- `scripts/core/game_object.py:144` `@abstractmethod core_lifecycle_prepare(self, event: Optional[PyoneerEvent]=None) -> surface` #TAG:PyoneerGameObject.core_lifecycle_prepare
+- `scripts/core/game_object.py:137` `@abstractmethod core_lifecycle_prepare(self, event: Optional[PyoneerEvent]=None) -> surface` #TAG:PyoneerGameObject.core_lifecycle_prepare
   - Called when the object is created.
-- `scripts/core/game_object.py:147` `core_lifecycle_prepare_post(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_lifecycle_prepare_post
+- `scripts/core/game_object.py:140` `core_lifecycle_prepare_post(self, event: Optional[PyoneerEvent]=None)` #TAG:PyoneerGameObject.core_lifecycle_prepare_post
   - Called after the prepare method.
-- `scripts/core/game_object.py:153` `@property image(self) -> surface.Surface | None` #TAG:PyoneerGameObject.image
+- `scripts/core/game_object.py:146` `@property image(self) -> surface.Surface | None` #TAG:PyoneerGameObject.image
   - The surface this object contributes to the frame, or None.
-- `scripts/core/game_object.py:167` `@image.setter image(self, value: surface.Surface | None)` #TAG:PyoneerGameObject.image.setter
-- `scripts/core/game_object.py:170` `require_image(self) -> surface.Surface` #TAG:PyoneerGameObject.require_image
+- `scripts/core/game_object.py:160` `@image.setter image(self, value: surface.Surface | None)` #TAG:PyoneerGameObject.image.setter
+- `scripts/core/game_object.py:163` `require_image(self) -> surface.Surface` #TAG:PyoneerGameObject.require_image
   - Return the image, or raise naming the object that lacks one.
-- `scripts/core/game_object.py:181` `core_render_blits(self, event: Optional[PyoneerEvent])` #TAG:PyoneerGameObject.core_render_blits
+- `scripts/core/game_object.py:174` `core_render_blits(self, event: Optional[PyoneerEvent])` #TAG:PyoneerGameObject.core_render_blits
   - Return all prepared blits.
-- `scripts/core/game_object.py:186` `@abstractmethod core_input_receive(self, events: Optional[PyoneerEvent])` #TAG:PyoneerGameObject.core_input_receive
+- `scripts/core/game_object.py:179` `@abstractmethod core_input_receive(self, events: Optional[PyoneerEvent])` #TAG:PyoneerGameObject.core_input_receive
   - Buffer the program events.

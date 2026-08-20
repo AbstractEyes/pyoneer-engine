@@ -1,24 +1,16 @@
 """Exact pixel-space clipping for the blit pool.
 
-WHY (from scripts/core/ui/widget/component todo.txt, "blit camera revamp")
----------------------------------------------------------------------------
-Every blit was queued whether or not the object was inside the camera's view
-space. That was fast and simple, and it worked because pygame's blits()
-clips for you -- but it gave the engine no way to answer three questions it
-needs to answer:
+pygame's `blits()` clips for you, but it cannot answer the three questions
+the engine needs answered before it queues a token:
 
     is this object visible at all?
     is it FULLY contained, or straddling the edge?
     which exact pixels of it are going to be drawn?
 
-Measured on the shipped scene: dragging the test window off the left edge
-left 51 of 63 tokens fully off-screen, still constructed and still submitted
-to SDL every frame.
-
-This module answers all three from one calculation. `clip_to_view` returns
-the destination and the source sub-rect already reduced to the pixels that
-land inside the clip region, or None when nothing does -- so a caller both
-culls and gets its exact draw area from a single call.
+`clip_to_view` answers all three from one calculation, returning the
+destination and the source sub-rect already reduced to the pixels that land
+inside the clip region, or None when nothing does -- so a caller culls and
+gets its exact draw area in a single call.
 
 SPACES
 ------
@@ -29,8 +21,8 @@ Everything here is "whatever space the caller is working in", as long as
     map layers   world space  -> clip is camera.view_area
     UI           screen space -> clip is the screen rect
 
-That is the whole reason this is a free function and not a method on
-GameCamera: UI has no camera, but it has the same problem.
+That is why this is a free function and not a method on GameCamera: UI has no
+camera and the same problem.
 """
 from __future__ import annotations
 

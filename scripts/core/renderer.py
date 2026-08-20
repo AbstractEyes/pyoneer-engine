@@ -30,10 +30,8 @@ from scripts.loaders.table_file import ProjectTables
 def drawable_tile_count(layer: pytmx.TiledTileLayer, tile_map: pytmx.TiledMap) -> int:
     """How many cells of this tile layer actually resolve to a surface.
 
-    A Tiled file happily carries layers that are declared but empty, and the
-    renderer used to rasterize them anyway: the shipped test.tmx has an
-    "Above1" layer with 10000 cells and zero non-zero gids, and it still got a
-    1600x1600 SRCALPHA surface (10.24 MB) plus a blit token every single
+    A Tiled file happily carries layers that are declared but empty, and
+    rasterizing one costs a full-map SRCALPHA surface plus a blit token every
     frame. The gid test alone is not enough -- a gid can be non-zero and still
     resolve to None -- so this counts what the bake would actually draw.
     """
@@ -101,34 +99,19 @@ class EntityLayer(Layer):
 
     def core_frame_update(self, event: Optional[PyoneerEvent] = None):
         pass
-        # update all entity positions if they are within the camera's view
-        #if self._camera:
-        #    for entity in self.entities:
-        #        #if self._camera.within_bounds(entity.world_transform.position):
-        #        if self._camera.viewport.colliderect((entity.transform.position.x, entity.transform.position.y, entity.image().get_width(), entity.image().get_height())):
-        #            x = entity.transform.position.x - self._camera.viewport.x
-        #            y = entity.transform.position.y - self._camera.viewport.y
-        #            #print(x, y, entity.transform.position.x, entity.transform.position.y, self._camera.viewport.topleft, self._camera.viewport.bottomright)
-        #            if self._camera.viewport.collidepoint(entity.transform.position.x, entity.transform.position.y):
-        #                self._image.blit(entity.image(), (x, y))
-        #            #self._image.blit(entity.image(), (x, y))
 
     def core_render_blits(self, event: Optional[PyoneerEvent] = None):
         camera = event.data["camera"]
         view = camera.view_area
         for entity in self.entities:
-            # One call. This used to invoke core_image() five times per entity
-            # per frame, and for an animated entity that is a dict lookup and
-            # a list index each time.
+            # One call: for an animated entity each access is a dict lookup
+            # and a list index.
             image = entity.image
             if image is None:
                 continue
-            # Cull against the sprite's true rect. The previous rect placed its
-            # ORIGIN at position + size/2 while the blit below draws at
-            # position, so the two disagreed by half a sprite: sprites popped
-            # out 22px early on the right edge and 32px early on the bottom,
-            # and off-screen sprites kept drawing for half a sprite past the
-            # left and top.
+            # Cull against the sprite's TRUE rect: the blit below draws at
+            # position, so a rect anchored anywhere else disagrees with it by
+            # that offset and sprites pop in and out early at the edges.
             rect = image.get_rect(topleft=(entity.transform.position.x,
                                            entity.transform.position.y))
             # clip_to_view culls and clips in one step, so a sprite straddling
@@ -157,8 +140,6 @@ class GameComponentLayer(Layer):
 
     def core_frame_update(self, delta: float):
         pass
-        #for component in self.components:
-        #    component.update(delta)
 
     def core_render_blits(self, event: Optional[PyoneerEvent]):
         for component in self.components:
@@ -236,24 +217,18 @@ class MapLayer(Layer):
 class MapComposite(Layer):
     """One baked surface standing in for a run of consecutive static tile layers.
 
-    Six full-map tile layers cost six viewport blits per frame -- measured at
-    3.663 ms of a 6.207 ms frame on the shipped map, i.e. 59% of the frame
-    spent redrawing pixels that never change. Baking them into one surface
-    turns that into one blit.
+    N full-map tile layers cost N viewport blits per frame redrawing pixels
+    that never change; baking them into one surface turns that into one blit.
 
-    WHY THIS IS NOT UNCONDITIONAL
-    -----------------------------
-    Flattening is not free of visual consequence. pygame's RGBA->RGBA blit
-    writes the blended colour WITHOUT re-dividing by the resulting alpha, so
-    partial alpha landing on partial alpha has its alpha applied a second time
-    at the final blit. That is not a rounding wobble: 533 of 972 sampled
-    combinations differ, one of them 11 vs 1 out of 255. So a composite is
-    only built where it is PROVABLY pixel-identical -- see
-    composite_is_exact(). Groups that fail the test are left as separate
-    layers, which is slower but correct.
+    It is NOT unconditional. pygame's RGBA->RGBA blit writes the blended
+    colour WITHOUT re-dividing by the resulting alpha, so partial alpha
+    landing on partial alpha has its alpha applied a second time at the final
+    blit. A composite is therefore only built where it is PROVABLY
+    pixel-identical -- see `composite_is_exact`. Groups that fail are left as
+    separate layers, which is slower but correct.
 
-    Baking happens in rebake(), never in __init__, because runtime map editing
-    is a goal of this engine and a composite with no rebake path walls it off.
+    Baking happens in `rebake`, never in `__init__`, so runtime map editing
+    has an entry point.
     """
 
     def __init__(self, sources: list[MapLayer], layer_depth: int):
@@ -267,8 +242,8 @@ class MapComposite(Layer):
         self.opaque: bool = False
         """True when the bake covers its whole surface at alpha 255.
 
-        Then the surface can drop its alpha channel entirely (.convert()),
-        which is the cheaper blit. Measured, never assumed.
+        The surface can then drop its alpha channel entirely (`.convert()`),
+        which is the cheaper blit.
         """
 
     def covers(self, depth_band: tuple[int, int]) -> bool:
@@ -311,16 +286,15 @@ MaskCache = dict
 def _masks(surface: Surface, cache: MaskCache | None) -> tuple[pygame.mask.Mask, pygame.mask.Mask]:
     """Opaque and partial-alpha masks, optionally memoized within one pass.
 
-    pygame.mask.from_surface over a 1600x1600 layer costs ~50ms, and
-    __split_exact_groups calls composite_is_exact with GROWING PREFIXES of the
-    same run, so the same surface is otherwise re-masked once per extension.
-    Measured: 288ms of a 347ms regroup was re-derivation.
+    `pygame.mask.from_surface` over a full-map layer is expensive, and
+    `__split_exact_groups` calls `composite_is_exact` with GROWING PREFIXES of
+    the same run, so without a cache each surface is re-masked once per
+    extension.
 
     The cache is passed IN and scoped to a single grouping pass, never module
-    global. A global keyed on id() is unsafe: CPython reuses the id of a freed
-    object, so a new surface can collide with a dead one's entry and receive
-    its mask. Scoping it to a call whose caller holds every surface alive in a
-    list makes id() collision impossible for the cache's lifetime.
+    global: it is keyed on `id()`, and CPython reuses the id of a freed
+    object, so only a caller holding every surface alive makes those keys
+    safe.
     """
     if cache is None:
         opaque = opaque_mask(surface)
@@ -343,27 +317,21 @@ def composite_is_exact(surfaces: list[Surface], cache: MaskCache | None = None) 
 
     Flattening replaces `screen <- L0 <- L1 <- ...` with
     `empty <- L0 <- L1 <- ... ; screen <- composite`. Whether that is
-    lossless depends on one detail of pygame's RGBA->RGBA blitter, which was
-    measured on pygame 2.6.0 / SDL 2.28.4 rather than assumed:
+    lossless depends on pygame's RGBA->RGBA blitter, measured on pygame
+    2.6.0 / SDL 2.28.4:
 
         destination alpha 0    the source pixel is COPIED verbatim, colour
-                               and alpha. It is not blended. So laying a
-                               half-transparent pixel into an untouched part
-                               of the buffer loses nothing.
+                               and alpha, so nothing is lost.
         destination alpha 255  a normal source-over blend onto a known
-                               colour -- the same arithmetic the screen would
-                               have done -- and the result is still opaque.
+                               colour, and the result is still opaque.
         destination alpha in   the blended colour is written back WITHOUT
         between                being re-divided by the resulting alpha, so
-                               the source's alpha gets applied a second time
+                               the source's alpha is applied a second time
                                at the final blit to the screen.
 
-    Only that last row is lossy, and only when the incoming pixel is itself
-    partially transparent (alpha 255 overwrites, alpha 0 is a no-op). So the
+    Only the last row is lossy, and only when the incoming pixel is itself
+    partially transparent (alpha 255 overwrites, alpha 0 is a no-op), so the
     single disqualifying event is PARTIAL ALPHA LANDING ON PARTIAL ALPHA.
-    Measured: 533 of 972 sampled two-partial-layer combinations differ, one
-    of them 11 vs 1 out of 255; 0 of 36 differ when the partials are
-    disjoint.
 
     A pixel is forgiven even then if a later layer is fully opaque there,
     because the bad value is overwritten before the composite is ever used.
@@ -421,8 +389,8 @@ class LayerRenderer:
 
         `self.layers` is DERIVED from this: a run of these may be replaced by
         one MapComposite. Keeping the sources means a rebake can always
-        reconstruct the ungrouped state, so rebaking twice is not the same as
-        compositing a composite.
+        reconstruct the ungrouped state, so rebaking twice never composites a
+        composite.
         """
 
         self._map_regroup: bool = False
@@ -436,93 +404,77 @@ class LayerRenderer:
         self.spawn_defaults: dict[str, dict] = {}
         """Per-type constructor keyword arguments for map-placed objects.
 
-        A .tmx object carries a type, a position and custom properties. It
-        cannot carry an InputActionManager or a parsed animation category, and
-        the renderer owns no asset managers to build them from, so whoever
-        does hands them over before the map is bound -- main.py does it in
-        prepare_test_scene(). Empty means every registered class is
-        constructible with no arguments, which is true of nothing the engine
-        ships and true of every probe a check writes.
+        A .tmx object carries a type, a position and custom properties, but it
+        cannot carry an `InputActionManager` or a parsed animation category,
+        and the renderer owns no asset managers to build them from. Whoever
+        does hands them over before the map is bound. Empty means every
+        registered class is constructible with no arguments.
         """
 
         self.tables: ProjectTables | None = None
         """The project's data tables, or None when nobody loaded any.
 
         Sits beside `spawn_defaults` because it is the same kind of thing: a
-        value a .tmx object cannot carry, handed over before the map is
-        bound. An object's `pyoneer_actor` names a row in here, and that row
-        is the middle rung of behavior-parameter resolution -- under the
-        object's own `pyoneer_param_*`, over each parameter's default.
+        value a .tmx object cannot carry, handed over before the map is bound.
+        An object's `pyoneer_actor` names a row in here, and that row is the
+        middle rung of behavior-parameter resolution -- under the object's own
+        `pyoneer_param_*`, over each parameter's default.
 
-        The renderer holds it for the reason it holds `collision_field`: it
-        is the single funnel every entity passes through, so the one slot
-        serves the map spawn and `SceneManager.spawn` both, and a runtime
-        projectile cannot end up reading a different table set than the
-        object beside it that Tiled placed.
+        The renderer holds it for the reason it holds `collision_field`: it is
+        the single funnel every entity passes through, so one slot serves the
+        map spawn and `SceneManager.spawn` alike.
 
-        None is the honest default and costs nothing: `actor_row` returns
-        None for an object that names no row, which is every object on every
-        map shipped today. `main.py` assigns `load_tables()` at boot.
+        None costs nothing -- `actor_row` returns None for an object that
+        names no row. `main.py` assigns `load_tables()` at boot.
         """
 
         self.spawned_entities: list[SpawnedEntity] = []
         """What the last map bind spawned, in document order.
 
-        Kept because binding into an EntityLayer is only half of what a live
-        entity needs: EntityLayer.core_frame_update is a no-op, so an entity
-        that exists only here holds its first frame forever -- it never
-        animates and never moves. SceneManager reads this list after
-        renderer.bind(GameMap) and binds the same entities into the scene,
-        which is what drives their frame updates. The renderer cannot do that
-        itself: scene_manager already imports renderer, so knowing about the
-        scene here would be an import cycle.
+        Binding into an `EntityLayer` is only half of what a live entity
+        needs: `EntityLayer.core_frame_update` is a no-op, so an entity that
+        exists only here holds its first frame forever. `SceneManager` reads
+        this list after `renderer.bind(GameMap)` and binds the same entities
+        into the scene, which is what drives their frame updates. The renderer
+        cannot do that itself -- `scene_manager` already imports `renderer`,
+        so reaching back would be an import cycle.
         """
 
         self.collision_field: CollisionField | None = None
         """The bound map's baked passability, or None when it declares none.
 
-        The renderer holds it because the renderer is where the two halves
-        meet: it is handed the parsed map, and it is the single funnel every
-        entity passes through on its way into a frame -- `bind()` for the ones
-        a caller builds by hand, `__prepare_entity_layers` for the ones the
-        map itself places. One field, one owner, and `__gate` is the only
-        thing that hands it out, so a map-spawned body and a hand-built one
-        cannot end up gated differently.
+        The renderer holds it because it is where the two halves meet: it is
+        handed the parsed map, and it is the single funnel every entity passes
+        through on its way into a frame -- `bind()` for hand-built ones,
+        `__prepare_entity_layers` for map-placed ones. `__gate` is the only
+        thing that hands it out, so the two cannot end up gated differently.
 
-        None means UNGATED, and it is the default for the same reason
-        `field_from_map` returns None rather than an all-open field: a map
-        that authors no passability must cost nothing and must move exactly as
-        it did before any of this existed.
+        None means UNGATED: a map that authors no passability costs nothing.
         """
 
     def __bind_map(self, tmx_data: pytmx.TiledMap):
-        # BEFORE the layers, not after: __prepare_entity_layers spawns and
-        # binds this map's own objects, and __gate_entities below hands them
-        # this field. Baking afterwards would be the same three lines in an
-        # order where the gate briefly reads a previous map's field.
+        # BEFORE the layers, not after: __prepare_entity_layers spawns this
+        # map's own objects and __gate_entities hands them this field, so
+        # baking afterwards would gate them on the PREVIOUS map's field.
         self.collision_field = field_from_map(tmx_data)
         self.__prepare_map_layers(tmx_data)
         self.__prepare_entity_layers(tmx_data)
-        # Every entity the renderer draws is gated by the map it is drawn on,
-        # whether it was placed by the map or bound by hand, and whether it
-        # was bound before this map or after. Doing it as one sweep here plus
-        # one call in __bind_entity is what makes that sentence true with no
-        # ordering rule for a caller to get wrong: main.py binds its player
-        # AFTER the map and a check may well bind one before.
+        # One sweep here plus one call in __bind_entity gates every entity
+        # the renderer draws, whether the map placed it or a caller bound it,
+        # and whether that happened before this map or after -- so a caller
+        # has no ordering rule to get wrong.
         self.__gate_entities()
 
     def __gate(self, entity: GameEntity) -> None:
         """Hand `entity` the passability of the map it is being drawn on.
 
-        The only assignment to `collision_field` in the engine, deliberately:
-        an entity that reached a frame through some second route and stayed
-        ungated would not raise, would not warn, and would walk through walls
-        while everything around it did not.
+        The only assignment to `collision_field` in the engine: an entity that
+        reached a frame ungated would not raise and not warn, it would just
+        walk through walls.
 
         Assigns unconditionally, None included. "This map declares no
-        passability" is a real answer and has to overwrite a previous map's
-        field rather than let an entity carry a gate into a world that has
-        none. A caller wanting a hand-built field sets it AFTER the bind.
+        passability" is a real answer and must overwrite a previous map's
+        field. A caller wanting a hand-built field sets it AFTER the bind.
         """
         entity.collision_field = self.collision_field
 
@@ -534,11 +486,6 @@ class LayerRenderer:
                     for entity in layer.entities:
                         self.__gate(entity)
 
-    #def prepare(self):
-    #    self.prepare_map_layers()
-    #    self.prepare_entity_layers()
-    #    self.ready = True
-
     def __make_tile_layer(self, layer_name: str, layer_depth: int, layer_surface: Surface, tmx_data: pytmx.TiledMap,
                           layer: pytmx.TiledTileLayer) -> MapLayer:
         """Make a tile layer, and bind it to the layer list for rendering."""
@@ -549,17 +496,11 @@ class LayerRenderer:
     def __prepare_map_layers(self, tmx_data: pytmx.TiledMap):
         """Rasterize every tile layer the MAP declares.
 
-        This loop used to iterate MAP_DEPTH -- the code's list of layer names
-        -- and look each one up in the map. That is inside out, and it failed
-        in both directions at once: it printed 7 "Layer not found" warnings
-        for names the map never had (ENTITY_1..3, FOREGROUND_1..2, UI_LAYER_1,
-        Parallax), while layers the map DID have but the code did not name
-        were dropped in complete silence. The shipped test.tmx spells its
-        parallax layer "Paralax", so its 39 tiles were silently discarded
-        every boot.
-
-        Driving from the map means authored content is never lost without a
-        warning naming the exact layer.
+        Driven from the MAP, not from `MAP_DEPTH`: iterating the code's list
+        of layer names and looking each one up warns about names the map never
+        had while silently dropping layers the map has and the code does not
+        name. Driving from the map means authored content is never lost
+        without a warning naming the exact layer.
         """
         for layer_data in tmx_data.layers:
             layer_name = getattr(layer_data, 'name', None)
@@ -578,10 +519,9 @@ class LayerRenderer:
                 continue
 
             if drawable_tile_count(layer_data, tmx_data) == 0:
-                # The .tmx says this layer exists, so say out loud that it was
-                # dropped. Silently ignoring authored content is the failure
-                # mode the loop above was rewritten to remove; an empty layer
-                # is cheap to skip but must not be invisible to the author.
+                # The .tmx says this layer exists, so say out loud that it
+                # was dropped. An empty layer is cheap to skip but must not be
+                # invisible to the author.
                 warn_content(
                     f"map layer {layer_name!r} (depth {layer_depth}) has no "
                     f"drawable tiles and was skipped: no surface allocated and "
@@ -599,10 +539,9 @@ class LayerRenderer:
             self.map_sources.setdefault(layer_depth, []).append(prepared)
 
         # Binding a map changes which depths hold tiles, so the grouping is
-        # stale by definition. Deliberately NOT baked here: the bake is the
-        # renderer's, and it runs from render() once the layer set has settled,
-        # so binding entities afterwards cannot leave a composite straddling
-        # them.
+        # stale by definition. Deliberately NOT baked here: the bake runs from
+        # render() once the layer set has settled, so binding entities
+        # afterwards cannot leave a composite straddling them.
         self.invalidate(sources_dirty=False)
 
     def invalidate(self, depth_band: int | tuple[int, int] | None = None,
@@ -617,20 +556,15 @@ class LayerRenderer:
 
         Every one of those re-rasterizes the affected source layers before
         re-flattening, so a content change actually reaches the screen. Passing
-        None additionally recomputes the GROUPING, which is what a layer being
-        added or removed needs, since a new layer can split a run that used to
-        be contiguous.
+        None additionally recomputes the GROUPING, which is what a layer
+        being added or removed needs, since a new layer can split a
+        previously contiguous run.
 
         sources_dirty=False says "the layer SET changed but no layer's CONTENT
-        did" -- regroup without re-rasterizing. Only __bind_map uses it, because
-        __prepare_map_layers has just baked every source itself.
-
-        The keyword exists because getting this wrong is silent: an earlier
-        version skipped the rebake on the None path to avoid exactly that
-        boot-time double-rasterization, which left the broadest-sounding call
-        doing LESS than a band call. A tile edit followed by invalidate() then
-        rendered the old pixels with no error. Measured: frame hash unchanged
-        after a 40x40 fill, while invalidate((1,60)) changed it.
+        did" -- regroup without re-rasterizing. Only __bind_map uses it,
+        because __prepare_map_layers has just baked every source itself.
+        Getting it wrong is silent: skipping the rebake makes a tile edit
+        followed by invalidate() render the old pixels with no error.
         """
         if depth_band is None:
             self._map_regroup = True
@@ -648,11 +582,9 @@ class LayerRenderer:
             self._map_invalid.clear()
             self._map_regroup = False
             # Re-rasterize unless the caller said the content is unchanged.
-            # __bind_map passes sources_dirty=False because __prepare_map_layers
-            # has just baked every source via core_lifecycle_prepare(), and
-            # baking twice at boot cost ~45ms for nothing. Everyone ELSE calling
-            # invalidate() means "something changed", and skipping the rebake
-            # for them made a tile edit silently render stale pixels.
+            # __bind_map passes sources_dirty=False because the sources are
+            # freshly baked; everyone else calling invalidate() means
+            # "something changed" and must not get stale pixels.
             if self._map_regroup_rebakes:
                 for layers in self.map_sources.values():
                     for source in layers:
@@ -676,11 +608,9 @@ class LayerRenderer:
         """Replace runs of tile-only depths with one MapComposite each.
 
         Draw order is preserved by construction: a run is a MAXIMAL span of
-        consecutive depths (in the renderer's own sort order) that hold nothing
+        consecutive depths (in the renderer's own sort order) holding nothing
         but tile layers, so an entity or UI layer anywhere in the range ends
-        the run there. On the shipped map that yields exactly two runs, one
-        under the entity layers at 40/41 and one over them, and the entities
-        still interleave.
+        the run there and the entities still interleave.
         """
         for depth in list(self.layers):
             self.layers[depth] = [layer for layer in self.layers[depth]
@@ -688,16 +618,16 @@ class LayerRenderer:
             if not self.layers[depth]:
                 del self.layers[depth]
 
-        # Whatever survived the strip is a non-tile layer, so its depth breaks
-        # a run. A depth holding BOTH tiles and entities is such a break: the
-        # tile layer is reinserted there on its own, at the front of the list,
-        # which is the order __prepare_map_layers established (map first, then
-        # whatever binds later).
-        # A DECLARED-dynamic layer breaks a run exactly the way a non-tile
-        # layer does. That is the whole implementation of "dynamic": it is
-        # not a new draw path, it is exclusion from the bake. A parallaxed
-        # or semi-transparent layer must be excluded too, because both are
-        # modulated at blit time and a composite cannot represent that.
+        # Whatever survived the strip is a non-tile layer, so its depth
+        # breaks a run. A depth holding BOTH tiles and entities is such a
+        # break: the tile layer is reinserted there on its own, at the front,
+        # which is the order __prepare_map_layers established.
+        #
+        # A DECLARED-dynamic layer breaks a run the same way, and that is the
+        # whole implementation of "dynamic": not a new draw path, just
+        # exclusion from the bake. Parallaxed and semi-transparent layers are
+        # excluded too, because both are modulated at blit time and a
+        # composite cannot represent that.
         blocking = set(self.layers) | {
             depth for depth, sources in self.map_sources.items()
             if any(not getattr(source, "static", True) for source in sources)
@@ -712,12 +642,9 @@ class LayerRenderer:
                     runs.append(current)
                 current = []
                 if depth in self.map_sources:
-                    # setdefault, not [depth]: a blocking depth used to be
-                    # BY DEFINITION already a key here, because `blocking`
-                    # was derived from self.layers. A declared-dynamic tile
-                    # layer breaks that -- it blocks without anything else
-                    # living at its depth -- and the bare lookup raised
-                    # KeyError the moment a real map declared parallax.
+                    # setdefault, not [depth]: a declared-dynamic tile layer
+                    # blocks without anything else living at its depth, so the
+                    # depth need not already be a key here.
                     self.layers.setdefault(depth, [])
                     for source in reversed(self.map_sources[depth]):
                         self.layers[depth].insert(0, source)
@@ -739,8 +666,8 @@ class LayerRenderer:
         """Greedily cut a run into the longest provably-exact merge groups.
 
         All-or-nothing would throw away a legal merge because of one bad layer
-        further down the run, so extend a group while composite_is_exact()
-        still holds and start a new one at the layer that breaks it.
+        further down the run, so a group extends while `composite_is_exact`
+        still holds and a new one starts at the layer that breaks it.
         """
         groups: list[list[MapLayer]] = []
         current: list[MapLayer] = []
@@ -767,44 +694,30 @@ class LayerRenderer:
     def __prepare_entity_layers(self, tmx_data: pytmx.TiledMap):
         """Spawn every typed object on the map's object layers and bind it.
 
-        This is the read side of the seam the editor has been authoring
-        against: `scripts/loaders/map_loader.py` constructs and positions the
-        entities, `scripts/core/spawn.py` says which class and which depth,
-        and this is where they become part of a frame.
+        `scripts/loaders/map_loader.py` constructs and positions the entities,
+        `scripts/core/spawn.py` says which class and which depth, and this is
+        where they become part of a frame.
 
-        It runs inside __bind_map, AFTER the tile layers are rasterized and
-        BEFORE anything renders, and that ordering is the whole reason a bulk
-        spawn is affordable. __prepare_map_layers has already flagged one
-        regroup that the lazy bake in render() has not serviced yet, so every
-        EntityLayer created here is folded into that single pending regroup --
-        and, more importantly, is visible to it. A spawn that happened after
-        the first render would leave a composite already baked across the
-        depths the entities landed on, and those entities would draw under
-        tiles that are supposed to be behind them.
+        It runs inside `__bind_map`, AFTER the tile layers are rasterized and
+        BEFORE anything renders, so every `EntityLayer` created here is folded
+        into the single regroup `__prepare_map_layers` already flagged. A
+        spawn after the first render would leave a composite already baked
+        across the depths the entities landed on, and they would draw under
+        tiles meant to be behind them.
 
-        WHY THIS DOES NOT CALL __bind_entity PER ENTITY
-        -----------------------------------------------
-        __bind_entity calls __invalidate_if_inside_map_span for every new
-        layer, and that calls invalidate() with sources_dirty defaulting to
-        True. The regroup FLAG is idempotent, so the regroup would still
-        happen only once -- but the first such call flips
-        _map_regroup_rebakes back to True, and the pending regroup then
-        re-rasterizes every tile layer __prepare_map_layers has just finished
-        rasterizing. That is the ~45ms boot-time double bake the
-        sources_dirty keyword exists to avoid, bought back silently. So the
-        span test is done once for the whole batch, and asks for the same
-        regroup WITHOUT the re-rasterization.
+        It asks for that regroup ONCE for the whole batch rather than calling
+        `__bind_entity` per entity: each of those would call `invalidate()`
+        with `sources_dirty` defaulting to True, re-rasterizing every tile
+        layer that was just rasterized.
 
-        The properties are read through MapDocument rather than pytmx (see
-        scripts/loaders/map_loader.py for the full reasoning): pytmx casts a
-        custom property only when the file carries type="int", so a depth
-        would otherwise arrive as the string '50', which is truthy, is not
-        50, and keys nothing in self.layers.
+        The properties are read through `MapDocument` rather than pytmx, which
+        casts a custom property only when the file carries `type="int"` -- a
+        depth would otherwise arrive as the string `'50'`, which is truthy,
+        is not 50, and keys nothing in `self.layers`.
 
-        It does NOT gate the entities it binds. __bind_map sweeps every bound
-        entity once, immediately after this returns, and that one sweep also
-        catches an entity bound BEFORE the map -- so the gate is one call site
-        for both cases instead of one here and a different one there.
+        It does NOT gate the entities it binds. `__bind_map` sweeps every
+        bound entity immediately after this returns, and that one sweep also
+        catches an entity bound BEFORE the map.
         """
         spawned = spawn_objects(tmx_data, defaults=self.spawn_defaults,
                                 tables=self.tables)
@@ -812,10 +725,9 @@ class LayerRenderer:
         regroup = False
         for record in spawned:
             # Compose BEFORE bind, so an entity is never bound in a
-            # half-composed state. attach_all raises on a duplicated token, a
-            # declared conflict, or two behaviors that share an order and both
-            # write the same field -- all of which are authoring errors that
-            # must surface at load rather than as a physics bug later.
+            # half-composed state. attach_all raises on a duplicated token or
+            # a declared conflict -- authoring errors that must surface at
+            # load rather than as a physics bug later.
             if record.behaviors:
                 record.entity.behaviors.attach_all(
                     build_behaviors(record.behaviors))
@@ -823,9 +735,8 @@ class LayerRenderer:
             layer.bind(record.entity)
             regroup = regroup or (created and self.__inside_map_span(record.depth))
         if regroup:
-            # sources_dirty=False for the same reason __prepare_map_layers
-            # passes it: the sources are freshly baked, only the GROUPING is
-            # stale, and re-rasterizing them cannot change a pixel.
+            # sources_dirty=False: the sources are freshly baked, only the
+            # GROUPING is stale, and re-rasterizing cannot change a pixel.
             self.invalidate(sources_dirty=False)
         if spawned:
             trace_lifecycle("map spawn bound %d entities at depths %s",
@@ -875,33 +786,24 @@ class LayerRenderer:
             )
 
     def unbind(self, game_object: PyoneerGameObject) -> bool:
-        """Stop drawing `game_object`. The inverse of `bind`, and it was absent.
+        """Stop drawing `game_object`. The inverse of `bind`.
 
-        `EntityLayer.unbind` and `GameComponentLayer.unbind` have both been
-        written since the layers existed and neither was reachable from this
-        class's public surface -- `hasattr(renderer, 'unbind')` was False --
-        so there was no despawn path at all. Measured before this method:
-        `scene.unbind(50, entity)` emptied the scene bucket while the renderer
-        still held the entity, and `EntityLayer.core_render_blits` went on
-        queueing a blit token for it every single frame, forever. That is why
-        `GameWindow.close()` hides rather than unbinding, and its docstring
-        says so.
+        Without this an object taken out of the scene stays in the renderer
+        and `EntityLayer.core_render_blits` goes on queueing a blit token for
+        it every frame, forever.
 
         Returns whether anything was removed, so a caller can tell "taken out"
-        from "was never in" -- `SceneManager.despawn` needs exactly that to be
-        idempotent. Silent on a miss rather than raising, for the reason
-        `EntityBehaviors.detach` gives: removing something that is already
-        absent is a request that is already satisfied.
+        from "was never in" -- `SceneManager.despawn` needs that to be
+        idempotent. Silent on a miss rather than raising: removing something
+        already absent is a request already satisfied.
 
-        Identity, never equality. `list.remove` uses `==`, and while no entity
-        or component in this tree defines `__eq__` today, one that did would
-        make this method remove a DIFFERENT object that merely compares equal
-        -- and the symptom would be the wrong sprite vanishing.
+        Identity, never equality. `list.remove` uses `==`, so an object
+        defining `__eq__` would make this remove a DIFFERENT one that merely
+        compares equal, and the symptom would be the wrong sprite vanishing.
 
-        The layer itself is kept even when it empties. An `EntityLayer` that
-        is removed and later recreated calls `__invalidate_if_inside_map_span`
-        again, and a regroup costs ~350ms; an empty layer costs one loop
-        iteration that queues nothing.
+        The layer itself is kept even when it empties. Recreating one calls
+        `__invalidate_if_inside_map_span` and buys a full regroup; an empty
+        layer costs one loop iteration that queues nothing.
         """
         for layers in self.layers.values():
             for layer in layers:
@@ -923,10 +825,9 @@ class LayerRenderer:
     def __entity_layer(self, depth: int, layer_name: int | str) -> tuple[EntityLayer, bool]:
         """The EntityLayer at `depth`, creating one if that depth has none.
 
-        Returns (layer, created). The caller is told whether it had to create
-        one because that is the only case that can split a run of tile layers,
-        and the two callers can afford the resulting regroup at different
-        moments -- see __prepare_entity_layers.
+        Returns (layer, created). Creating one is the only case that can split
+        a run of tile layers, and the two callers pay for the resulting
+        regroup at different moments -- see `__prepare_entity_layers`.
         """
         layers = self.layers.setdefault(depth, [])
         for layer in layers:
@@ -941,15 +842,14 @@ class LayerRenderer:
         depth = self.__prepare_depth(layer_name)
         layer, created = self.__entity_layer(depth, layer_name)
         layer.bind(entity)
-        # The hand-built half of the gate. main.py's player arrives here and a
-        # map-placed one arrives through __prepare_entity_layers; both are
-        # gated by the same call with the same field, which is what stops
-        # "the player" and "an entity" being two different things.
+        # The hand-built half of the gate; a map-placed entity arrives
+        # through __prepare_entity_layers. Both are gated by the same call
+        # with the same field.
         self.__gate(entity)
         if created:
             # A new entity layer can land in the middle of a run of tile
             # layers, and a composite spanning it would draw the tiles above
-            # the entities. Only regroup when that is actually possible.
+            # the entities. Only regroup when that is possible.
             self.__invalidate_if_inside_map_span(depth)
 
     def __inside_map_span(self, depth: int) -> bool:
@@ -966,12 +866,10 @@ class LayerRenderer:
     def __invalidate_if_inside_map_span(self, depth: int) -> None:
         """Regroup ONLY if a new layer at `depth` could split a tile run.
 
-        Both bind paths used to call invalidate() unconditionally, which sets
-        the regroup flag and costs a full ~350ms restructure on the next
-        render(). Nothing in main.py binds after boot, so no check caught it --
-        but scene.bind -> renderer.bind IS the runtime API, so the first
-        window opened or entity spawned mid-game ate a quarter-second stall
-        that did not exist before compositing.
+        An unconditional `invalidate()` sets the regroup flag and buys a full
+        restructure on the next `render()`, so the first window opened or
+        entity spawned mid-game would eat a stall measured in tenths of a
+        second.
         """
         if self.__inside_map_span(depth):
             self.invalidate()
@@ -1011,9 +909,9 @@ class LayerRenderer:
     def render(self):
         """draw all available layers."""
         if self.camera:
-            # Lazy, not eager: the bake runs once after the layer set settles
-            # and again only when something calls invalidate(). Doing it here
-            # rather than in a constructor is what keeps runtime map editing
+            # Lazy, not eager: the bake runs once after the layer set
+            # settles, and again only when something calls invalidate(). Doing
+            # it here rather than in a constructor keeps runtime map editing
             # possible.
             if self._map_regroup or self._map_invalid:
                 self.rebake_map()

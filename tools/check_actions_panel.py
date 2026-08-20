@@ -1,9 +1,7 @@
-"""Assert the two dormant things this pass wired are actually reachable.
+"""Assert the authoring surfaces for map events and the collision tileset.
 
-`check_map_events.py` already proves the trigger vocabulary is correct. It
-proved that while nothing in the application imported it -- 843 lines and a
-497-line check verifying a module with zero production importers. This file
-covers the seams those cannot see:
+`check_map_events.py` proves the trigger vocabulary is correct in isolation.
+This file covers the seams it cannot see:
 
   * `map.object.action.*` exists, validates at the authoring door, and its
     inverse carries the value it FOUND rather than one the validator would
@@ -19,19 +17,17 @@ covers the seams those cannot see:
   * `MapCanvas` declares the collision tileset through `map.tileset.add`,
     with an exact inverse, inside the same transaction as the stroke that
     needed it -- and provisions the sheet it points at rather than asking.
-    The modal that used to sit on that path is gone;
-    `tools/check_collision_mount.py` owns the teeth for the replacement.
+    `tools/check_collision_mount.py` owns the teeth for that path.
 
-Against its OWN fixture, never `data/maps/test.tmx`. The author repaints
-that file constantly and five red suites have come from a check that pinned
-its contents. The fixture here declares exactly what these seams need: no
+Against its OWN fixture, never `data/maps/test.tmx` (law 4). The author
+repaints that file constantly. The fixture here declares exactly what these
+seams need: no
 collision tileset (so the offer path runs), an object with no declaration,
 an object whose declaration was HAND-AUTHORED badly and in a middle
 position, and a tile object with no size (so the region reader's two
 corrections are exercised).
 
-Skips cleanly when PySide6 is absent; the engine does not depend on it and a
-bare clone should not fail here.
+Skips cleanly when PySide6 is absent.
 """
 from __future__ import annotations
 
@@ -532,12 +528,11 @@ try:
     # has to hold is below.
     #
     # COLLISION_TILESET is the name a map is PAINTED against in the editor and
-    # the name the ENGINE reads it back by. It used to be written out twice,
-    # on opposite sides of the scripts/ <-> editor/ fence; canvas.py imports
-    # the engine's now, so the assertion that they MATCH would be comparing an
-    # object with itself. Both halves of the real contract instead: the exact
-    # string, which every already-painted map is stored against, and the fact
-    # that the canvas is re-exporting rather than declaring.
+    # the name the ENGINE reads it back by, and canvas.py imports the engine's
+    # one -- so asserting they MATCH would compare an object with itself. Both
+    # halves of the real contract instead: the exact string, which every
+    # already-painted map is stored against, and the fact that the canvas is
+    # re-exporting rather than declaring.
     expect("the tileset a map is painted against is spelled 'collision'",
            COLLISION_TILESET, "collision")
     expect("and a companion layer is the layer's name plus 'Collision'",
@@ -572,14 +567,11 @@ try:
            os.path.normcase(os.path.normpath(os.path.join(
                os.path.dirname(canvas.document.path), COLLISION_IMAGE))))
 
-    # The offer is no longer a QUESTION. There is no `confirm` seam left on
-    # the canvas to answer, because the modal that used to sit here was
-    # deleted: a 191-word dialog on a paint click, whose stated reason -- "a
-    # written PNG has no inverse" -- guarded a coupling that does not exist,
-    # and whose chosen outcome was a map pytmx refuses to load.
-    # `tools/check_collision_mount.py` owns the teeth for the replacement;
-    # what this file still asserts is the seam it has always covered, that a
-    # press reaches `map.tileset.add` with an exact inverse.
+    # The offer is not a QUESTION: there is no `confirm` seam on the canvas to
+    # answer, and a dialog on a paint click is what
+    # `tools/check_collision_mount.py` owns the teeth against. What this file
+    # asserts is the seam it has always covered -- that a press reaches
+    # `map.tileset.add` with an exact inverse.
     expect("the canvas carries no consent seam at all",
            hasattr(canvas, "confirm"), False)
     sheet = os.path.normpath(

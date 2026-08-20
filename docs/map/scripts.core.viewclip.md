@@ -5,20 +5,20 @@
 
 > Exact pixel-space clipping for the blit pool.
 
-`scripts.core.viewclip` · 111 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.viewclip` · 103 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Functions
 
-- `scripts/core/viewclip.py:54` `containment(target: Rect, clip: Rect) -> Containment` #TAG:containment
+- `scripts/core/viewclip.py:46` `containment(target: Rect, clip: Rect) -> Containment` #TAG:containment
   - Classify `target` against `clip` without allocating an intersection.
-- `scripts/core/viewclip.py:75` `clip_to_view(target: Rect, clip: Rect, source_origin: tuple[int, int]=(0, 0)) -> ClippedBlit | None` #TAG:clip_to_view
+- `scripts/core/viewclip.py:67` `clip_to_view(target: Rect, clip: Rect, source_origin: tuple[int, int]=(0, 0)) -> ClippedBlit | None` #TAG:clip_to_view
   - Reduce a draw to the pixels that actually land inside `clip`.
 
 ## Classes
 
 ### `class Containment(IntEnum)` #TAG:Containment
 
-`scripts/core/viewclip.py:43`–`51`
+`scripts/core/viewclip.py:35`–`43`
 
 > How much of a rect lies inside a clip region.
 
@@ -26,7 +26,7 @@
 
 ### `class ClippedBlit(NamedTuple)` #TAG:ClippedBlit
 
-`scripts/core/viewclip.py:64`–`72`
+`scripts/core/viewclip.py:56`–`64`
 
 > The exact pixels to draw, and where.
 

@@ -606,8 +606,8 @@ try:
     expect("MapData keeps the authored string", entry.source, "data/maps/test.tmx")
     expect("MapData resolves the file", os.path.isfile(entry.file), True)
 
-    # The actual regression: this used to raise FileNotFoundError purely
-    # because of where the process happened to be standing.
+    # The path must not depend on where the process happens to be standing,
+    # or this raises FileNotFoundError from a different working directory.
     previous_cwd = os.getcwd()
     os.chdir(scratch)
     try:

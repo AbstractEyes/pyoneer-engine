@@ -3,7 +3,7 @@
 
 # `scripts/core/ui/widget/containers/text_box.py` — tier 2 #TAG:scripts/core/ui/widget/containers/text_box.py
 
-`scripts.core.ui.widget.containers.text_box` · 228 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.widget.containers.text_box` · 219 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,28 +13,28 @@
 
 ### `class TextBox(DrawComponent)` #TAG:TextBox
 
-`scripts/core/ui/widget/containers/text_box.py:19`–`226`
+`scripts/core/ui/widget/containers/text_box.py:19`–`217`
 
 - `scripts/core/ui/widget/containers/text_box.py:20` `__init__(self, default_text: str='', focused: bool=False, max_length: int=80, enter_enabled: bool=False, *args, **kwargs)` #TAG:TextBox.__init__
   - A single-line text field with placeholder semantics.
-- `scripts/core/ui/widget/containers/text_box.py:68` `@property value(self) -> str` #TAG:TextBox.value
+- `scripts/core/ui/widget/containers/text_box.py:67` `@property value(self) -> str` #TAG:TextBox.value
   - The typed content. Empty when the user has entered nothing.
-- `scripts/core/ui/widget/containers/text_box.py:73` `@value.setter value(self, text: str)` #TAG:TextBox.value.setter
-- `scripts/core/ui/widget/containers/text_box.py:81` `@property text(self) -> str` #TAG:TextBox.text
+- `scripts/core/ui/widget/containers/text_box.py:72` `@value.setter value(self, text: str)` #TAG:TextBox.value.setter
+- `scripts/core/ui/widget/containers/text_box.py:80` `@property text(self) -> str` #TAG:TextBox.text
   - Alias for `value`, kept so existing call sites keep working.
-- `scripts/core/ui/widget/containers/text_box.py:86` `@text.setter text(self, value: str)` #TAG:TextBox.text.setter
-- `scripts/core/ui/widget/containers/text_box.py:90` `@property showing_placeholder(self) -> bool` #TAG:TextBox.showing_placeholder
-- `scripts/core/ui/widget/containers/text_box.py:93` `refresh(self)` #TAG:TextBox.refresh
+- `scripts/core/ui/widget/containers/text_box.py:85` `@text.setter text(self, value: str)` #TAG:TextBox.text.setter
+- `scripts/core/ui/widget/containers/text_box.py:89` `@property showing_placeholder(self) -> bool` #TAG:TextBox.showing_placeholder
+- `scripts/core/ui/widget/containers/text_box.py:92` `refresh(self)` #TAG:TextBox.refresh
   - Push the right string and colour into the display component.
-- `scripts/core/ui/widget/containers/text_box.py:109` `__make(self)` #TAG:TextBox.__make
-- `scripts/core/ui/widget/containers/text_box.py:143` `_on_focus_changed(self, focused: bool)` #TAG:TextBox._on_focus_changed
+- `scripts/core/ui/widget/containers/text_box.py:108` `__make(self)` #TAG:TextBox.__make
+- `scripts/core/ui/widget/containers/text_box.py:141` `_on_focus_changed(self, focused: bool)` #TAG:TextBox._on_focus_changed
   - Claim or release the keyboard while this box is the typing target.
-- `scripts/core/ui/widget/containers/text_box.py:164` `@staticmethod __unpack_keys(event_args: list[pygame.event.Event]) -> str` #TAG:TextBox.__unpack_keys
-- `scripts/core/ui/widget/containers/text_box.py:167` `update_carat(self, event: Optional[PyoneerEvent]=None)` #TAG:TextBox.update_carat
+- `scripts/core/ui/widget/containers/text_box.py:162` `@staticmethod __unpack_keys(event_args: list[pygame.event.Event]) -> str` #TAG:TextBox.__unpack_keys
+- `scripts/core/ui/widget/containers/text_box.py:165` `update_carat(self, event: Optional[PyoneerEvent]=None)` #TAG:TextBox.update_carat
   - Blink the caret.
-- `scripts/core/ui/widget/containers/text_box.py:188` `key_down_repeat(self, event: Optional[PyoneerEvent]=None)` #TAG:TextBox.key_down_repeat
+- `scripts/core/ui/widget/containers/text_box.py:186` `key_down_repeat(self, event: Optional[PyoneerEvent]=None)` #TAG:TextBox.key_down_repeat
   - Our test keyboard listener, meant to test the input buffer
-- `scripts/core/ui/widget/containers/text_box.py:194` `key_down(self, event: Optional[PyoneerEvent]=None) -> bool` #TAG:TextBox.key_down
-- `scripts/core/ui/widget/containers/text_box.py:200` `key_pressed(self, event: Optional[PyoneerEvent]=None) -> bool` #TAG:TextBox.key_pressed
+- `scripts/core/ui/widget/containers/text_box.py:192` `key_down(self, event: Optional[PyoneerEvent]=None) -> bool` #TAG:TextBox.key_down
+- `scripts/core/ui/widget/containers/text_box.py:198` `key_pressed(self, event: Optional[PyoneerEvent]=None) -> bool` #TAG:TextBox.key_pressed
   - Apply one key to the VALUE. Display follows via refresh().
-- `scripts/core/ui/widget/containers/text_box.py:218` `key_up(self, event: Optional[PyoneerEvent]) -> bool` #TAG:TextBox.key_up
+- `scripts/core/ui/widget/containers/text_box.py:216` `key_up(self, event: Optional[PyoneerEvent]) -> bool` #TAG:TextBox.key_up

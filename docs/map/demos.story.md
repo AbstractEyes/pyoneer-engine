@@ -5,7 +5,7 @@
 
 > Story demo: an opening cutscene, advanced by the player, then handed back.
 
-`demos.story` · 69 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.story` · 56 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,6 +15,6 @@
 
 ### `class StoryDemo(StoryGame)` #TAG:StoryDemo
 
-`demos/story.py:55`–`64`
+`demos/story.py:42`–`51`
 
 - (no methods)

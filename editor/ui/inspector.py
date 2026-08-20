@@ -10,18 +10,16 @@ command, hand commands to the window's single mutation point.
 ONE THING IS TAKEN OUT OF THE FORM HERE
 ---------------------------------------
 `describe` renders every custom property as an untyped text box, which is
-right for `hp` and wrong for the behavior vocabulary: `pyoneer_behaviors` is
-the declaration site of the composition model, and a free-text box offers no
-completion, no parameters and -- the part that matters -- no refusal, so a
-list naming two behaviors that declare they conflict is authored happily and
-fails at map load. The Behaviors panel offers all four. Two doors onto one
-property where only one of them validates is the same thing as no validation,
-so the raw rows are removed from the generic Properties section and the note
-says where they went.
+right for `hp` and wrong for `pyoneer_behaviors`: a free-text box offers no
+completion, no parameters and no refusal, so a list naming two behaviors
+that declare they conflict is authored happily and fails at map load. The
+Behaviors panel offers all four, and two doors onto one property where only
+one validates is the same thing as no validation -- so the raw rows are
+removed from the generic Properties section, with a note saying where they
+went.
 
-It is done HERE rather than in `editor/core/inspect.py` because this pass
-owns this file and not that one; the move is mechanical and belongs beside
-the other describers, exactly as `describe_actions` does.
+Belongs beside the other describers in `editor/core/inspect.py`; the move is
+mechanical, exactly as for `describe_actions`.
 """
 from __future__ import annotations
 

@@ -5,6 +5,6 @@
 
 > Prototype games built out of the engine's own composition system.
 
-`demos.__init__` · 50 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.__init__` · 39 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 This module defines no class, function or public constant.

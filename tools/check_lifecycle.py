@@ -15,8 +15,8 @@ neighbour that skipped a frame:
         means the body never dies of old age
      5. THE LOAD-BEARING HALF: after `SceneManager.despawn` the entity queues
         ZERO blit tokens on the next frame -- and after `scene.unbind` ALONE
-        it still queues them, which is the state the engine was in before
-        `LayerRenderer.unbind` existed and is what proves this check can fail
+        it still queues them, which is the negative control that proves this
+        section can fail
      6. `reap()` removes every marked body in one pass, including adjacent
         ones -- a live-list walk would remove alternate ones and look fine
      7. `LayerRenderer.unbind` answers False for something it never held, and
@@ -32,11 +32,11 @@ neighbour that skipped a frame:
 
 EVERY ASSERTION IS A PAIR
 -------------------------
-The standing correction on this repo is that a gate gets proved to let
-something through and never proved to stop it. Each rule above is written as
-two assertions with opposite expectations; the ones that matter most are
-marked BOTH HALVES in the source, and the mutation table at the end records
-what each one turned red for.
+A gate proved to let something through and never proved to stop it is the
+commonest toothless shape here, so each rule above is written as two
+assertions with opposite expectations. The ones that matter most are marked
+BOTH HALVES in the source, and the mutation table at the end records what
+each one turned red for.
 
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
@@ -506,13 +506,11 @@ expect("both bound entities queue a token on the first frame",
        (tokens_for(renderer, victim), tokens_for(renderer, bystander)), (1, 1))
 
 # THE NEGATIVE CONTROL, and it is the assertion that proves this whole section
-# can fail. `scene.unbind` alone is what the engine could do before
-# `LayerRenderer.unbind` existed: the object stops UPDATING and goes on
+# can fail. `scene.unbind` alone stops the object UPDATING and leaves it
 # DRAWING, forever, because the tokens are rebuilt from EntityLayer.entities.
-# It runs on its own manager, because rebinding the same entity afterwards
-# would bind it into the EntityLayer a SECOND time and every count below would
-# be off by one -- measured while writing this check, and worth knowing:
-# `bind` does not de-duplicate.
+# It runs on its own manager, because `bind` does not de-duplicate: rebinding
+# the same entity afterwards would put it in the EntityLayer a SECOND time and
+# every count below would be off by one.
 control_manager, control_renderer = build_manager()
 leaker = Probe(tint=(200, 200, 0))
 control_manager.bind(50, leaker)
@@ -738,14 +736,12 @@ expect_raises("an unregistered type raises rather than spawning nothing",
 
 # THE SCENE IS ASKED FOR FIRST, AND THE COUNTER IS THE TEETH. `bind` carries
 # the same guard and raises the same exception CLASS from the bottom of
-# `spawn`, so asserting only that it raises passes wherever the check sits.
-# Measured with the guard at the bottom: the entity was constructed, moved to
-# (3, 4) and fully composed -- `behaviors.names` was already
-# `('lifecycle_mark',)` -- and only then did the caller hear about the missing
-# scene. Every `attach` hook had run by that point, which is where a behavior
-# audits what it needs. The message is the second half of the teeth: from
-# `bind` it reads `bind Counted into`, naming the class the registry built,
-# and the author typed `CountedProbe`.
+# `spawn`, so asserting only that it raises passes wherever the guard sits.
+# With it at the bottom the entity is constructed, moved and fully composed --
+# every `attach` hook has run, which is where a behavior audits what it needs
+# -- before the caller hears about the missing scene. The message is the
+# second half of the teeth: from `bind` it reads `bind Counted into`, naming
+# the class the registry built, where the author typed `CountedProbe`.
 sceneless = SceneManager(game=None)
 expect("no probe has been built through this registry entry yet", len(BUILDS), 0)
 expect_raises("spawn with no scene raises, naming the TYPE and the fix",
@@ -833,9 +829,10 @@ print("\n10. the THIRD removal: the map's own spawn record is forgotten")
 # ===========================================================================
 # `renderer.spawned_entities` is a list the map bind writes and
 # `SceneManager.__bind_spawned_entities` reads. `LayerRenderer.unbind` empties
-# the LAYER and never touches it, so a reaped body used to stay reachable from
-# the renderer for as long as the map was bound. Sections 5 and 6 cannot see
-# that: they bind by hand, and a hand-bound entity has no record.
+# the LAYER and never touches it, so without a third removal a reaped body
+# stays reachable from the renderer for as long as the map is bound. Sections
+# 5 and 6 cannot see that: they bind by hand, and a hand-bound entity has no
+# record.
 map_manager, map_renderer = build_manager()
 map_manager.bind("MAP", load_fixture_map())
 _records = map_renderer.spawned_entities

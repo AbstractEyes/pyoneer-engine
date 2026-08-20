@@ -1,44 +1,27 @@
 """The game-side narrative kit: a dialogue box, a step adapter, and the wiring.
 
-WHAT THIS IS FOR
-----------------
-`scripts/game/flow/scene_flow.py` ships a sequencer with NO widgets, and says
-so in its first paragraph: a step drives a window it was HANDED, calls
-`open()` on entry and `close()` on exit, and knows nothing else about it.
-Everything on the other side of that pair is the game's, and this module is
-one game's answer. It is the fourth demo's half of the contract, kept out of
-`scripts/` for the reason `demos/behaviors.py` is: proving an extension point
-is only proof when the extension lives outside the thing it extends.
+`scripts/game/flow/scene_flow.py` sequences steps and ships no widgets: a
+step drives a window it was handed, calling `open()` on entry and `close()`
+on exit. This module is one game's answer to the other side of that pair, and
+lives here rather than in `scripts/` because it is game content.
 
-THE ONE REAL FINDING, WRITTEN WHERE IT WAS FOUND
-------------------------------------------------
-A `FlowStep` carries `name`, `window`, `hold_ms` and `payload`. It carries no
-TEXT. So "a dialogue box that shows a different line on each beat" is not
-expressible by handing the same `GameWindow` to every step -- that reopens one
-box saying one thing three times, which looks like a flow that is not
-advancing.
+A `FlowStep` carries `name`, `window`, `hold_ms` and `payload` -- no TEXT.
+Handing the same `GameWindow` to every step therefore reopens one box saying
+one thing on every beat. `StoryLine` below is the fix: anything with
+`open()`/`close()` is a step's window, so each step gets a small object that
+sets the shared box's line and then opens it.
 
-The duck type is what saves it, and `StoryLine` below is the whole fix: an
-object with `open()`/`close()` that sets the line and then opens the shared
-box. Six lines, and it is the difference between "SceneFlow cannot do
-dialogue" and "SceneFlow does dialogue". The flow's own docstring anticipates
-it -- "a panel wrapper, a fade, a test double" -- but nothing in the tree had
-written one, and the shape a reader reaches for first is the one that fails.
+Limits a script written against this will hit:
 
-WHAT IS STILL MISSING AND IS NOT PAPERED OVER HERE
----------------------------------------------------
-  * **No word wrap.** `TextComponent.prepare_text` is ONE `font.render` of ONE
-    string and answers overflow by SHRINKING the font. So a line here is
-    short, and a real script needs wrapping in `scripts/core/ui/text.py` --
-    not in a sequencer and not in this file.
-  * **No branching.** `FlowStep` has a successor, not a set of them. A choice
-    needs a widget that reports a click and nothing in this engine reports one
-    yet, so this demo is a linear scene and says so.
-  * **No trigger.** The flow begins at boot because the map's `use` triggers
-    have no runtime reader: `editor/core/map_events.py` authors them and
-    `scripts/` has no consumer. Standing next to the keeper is therefore
-    scenery, not a condition. That gap is the reason the keeper is in the map:
-    it is the negative control for a wire that does not exist yet.
+  * **No word wrap.** `TextComponent.prepare_text` is one `font.render` of one
+    string and answers overflow by SHRINKING the font, so lines here are
+    short. Wrapping belongs in `scripts/core/ui/text.py`.
+  * **No branching.** `FlowStep` has one successor, and no widget in this
+    engine reports a click yet, so a flow is a linear scene.
+  * **No trigger.** A flow begins when the game calls `begin()` -- at boot,
+    here. The map's `use` triggers are authored by
+    `editor/core/map_events.py` and have no runtime reader, so proximity to
+    an object cannot start one.
 """
 from __future__ import annotations
 
@@ -61,11 +44,10 @@ BOX_BOUNDS = Rect(120, 400, 560, 120)
 class StoryBox(GameWindow):
     """A `GameWindow` with one line of text in it. That is the entire widget.
 
-    Derives `GameWindow` rather than composing one, because `open()` and
-    `close()` are the pair `SceneFlow` drives and they are already exact
-    inverses here -- `visible`/`active` up, `visible`/`active`/focus down.
-    Reimplementing that pair on a wrapper is how a closed dialogue box goes on
-    swallowing clicks in the rectangle it used to occupy.
+    Derives `GameWindow` rather than wrapping one so that `open()` and
+    `close()` stay the inherited pair -- `visible`/`active` up, and
+    `visible`/`active`/focus down. A wrapper that reimplements them is how a
+    closed dialogue box goes on swallowing clicks where it used to be.
     """
 
     def __init__(self, *args, **kwargs):
@@ -76,12 +58,11 @@ class StoryBox(GameWindow):
         self._line: str = ""
 
     def build_content(self):
-        """Called by `GameWindow` once the chrome exists.
+        """Build the line of text. Called by `GameWindow` once the chrome exists.
 
-        The text component is built here and not in `__init__` for the reason
-        every other window content is: `world_bounds` is not final until the
-        component has a parent and has been prepared, so a child sized in the
-        constructor is sized against the wrong rectangle.
+        Content belongs here rather than in `__init__`: `world_bounds` is not
+        final until the component has a parent and has been prepared, so a
+        child sized in the constructor is sized against the wrong rectangle.
         """
         self.line_text = TextComponent(
             parent=self, depth=2,
@@ -102,10 +83,8 @@ class StoryBox(GameWindow):
     @line.setter
     def line(self, value: str) -> None:
         self._line = str(value)
-        # Buffered when the chrome has not been built yet -- `build_content`
-        # runs at `core_lifecycle_prepare`, and a flow may legally begin before
-        # that. Writing straight through would raise on None and make "the
-        # cutscene starts at boot" an ordering rule the caller has to know.
+        # Buffered until the chrome exists: `build_content` runs at
+        # `core_lifecycle_prepare`, and a flow may begin before that.
         if self.line_text is not None:
             self.line_text.text = self._line
 
@@ -113,15 +92,12 @@ class StoryBox(GameWindow):
 class StoryLine:
     """One beat's window: set the shared box's line, THEN open the box.
 
-    This is the adapter the module docstring is about. `SceneFlow` calls
-    `open()` and `close()` and asks nothing else, so a step's "window" does not
-    have to be a widget -- it has to be a pair of verbs. Handing every step the
-    same `StoryBox` would open one box saying one thing on every beat; handing
-    each step one of these changes what the box says on the way in.
+    `SceneFlow` calls `open()` and `close()` and asks nothing else, so a
+    step's window need not be a widget -- one of these per step is what makes
+    a shared box say something different on each beat.
 
-    `close()` closes the shared box rather than clearing the line, so two
-    consecutive steps sharing a box do not flicker an empty frame between them,
-    and so a replayed flow shows the first line again rather than the last.
+    `close()` closes the box rather than clearing the line, so consecutive
+    steps sharing a box do not flicker an empty frame between them.
     """
 
     __slots__ = ("box", "text")
@@ -145,15 +121,13 @@ def build_flow(script: Sequence[tuple[str, str, float]], box: Any,
                bodies: Sequence[Any], *, name: str = "opening") -> SceneFlow:
     """Turn `(step name, line, hold_ms)` rows into a running-ready `SceneFlow`.
 
-    A separate function and not a `SceneFlow` subclass: the sequencer is
-    finished, and a subclass would be a second place for the step vocabulary
-    to be spelled. This only builds records.
+    A function rather than a `SceneFlow` subclass: this only builds records.
 
-    The agency keywords are left at their defaults deliberately --
-    `steerable=False`, `enabled_inputs` untouched, `simulated` untouched. That
-    is the measured-correct cutscene hold: the body stops walking and can
-    still press continue. Clearing `enabled_inputs` too is how a visual novel
-    locks itself out of its own advance button, and it is one keyword away.
+    The agency keywords are left at their defaults -- `steerable=False`,
+    `enabled_inputs` and `simulated` untouched. That is the cutscene hold a
+    dialogue wants: the body stops walking and can still press continue.
+    Clearing `enabled_inputs` as well locks the flow out of its own advance
+    button.
     """
     steps = tuple(FlowStep(name=step_name, window=StoryLine(box, line),
                            hold_ms=hold)
@@ -165,12 +139,7 @@ class StoryGame(DemoGame):
     """A `DemoGame` that also mounts a scene flow over a dialogue box.
 
     Everything a narrative demo needs that a `.tmx` cannot say, and nothing
-    else. `DemoGame` stays untouched: `tools/check_demos.py` asserts by name
-    that it overrides exactly `load_map`, `load_test_objects` and `entity_of`,
-    and a narrative hook added there would be a hook the three older demos
-    carry and never use.
-
-    A concrete story demo below this is a `MAP_NAME` and a `SCRIPT`.
+    else: a concrete story demo is a `MAP_NAME` and a `SCRIPT`.
     """
 
     SCRIPT: tuple[tuple[str, str, float], ...] = ()
@@ -198,11 +167,9 @@ class StoryGame(DemoGame):
     def load_test_objects(self):
         """Let `DemoGame` place the camera, then mount the box and the flow.
 
-        Calls `super()` first, and needs to: that is what resolves the driven
-        entity out of the composition and sets `self.player`, which is the body
-        whose agency the flow borrows. Deriving it a second time here would be
-        the second implementation of "which object is the player", and the
-        answer would silently diverge the day `player_input` is renamed.
+        Calls `super()` first, and must: that is what resolves the driven
+        entity out of the composition and sets `self.player`, the body whose
+        agency the flow borrows.
         """
         bindable = super().load_test_objects()
         if not self.SCRIPT:
@@ -214,15 +181,13 @@ class StoryGame(DemoGame):
         bodies = [record.entity for record in self.spawned]
         self.story_flow = build_flow(self.SCRIPT, self.story_box, bodies,
                                      name=self.FLOW_NAME)
-        # The router is the scene's, already assigned to every bound entity as
-        # its `action_sink` -- so this one line is the whole wire from "the
-        # player pressed the action verb" to "the conversation moved on".
-        # `SceneFlow.on_action` takes (entity, fired) and reads neither,
-        # because WHICH action advances a flow is the router's decision.
+        # The scene's router is already every bound entity's `action_sink`, so
+        # this one line is the whole wire from "the player pressed the action
+        # verb" to "the conversation moved on".
         self.scene.actions.route(ADVANCE_ACTION, self.story_flow.on_action,
                                  self.ADVANCE_PAYLOAD)
-        # One slot on the manager, not a list: `post_update` ticks this after
-        # the scene fan-out returns, which is what makes a timed step advance.
+        # One slot on the manager, not a list. `post_update` ticks it after
+        # the scene fan-out returns, which is what advances a timed step.
         self.scene.flow = self.story_flow
         self.story_flow.begin()
         return bindable

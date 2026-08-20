@@ -5,7 +5,7 @@
 
 > Editor preferences.
 
-`editor.core.settings` · 136 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.settings` · 135 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
@@ -24,7 +24,7 @@
 
 ### `class EditorSettings` #TAG:EditorSettings
 
-`editor/core/settings.py:80`–`135`
+`editor/core/settings.py:80`–`134`
 
 > Typed access to the stored preferences.
 

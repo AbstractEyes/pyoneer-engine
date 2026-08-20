@@ -5,7 +5,7 @@
 
 > Open a file, at a line, in whichever IDE the developer actually uses.
 
-`editor.core.ide` · 409 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.ide` · 406 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
@@ -26,15 +26,15 @@
 - `editor/core/ide.py:203` `_version_key(text: str) -> tuple` #TAG:_version_key
 - `editor/core/ide.py:210` `detect(*, refresh: bool=False) -> list[FoundIde]` #TAG:detect
   - Every IDE we can find, best first. Nothing is launched.
-- `editor/core/ide.py:264` `_toolbox_candidates() -> list[FoundIde]` #TAG:_toolbox_candidates
+- `editor/core/ide.py:261` `_toolbox_candidates() -> list[FoundIde]` #TAG:_toolbox_candidates
   - JetBrains Toolbox records exactly what we need, so read it.
-- `editor/core/ide.py:305` `_locate_installed(candidate: IdeSpec) -> FoundIde | None` #TAG:_locate_installed
-- `editor/core/ide.py:315` `_locate_on_path(candidate: IdeSpec) -> FoundIde | None` #TAG:_locate_on_path
-- `editor/core/ide.py:323` `preferred(configured: str | None=None) -> FoundIde | None` #TAG:preferred
+- `editor/core/ide.py:302` `_locate_installed(candidate: IdeSpec) -> FoundIde | None` #TAG:_locate_installed
+- `editor/core/ide.py:312` `_locate_on_path(candidate: IdeSpec) -> FoundIde | None` #TAG:_locate_on_path
+- `editor/core/ide.py:320` `preferred(configured: str | None=None) -> FoundIde | None` #TAG:preferred
   - The IDE to use: the configured one if it is present, else the best
-- `editor/core/ide.py:348` `open_at(path: str, line: int | None=None, *, configured: str | None=None, found: FoundIde | None=None) -> LaunchResult` #TAG:open_at
+- `editor/core/ide.py:345` `open_at(path: str, line: int | None=None, *, configured: str | None=None, found: FoundIde | None=None) -> LaunchResult` #TAG:open_at
   - Reveal `path` (optionally at `line`) in the developer's IDE.
-- `editor/core/ide.py:390` `find_symbol_line(path: str, symbol: str) -> int | None` #TAG:find_symbol_line
+- `editor/core/ide.py:387` `find_symbol_line(path: str, symbol: str) -> int | None` #TAG:find_symbol_line
   - The line a class or function is defined on, WITHOUT importing.
 
 ## Classes
@@ -57,6 +57,6 @@
 
 ### `@dataclass class LaunchResult` #TAG:LaunchResult
 
-`editor/core/ide.py:339`–`345`
+`editor/core/ide.py:336`–`342`
 
-- `editor/core/ide.py:344` `__bool__(self) -> bool` #TAG:LaunchResult.__bool__
+- `editor/core/ide.py:341` `__bool__(self) -> bool` #TAG:LaunchResult.__bool__

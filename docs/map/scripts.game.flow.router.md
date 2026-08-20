@@ -5,7 +5,7 @@
 
 > The engine's one host for `entity.action_sink`, and it CALLS.
 
-`scripts.game.flow.router` · 229 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.flow.router` · 189 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,28 +13,28 @@
 
 ## Module constants
 
-- `scripts/game/flow/router.py:85` `ANY_PAYLOAD` #TAG:ANY_PAYLOAD
+- `scripts/game/flow/router.py:57` `ANY_PAYLOAD` #TAG:ANY_PAYLOAD
 
 ## Classes
 
 ### `class ActionRouter` #TAG:ActionRouter
 
-`scripts/game/flow/router.py:95`–`225`
+`scripts/game/flow/router.py:67`–`185`
 
 > Token -> handler, and the `entity.action_sink` callable itself.
 
-- `scripts/game/flow/router.py:110` `__init__(self) -> None` #TAG:ActionRouter.__init__
-- `scripts/game/flow/router.py:115` `route(self, token: str, handler: Callable[[Any, Any], Any], payload: str=ANY_PAYLOAD) -> Callable[[Any, Any], Any]` #TAG:ActionRouter.route
+- `scripts/game/flow/router.py:80` `__init__(self) -> None` #TAG:ActionRouter.__init__
+- `scripts/game/flow/router.py:85` `route(self, token: str, handler: Callable[[Any, Any], Any], payload: str=ANY_PAYLOAD) -> Callable[[Any, Any], Any]` #TAG:ActionRouter.route
   - Call `handler(entity, fired)` when `token` fires with `payload`.
-- `scripts/game/flow/router.py:149` `clear(self, token: str | None=None, payload: str=ANY_PAYLOAD) -> int` #TAG:ActionRouter.clear
+- `scripts/game/flow/router.py:117` `clear(self, token: str | None=None, payload: str=ANY_PAYLOAD) -> int` #TAG:ActionRouter.clear
   - Forget routes. Returns how many handlers were dropped.
-- `scripts/game/flow/router.py:164` `@property routes(self) -> Tuple[Tuple[str, str, int], ...]` #TAG:ActionRouter.routes
+- `scripts/game/flow/router.py:131` `@property routes(self) -> Tuple[Tuple[str, str, int], ...]` #TAG:ActionRouter.routes
   - (token, payload, handler count) for every route. SORTED.
-- `scripts/game/flow/router.py:176` `__len__(self) -> int` #TAG:ActionRouter.__len__
-- `scripts/game/flow/router.py:179` `__contains__(self, item: Any) -> bool` #TAG:ActionRouter.__contains__
+- `scripts/game/flow/router.py:141` `__len__(self) -> int` #TAG:ActionRouter.__len__
+- `scripts/game/flow/router.py:144` `__contains__(self, item: Any) -> bool` #TAG:ActionRouter.__contains__
   - `"interact_action" in router`, or `("interact_action", "door") in router`.
-- `scripts/game/flow/router.py:187` `handlers_for(self, token: str, payload: str=ANY_PAYLOAD) -> Tuple[Callable[[Any, Any], Any], ...]` #TAG:ActionRouter.handlers_for
+- `scripts/game/flow/router.py:152` `handlers_for(self, token: str, payload: str=ANY_PAYLOAD) -> Tuple[Callable[[Any, Any], Any], ...]` #TAG:ActionRouter.handlers_for
   - Which handlers a firing of (token, payload) would reach.
-- `scripts/game/flow/router.py:204` `__call__(self, entity: Any, fired: Any) -> int` #TAG:ActionRouter.__call__
+- `scripts/game/flow/router.py:167` `__call__(self, entity: Any, fired: Any) -> int` #TAG:ActionRouter.__call__
   - The `action_sink` itself. Returns how many handlers ran.
-- `scripts/game/flow/router.py:222` `__repr__(self) -> str` #TAG:ActionRouter.__repr__
+- `scripts/game/flow/router.py:182` `__repr__(self) -> str` #TAG:ActionRouter.__repr__

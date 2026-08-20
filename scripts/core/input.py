@@ -110,11 +110,9 @@ class InputActionManager(CoreAsset):
         """Sample every action once and derive this frame's edges.
 
         Edges are derived by comparing the raw state against last frame's
-        `held`, which is the only way `released` can be a real falling edge.
-        The previous implementation guarded each flag behind its own value
-        (`if action and not action.released`), so `released` latched True on
-        the first frame and never cleared -- `released('pause')` fired every
-        frame from startup forever.
+        `held`, which is the only way `released` can be a real falling edge:
+        guarding each flag behind its own previous value latches it True
+        instead.
         """
         if not self.config:
             return
@@ -186,11 +184,10 @@ class InputActionManager(CoreAsset):
         for action_name, action_input in self.config.items():
             self.actions[action_name] = BaseAction(action_name, action_input)
         self.validate_bindings()
-        # Deliberately NOT sampling the keyboard here: prepare_inputs runs from
-        # CoreAssetManager.__init__, which main.py calls before
+        # Deliberately NOT sampling the keyboard here: this runs before
         # pygame.display.set_mode(), and pygame.key.get_pressed() requires an
         # initialized video mode. Every action starts held=False, so the first
-        # update() already computes correct edges without priming.
+        # update() computes correct edges without priming.
         trace_input("bindings resolved: %s", sorted(self.actions))
         return self
 

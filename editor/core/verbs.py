@@ -39,9 +39,8 @@ from editor.core import genre as genre_module
 from editor.core import layers as layer_module
 from editor.core import map_events as map_event_module
 # The collision vocabulary through the editor's re-export, never a second
-# copy of it -- law 2's corollary cost 425 duplicate lines on exactly this
-# pair of modules. `BLITMASK_SUFFIX` is the extension the .tileset format
-# already validates a mask reference against, so it is spelled once there.
+# copy of it. `BLITMASK_SUFFIX` is the extension the .tileset format already
+# validates a mask reference against, so it is spelled once there.
 from editor.core.collision import (
     DEFAULTS_PROPERTY,
     NO_DATA,
@@ -242,17 +241,13 @@ def _tile_fill(project: Project, cmd: Command) -> Command | None:
 def _layer_add(project: Project, cmd: Command) -> Command:
     """Create a layer, at a size the caller may choose.
 
-    `subcell` is the whole reason width and height are arguments at all: a
-    4x passability companion is four times the map on each axis, so before
-    this verb carried a size, nothing in the editor could CREATE the format
-    the engine already reads.
+    `subcell` is why width and height are arguments at all: a 4x passability
+    companion is four times the map on each axis.
 
-    The inverse is unchanged and needs no new argument. `map.layer.remove`
-    serializes the element it takes out -- its `width=`, its `height=`, its
-    `<properties>` and its csv -- and restores that XML verbatim, so undo is
-    byte-exact for a 4x companion for exactly the reason it already was for
-    a map-sized one. An inverse that re-stated the dimensions would be a
-    second place for them to be wrong.
+    The inverse needs no new argument. `map.layer.remove` serializes the
+    element it takes out -- its `width=`, its `height=`, its `<properties>`
+    and its csv -- and restores that XML verbatim, so undo is byte-exact for
+    a 4x companion as it is for a map-sized one.
     """
     document = project.map(cmd.scope.require("map"))
     before = document.root.get("nextlayerid", "1")
@@ -389,9 +384,8 @@ def _layer_restore(project: Project, cmd: Command) -> Command:
 # to the tileset underneath and paints the wrong art.
 #
 # MapDocument.remove_tileset refuses in that case and names the layers and
-# counts that block it. These verbs let that refusal through unchanged.
-# Catching it to reword it would cost the caller the one piece of
-# information that says how to proceed.
+# counts that block it. These verbs let that refusal through unchanged:
+# rewording it would cost the caller the part that says how to proceed.
 # --------------------------------------------------------------------------
 
 def _tileset_key(cmd: Command) -> str | int:
@@ -556,15 +550,13 @@ def _tileset_restore(project: Project, cmd: Command) -> Command:
             verb=cmd.verb, got=sorted(payload))
 
     name = document.restore_tileset(payload)
-    # force=True here, where map.tileset.add's inverse says False, and the
-    # asymmetry is the whole point. An add creates a range that did not
-    # exist, so taking it back can orphan tiles painted into it since --
-    # the guard has real work to do. A restore only ever puts back what was
-    # just taken out, so removing it again returns the document to a state
-    # it was already in a moment ago, and anything that painted into the
-    # range in between is a later command whose inverse runs FIRST. Without
-    # force this is also unusable on an external tileset, whose extent
-    # lives in the .tsx: the guard would refuse to undo its own undo.
+    # force=True here, where map.tileset.add's inverse says False. An add
+    # creates a range that did not exist, so taking it back can orphan tiles
+    # painted into it since, and the guard has real work to do. A restore
+    # only puts back what was just taken out, and anything that painted into
+    # the range meanwhile is a later command whose inverse runs FIRST.
+    # Without force this would also be unusable on an external tileset, whose
+    # extent lives in the .tsx: the guard would refuse to undo its own undo.
     if name:
         return Command("map.tileset.remove", cmd.scope,
                        {"name": name, "force": True})
@@ -578,61 +570,49 @@ def _tileset_restore(project: Project, cmd: Command) -> Command:
 # `scripts/core/collision_runtime.py` reads a tileset's per-tile masks out of
 # a `.blitmask` named by the `pyoneer_collision` property on the `<tileset>`
 # element, and `field_from_map` stacks that level UNDER every companion so a
-# painted cell still wins. Until these two verbs there was no way to author
-# either half from here: the property had to be typed into the .tmx by hand
-# and the sidecar written in a text editor, which is the authoring equivalent
-# of the dialog `provision_collision_tileset` exists not to show.
+# painted cell still wins. These two verbs author both halves: the property
+# on the element, and the sidecar it names.
 #
 # THE FILE IS PROVISIONED, NOT ASKED ABOUT
 # ----------------------------------------
 # `map.tileset.mask.set` writes the `.blitmask` when it is not there, the
-# same call the first collision stroke makes for `Collision.png`. The editor
-# knows exactly what is needed, so asking is a modal on a routine path. What
-# it costs is stated rather than hidden -- see the next paragraph.
+# same call the first collision stroke makes for `Collision.png`.
 #
 # WHAT HAS NO INVERSE, AND WHY THAT IS SOUND        #TAG:written_file_has_no_inverse
 # ------------------------------------------
 # Three things can change: one cell of the sidecar, the tmx property, and the
 # sidecar's EXISTENCE. The first two are inverted exactly, and the inverse
 # carries the opinion and the reference it FOUND rather than ones it could
-# re-derive -- `_action_inverse` makes the same argument for the same shape.
-# The third is not inverted: undo leaves the file on disk, all-NO_DATA if
-# this verb created it. That is deliberate and it is measurable. A grid of
-# no-data reads exactly as a tileset with no masks at all -- once the
-# property is gone `tileset_defaults` never opens the file, and
-# `opinion_for_local` answers NO_DATA either way -- so the baked field is
-# identical with the file present or absent, and the thing undo is contracted
-# to restore, the .tmx byte for byte, IS restored. An undo that DELETED a
-# file would be a strictly worse trade: it can destroy work the author put
-# there, and it buys nothing that assertion does not already give.
+# re-derive. The third is not inverted: undo leaves the file on disk,
+# all-NO_DATA if this verb created it. A grid of no-data reads exactly as a
+# tileset with no masks at all -- once the property is gone
+# `tileset_defaults` never opens the file -- so the baked field is identical
+# either way, and the .tmx, which is what undo is contracted to restore,
+# comes back byte for byte. An undo that DELETED a file could destroy work
+# the author put there.
 #
 # GROWING a short mask is in the same class. Masking only the first three
-# rows of a 24-row sheet is legal and deliberate -- `tileset_defaults` says
-# so in as many words -- so setting a tile below that has to add rows. The
-# added rows are NO_DATA, so again the meaning is unchanged, and undo
-# restores the cell rather than the row count.
+# rows of a 24-row sheet is legal, so setting a tile below that adds rows;
+# the added rows are NO_DATA, and undo restores the cell rather than the row
+# count.
 #
 # WHY TWO VERBS AND NOT ONE
 # -------------------------
-# `restore` is the exact inverse of `set` and of itself, the way
-# `map.object.action.restore` is, because the two things that change have to
-# come back TOGETHER: putting the cell back without removing a declaration
-# this call created leaves the tmx one property heavier than it was found. A
-# `set` that could also undeclare would need its `reference` argument to
-# treat empty as "delete", which is a second meaning for a default value, so
-# the undeclaring half lives in the verb only the stream writes.
+# `restore` is the exact inverse of `set` and of itself, because the cell and
+# the declaration have to come back TOGETHER: putting the cell back without
+# removing a declaration this call created leaves the tmx one property
+# heavier than it was found.
 # --------------------------------------------------------------------------
 
 def _tileset_for_mask(project: Project, cmd: Command):
     """The `<tileset>` a mask verb addresses, and the document holding it.
 
     The two refusals are `tileset_defaults`' own, moved forward to authoring
-    time. A mask grid is row-major over the sheet, so with no `columns` there
-    is no arithmetic from a tile id to a cell of it; and with no tile count
-    nothing can say which gids the tileset owns, which is exactly the state
-    in which every tile silently reads as having no mask. Writing a file the
-    engine would then refuse to load is the half-delivery these verbs exist
-    to end, so the refusal comes before anything is written.
+    time so that nothing is written the engine would then refuse to load. A
+    mask grid is row-major over the sheet, so with no `columns` there is no
+    arithmetic from a tile id to a cell of it; and with no tile count nothing
+    can say which gids the tileset owns, which is the state in which every
+    tile silently reads as having no mask.
     """
     document = project.map(cmd.scope.require("map"))
     ref = document.tileset(_tileset_key(cmd))
@@ -692,16 +672,14 @@ def _conventional_mask_reference(ref, cmd: Command) -> str:
     the image reads as the image -- and because a sheet shared by five maps
     then has ONE mask file rather than five copies that drift.
 
-    Named after the tileset and NOT after the image, which is the half worth
-    the sentence. Two `<tileset>` elements may point at one sheet with
-    different geometry and different firstgids, and one mask file cannot be
-    both of them: `to_blitmask` stores the tileset's name in the file and
-    `tileset_defaults` raises when it disagrees with the one it is attached
-    to, so an image-derived name would make the second tileset's first
-    authored mask break the first tileset's map. Path separators in the name
-    are replaced rather than honoured, `blitmap.tileset_reference`'s
-    precedent: a tileset called `System/TileA2` must not write outside the
-    directory it was given.
+    Named after the TILESET and not after the image: two `<tileset>` elements
+    may point at one sheet with different geometry and different firstgids,
+    and one mask file cannot be both. `to_blitmask` stores the tileset's name
+    in the file and `tileset_defaults` raises when it disagrees, so an
+    image-derived name would let one tileset's first authored mask break the
+    other's map. Path separators in the name are replaced rather than
+    honoured, as `blitmap.tileset_reference` does: a tileset called
+    `System/TileA2` must not write outside the directory it was given.
     """
     if not ref.image_source:
         raise PyoneerCommandArgumentError(
@@ -1002,24 +980,22 @@ def _born_with(project: Project, scope: Scope,
 
     This is where a genre pack's `layers[].object_classes[].behaviors` stops
     being a declaration and becomes map data. The editor MATERIALISES it here
-    and never consults it again -- `scripts/` may not import `editor/`, so an
-    engine-side fallback is not available at any price, and the `.tmx` being
-    the whole truth is what makes a map play the same whether or not the
-    editor has ever opened it.
+    and never consults it again -- `scripts/` may not import `editor/`, so
+    there is no engine-side fallback, and the `.tmx` being the whole truth is
+    what makes a map play the same whether or not the editor has ever opened
+    it.
 
-    PRECEDENCE, and both halves are asserted in `tools/check_editor.py`:
+    PRECEDENCE:
 
       1. a `pyoneer_behaviors` the CALLER supplied wins outright, including
          an explicit empty one -- "this object does nothing" is a thing an
-         author is allowed to say, and a default that overrode it would be a
-         policy rather than a starting value
+         author is allowed to say
       2. otherwise the pack's list for this layer and this class, if it
          declares one
-      3. otherwise nothing at all, which is every pack that declares no
-         `object_classes` and every class it does not name
+      3. otherwise nothing at all
 
-    Nothing re-asserts step 2 afterwards. Editing the list on the object is
-    the last word forever, because no later command reads the pack.
+    Nothing re-asserts step 2 afterwards, so editing the list on the object is
+    the last word: no later command reads the pack.
     """
     properties = dict(args["properties"] or {})
     if BEHAVIORS in properties:                # #TAG:behaviors_materialised_at_add
@@ -1045,11 +1021,9 @@ def _object_remove(project: Project, cmd: Command) -> Command:
     layer = _object_layer(project, cmd.scope)
     document = project.map(cmd.scope.require("map"))
 
-    # The inverse used to be `map.object.add` rebuilt from eight attributes,
-    # which SILENTLY DESTROYED rotation, visible, template and every shape
-    # child (<polygon>, <polyline>, <point>, <ellipse>, <text>) on undo. The
-    # byte-identity check missed it because the only objects it ever removed
-    # were plain rectangles it had created itself two lines earlier.
+    # The whole XML element, not a rebuild from its attributes: rotation,
+    # visible, template and every shape child (<polygon>, <polyline>,
+    # <point>, <ellipse>, <text>) survive undo only this way.
     payload = {
         "xml": layer.serialize_object(found.id),
         "index": layer.object_index(found.id),
@@ -1232,21 +1206,20 @@ def _object_property_remove(project: Project, cmd: Command) -> Command | None:
 # announces that in a warning nobody is watching for. Here the authoring
 # door is where the mistake is cheap.
 #
-# NOTHING IN THE ENGINE EXECUTES ONE OF THESE. Not "not fully": there is no
-# collision detection, entities are not on the event bus, no MAP_TRIGGER_*
-# event type exists, and the renderer skips object layers entirely. A map
-# authored with these plays exactly as it did before. That is written here,
-# in the generated COMMANDS.md through the summaries below, and on screen in
-# the Actions panel -- three places, because a caveat that lives only in a
-# docstring is a caveat the AI writing a response never sees.
+# NOTHING IN THE ENGINE EXECUTES ONE OF THESE. No MAP_TRIGGER_* event type
+# exists and nothing under `scripts/` reads `pyoneer_trigger`, so a map
+# authored with these plays exactly as it did before. That caveat is stated
+# in three places -- here, in the generated COMMANDS.md through the summaries
+# below, and on screen in the Actions panel -- because one that lives only in
+# a docstring is one the AI writing a response never sees.
 #
 # ONE LIMIT, STATED. `MapProperties` can delete a `<property>` and append
 # one, but cannot insert at an index, so taking a field back and putting it
 # back again re-appends it at the END of `<properties>`. Every VALUE survives
 # exactly; the element ORDER survives only while the field being taken back
-# was the last one declared -- which is always true of a field this panel
-# just added, and not of one hand-authored in Tiled above another.
-# `map.object.property.remove` has had the same limit since it was written.
+# was the last one declared -- always true of a field this panel just added,
+# and not of one hand-authored in Tiled above another. The same limit applies
+# to `map.object.property.remove`.
 # --------------------------------------------------------------------------
 
 def _action_property(cmd: Command) -> str:
@@ -1338,18 +1311,12 @@ def _action_unset(project: Project, cmd: Command) -> Command | None:
 
     # `MapProperties.__delitem__` drops the `<properties>` container once it
     # empties, but `_remove_child` hands the whitespace back to the OWNER --
-    # so an `<object .../>` the file wrote self-closing comes back as
-    # `<object ...>\n</object>`. Two lines of diff on a declare-then-undo
-    # that should leave no diff at all, which is the one thing the tmx
-    # contract exists to prevent. A childless object is written self-closing
-    # by Tiled and by this document, so `text = None` is returning it to the
-    # file's own spelling; `ObjectLayer.remove_object` does exactly this one
-    # level up, from a remembered `_original_text`.
-    #
-    # The real home for this is `MapProperties.__delitem__`, where
-    # map.object.property.remove would get it too. That is a change to
-    # scripts/loaders/map_document.py, and this guard becomes a harmless
-    # no-op the moment it lands.
+    # so an `<object .../>` the file wrote self-closing would come back as
+    # `<object ...>\n</object>`: two lines of diff on a declare-then-undo
+    # that must leave none. A childless object is written self-closing by
+    # Tiled and by this document, so `text = None` returns it to the file's
+    # own spelling, as `ObjectLayer.remove_object` does one level up.
+    # Belongs in `MapProperties.__delitem__`, which is in scripts/.
     if not list(found.element):
         found.element.text = None
 

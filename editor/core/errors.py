@@ -4,13 +4,10 @@ Extends the engine's, so the `Pyoneer` prefix still enumerates the whole
 error surface across both applications and `except PyoneerError` still
 catches everything.
 
-WHY THE EDITOR NEEDS ITS OWN
-----------------------------
-The editor has a failure mode the engine does not: **an untrusted author.**
-Not malicious -- an AI that emitted a plausible-looking command against a
-schema it half-remembered. That is the single most likely way this project
-breaks, so it gets a dedicated, specific, loud error surface rather than a
-generic ValueError.
+The editor has a failure mode the engine does not: **an untrusted author** --
+not malicious, but an AI emitting a plausible-looking command against a
+schema it half-remembered. Hence a specific, loud error per failure rather
+than a generic ValueError.
 
     PyoneerError                      (from scripts.core.errors)
     +-- PyoneerEditorError
@@ -62,8 +59,8 @@ class PyoneerCommandError(PyoneerEditorError):
 class PyoneerCommandUnknownError(PyoneerCommandError, KeyError):
     """No such verb is registered.
 
-    Raised rather than ignored because a response full of invented verbs is
-    the loudest possible signal that the conditioning docs went stale.
+    Raised rather than skipped: invented verbs are the signal that whatever
+    wrote the response was working from a stale vocabulary.
     """
 
     def __init__(self, verb: str, known: list[str] | None = None, **context: Any):

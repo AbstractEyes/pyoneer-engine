@@ -104,14 +104,12 @@ print()
 print("every advertised channel has at least one call site")
 # A channel that validates, enables, and then emits nothing is the one
 # specific failure this module exists to remove -- an advertised switch that
-# turns on and does nothing. Counted with ast over Call nodes, NOT grep:
-# grep counts the import line and the definition in log.py itself, which is
-# how a survey ended up reporting the same channel as both 5 and 7.
+# turns on and does nothing. Counted with ast over Call nodes, NOT grep: grep
+# counts the import line and the definition in log.py itself.
 #
 # tools/ is deliberately NOT a production area. A trace_events(...) written
-# inside a check is not evidence that the ENGINE traces anything, and while
-# tools/ was scanned this section could be satisfied by its own fixtures --
-# the four log.trace_mouse calls above already count under the old walk.
+# inside a check is not evidence that the ENGINE traces anything, and scanning
+# tools/ would let this section be satisfied by its own fixtures.
 ROOT = _bootstrap.REPO_ROOT
 LOG_SOURCE = os.path.join(ROOT, "scripts", "core", "log.py")
 PRODUCTION_AREAS = ("scripts", "editor", "config")

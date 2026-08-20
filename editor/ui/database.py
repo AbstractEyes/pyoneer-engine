@@ -1,11 +1,9 @@
 """The Database window -- actors, items, equipment, weapons, levels.
 
-A second, non-modal window rather than a dock, because this is the RPG
-Maker shape and the RPG Maker shape is right for it: a list of things on the
-left, every field of the selected thing on the right, and enough room to see
-all of them at once. Cramming that into a side panel is what made the first
-version substandard -- a table of actors squeezed into a column shows you
-six columns of twenty and none of the meaning.
+A second, non-modal window rather than a dock, in the RPG Maker shape: a
+list of things on the left, every field of the selected thing on the right,
+and enough room to see all of them at once. A side panel shows six columns
+of twenty and none of the meaning.
 
 Non-modal on purpose. You edit a monster's hp while looking at where it
 stands on the map; a modal dialog would make that two trips.
@@ -61,10 +59,9 @@ class TablePage(QWidget):
         self.list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.list.currentItemChanged.connect(self.__on_select)
 
-        # These three used to early-return when the table did not exist or
-        # nothing was selected, which on a fresh project is ALWAYS -- so every
-        # one of them was a dead click with no feedback. A button that cannot
-        # act must look like it cannot act.
+        # Enabled state, not an early return: on a fresh project there is no
+        # table and no selection, and a button that cannot act must look like
+        # it cannot act rather than swallowing the click.
         buttons = QHBoxLayout()
         self.add_button = QPushButton("+")
         self.add_button.clicked.connect(self.__on_add)
@@ -209,8 +206,7 @@ class TablePage(QWidget):
             Command("table.create", Scope.of(("table", self.table_name)), {}))
 
     #: A row id is a file-format string -- stable once referenced, never
-    #: renamed (CLAUDE.md law 8). Nothing can infer it, so this is a real
-    #: decision and asking for it is legitimate.
+    #: renamed. Nothing can infer it, so asking for it is a real decision.
     _ID_DOC = ("snake_case, stable, referenced by name from maps and other "
                "tables. Renaming it later silently disarms every reference.")
 
@@ -247,12 +243,10 @@ class TablePage(QWidget):
     def __on_remove(self) -> None:
         if not self.exists or self.current_row is None:
             return
-        # It used to ask "Delete 'hero' from actors?" and then answer its own
-        # question with "This is undoable." The button is already disabled
-        # unless a row is selected, so the click is deliberate, and undo
-        # reaches it exactly -- which by this editor's own definition means
-        # it is not destructive. The reassurance moved to the status bar,
-        # where it is the affordance rather than an interruption.
+        # No confirmation: the button is disabled unless a row is selected,
+        # so the click is deliberate, and undo reaches this exactly -- which
+        # by this editor's definition means it is not destructive. The
+        # status line says so, where it informs rather than interrupts.
         doomed = self.current_row
         self.current_row = None
         self.command_requested.emit(Command(

@@ -97,18 +97,13 @@ class Panel(DrawComponent):
 
         self.bind_component("background", self.background)
         self.bind_component("dead_corner", self.dead_corner)
-        #self.bind_sync_listener(GameEventType.UPDATE, self.__update_scroll)
         self.mouse.bind_mouse_listener(GameEventType.MOUSE_SCROLL, self.__event__mouse_scroll)
-        #self.child_mouse.bind_mouse_listener(GameEventType.MOUSE_SCROLL_DOWN, self.__event__mouse_scroll_down)
         self.bind_sync_listener(GameEventType.VIEWPORT_SCROLLED, self.__event__viewport_scrolled)
         self.bind_sync_listener(GameEventType.UPDATE, self.__event__update)
-        #self.bind_sync_listener(GameEventType.VIEWPORT_SCROLLED, self.__update_scroll)
         working_area = self.working_area.copy()
         working_area.width -= self.horizontal_scroll.arrow_1.local_bounds.width
         working_area.height -= self.vertical_scroll.arrow_1.local_bounds.height
         self.working_area = working_area
-        #self.horizontal_scroll.bind_sync_listener(GameEventType.VIEWPORT_SCROLLED, self.__panel_scroll_event)
-        #self.vertical_scroll.bind_sync_listener(GameEventType.VIEWPORT_SCROLLED, self.__panel_scroll_event)
 
     def __event__scroll_key_down(self, event_: PyoneerEvent):
         if self.mouse.mouse_inside:
@@ -140,13 +135,11 @@ class Panel(DrawComponent):
         content_bounds()/fit_scroll_area(). bind_component is for the panel's
         own chrome.
 
-        Sets the parent. It previously did not -- the line was commented out --
-        and every child the panel builds for itself passes `parent=self` to its
-        constructor instead, so the omission was invisible. Anything attached
-        from outside was left parentless, and
-        GameComponent.__update_world_bounds returns immediately when parent is
-        None: the component kept world_bounds == local_bounds, drew at the wrong
-        place, and did not move when the panel scrolled. Nothing errored.
+        Sets the parent, which is load-bearing:
+        `GameComponent.__update_world_bounds` returns immediately when parent
+        is None, so a parentless child keeps world_bounds == local_bounds,
+        draws in the wrong place and does not move when the panel scrolls --
+        without erroring.
         """
         obj.bind_parent(self, preserve_world_bounds=False)
         if depth is not None:
@@ -224,16 +217,10 @@ class Panel(DrawComponent):
     def __hide_unhide_scroll(self):
         """Show a scrollbar only when its axis has something to scroll.
 
-        Both bars, and both flags. This used to set `visible` on the VERTICAL
-        bar only, leaving the horizontal one permanently shown, and it never
-        touched `active` -- the `# todo; add active hook` that sat here. So a
-        scrollbar with nothing to scroll stayed visible AND draggable, and
-        dragging it raised ZeroDivisionError, because a thumb that fills its
-        bar has zero travel to divide by.
-
-        Clearing `active` disables the whole scrollbar subtree for input
-        without affecting anything else, which is exactly what that flag is
-        for.
+        Both bars, and both flags. `visible` alone leaves a useless scrollbar
+        draggable, and dragging one raises ZeroDivisionError because a thumb
+        that fills its bar has zero travel to divide by. Clearing `active`
+        disables the whole scrollbar subtree for input.
         """
         showing = []
         for scroll in (self.vertical_scroll, self.horizontal_scroll):
@@ -246,9 +233,8 @@ class Panel(DrawComponent):
 
         # The dead corner exists only to fill the square where the two bars
         # would otherwise overlap. With one bar it spans its whole edge and
-        # there is no gap; with none there is nothing to fill. It used to be
-        # unconditionally visible, so a panel with nothing to scroll still
-        # drew a black square in its bottom-right corner.
+        # there is no gap; with none there is nothing to fill -- so showing it
+        # unconditionally draws a black square in an unscrollable panel.
         if self.dead_corner is not None:
             both = len(showing) == 2 and all(showing)
             self.dead_corner.visible = both
@@ -257,10 +243,9 @@ class Panel(DrawComponent):
     def __event__update(self, event: Optional[PyoneerEvent] = None):
         """Per-frame scroll clamp, scrollbar visibility and transform refresh.
 
-        This was a `core_frame_update` override, which measured 0 calls per
-        frame: a Panel is reached through GameWindow's `components` dict, so
-        it is driven by the event bus and its core_* methods are never
-        invoked. The whole body was dead. Bound to UPDATE it actually runs.
+        Bound to UPDATE, not a `core_frame_update` override: a Panel is
+        reached through its parent's `components` dict, so it is driven by the
+        event bus and its core_* methods are never invoked.
         """
         self.__clamp_scroll()
         self.__hide_unhide_scroll()

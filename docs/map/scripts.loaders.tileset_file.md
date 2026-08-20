@@ -5,7 +5,7 @@
 
 > The .tileset file, and the line grammar the whole .blit* family shares.
 
-`scripts.loaders.tileset_file` · 974 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.loaders.tileset_file` · 950 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,142 +13,142 @@
 
 ## Module constants
 
-- `scripts/loaders/tileset_file.py:98` `MAGIC` #TAG:tileset_file.MAGIC
-- `scripts/loaders/tileset_file.py:99` `VERSION` #TAG:tileset_file.VERSION
-- `scripts/loaders/tileset_file.py:104` `TILESET_SUFFIX` #TAG:TILESET_SUFFIX
-- `scripts/loaders/tileset_file.py:105` `BLITMAP_SUFFIX` #TAG:BLITMAP_SUFFIX
-- `scripts/loaders/tileset_file.py:106` `BLITMASK_SUFFIX` #TAG:BLITMASK_SUFFIX
-- `scripts/loaders/tileset_file.py:823` `COPY` #TAG:COPY
-- `scripts/loaders/tileset_file.py:824` `KEEP` #TAG:KEEP
-- `scripts/loaders/tileset_file.py:825` `MISSING` #TAG:MISSING
-- `scripts/loaders/tileset_file.py:826` `OCCUPIED` #TAG:OCCUPIED
+- `scripts/loaders/tileset_file.py:86` `MAGIC` #TAG:tileset_file.MAGIC
+- `scripts/loaders/tileset_file.py:87` `VERSION` #TAG:tileset_file.VERSION
+- `scripts/loaders/tileset_file.py:92` `TILESET_SUFFIX` #TAG:TILESET_SUFFIX
+- `scripts/loaders/tileset_file.py:93` `BLITMAP_SUFFIX` #TAG:BLITMAP_SUFFIX
+- `scripts/loaders/tileset_file.py:94` `BLITMASK_SUFFIX` #TAG:BLITMASK_SUFFIX
+- `scripts/loaders/tileset_file.py:803` `COPY` #TAG:COPY
+- `scripts/loaders/tileset_file.py:804` `KEEP` #TAG:KEEP
+- `scripts/loaders/tileset_file.py:805` `MISSING` #TAG:MISSING
+- `scripts/loaders/tileset_file.py:806` `OCCUPIED` #TAG:OCCUPIED
 
 ## Functions
 
-- `scripts/loaders/tileset_file.py:148` `escape_word(text: str) -> str` #TAG:escape_word
+- `scripts/loaders/tileset_file.py:135` `escape_word(text: str) -> str` #TAG:escape_word
   - Escape a token that must survive as ONE whitespace-free word.
-- `scripts/loaders/tileset_file.py:155` `escape_text(text: str) -> str` #TAG:escape_text
+- `scripts/loaders/tileset_file.py:142` `escape_text(text: str) -> str` #TAG:escape_text
   - Escape a value that runs to the end of the line.
-- `scripts/loaders/tileset_file.py:172` `unescape(text: str, *, line: int | None=None, path: str | None=None) -> str` #TAG:unescape
+- `scripts/loaders/tileset_file.py:159` `unescape(text: str, *, line: int | None=None, path: str | None=None) -> str` #TAG:unescape
   - The one decoder for both encoders.
-- `scripts/loaders/tileset_file.py:203` `tail(text: str) -> str` #TAG:tail
+- `scripts/loaders/tileset_file.py:190` `tail(text: str) -> str` #TAG:tail
   - A value appended to a line, or nothing at all when it is empty.
-- `scripts/loaders/tileset_file.py:214` `number_text(value: float | int) -> str` #TAG:number_text
+- `scripts/loaders/tileset_file.py:201` `number_text(value: float | int) -> str` #TAG:number_text
   - Render a number the way Tiled writes an attribute: ints stay ints.
-- `scripts/loaders/tileset_file.py:260` `lex(text: str, *, path: str | None=None) -> list[Line]` #TAG:lex
+- `scripts/loaders/tileset_file.py:247` `lex(text: str, *, path: str | None=None) -> list[Line]` #TAG:lex
   - Text to significant lines. Blank lines and `#` comments are dropped.
-- `scripts/loaders/tileset_file.py:322` `once(seen: set[str], line: Line, cursor: Cursor) -> None` #TAG:once
+- `scripts/loaders/tileset_file.py:309` `once(seen: set[str], line: Line, cursor: Cursor) -> None` #TAG:once
   - Refuse a duplicate header key.
-- `scripts/loaders/tileset_file.py:393` `render_properties(properties: Sequence[Property], depth: int) -> list[str]` #TAG:render_properties
-- `scripts/loaders/tileset_file.py:397` `render_attributes(attributes: Sequence[tuple[str, str]], depth: int) -> list[str]` #TAG:render_attributes
+- `scripts/loaders/tileset_file.py:380` `render_properties(properties: Sequence[Property], depth: int) -> list[str]` #TAG:render_properties
+- `scripts/loaders/tileset_file.py:384` `render_attributes(attributes: Sequence[tuple[str, str]], depth: int) -> list[str]` #TAG:render_attributes
   - `attr` lines: everything the format does not model, carried verbatim.
-- `scripts/loaders/tileset_file.py:411` `read_attribute(line: Line, cursor: Cursor) -> tuple[str, str]` #TAG:read_attribute
-- `scripts/loaders/tileset_file.py:660` `read_magic(cursor: Cursor, magic: str, version: int) -> None` #TAG:read_magic
+- `scripts/loaders/tileset_file.py:398` `read_attribute(line: Line, cursor: Cursor) -> tuple[str, str]` #TAG:read_attribute
+- `scripts/loaders/tileset_file.py:641` `read_magic(cursor: Cursor, magic: str, version: int) -> None` #TAG:read_magic
   - Consume and check the `<magic> <version>` line every file starts with.
-- `scripts/loaders/tileset_file.py:680` `_read_tile_entry(header: Line, cursor: Cursor, path: str | None) -> TileEntry` #TAG:_read_tile_entry
-- `scripts/loaders/tileset_file.py:712` `_int_of(element, key: str, default: int=0) -> int` #TAG:_int_of
-- `scripts/loaders/tileset_file.py:724` `_properties_of(element) -> tuple[Property, ...]` #TAG:tileset_file._properties_of
+- `scripts/loaders/tileset_file.py:661` `_read_tile_entry(header: Line, cursor: Cursor, path: str | None) -> TileEntry` #TAG:_read_tile_entry
+- `scripts/loaders/tileset_file.py:693` `_int_of(element, key: str, default: int=0) -> int` #TAG:_int_of
+- `scripts/loaders/tileset_file.py:705` `_properties_of(element) -> tuple[Property, ...]` #TAG:tileset_file._properties_of
   - Every `<property>` under `element`, as (type, name, raw text).
-- `scripts/loaders/tileset_file.py:745` `_attributes_of(element, modelled: Sequence[str]) -> tuple[tuple[str, str], ...]` #TAG:_attributes_of
-- `scripts/loaders/tileset_file.py:750` `from_tmx_tileset(element, *, dropped: list[str] | None=None, collision: str='') -> TilesetFile` #TAG:from_tmx_tileset
+- `scripts/loaders/tileset_file.py:726` `_attributes_of(element, modelled: Sequence[str]) -> tuple[tuple[str, str], ...]` #TAG:_attributes_of
+- `scripts/loaders/tileset_file.py:731` `from_tmx_tileset(element, *, dropped: list[str] | None=None, collision: str='') -> TilesetFile` #TAG:from_tmx_tileset
   - One tmx `<tileset>` element as a TilesetFile.
-- `scripts/loaders/tileset_file.py:864` `_posix(path: str) -> str` #TAG:_posix
-- `scripts/loaders/tileset_file.py:868` `_same(left: str, right: str) -> bool` #TAG:_same
-- `scripts/loaders/tileset_file.py:873` `resolve_image(tileset: TilesetFile, tileset_path: str) -> str` #TAG:resolve_image
+- `scripts/loaders/tileset_file.py:842` `_posix(path: str) -> str` #TAG:_posix
+- `scripts/loaders/tileset_file.py:846` `_same(left: str, right: str) -> bool` #TAG:_same
+- `scripts/loaders/tileset_file.py:851` `resolve_image(tileset: TilesetFile, tileset_path: str) -> str` #TAG:resolve_image
   - Where a tileset's `image` reference points, absolutely.
-- `scripts/loaders/tileset_file.py:888` `_same_content(left: str, right: str) -> bool` #TAG:_same_content
+- `scripts/loaders/tileset_file.py:866` `_same_content(left: str, right: str) -> bool` #TAG:_same_content
   - Byte comparison, treating unreadable as DIFFERENT.
-- `scripts/loaders/tileset_file.py:901` `plan_intern(tileset: TilesetFile, *, tileset_path: str, managed_root: str, exists: Callable[[str], bool]=os.path.isfile, same_content: Callable[[str, str], bool] | None=None, name: str | None=None) -> InternPlan` #TAG:plan_intern
+- `scripts/loaders/tileset_file.py:879` `plan_intern(tileset: TilesetFile, *, tileset_path: str, managed_root: str, exists: Callable[[str], bool]=os.path.isfile, same_content: Callable[[str, str], bool] | None=None, name: str | None=None) -> InternPlan` #TAG:plan_intern
   - Decide what interning `tileset`'s image would do. Pure.
-- `scripts/loaders/tileset_file.py:947` `interned(tileset: TilesetFile, plan: InternPlan) -> TilesetFile` #TAG:interned
+- `scripts/loaders/tileset_file.py:923` `interned(tileset: TilesetFile, plan: InternPlan) -> TilesetFile` #TAG:interned
   - The tileset with its image reference rewritten. Pure; copies nothing.
-- `scripts/loaders/tileset_file.py:961` `apply_intern(plan: InternPlan) -> bool` #TAG:apply_intern
+- `scripts/loaders/tileset_file.py:937` `apply_intern(plan: InternPlan) -> bool` #TAG:apply_intern
   - Execute a plan. Returns True if a file was actually copied.
 
 ## Classes
 
 ### `class PyoneerBlitFormatError(PyoneerConfigError)` #TAG:PyoneerBlitFormatError
 
-`scripts/loaders/tileset_file.py:109`–`132`
+`scripts/loaders/tileset_file.py:97`–`120`
 
 > A .blitmap or .tileset is not the agreed format.
 
-- `scripts/loaders/tileset_file.py:119` `__init__(self, message: str, *, line: int | None=None, path: str | None=None, **context: Any)` #TAG:PyoneerBlitFormatError.__init__
+- `scripts/loaders/tileset_file.py:107` `__init__(self, message: str, *, line: int | None=None, path: str | None=None, **context: Any)` #TAG:PyoneerBlitFormatError.__init__
 
 ### `@dataclass(frozen=True) class Line` #TAG:Line
 
-`scripts/loaders/tileset_file.py:229`–`257`
+`scripts/loaders/tileset_file.py:216`–`244`
 
 > One significant line: where it was, how deep, and what it says.
 
-- `scripts/loaders/tileset_file.py:237` `word(self, *, path: str | None=None) -> tuple[str, str]` #TAG:Line.word
+- `scripts/loaders/tileset_file.py:224` `word(self, *, path: str | None=None) -> tuple[str, str]` #TAG:Line.word
   - Split `rest` into its first word and the remainder, unescaping
-- `scripts/loaders/tileset_file.py:243` `text(self, *, path: str | None=None) -> str` #TAG:Line.text
-- `scripts/loaders/tileset_file.py:246` `ints(self, count: int, *, path: str | None=None) -> list[int]` #TAG:Line.ints
+- `scripts/loaders/tileset_file.py:230` `text(self, *, path: str | None=None) -> str` #TAG:Line.text
+- `scripts/loaders/tileset_file.py:233` `ints(self, count: int, *, path: str | None=None) -> list[int]` #TAG:Line.ints
 
 ### `class Cursor` #TAG:Cursor
 
-`scripts/loaders/tileset_file.py:285`–`319`
+`scripts/loaders/tileset_file.py:272`–`306`
 
 > A position in a lexed file, with the block loop every reader wants.
 
-- `scripts/loaders/tileset_file.py:288` `__init__(self, lines: Sequence[Line], path: str | None=None)` #TAG:Cursor.__init__
-- `scripts/loaders/tileset_file.py:293` `peek(self) -> Line | None` #TAG:Cursor.peek
-- `scripts/loaders/tileset_file.py:296` `take(self) -> Line` #TAG:Cursor.take
-- `scripts/loaders/tileset_file.py:301` `fail(self, message: str, line: Line | None=None) -> 'PyoneerBlitFormatError'` #TAG:Cursor.fail
-- `scripts/loaders/tileset_file.py:306` `block(self, depth: int) -> Iterable[Line]` #TAG:Cursor.block
+- `scripts/loaders/tileset_file.py:275` `__init__(self, lines: Sequence[Line], path: str | None=None)` #TAG:Cursor.__init__
+- `scripts/loaders/tileset_file.py:280` `peek(self) -> Line | None` #TAG:Cursor.peek
+- `scripts/loaders/tileset_file.py:283` `take(self) -> Line` #TAG:Cursor.take
+- `scripts/loaders/tileset_file.py:288` `fail(self, message: str, line: Line | None=None) -> 'PyoneerBlitFormatError'` #TAG:Cursor.fail
+- `scripts/loaders/tileset_file.py:293` `block(self, depth: int) -> Iterable[Line]` #TAG:Cursor.block
   - Yield every line at exactly `depth`, stopping at the first
 
 ### `@dataclass(frozen=True) class Property` #TAG:Property
 
-`scripts/loaders/tileset_file.py:342`–`390`
+`scripts/loaders/tileset_file.py:329`–`377`
 
 > One custom property, kept as it sits on disk.
 
-- `scripts/loaders/tileset_file.py:355` `__post_init__(self) -> None` #TAG:Property.__post_init__
-- `scripts/loaders/tileset_file.py:369` `@property value(self) -> Any` #TAG:Property.value
+- `scripts/loaders/tileset_file.py:342` `__post_init__(self) -> None` #TAG:Property.__post_init__
+- `scripts/loaders/tileset_file.py:356` `@property value(self) -> Any` #TAG:Property.value
   - The typed value, cast by the engine's own property caster.
-- `scripts/loaders/tileset_file.py:373` `render(self, depth: int=0) -> str` #TAG:Property.render
-- `scripts/loaders/tileset_file.py:379` `@classmethod read(cls, line: Line, cursor: Cursor) -> 'Property'` #TAG:Property.read
+- `scripts/loaders/tileset_file.py:360` `render(self, depth: int=0) -> str` #TAG:Property.render
+- `scripts/loaders/tileset_file.py:366` `@classmethod read(cls, line: Line, cursor: Cursor) -> 'Property'` #TAG:Property.read
 
 ### `@dataclass(frozen=True) class TileEntry` #TAG:TileEntry
 
-`scripts/loaders/tileset_file.py:423`–`442`
+`scripts/loaders/tileset_file.py:410`–`429`
 
 > Per-tile authored data: `<tile id=...>` inside a tmx tileset.
 
-- `scripts/loaders/tileset_file.py:431` `__post_init__(self) -> None` #TAG:TileEntry.__post_init__
-- `scripts/loaders/tileset_file.py:435` `render(self, depth: int=0) -> list[str]` #TAG:TileEntry.render
+- `scripts/loaders/tileset_file.py:418` `__post_init__(self) -> None` #TAG:TileEntry.__post_init__
+- `scripts/loaders/tileset_file.py:422` `render(self, depth: int=0) -> list[str]` #TAG:TileEntry.render
 
 ### `@dataclass(frozen=True) class TilesetFile` #TAG:TilesetFile
 
-`scripts/loaders/tileset_file.py:446`–`657`
+`scripts/loaders/tileset_file.py:433`–`638`
 
 > One tileset: the image, the grid over it, and what its tiles mean.
 
-- `scripts/loaders/tileset_file.py:494` `__post_init__(self) -> None` #TAG:TilesetFile.__post_init__
-- `scripts/loaders/tileset_file.py:529` `@property rows(self) -> int` #TAG:TilesetFile.rows
+- `scripts/loaders/tileset_file.py:475` `__post_init__(self) -> None` #TAG:TilesetFile.__post_init__
+- `scripts/loaders/tileset_file.py:510` `@property rows(self) -> int` #TAG:TilesetFile.rows
   - Rows the declared tile count occupies. 0 when columns is unknown.
-- `scripts/loaders/tileset_file.py:536` `@property measured(self) -> tuple[int, int, int]` #TAG:TilesetFile.measured
+- `scripts/loaders/tileset_file.py:517` `@property measured(self) -> tuple[int, int, int]` #TAG:TilesetFile.measured
   - (columns, rows, tiles) the IMAGE can actually hold.
-- `scripts/loaders/tileset_file.py:549` `@property last_local_id(self) -> int` #TAG:TilesetFile.last_local_id
-- `scripts/loaders/tileset_file.py:552` `tile(self, tile_id: int) -> TileEntry | None` #TAG:TilesetFile.tile
-- `scripts/loaders/tileset_file.py:559` `render(self) -> str` #TAG:TilesetFile.render
+- `scripts/loaders/tileset_file.py:530` `@property last_local_id(self) -> int` #TAG:TilesetFile.last_local_id
+- `scripts/loaders/tileset_file.py:533` `tile(self, tile_id: int) -> TileEntry | None` #TAG:TilesetFile.tile
+- `scripts/loaders/tileset_file.py:540` `render(self) -> str` #TAG:TilesetFile.render
   - The file, as a string. Always ends in a newline.
-- `scripts/loaders/tileset_file.py:587` `@classmethod parse(cls, text: str, *, path: str | None=None) -> 'TilesetFile'` #TAG:TilesetFile.parse
-- `scripts/loaders/tileset_file.py:632` `@classmethod load(cls, path: str) -> 'TilesetFile'` #TAG:TilesetFile.load
-- `scripts/loaders/tileset_file.py:636` `save(self, path: str) -> str` #TAG:TilesetFile.save
+- `scripts/loaders/tileset_file.py:568` `@classmethod parse(cls, text: str, *, path: str | None=None) -> 'TilesetFile'` #TAG:TilesetFile.parse
+- `scripts/loaders/tileset_file.py:613` `@classmethod load(cls, path: str) -> 'TilesetFile'` #TAG:TilesetFile.load
+- `scripts/loaders/tileset_file.py:617` `save(self, path: str) -> str` #TAG:TilesetFile.save
   - Write it. newline='' so the bytes are the bytes on every platform.
-- `scripts/loaders/tileset_file.py:652` `__str__(self) -> str` #TAG:TilesetFile.__str__
-- `scripts/loaders/tileset_file.py:655` `__repr__(self) -> str` #TAG:TilesetFile.__repr__
+- `scripts/loaders/tileset_file.py:633` `__str__(self) -> str` #TAG:TilesetFile.__str__
+- `scripts/loaders/tileset_file.py:636` `__repr__(self) -> str` #TAG:TilesetFile.__repr__
 
 ### `@dataclass(frozen=True) class InternPlan` #TAG:InternPlan
 
-`scripts/loaders/tileset_file.py:830`–`861`
+`scripts/loaders/tileset_file.py:810`–`839`
 
 > What interning one image WOULD do. Computing this touches nothing.
 
-- `scripts/loaders/tileset_file.py:851` `@property copies(self) -> bool` #TAG:InternPlan.copies
-- `scripts/loaders/tileset_file.py:855` `@property safe(self) -> bool` #TAG:InternPlan.safe
+- `scripts/loaders/tileset_file.py:829` `@property copies(self) -> bool` #TAG:InternPlan.copies
+- `scripts/loaders/tileset_file.py:833` `@property safe(self) -> bool` #TAG:InternPlan.safe
   - May the tileset's reference be rewritten to `reference`?
-- `scripts/loaders/tileset_file.py:859` `__repr__(self) -> str` #TAG:InternPlan.__repr__
+- `scripts/loaders/tileset_file.py:837` `__repr__(self) -> str` #TAG:InternPlan.__repr__

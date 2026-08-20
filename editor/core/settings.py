@@ -121,11 +121,10 @@ class EditorSettings:
                 number = int(raw)
             except (TypeError, ValueError):
                 return setting.default
-            # The `choices` guard used to live only on the str branch below,
-            # so an int setting validated NOTHING: measured, a stored 0 came
-            # straight back as 0, and 0 is a ZeroDivisionError in the code
-            # that divides a pixel by a cell size. A fallback that can never
-            # fire is not a fallback.
+            # An int setting is validated against `choices` here, not only on
+            # the str branch below: a stored 0 would otherwise come straight
+            # back, and 0 is a ZeroDivisionError in the code that divides a
+            # pixel by a cell size.
             if setting.choices and str(number) not in [c for c, _l in setting.choices]:
                 return setting.default
             return number

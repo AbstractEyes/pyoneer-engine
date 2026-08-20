@@ -9,16 +9,12 @@ code, and that a reader arriving cold can be routed by it.
 
 WHY A DOCS CHECK IS NOT CEREMONY
 --------------------------------
-Every defect this file guards has already been paid for here. `README.md` still
-states three shipped subsystems as missing. `docs/BEHAVIORS.md` -- the repo's
-GENERATED document -- ships an example naming a behavior token that does not
-exist, which makes a map raise at load, because its preamble is hand-written
-prose living inside the generator: generation guarantees the file matches the
-generator, never that the generator matches the code. Nine documentation sites
-stated the opposite of a shipped wire in one review pass, because nine sites
-existed. A document that lies costs more than one that is missing: a missing
-document sends a reader to the source, a lying one sends them to write a `.tmx`
-that raises.
+A document that lies costs more than one that is missing: a missing document
+sends a reader to the source, a lying one sends them to write a `.tmx` that
+raises. Generation alone does not save a document either -- a generated file
+is guaranteed to match its GENERATOR, never to match the code, which is how
+`docs/BEHAVIORS.md`'s hand-written preamble can name a behavior token that
+does not exist.
 
 WHAT IS ASSERTED
 ----------------
@@ -50,19 +46,11 @@ WHAT IS ASSERTED
 
 WHY AN ANCHOR IS A #TAG AND NOT A LINE NUMBER
 ---------------------------------------------
-Rule 5 used to read `path.py:LINE :: quoted text`, and it was the strongest
-assertion in this file until it started failing for a reason that had nothing
-to do with documentation. Measured one hour before this was written: a
-five-line docstring edit turned this check red with
-
-    game_entity.py:236 no longer contains 'if field is None or bit is None'
-    -- it moved to line 241
-
-The anchor was not wrong, the document was not stale, and the documented fact
-had not changed. A line number is an address invalidated by every edit above
-it. A `#TAG:` is an address that survives one, because the checker re-derives
-the line from the AST on every run. Rule 5 keeps the proving and changes the
-address; rule 4 keeps the old form alive only as a pinned, shrinking debt.
+A line number is an address invalidated by every edit above it, so a correct
+anchor on a current document goes red when a docstring five rows up grows a
+line. A `#TAG:` survives that, because the checker re-derives the line from
+the AST on every run. Rule 5 keeps the proving and changes the address; rule 4
+keeps the old form alive only as a pinned, shrinking debt.
 
 THE ANTI-DRIFT POSITION THIS FILE TAKES
 ---------------------------------------
@@ -166,18 +154,15 @@ FOREIGN_GENERATED = {
 # line numbers cannot rot -- an address is only fragile when a human has to
 # maintain it.
 #
-# Paid off on 2026-08-16 at `d8c303f`, and the empty dict is the strongest
-# form this rule can take: every bare `file.py:LINE` in a live document is now
-# a failure, with no exceptions to argue about. `docs/DIAGNOSE.md`'s four
-# became `#TAG:GameEntity.allowed_move`, `#TAG:GameEntitySimple.__init__`,
-# `#TAG:LAYER_NAME_ALIASES` and `#TAG:GameAnimationHandler.__init__`;
-# `docs/NEXT.md`'s seven went to `docs/history/NEXT_ce66ce5.md` with the
-# ce66ce5-era ranked list they belonged to, where an L3 archive's numbers are
-# history and exempt on purpose.
+# The empty dict is the strongest form this rule can take: every bare
+# `file.py:LINE` in a live document is a failure, with no exception left to
+# argue about. A converted anchor reads as an address instead:
+# `#TAG:GameEntity.allowed_move`, `#TAG:GameEntitySimple.__init__`,
+# `#TAG:LAYER_NAME_ALIASES`, `#TAG:GameAnimationHandler.__init__`.
 LINE_ANCHOR_DEBT: dict[str, int] = {}
 
-# Text that is KNOWN WRONG in a document this pass may not edit, pinned so it
-# cannot get worse and cannot be forgotten. Each entry fails in BOTH
+# Text that is KNOWN WRONG in a document this file does not generate, pinned
+# so it cannot get worse and cannot be forgotten. Each entry fails in BOTH
 # directions: if the text disappears the pin is stale and must be deleted in
 # the same change that fixed the defect; if new bad text appears it is not
 # pinned and rule 6 catches it.
@@ -479,10 +464,10 @@ expect_empty("every document under docs/history/ is an L3 archive",
 expect_empty("every L3 archive lives under docs/history/",
              [rel for rel in ARCHIVE if not rel.startswith(ARCHIVE_DIR)])
 # ...and the walk really descends into it. Both rules above are satisfied
-# VACUOUSLY by a classifier that never looks inside `docs/history/` -- which is
-# exactly what the old `os.listdir(DOCS)` did, and is how filing a document
-# under history/ could have become a way to exempt it from every rule in this
-# file rather than a way to date it. Enumerated by glob rather than by
+# VACUOUSLY by a classifier that never looks inside `docs/history/` -- a
+# non-recursive listing -- which would make filing a document there a way to
+# exempt it from every rule in this file rather than a way to date it.
+# Enumerated by glob rather than by
 # `doc_files()` on purpose: an assertion that asks the walker whether it walked
 # proves nothing.
 import glob as _glob                                                # noqa: E402
@@ -609,10 +594,9 @@ for rel in LIVE:
                               f"(only {len(lines_of(target))} lines)")
 expect_empty("no live document quotes a line past the end of its file", stale_refs)
 
-# The inventory, both directions. `ref_count >= 8` used to live here and meant
-# "documents still quote source lines" -- which is now the thing being removed,
-# so an assertion that DEMANDED it would be an assertion against the point of
-# the change.
+# The inventory, both directions -- but nothing here DEMANDS a minimum number
+# of line references: source-line quoting is the thing being removed, so an
+# assertion insisting some survive would be an assertion against the point.
 observed_debt = {}
 for rel in LIVE:
     if rel in FOREIGN_GENERATED or rel in GENERATED:
@@ -765,11 +749,9 @@ expect_empty("every behavior token a live document declares is registered "
 # THE SOWN TAGS, BOTH DIRECTIONS.
 #
 # A `#TAG:` comment in a source file is an ADDRESS, and an address nothing
-# validates is the line-number problem wearing a new hat. The whole pass
-# exists because `game_entity.py:236` stopped meaning what it said when five
-# lines were inserted above it; a tag that names a behavior which has since
-# been renamed fails exactly the same way, only silently -- the grep the docs
-# teach returns zero hits and the reader concludes the thing does not exist.
+# validates is the line-number problem wearing a new hat. A tag naming a
+# behavior that has since been renamed fails silently: the grep the docs teach
+# returns zero hits and the reader concludes the thing does not exist.
 #
 # So the sown behavior tags and the registry must agree as SETS. Both
 # directions matter and they catch different mistakes:

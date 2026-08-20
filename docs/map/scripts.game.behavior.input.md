@@ -5,7 +5,7 @@
 
 > Who is driving, and what they asked for: the input behavior and its intent.
 
-`scripts.game.behavior.input` · 315 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.behavior.input` · 274 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,45 +13,45 @@
 
 ## Module constants
 
-- `scripts/game/behavior/input.py:126` `NO_INTENT` #TAG:NO_INTENT
-- `scripts/game/behavior/input.py:277` `PLAYER_INPUT` #TAG:PLAYER_INPUT
+- `scripts/game/behavior/input.py:99` `NO_INTENT` #TAG:NO_INTENT
+- `scripts/game/behavior/input.py:236` `PLAYER_INPUT` #TAG:PLAYER_INPUT
 
 ## Functions
 
-- `scripts/game/behavior/input.py:135` `intent_of(entity: Any) -> MoveIntent` #TAG:intent_of
+- `scripts/game/behavior/input.py:108` `intent_of(entity: Any) -> MoveIntent` #TAG:intent_of
   - The entity's own intent, or the shared inert one.
 
 ## Classes
 
 ### `class MoveIntent` #TAG:MoveIntent
 
-`scripts/game/behavior/input.py:53`–`123`
+`scripts/game/behavior/input.py:37`–`96`
 
 > What an entity has been ASKED to do this frame, in device-free terms.
 
-- `scripts/game/behavior/input.py:72` `__init__(self, locked: bool=False)` #TAG:MoveIntent.__init__
-- `scripts/game/behavior/input.py:77` `__setattr__(self, name: str, value: Any) -> None` #TAG:MoveIntent.__setattr__
+- `scripts/game/behavior/input.py:49` `__init__(self, locked: bool=False)` #TAG:MoveIntent.__init__
+- `scripts/game/behavior/input.py:54` `__setattr__(self, name: str, value: Any) -> None` #TAG:MoveIntent.__setattr__
   - Refuse every write once locked. `NO_INTENT` is the only locked one.
-- `scripts/game/behavior/input.py:93` `clear(self) -> None` #TAG:MoveIntent.clear
+- `scripts/game/behavior/input.py:69` `clear(self) -> None` #TAG:MoveIntent.clear
   - Back to "nothing is being asked for". Called at the top of a poll.
-- `scripts/game/behavior/input.py:103` `@property x(self) -> int` #TAG:MoveIntent.x
+- `scripts/game/behavior/input.py:79` `@property x(self) -> int` #TAG:MoveIntent.x
   - -1, 0 or +1. Both horizontal verbs held cancel, as a stick would.
-- `scripts/game/behavior/input.py:117` `@property moving(self) -> bool` #TAG:MoveIntent.moving
-- `scripts/game/behavior/input.py:120` `__repr__(self) -> str` #TAG:MoveIntent.__repr__
+- `scripts/game/behavior/input.py:90` `@property moving(self) -> bool` #TAG:MoveIntent.moving
+- `scripts/game/behavior/input.py:93` `__repr__(self) -> str` #TAG:MoveIntent.__repr__
 
 ### `class GamePlayerInputBehavior(EntityBehavior)` #TAG:GamePlayerInputBehavior
 
-`scripts/game/behavior/input.py:146`–`274`
+`scripts/game/behavior/input.py:118`–`233`
 
 > Poll the bound `InputActionManager` and publish this frame's intent.
 
-- `scripts/game/behavior/input.py:162` `__init__(self, up_verb: str='up', down_verb: str='down', left_verb: str='left', right_verb: str='right', sprint_verb: str='sprint', jump_verb: str='')` #TAG:GamePlayerInputBehavior.__init__
-- `scripts/game/behavior/input.py:179` `@property held_verbs(self) -> tuple[str, ...]` #TAG:GamePlayerInputBehavior.held_verbs
+- `scripts/game/behavior/input.py:131` `__init__(self, up_verb: str='up', down_verb: str='down', left_verb: str='left', right_verb: str='right', sprint_verb: str='sprint', jump_verb: str='')` #TAG:GamePlayerInputBehavior.__init__
+- `scripts/game/behavior/input.py:148` `@property held_verbs(self) -> tuple[str, ...]` #TAG:GamePlayerInputBehavior.held_verbs
   - The verbs polled with `held()`, in the order they are polled.
-- `scripts/game/behavior/input.py:185` `@property edge_verbs(self) -> tuple[str, ...]` #TAG:GamePlayerInputBehavior.edge_verbs
+- `scripts/game/behavior/input.py:154` `@property edge_verbs(self) -> tuple[str, ...]` #TAG:GamePlayerInputBehavior.edge_verbs
   - The verbs polled with `pressed()` -- a true rising edge.
-- `scripts/game/behavior/input.py:191` `attach(self, entity: Any) -> None` #TAG:GamePlayerInputBehavior.attach
+- `scripts/game/behavior/input.py:160` `attach(self, entity: Any) -> None` #TAG:GamePlayerInputBehavior.attach
   - Allocate the intent, and prove every declared verb is bound.
-- `scripts/game/behavior/input.py:219` `detach(self, entity: Any) -> None` #TAG:GamePlayerInputBehavior.detach
-  - Hand back the inert intent, so a movement sibling reads zeroes.
-- `scripts/game/behavior/input.py:229` `update(self, entity: Any, event: Any) -> None` #TAG:GamePlayerInputBehavior.update
+- `scripts/game/behavior/input.py:187` `detach(self, entity: Any) -> None` #TAG:GamePlayerInputBehavior.detach
+  - Hand back a cleared intent, so a movement sibling reads zeroes.
+- `scripts/game/behavior/input.py:196` `update(self, entity: Any, event: Any) -> None` #TAG:GamePlayerInputBehavior.update

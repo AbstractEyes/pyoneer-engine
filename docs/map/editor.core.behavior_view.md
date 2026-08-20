@@ -5,7 +5,7 @@
 
 > What a map object COMPOSES, as data: the behavior list, its parameters,
 
-`editor.core.behavior_view` · 739 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.behavior_view` · 710 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,55 +13,55 @@
 
 ## Module constants
 
-- `editor/core/behavior_view.py:75` `STATE_PREFIX` #TAG:STATE_PREFIX
+- `editor/core/behavior_view.py:64` `STATE_PREFIX` #TAG:STATE_PREFIX
 
 ## Functions
 
-- `editor/core/behavior_view.py:131` `object_at(session, scope: Scope)` #TAG:object_at
+- `editor/core/behavior_view.py:119` `object_at(session, scope: Scope)` #TAG:object_at
   - `(object_layer, object)` for an object scope, or `(None, None)`.
-- `editor/core/behavior_view.py:154` `read_tokens(obj: Any) -> tuple[str, ...]` #TAG:read_tokens
+- `editor/core/behavior_view.py:141` `read_tokens(obj: Any) -> tuple[str, ...]` #TAG:read_tokens
   - The behavior tokens this object declares, exactly as authored.
-- `editor/core/behavior_view.py:167` `is_vocabulary(key: str) -> bool` #TAG:is_vocabulary
+- `editor/core/behavior_view.py:154` `is_vocabulary(key: str) -> bool` #TAG:is_vocabulary
   - Whether `key` is a tmx property this panel owns.
-- `editor/core/behavior_view.py:190` `refusals(tokens: Sequence[str], registry: Mapping[str, BehaviorSpec] | None=None) -> tuple[str, ...]` #TAG:refusals
+- `editor/core/behavior_view.py:177` `refusals(tokens: Sequence[str], registry: Mapping[str, BehaviorSpec] | None=None) -> tuple[str, ...]` #TAG:refusals
   - Every reason the engine would refuse this list, in the engine's words.
-- `editor/core/behavior_view.py:236` `unknown_axes(registry: Mapping[str, BehaviorSpec] | None=None) -> tuple[tuple[str, str], ...]` #TAG:unknown_axes
+- `editor/core/behavior_view.py:217` `unknown_axes(registry: Mapping[str, BehaviorSpec] | None=None) -> tuple[tuple[str, str], ...]` #TAG:unknown_axes
   - (behavior, write) for every `state.<axis>` naming an axis that is not one.
-- `editor/core/behavior_view.py:261` `describe_behaviors(session, scope: Scope, *, registry: Mapping[str, BehaviorSpec] | None=None, on_error: Callable[[str], None] | None=None) -> Inspection` #TAG:describe_behaviors
+- `editor/core/behavior_view.py:242` `describe_behaviors(session, scope: Scope, *, registry: Mapping[str, BehaviorSpec] | None=None, on_error: Callable[[str], None] | None=None) -> Inspection` #TAG:describe_behaviors
   - What the behavior panel shows for one scope. Never raises.
-- `editor/core/behavior_view.py:287` `_describe(session, scope: Scope, obj: Any, registry: Mapping[str, BehaviorSpec] | None, on_error: Callable[[str], None]) -> Inspection` #TAG:behavior_view._describe
-- `editor/core/behavior_view.py:317` `_checklist(scope: Scope, tokens: Sequence[str], table: Mapping[str, BehaviorSpec], genre: str, standing: Sequence[str], registry: Mapping[str, BehaviorSpec] | None, on_error: Callable[[str], None]) -> Section` #TAG:_checklist
+- `editor/core/behavior_view.py:268` `_describe(session, scope: Scope, obj: Any, registry: Mapping[str, BehaviorSpec] | None, on_error: Callable[[str], None]) -> Inspection` #TAG:behavior_view._describe
+- `editor/core/behavior_view.py:298` `_checklist(scope: Scope, tokens: Sequence[str], table: Mapping[str, BehaviorSpec], genre: str, standing: Sequence[str], registry: Mapping[str, BehaviorSpec] | None, on_error: Callable[[str], None]) -> Section` #TAG:_checklist
   - One tickable row per registered token, plus any the registry lacks.
-- `editor/core/behavior_view.py:349` `_token_label(spec: BehaviorSpec, present: bool, genre: str, tokens: Sequence[str]) -> str` #TAG:_token_label
-- `editor/core/behavior_view.py:365` `_token_doc(spec: BehaviorSpec, genre: str) -> str` #TAG:_token_doc
-- `editor/core/behavior_view.py:383` `_toggle_block(tokens: Sequence[str], spec: BehaviorSpec, present: bool, standing: Sequence[str], registry: Mapping[str, BehaviorSpec] | None) -> str` #TAG:_toggle_block
+- `editor/core/behavior_view.py:330` `_token_label(spec: BehaviorSpec, present: bool, genre: str, tokens: Sequence[str]) -> str` #TAG:_token_label
+- `editor/core/behavior_view.py:346` `_token_doc(spec: BehaviorSpec, genre: str) -> str` #TAG:_token_doc
+- `editor/core/behavior_view.py:364` `_toggle_block(tokens: Sequence[str], spec: BehaviorSpec, present: bool, standing: Sequence[str], registry: Mapping[str, BehaviorSpec] | None) -> str` #TAG:_toggle_block
   - Why this row cannot be ticked, or empty. Engine refusals ONLY.
-- `editor/core/behavior_view.py:412` `_toggle_emitter(scope: Scope, tokens: Sequence[str], token: str, present: bool, on_error: Callable[[str], None])` #TAG:_toggle_emitter
+- `editor/core/behavior_view.py:392` `_toggle_emitter(scope: Scope, tokens: Sequence[str], token: str, present: bool, on_error: Callable[[str], None])` #TAG:_toggle_emitter
   - Ticking or unticking one token, as one command over the whole list.
-- `editor/core/behavior_view.py:452` `_parameters(scope: Scope, tokens: Sequence[str], table: Mapping[str, BehaviorSpec], raw: Mapping[str, Any], on_error: Callable[[str], None]) -> Section` #TAG:_parameters
+- `editor/core/behavior_view.py:429` `_parameters(scope: Scope, tokens: Sequence[str], table: Mapping[str, BehaviorSpec], raw: Mapping[str, Any], on_error: Callable[[str], None]) -> Section` #TAG:_parameters
   - The union of the declared parameters of the TICKED tokens, and nothing else.
-- `editor/core/behavior_view.py:515` `_current(param: BehaviorParam, raw: Any) -> tuple[Any, str]` #TAG:_current
+- `editor/core/behavior_view.py:492` `_current(param: BehaviorParam, raw: Any) -> tuple[Any, str]` #TAG:_current
   - (what to show in the editor, what is wrong with the file), never raises.
-- `editor/core/behavior_view.py:535` `_param_doc(param: BehaviorParam, owners: Sequence[str], problem: str) -> str` #TAG:_param_doc
-- `editor/core/behavior_view.py:551` `_param_emitter(scope: Scope, param: BehaviorParam, on_error: Callable[[str], None])` #TAG:_param_emitter
+- `editor/core/behavior_view.py:510` `_param_doc(param: BehaviorParam, owners: Sequence[str], problem: str) -> str` #TAG:_param_doc
+- `editor/core/behavior_view.py:526` `_param_emitter(scope: Scope, param: BehaviorParam, on_error: Callable[[str], None])` #TAG:_param_emitter
   - Editing one parameter, through the ordinary property verb.
-- `editor/core/behavior_view.py:572` `_orphans(scope: Scope, tokens: Sequence[str], table: Mapping[str, BehaviorSpec], raw: Mapping[str, Any]) -> list[Field]` #TAG:_orphans
+- `editor/core/behavior_view.py:547` `_orphans(scope: Scope, tokens: Sequence[str], table: Mapping[str, BehaviorSpec], raw: Mapping[str, Any]) -> list[Field]` #TAG:_orphans
   - `pyoneer_param_*` properties no ticked behavior declares.
-- `editor/core/behavior_view.py:608` `_axes(tokens: Sequence[str], table: Mapping[str, BehaviorSpec]) -> Section` #TAG:_axes
+- `editor/core/behavior_view.py:583` `_axes(tokens: Sequence[str], table: Mapping[str, BehaviorSpec]) -> Section` #TAG:_axes
   - Which axes of the shared `BodyState` this composition writes, and by whom.
-- `editor/core/behavior_view.py:655` `_problems(tokens: Sequence[str], table: Mapping[str, BehaviorSpec], raw: Mapping[str, Any], standing: Sequence[str]) -> Section | None` #TAG:_problems
+- `editor/core/behavior_view.py:630` `_problems(tokens: Sequence[str], table: Mapping[str, BehaviorSpec], raw: Mapping[str, Any], standing: Sequence[str]) -> Section | None` #TAG:_problems
   - What the engine would say at load, said here instead. None when clean.
-- `editor/core/behavior_view.py:687` `_declared_params(tokens: Sequence[str], table: Mapping[str, BehaviorSpec]) -> Iterable[BehaviorParam]` #TAG:_declared_params
-- `editor/core/behavior_view.py:704` `strip_vocabulary(inspection: Inspection) -> Inspection` #TAG:strip_vocabulary
+- `editor/core/behavior_view.py:662` `_declared_params(tokens: Sequence[str], table: Mapping[str, BehaviorSpec]) -> Iterable[BehaviorParam]` #TAG:_declared_params
+- `editor/core/behavior_view.py:679` `strip_vocabulary(inspection: Inspection) -> Inspection` #TAG:strip_vocabulary
   - Take the behavior vocabulary out of a generic Properties section.
 
 ## Classes
 
 ### `class _Inert(EntityBehavior)` #TAG:_Inert
 
-`editor/core/behavior_view.py:112`–`124`
+`editor/core/behavior_view.py:100`–`112`
 
 > A stand-in that carries a real spec and does nothing.
 
-- `editor/core/behavior_view.py:123` `update(self, entity: Any, event: Any) -> None` #TAG:_Inert.update
+- `editor/core/behavior_view.py:111` `update(self, entity: Any, event: Any) -> None` #TAG:_Inert.update
   - Never called: nothing drives these.

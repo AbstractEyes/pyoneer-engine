@@ -2,26 +2,21 @@
 
 WHY THIS EXISTS
 ---------------
-pytmx is read-only. It has no writer at all, and it is lossy by design: it
-hands back a runtime view (surfaces, resolved gids, flattened layers) with no
-memory of how the file on disk was punctuated. That is exactly right for
-rendering and exactly wrong for editing.
+pytmx is read-only and lossy by design: it hands back a runtime view
+(surfaces, resolved gids, flattened layers) with no memory of how the file on
+disk was punctuated. That is right for rendering and wrong for editing, since
+a human editing a map in Tiled and a program editing the same map only
+collaborate while a programmatic write is a MINIMAL DIFF -- a writer that
+reflows the document makes every later `git diff` all noise.
 
-The long-term goal of this project is that a human edits maps in Tiled while
-an AI edits the same maps programmatically. That only works if a
-programmatic write is a MINIMAL DIFF. A writer that reflows the document --
-re-indents it, reorders attributes, rewrites the XML declaration, converts
-CRLF to LF -- destroys that collaboration after the very first AI edit,
-because every later `git diff` a human reads is 100% noise and 0% signal.
-
-So the contract here is stronger than "produces valid TMX":
+So the contract is stronger than "produces valid TMX":
 
     load(path) -> save(path)  is BYTE IDENTICAL when nothing was changed
     set_tile(x, y, gid)       changes the bytes of exactly one csv token
     add_object + remove_object returns the original bytes
 
-That is measured, not asserted by vibes: tools/check_tmx_roundtrip.py does
-the byte comparison against the shipped 133,940-byte data/maps/test.tmx.
+`tools/check_tmx_roundtrip.py` byte-compares that against the shipped
+133,940-byte data/maps/test.tmx.
 
 WHAT THE SHIPPED FILE ACTUALLY LOOKS LIKE
 -----------------------------------------
@@ -60,28 +55,22 @@ PROPERTY TYPES
 --------------
 Tiled writes `type="int"` / `"bool"` / `"float"` / `"color"` / `"file"` /
 `"object"` on custom properties and OMITS the attribute for plain strings.
-Without that attribute a `depth` of 50 reads back as the string '50', and
-`'50' * 2` is '5050' rather than 100.
+Without it a `depth` of 50 reads back as the string '50', and `'50' * 2` is
+'5050' rather than 100.
 
-MEASURED, because the assumption is easy to get wrong: the pytmx installed
-here (3.32) DOES honour the type attribute on read -- `parse_properties`
-looks the type up in `prop_type` and casts. So the read side is not broken
-today, and check_tmx_roundtrip asserts that pytmx and this module agree on
-the same file rather than pretending otherwise.
+pytmx (3.32) honours the type attribute on READ, and `check_tmx_roundtrip`
+asserts that pytmx and this module agree on the same file. What pytmx has no
+equivalent for is the WRITE side: nothing in it can emit `type="int"`, and a
+property written without one is silently downgraded to a string for every
+future reader. `format_property` checks `bool` before `int`, because in
+Python `bool` IS an `int` and `type="int" value="True"` is a file Tiled
+rejects.
 
-What has no pytmx equivalent is the WRITE side. Nothing in pytmx can emit
-`type="int"`, and a property written without it is silently downgraded to a
-string for every future reader, pytmx included. `format_property` is what
-stops a programmatic spawn point from poisoning its own properties, and it
-checks `bool` before `int` because in Python `bool` IS an `int` and
-`type="int" value="True"` is a file Tiled rejects.
-
-One real pytmx gap this module does not share: pytmx reads a property's
-value as `subnode.get("value") or subnode.text`, then casts
-`cls(subnode.get("value"))`. A multi-line property (Tiled moves those into
-the element body and drops the `value` attribute) therefore raises inside
-pytmx if it is typed, and reads as None if its value is empty. MapProperties
-reads the body text instead.
+One pytmx gap this module does not share: it reads a property's value as
+`subnode.get("value") or subnode.text` and then casts
+`cls(subnode.get("value"))`, so a MULTI-LINE property -- which Tiled moves
+into the element body, dropping the `value` attribute -- raises there if it
+is typed. `MapProperties` reads the body text instead.
 """
 from __future__ import annotations
 
@@ -427,13 +416,10 @@ class TileLayer:
 
         The serializer joins values with commas and the reader is
         `re.compile(r"\\d+")`, which treats a leading '-' as a SEPARATOR. So a
-        negative gid does not fail, it silently comes back as its absolute
-        value: fill(rect, -5) wrote '-5,-5' and re-read as 5, with the tile
-        count still correct and nothing warning. A plausible wrong number is
-        the worst possible outcome for a map file, so this is a hard error.
-
-        Shared by set_tile and fill -- the guard existed on set_tile only,
-        which is how fill got to corrupt silently.
+        negative gid does not fail: `fill(rect, -5)` writes '-5,-5' and reads
+        back as 5, with the tile count still correct and nothing warning. A
+        plausible wrong number is the worst outcome for a map file, so this is
+        a hard error, and every writer goes through it.
         """
         gid = int(gid)
         if gid < 0:
@@ -722,11 +708,9 @@ class ObjectLayer:
 # Tilesets
 #
 # A tileset is the only thing in a .tmx that OTHER elements depend on
-# numerically: every csv token and every `<object gid=...>` in the document
-# is an index into the concatenated firstgid ranges. So the tileset methods
-# below are the one place in this module where a structurally correct edit
-# can still be semantically catastrophic, and they are written defensively
-# because of it.
+# numerically: every csv token and every `<object gid=...>` is an index into
+# the concatenated firstgid ranges. So a structurally correct edit here can
+# still be semantically catastrophic, and these methods are defensive.
 # ---------------------------------------------------------------------------
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -740,17 +724,12 @@ _GID_VALUE_MASK = 0x1FFFFFFF
 def image_size(path: str) -> tuple[int, int]:
     """(width, height) of a PNG, read from the 24 bytes of its IHDR header.
 
-    No decode, no pygame, no Qt. That last one is the point: this module
-    lives under `scripts/`, and `scripts/` may never import `editor/`
-    (tools/check_editor.py asserts the direction). PySide6's QImage would
-    answer this question, and it is the right tool on the EDITOR side for
-    the formats the engine never sees -- but reaching for it here would
-    make the engine depend on the editor to learn two integers that are
-    sitting in plain sight at a fixed offset.
+    No decode, no pygame, no Qt: this module is under `scripts/`, which may
+    never import `editor/`, and the two integers sit at a fixed offset.
 
-    Raises rather than guessing on a non-PNG, so a caller that supports
-    more formats can catch it and fall back instead of silently importing
-    a tileset with a fabricated tile count.
+    Raises rather than guessing on a non-PNG, so a caller that supports more
+    formats can catch it and fall back instead of importing a tileset with a
+    fabricated tile count.
     """
     try:
         with open(path, "rb") as handle:
@@ -816,17 +795,15 @@ def _int_attribute(element: ElementTree.Element, name: str, default: int) -> int
 class TilesetRef:
     """A read-only view of one `<tileset>` declaration.
 
-    Frozen and detached from the document on purpose: this is what
-    `tilesets()` hands out, and a caller that mutated it would be editing a
-    snapshot while believing it was editing the map. `element` is here for
-    the code inside this module that does need the live node.
+    Frozen and detached from the document: `tilesets()` hands these out, and a
+    caller that mutated one would be editing a snapshot. `element` is here for
+    the code inside this module that needs the live node.
 
     An EXTERNAL tileset (`<tileset firstgid="9" source="foo.tsx"/>`) has no
-    name, no image and no tile count in THIS file -- they all live in the
-    .tsx. Those fields therefore read as "" / 0 rather than being invented,
-    and `holds()` is correspondingly False for every gid. That is honest:
-    this document cannot answer the question without opening a second file,
-    and a second file is outside its byte-exactness contract.
+    name, image or tile count in THIS file -- they live in the .tsx -- so
+    those fields read as "" / 0 rather than being invented, and `holds()` is
+    False for every gid. Opening the second file is outside this document's
+    byte-exactness contract.
     """
 
     element: ElementTree.Element
@@ -858,12 +835,10 @@ class TilesetRef:
         no for an embedded one that omits `tilecount`, which is legal TMX
         that Tiled always writes but a hand edit may not.
 
-        This distinction is load-bearing. `holds()` returns False for an
-        unknown-extent tileset, and False is indistinguishable from "outside
-        this range" to a caller that does not ask. Every operation whose
-        CORRECTNESS depends on knowing the extent must check this and refuse
-        rather than act on a confident-sounding no -- see
-        `require_known_extents`.
+        Load-bearing: `holds()` returns False for an unknown-extent tileset,
+        which is indistinguishable from "outside this range" to a caller that
+        does not ask. Any operation whose CORRECTNESS depends on the extent
+        must check this and refuse -- see `require_known_extents`.
         """
         return self.tile_count > 0
 
@@ -1159,28 +1134,21 @@ class MapDocument:
 
         WHY THE DIMENSIONS ARE AN ARGUMENT.                #TAG:add_layer_dimensions
         A passability companion at `pyoneer_subcell="4"` is FOUR TIMES the
-        map's width and height, and this function hardcoded `self.width` /
-        `self.height`. So the format the engine reads was unreachable by any
-        editor action: every layer the editor could create was map-sized, and
-        a map-sized layer cannot carry a 4x mask.
+        map's width and height, so a map-sized layer cannot carry a 4x mask.
 
-        WHY `subcell` SIZES AND DECLARES IN ONE CALL. The two halves are one
-        fact. A layer that is 4x the map and does NOT say so is a layer
-        `companion_subcell` reads as 1x and refuses (it is larger than a 1x
-        companion may be); a layer that says 4 and is map-sized is the
-        shrunken case below. Either half alone is a map that does not load,
-        so making them separable would only be offering a way to write one.
-        The validation itself is `companion_subcell`'s -- the ENGINE's own
-        reader, called rather than mirrored, so what the editor may write is
-        by construction what the engine will read. A factor it refuses takes
-        the layer back out again and raises, rather than leaving a companion
-        behind that makes the map unloadable.
+        WHY `subcell` SIZES AND DECLARES IN ONE CALL. Either half alone is a
+        map that does not load: a layer 4x the map that does not SAY so is
+        refused by `companion_subcell` as oversized for a 1x companion, and a
+        layer that says 4 while map-sized is the shrunken case below. The
+        validation is `companion_subcell`'s -- the ENGINE's own reader, called
+        rather than mirrored -- and a factor it refuses takes the layer back
+        out again and raises, rather than leaving an unloadable companion
+        behind.
 
         Adding a layer does NOT make it render: the engine resolves a layer
         name to a depth through `scripts/core/depth.py`, and an unmapped name
-        draws nothing. `warn_content` says so rather than letting it be a
-        silent no-op, because that failure has already cost this project 39
-        authored tiles once.
+        draws nothing, so this `warn_content`s rather than being a silent
+        no-op.
         """
         if kind not in ("tile", "object"):
             raise PyoneerConfigError(
@@ -1257,13 +1225,10 @@ class MapDocument:
                      subcell: int | None) -> tuple[int, int]:
         """The dimensions a new tile layer is written at, checked.
 
-        A declared sub-cell factor and an explicit size are each allowed on
-        their own and are only allowed TOGETHER when they agree, because a
-        companion that declares a factor its dimensions do not support is an
-        authoring error rather than a rounding question. Measured before this
-        existed: a 32x32 field baked from an 8x8 layer's worth of data, no
-        exception and no warning -- fifteen sixteenths of the author's
-        collision simply absent from the map they were walking.
+        A declared sub-cell factor and an explicit size are each allowed
+        alone, and together only when they AGREE: a companion declaring a
+        factor its dimensions do not support bakes a field from a fraction of
+        the data, with no exception and no warning.
         """
         wanted_width = self.width if width is None else int(width)
         wanted_height = self.height if height is None else int(height)
@@ -1301,12 +1266,11 @@ class MapDocument:
         """Write `pyoneer_subcell` on a layer just created, and prove the
         engine will accept it.
 
-        `companion_subcell` is the reader that decides whether a map loads,
-        so it is also what decides whether this write is allowed -- one
-        validator, called, never a second copy of its rules. A factor it
-        refuses (a value the tile size does not divide, say) rolls the whole
-        layer back out before re-raising, because a half-written companion is
-        a map that raises at load and the author would have nothing to undo.
+        `companion_subcell` is the reader that decides whether a map loads, so
+        it also decides whether this write is allowed -- one validator,
+        called, never a second copy of its rules. A factor it refuses rolls
+        the whole layer back out before re-raising, since a half-written
+        companion is a map that raises at load with nothing to undo.
         """
         from scripts.core.collision_runtime import companion_subcell
         self.tile_layer(name).properties[subcell_property()] = int(subcell)
@@ -1567,16 +1531,13 @@ class MapDocument:
     def require_known_extents(self, operation: str) -> None:
         """Refuse an operation that cannot be done safely.
 
-        A tileset whose extent this document cannot see contributes 0 to
-        every range calculation, so `next_tileset_firstgid` would hand back
-        a gid that tileset already owns. pytmx resolves a gid by taking the
-        highest firstgid at or below it, so the new sheet would silently
-        win and every tile authored against the old one would repaint with
-        the wrong art -- the exact failure `remove_tileset` refuses to
-        cause, arrived at from the other direction.
-
-        Refusing is the only honest answer: the information is in a file
-        this document does not own.
+        A tileset whose extent this document cannot see contributes 0 to every
+        range calculation, so `next_tileset_firstgid` would hand back a gid
+        that tileset already owns. pytmx resolves a gid by taking the highest
+        firstgid at or below it, so the new sheet would silently win and every
+        tile authored against the old one would repaint with the wrong art.
+        The missing information lives in a file this document does not own,
+        so refusing is the only answer available.
         """
         unknown = [ref for ref in self.tilesets() if not ref.extent_known]
         if not unknown:
@@ -1675,22 +1636,18 @@ class MapDocument:
         columns/tilecount fall out of `tileset_geometry`. Pass any of them
         explicitly to override.
 
-        APPEND ONLY. `first_gid` defaults to `next_tileset_firstgid()`, and
-        an explicit value at or below an existing range is REFUSED rather
-        than accommodated. Inserting into the middle of the gid space is not
-        an indexing inconvenience, it is a whole-file rewrite: every later
-        tileset's firstgid moves up, and so does every csv token at or above
-        the insertion point and every `<object gid=...>`, with flip flags
-        masked off first. That destroys the minimal-diff contract this
-        module exists for, and it destroys the exact-inverse contract too --
-        the undo would have to carry a map-wide gid remap instead of a
-        serialized element. Document order does not have to match firstgid
-        order for any reader (pytmx sorts), so there is never a reason to
-        pay that price.
+        APPEND ONLY. `first_gid` defaults to `next_tileset_firstgid()`, and an
+        explicit value at or below an existing range is REFUSED. Inserting
+        into the middle of the gid space is a whole-file rewrite -- every
+        later tileset's firstgid moves up, and so does every csv token at or
+        above the insertion point and every `<object gid=...>`, flip flags
+        masked off first -- which breaks both the minimal-diff contract and
+        the exact-inverse one. Document order need not match firstgid order
+        for any reader, since pytmx sorts.
 
         EXTERNAL tilesets (`source="foo.tsx"`) are readable through
-        `tilesets()` but cannot be created here: a .tsx is a second file,
-        and this document's byte-exactness contract covers exactly one.
+        `tilesets()` but cannot be created here: a .tsx is a second file, and
+        this document's byte-exactness contract covers exactly one.
         """
         if not name:
             raise PyoneerConfigError("a tileset needs a name", source=self.path)
@@ -1834,11 +1791,10 @@ class MapDocument:
             if position:
                 siblings[position - 1].tail = separator
         else:
-            # We were inserted in front of something, so our tail is the
-            # separator that used to sit in front of it -- verbatim, not
-            # recomputed. Assigned unconditionally, including None, because
-            # a document written with no whitespace at all must come back
-            # with no whitespace at all.
+            # We were inserted in front of something, so our tail is that
+            # element's original leading separator -- verbatim, not
+            # recomputed. Assigned unconditionally, including None, because a
+            # document written with no whitespace must come back with none.
             element.tail = saved_prev_tail if position else saved_root_text
         self.root.text = saved_root_text
 
@@ -1859,20 +1815,16 @@ class MapDocument:
     def remove_tileset(self, key: str | int, *, force: bool = False) -> bool:
         """Remove a tileset by name or firstgid. False if it was not there.
 
-        Purely structural, and pointedly so: it does NOT renumber the
-        surviving tilesets and does NOT touch a single gid. The firstgid
-        hole it leaves behind is legal TMX and pytmx reads it without
-        complaint, whereas renumbering would rewrite the entire file and
-        make the inverse of this operation a map-wide gid remap instead of
-        a serialized element -- breaking the minimal-diff contract and the
-        exact-inverse contract in one move.
+        Purely structural: it does NOT renumber the surviving tilesets and
+        does NOT touch a single gid. The firstgid hole it leaves is legal TMX
+        that pytmx reads without complaint, while renumbering would rewrite
+        the whole file and make this operation's inverse a map-wide gid remap.
 
         What it will NOT do quietly is orphan tiles. A gid whose tileset has
-        vanished does not raise anywhere: pytmx's `get_tileset_from_gid`
-        sorts firstgids descending and returns the first one that is <= the
-        gid, so an orphan silently resolves to the tileset BELOW it and
-        paints the WRONG ART. That is worse than an error, so a tileset with
-        live references is refused, naming the layers and counts.
+        vanished raises nowhere: pytmx's `get_tileset_from_gid` sorts firstgids
+        descending and returns the first one <= the gid, so an orphan resolves
+        to the tileset BELOW it and paints the WRONG ART. A tileset with live
+        references is therefore refused, naming the layers and counts.
 
         `force=True` proceeds anyway, and exists for exactly one caller: a
         command that has already zeroed those gids in the same transaction
@@ -1935,14 +1887,12 @@ class MapDocument:
         firstgid is carried instead, for a caller that needs to name it in
         an inverse command).
 
-        The whitespace fields are the whole point, and they are the same
-        three `serialize_layer` carries. In ElementTree the whitespace
-        BEFORE an element is not the element's own: it lives in the previous
-        sibling's `tail`, or in `parent.text` when the element is first.
-        Removal overwrites both, so both have to be captured here or the
-        restored tileset comes back with a recomputed indent -- which in a
-        file that mixes tabs and spaces is wrong somewhere no matter what it
-        computes.
+        The whitespace fields are the point, and are the same three
+        `serialize_layer` carries. In ElementTree the whitespace BEFORE an
+        element is not the element's own: it lives in the previous sibling's
+        `tail`, or in `parent.text` when the element is first. Removal
+        overwrites both, so both are captured here -- a recomputed indent is
+        wrong somewhere in a file that mixes tabs and spaces.
         """
         element = self._tileset_element(key)
         if element is None:

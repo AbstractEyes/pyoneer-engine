@@ -210,16 +210,13 @@ def _version_key(text: str) -> tuple:
 def detect(*, refresh: bool = False) -> list[FoundIde]:
     """Every IDE we can find, best first. Nothing is launched.
 
-    PATH IS THE LAST RESORT, NOT THE FIRST -- and that is the whole point of
-    this function. On a machine with JetBrains Toolbox, `shutil.which
-    ("pycharm")` resolves by shim NAME, and the numeric suffix on those shims
-    is assignment order rather than version order. Measured on the author's
-    machine: `pycharm` was PyCharm Community 2023.3.3 while the running IDE,
-    with this very project open, was PyCharm Professional 2026.1.4 under
-    `pycharm1`. Same story for VS Code, where a stale system-wide shim
-    silently COLD-STARTS an older second instance instead of jumping into the
-    window you are looking at -- the worst kind of failure, because it looks
-    like it worked.
+    PATH IS THE LAST RESORT, NOT THE FIRST. On a machine with JetBrains
+    Toolbox, `shutil.which("pycharm")` resolves by shim NAME, and the numeric
+    suffix on those shims is assignment order rather than version order -- so
+    `pycharm` can be an old Community install while the IDE actually running
+    this project is a newer Professional one under `pycharm1`. A stale VS
+    Code shim is worse: it cold-starts an older second instance instead of
+    jumping into the window you are looking at, which looks like it worked.
 
     So: read Toolbox's own manifest, then well-known install locations
     (user-scope before system-scope), and only then fall back to PATH.

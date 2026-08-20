@@ -3,7 +3,7 @@
 
 # `scripts/core/ui/widget/factory/component_factory.py` — tier 2 #TAG:scripts/core/ui/widget/factory/component_factory.py
 
-`scripts.core.ui.widget.factory.component_factory` · 86 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.widget.factory.component_factory` · 71 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 

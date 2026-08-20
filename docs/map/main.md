@@ -3,7 +3,7 @@
 
 # `main.py` — tier 2 #TAG:main.py
 
-`main` · 354 lines · tier 1: [`../MAP.md`](../MAP.md)
+`main` · 349 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -18,7 +18,7 @@
 
 ### `class MainGame` #TAG:MainGame
 
-`main.py:62`–`350`
+`main.py:62`–`345`
 
 - `main.py:63` `__init__(self, autostart: bool=True)` #TAG:MainGame.__init__
 - `main.py:96` `prepare(self)` #TAG:MainGame.prepare
@@ -26,16 +26,16 @@
 - `main.py:104` `prepare_test_scene(self)` #TAG:MainGame.prepare_test_scene
 - `main.py:128` `spawn_arguments(self) -> dict[str, dict]` #TAG:MainGame.spawn_arguments
   - Constructor arguments for the entity types a map may place.
-- `main.py:160` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:MainGame.load_map
-- `main.py:167` `load_test_objects(self)` #TAG:MainGame.load_test_objects
-- `main.py:230` `load_config(self)` #TAG:MainGame.load_config
-- `main.py:235` `load_renderer(self)` #TAG:MainGame.load_renderer
-- `main.py:278` `quit(self)` #TAG:MainGame.quit
-- `main.py:282` `begin(self, max_frames: int | None=None)` #TAG:MainGame.begin
+- `main.py:155` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:MainGame.load_map
+- `main.py:162` `load_test_objects(self)` #TAG:MainGame.load_test_objects
+- `main.py:225` `load_config(self)` #TAG:MainGame.load_config
+- `main.py:230` `load_renderer(self)` #TAG:MainGame.load_renderer
+- `main.py:273` `quit(self)` #TAG:MainGame.quit
+- `main.py:277` `begin(self, max_frames: int | None=None)` #TAG:MainGame.begin
   - Run the main loop.
-- `main.py:299` `tick(self) -> float` #TAG:MainGame.tick
+- `main.py:294` `tick(self) -> float` #TAG:MainGame.tick
   - Advance exactly one frame. Returns the delta time used.
-- `main.py:323` `handle_global_input(self)` #TAG:MainGame.handle_global_input
+- `main.py:318` `handle_global_input(self)` #TAG:MainGame.handle_global_input
   - Application-level keys, handled before the scene sees anything.
-- `main.py:339` `toggle_window(self)` #TAG:MainGame.toggle_window
+- `main.py:334` `toggle_window(self)` #TAG:MainGame.toggle_window
   - F1: show or hide the test window.

@@ -12,7 +12,6 @@ from scripts.core.event_types import GameEventType
 from scripts.core.log import trace_events
 from scripts.core.transform2d import Transform2D
 from scripts.core.ui.anchor import Anchor, DEFAULT_ANCHOR, reflow as anchor_reflow
-#from scripts.game.game_camera import GameCamera
 
 from config.managers.core_asset_manager import CoreAssetManager
 from scripts.core.errors import (PyoneerAlreadyBoundError, PyoneerAssetMissingError,
@@ -80,8 +79,6 @@ class GameComponent(PyoneerGameObject, ABC):
         PyoneerGameObject._image). The properties below are the supported
         way in; this attribute is the one place the state actually lives.
         """
-        #self.__depth: int = 0
-        #"""The depth of the component, used for rendering order."""
         # ---------------------------------------------------------------------------------------- #
         # behavior
         self.is_view: bool = False
@@ -253,7 +250,6 @@ class GameComponent(PyoneerGameObject, ABC):
 
     def __transform_component(self, event: PyoneerEvent | None = None):
         """Handle the parent moved event."""
-        # if data is not empty
         any_transformed = False
         if event is not None and event.data is not None:
             parent_moved = event.data.get("parent_moved", False)
@@ -262,7 +258,6 @@ class GameComponent(PyoneerGameObject, ABC):
             rotation = event.data.get("rotation", None)
             offset = event.data.get("offset", None)
             if parent_moved:
-                #print("Transforming; Parent Moved: ", self, event.data)
                 self.__update_world_bounds(event)
                 any_transformed = True
             if isinstance(position, Vector2):
@@ -289,10 +284,6 @@ class GameComponent(PyoneerGameObject, ABC):
             if isinstance(offset, Vector2):
                 self.offset = offset
                 any_transformed = True
-        #self.__force_update_world_bounds(event)
-        #if any_transformed:
-        #    self.send_event_to_children_advanced(event_type=GameEventType.TRANSFORM,
-        #                                         event=PyoneerEvent(GameEventType.TRANSFORM, sender=self, data={"parent_moved": True}))
 
     def force_update_transforms(self):
         self.send_event_to_children_advanced(event_type=GameEventType.TRANSFORM,
@@ -404,12 +395,9 @@ class GameComponent(PyoneerGameObject, ABC):
     def local_bounds(self, bounds: Rect | Vector2):
         """Assign local bounds and cascade the consequences.
 
-        This used to be a bare assignment, which meant a post-construction
-        bounds change reached nothing: not the component's own world bounds,
-        not its children, not its surface. Measured on the scroll thumb --
-        set `vertical_scroll.scrollable_bounds` and re-run the scroll update
-        and `thumb.local_bounds` becomes h=6 while `thumb.world_bounds` and
-        the surface of its "background" child both stay at h=118.
+        A setter and not a bare assignment, because a post-construction bounds
+        change otherwise reaches nothing: not the component's own world
+        bounds, not its children, and not its surface.
         """
         if isinstance(bounds, Vector2):
             new_bounds = Rect(bounds.x, bounds.y, self._transform.local.w, self._transform.local.h)
@@ -448,8 +436,7 @@ class GameComponent(PyoneerGameObject, ABC):
         if resized:
             # Reflow anchored children BEFORE rebasing positions, so the
             # rebase below sees each child's settled rect and only has to
-            # translate it. Children with the default TOP_LEFT anchor are
-            # untouched, which is why adding this moved no pixels.
+            # translate it. A default TOP_LEFT child is untouched.
             self.reflow_children(previous, current)
         for child in tuple(self.components.values()):
             child.notify_parent_bounds_changed(self)
@@ -459,11 +446,8 @@ class GameComponent(PyoneerGameObject, ABC):
     def reflow_children(self, previous: Rect, current: Rect):
         """Apply each child's anchors after this component changed size.
 
-        Nothing reflowed before this existed. Measured: resizing a Panel from
-        200x120 to 320x220 left its background, both scrollbars and its dead
-        corner at their original sizes, and resizing a GameWindow left every
-        one of its children unchanged -- so a resizable window resized into a
-        broken layout. That is why window resize was never finished.
+        Without this a resize leaves every child at its original size, so a
+        resizable window resizes into a broken layout.
         """
         delta_width = current.width - previous.width
         delta_height = current.height - previous.height
@@ -643,15 +627,6 @@ class GameComponent(PyoneerGameObject, ABC):
     def has_event_type(self, typ: GameEventType) -> bool:
         return self.callbacks.keys().__contains__(typ)
 
-    #async def bind_async_listener(self, typ: GameEventType, callback: Callable):
-    #    """Bind a callback to a component event."""
-    #    if self.async_callbacks.keys().__contains__(typ):
-    #        self.async_callbacks[typ].append(callback)
-    #    else:
-    #        self.async_callbacks[typ] = [callback]
-    #    return True
-
-    # ---------------------------------------------------------------------------------------------
     @staticmethod
     def event_listener(typ: GameEventType) -> Callable:
         """Decorator for binding a callback to a component event type."""
@@ -660,14 +635,6 @@ class GameComponent(PyoneerGameObject, ABC):
                 func(self, *args, **kwargs)
             return wrapper  # func
         return decorator  # wrapper
-
-    #async def async_listener(self, typ: GameEventType) -> Callable:
-    #    """Decorator for binding a callback to a component event type."""
-    #    async def decorator(func):
-    #        await self.bind_async_listener(typ, func)
-    #        return func
-    #    return decorator
-    # ---------------------------------------------------------------------------------------------
 
     def unbind_event_listener(self, typ: GameEventType, callback: Callable):
         """Unbind a callback from a component event."""
@@ -679,11 +646,9 @@ class GameComponent(PyoneerGameObject, ABC):
         return False
 
     def __send_event(self, typ: GameEventType, event: Optional[PyoneerEvent], *args, **kwargs):
-        # An already-consumed event stops here. Previously `handled` only
-        # broke out of the local callback loop and the fan-out below ran
-        # unconditionally, so mark_event_handled() could not actually consume
-        # anything: a click on a window's close button was still delivered to
-        # every sibling and every descendant.
+        # An already-consumed event stops here, fan-out included --
+        # otherwise mark_event_handled() consumes nothing and a click on a
+        # window's close button still reaches every sibling.
         if event is not None and event.handled and not event.trickle:
             trace_events("consumed %s at %s", typ.name, type(self).__name__)
             return
@@ -696,12 +661,10 @@ class GameComponent(PyoneerGameObject, ABC):
                          type(self).__name__)
             return
 
-        # Rendering is gated on `visible`, and it must gate the whole SUBTREE.
-        # Each DrawComponent checks its own `visible`, but a container like
-        # GameWindow is a plain GameComponent with no core_render_blits of its own --
-        # it only fans BLITS out to children. So setting `window.visible =
-        # False` hid nothing: every child still had visible=True and kept
-        # drawing itself. Cutting the fan-out here makes visibility inherit.
+        # Rendering is gated on `visible`, and it must gate the whole
+        # SUBTREE. A container like GameWindow has no core_render_blits of
+        # its own -- it only fans BLITS out to children -- so cutting the
+        # fan-out here is what makes visibility inherit.
         if typ is GameEventType.BLITS and not self.visible:
             return
 
@@ -729,11 +692,10 @@ class GameComponent(PyoneerGameObject, ABC):
                            event=getattr(typ, "name", typ))
             raise
         except TypeError as exc:
-            # A TypeError raised AT the call boundary (empty traceback beyond
-            # this frame) means the signature does not match what the
-            # dispatcher passes -- a contract error, not a bug inside the
-            # listener. DrawComponent.dispose_drawable shipped exactly this:
-            # bound to DISPOSE while taking no `event` parameter.
+            # A TypeError raised AT the call boundary (empty traceback
+            # beyond this frame) means the listener's signature does not
+            # match what the dispatcher passes -- a contract error, not a
+            # bug inside the listener.
             if exc.__traceback__ is not None and exc.__traceback__.tb_next is None:
                 raise PyoneerListenerContractError(
                     f"{type(self).__name__} listener "
@@ -764,9 +726,8 @@ class GameComponent(PyoneerGameObject, ABC):
     def focused(self) -> bool:
         """Whether this component holds keyboard focus.
 
-        This is the flag a click-to-focus widget sets. `active` used to be
-        overloaded for it by GameWindow and TextBox, which conflicted with
-        `active` meaning "enabled".
+        The flag a click-to-focus widget sets. Distinct from `active`, which
+        means "enabled" -- one flag cannot carry both.
         """
         return self._focused
 
@@ -795,10 +756,6 @@ class GameComponent(PyoneerGameObject, ABC):
 
     def __create_event(self, event_type: GameEventType, data: PyoneerEvent | dict, sender: GameComponent | None = None) -> PyoneerEvent:
         return PyoneerEvent(event_type=event_type, sender=sender, data=data)
-
-    #async def send_async_event(self, typ: GameEventType, event: Optional[PyoneerEvent], *args, **kwargs):
-    #    """Send an async event to the component."""
-    #    return self.send_event(typ, event, *args, **kwargs)
 
     def send_pygame_event(self, event: PyoneerEvent, *args, **kwargs):
         """Send a PyoneerEvent to the component."""
@@ -830,9 +787,8 @@ class GameComponent(PyoneerGameObject, ABC):
             - args: Additional arguments for the actual event callback.\n
             - kwargs: Additional keyword arguments for the actual event callback.\n
         """
-        # if the parent or the manager is managing we want to send
-        # if the manager is not set, we want to send as there is no manager
-        # if the event sender is the current widget, we want to send as that is necessary functionality
+        # Sent when there is no manager, when the manager is the one driving,
+        # or when this widget is its own sender.
         e_type = None
         event__ = None
         if isinstance(event_type, GameEventType):
@@ -847,7 +803,7 @@ class GameComponent(PyoneerGameObject, ABC):
             event__ = event_type
 
         if e_type is None:
-            # Nothing routable was supplied. Previously this returned silently.
+            # Nothing routable was supplied.
             raise PyoneerEventTypeError(
                 f"{type(self).__name__}.send_event_advanced needs a GameEventType or a "
                 f"PyoneerEvent; got event_type={event_type!r}",
@@ -855,22 +811,15 @@ class GameComponent(PyoneerGameObject, ABC):
             )
 
         if event__ is None:
-            # Synthesize the missing event instead of dropping the dispatch.
-            #
-            # This guard used to read `event__ is not None`, so ANY call with
-            # event=None returned having invoked nothing. Every lifecycle
-            # wrapper funnels through here, and bind_component calls
-            # core_lifecycle_prepare(None) / core_lifecycle_build(None)
-            # directly -- so those methods ran, but the listener fan-out INSIDE
-            # them was silently discarded. Widgets that register behaviour with
-            # bind_sync_listener(PREPARE, ...) never received it unless the
-            # scene happened to re-dispatch with a real event later.
+            # Synthesize the missing event rather than dropping the
+            # dispatch: `bind_component` calls core_lifecycle_prepare(None)
+            # and core_lifecycle_build(None) directly, and returning here
+            # would discard the listener fan-out inside them.
             event__ = self.__create_event(e_type, {}, sender=self)
 
-        # The `manager` gate: when a manager is set, only it may drive this
-        # component. Reads event__ rather than the raw `event` argument, which
-        # was an AttributeError waiting to happen -- `event` can be a dict or
-        # None here, and neither has `.sender`.
+        # The `manager` gate: when a manager is set, only it may drive
+        # this component. Reads event__, not the raw `event` argument,
+        # which can be a dict or None and has no `.sender`.
         if self.manager is not None and event__.sender is not self.manager:
             return None
 
@@ -888,14 +837,13 @@ class GameComponent(PyoneerGameObject, ABC):
         if event is None:
             event = self.__create_event(event_type, {}, sender=self)
 
-        # Same gates __send_event enforces. This is a public dispatch entry
-        # point sitting next to send_event_advanced, and without these it
-        # would deliver a mouse event to a disabled component or a BLITS to a
-        # hidden one -- silently, and only for whoever called this method.
-        # A dispatch path with different rules from the main one is a trap.
+        # The same gates __send_event enforces: a public dispatch entry
+        # point with different rules from the main one would deliver a
+        # mouse event to a disabled component or a BLITS to a hidden one.
         #
-        # The `manager` gate is deliberately NOT copied: resize() sends with
-        # sender=self, so a managed component would refuse to repaint itself.
+        # The `manager` gate is deliberately NOT copied: resize() sends
+        # with sender=self, so a managed component would refuse to
+        # repaint itself.
         if event.handled and not event.trickle:
             return event
         if event_type in INPUT_EVENT_TYPES and not self.accepts_input:
@@ -995,11 +943,7 @@ class GameComponent(PyoneerGameObject, ABC):
         """Blit the component."""
         return self.send_event_advanced(event_type=GameEventType.BLITS, event=event)
 
-    # `image` is inherited from PyoneerGameObject. The override that lived
-    # here returned self.__image, which mangled to _GameComponent__image and
-    # was never assigned anywhere -- so it raised AttributeError for any
-    # subclass that did not override it. Every live subclass happened to,
-    # which is the only reason it never fired.
+    # `image` is inherited from PyoneerGameObject; this class adds no override.
 
     def is_clickable(self) -> bool:
         return self.get_component("mouse") is not None or self.clickable
@@ -1014,12 +958,6 @@ class GameComponent(PyoneerGameObject, ABC):
     # These are meant to either be overridden or replaced.
     def __on_parent_changed(self, event: Optional[PyoneerEvent] = None):
         """When the parent is changed, this is deployed to components."""
-        # adjust the offset to fit the correct parent/child hierarchy
-        #new_parent = event.data["parent"]
-        #if new_parent is not None:
-        #    new_parent_offset = new_parent.offset
-        #    self.offset: Vector2 = Vector2(new_parent_offset.x + self.offset.x, new_parent_offset.y + self.offset.y)
-        # adjust the bounds to fit the correct parent/child hierarchy
         if self.__parent is not None:
             self.__update_world_bounds()
 

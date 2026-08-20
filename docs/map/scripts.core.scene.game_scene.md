@@ -3,7 +3,7 @@
 
 # `scripts/core/scene/game_scene.py` — tier 2 #TAG:scripts/core/scene/game_scene.py
 
-`scripts.core.scene.game_scene` · 159 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.scene.game_scene` · 152 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,7 +13,7 @@
 
 ### `class GameScene(PyoneerGameObject)` #TAG:GameScene
 
-`scripts/core/scene/game_scene.py:16`–`158`
+`scripts/core/scene/game_scene.py:16`–`151`
 
 - `scripts/core/scene/game_scene.py:18` `__init__(self, name: str)` #TAG:GameScene.__init__
 - `scripts/core/scene/game_scene.py:23` `core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.core_lifecycle_build
@@ -24,16 +24,16 @@
 - `scripts/core/scene/game_scene.py:55` `bind(self, object_type: str | int, game_object: PyoneerGameObject | list[PyoneerGameObject] | GameComponent | list[GameComponent])` #TAG:GameScene.bind
 - `scripts/core/scene/game_scene.py:64` `unbind(self, object_type: str, game_object: PyoneerGameObject)` #TAG:GameScene.unbind
   - Remove one object from one bucket. Tolerant of a miss, by identity.
-- `scripts/core/scene/game_scene.py:86` `discard(self, game_object: PyoneerGameObject) -> str | int | None` #TAG:GameScene.discard
+- `scripts/core/scene/game_scene.py:83` `discard(self, game_object: PyoneerGameObject) -> str | int | None` #TAG:GameScene.discard
   - Remove `game_object` from whichever bucket holds it. Returns the key.
-- `scripts/core/scene/game_scene.py:102` `contents(self) -> tuple[tuple[str | int, PyoneerGameObject], ...]` #TAG:GameScene.contents
+- `scripts/core/scene/game_scene.py:97` `contents(self) -> tuple[tuple[str | int, PyoneerGameObject], ...]` #TAG:GameScene.contents
   - A SNAPSHOT of every bound object, with the bucket key it is under.
-- `scripts/core/scene/game_scene.py:115` `begin(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.begin
-- `scripts/core/scene/game_scene.py:122` `core_lifecycle_dispose_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.core_lifecycle_dispose_pre
-- `scripts/core/scene/game_scene.py:127` `core_lifecycle_dispose(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.core_lifecycle_dispose
-- `scripts/core/scene/game_scene.py:132` `core_lifecycle_dispose_post(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.core_lifecycle_dispose_post
-- `scripts/core/scene/game_scene.py:137` `core_frame_update_pre(self, delta: float)` #TAG:GameScene.core_frame_update_pre
-- `scripts/core/scene/game_scene.py:142` `core_frame_update(self, delta: float)` #TAG:GameScene.core_frame_update
-- `scripts/core/scene/game_scene.py:147` `core_frame_update_post(self, delta: float)` #TAG:GameScene.core_frame_update_post
-- `scripts/core/scene/game_scene.py:152` `core_render_blits(self, *args, **kwargs) -> list[tuple[Surface, tuple[float | int, float | int]]]` #TAG:GameScene.core_render_blits
-- `scripts/core/scene/game_scene.py:155` `core_input_receive(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.core_input_receive
+- `scripts/core/scene/game_scene.py:108` `begin(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.begin
+- `scripts/core/scene/game_scene.py:115` `core_lifecycle_dispose_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.core_lifecycle_dispose_pre
+- `scripts/core/scene/game_scene.py:120` `core_lifecycle_dispose(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.core_lifecycle_dispose
+- `scripts/core/scene/game_scene.py:125` `core_lifecycle_dispose_post(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.core_lifecycle_dispose_post
+- `scripts/core/scene/game_scene.py:130` `core_frame_update_pre(self, delta: float)` #TAG:GameScene.core_frame_update_pre
+- `scripts/core/scene/game_scene.py:135` `core_frame_update(self, delta: float)` #TAG:GameScene.core_frame_update
+- `scripts/core/scene/game_scene.py:140` `core_frame_update_post(self, delta: float)` #TAG:GameScene.core_frame_update_post
+- `scripts/core/scene/game_scene.py:145` `core_render_blits(self, *args, **kwargs) -> list[tuple[Surface, tuple[float | int, float | int]]]` #TAG:GameScene.core_render_blits
+- `scripts/core/scene/game_scene.py:148` `core_input_receive(self, event: Optional[PyoneerEvent]=None)` #TAG:GameScene.core_input_receive

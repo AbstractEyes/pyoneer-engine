@@ -14,24 +14,13 @@ object back into a `MapEvent`, and the validator that stops an invented
 trigger kind reaching the file. Nothing here executes, allocates, draws, or
 ticks; it is data and the rules the data must obey.
 
-PROPERTIES, NOT A SIDE TABLE
-----------------------------
-The choice was between tmx custom properties and a separate table keyed by
-object id. Properties win, for reasons that are all about the file rather
-than about taste:
-
-  * Tiled renders them. A trigger authored here is editable by hand in the
-    same dialog the author already uses, and a trigger authored by hand is
-    readable here. A side table is invisible to Tiled and would rot.
-  * `MapDocument` already writes them with a byte-minimal, exactly
-    reversible diff (`tools/check_tmx_roundtrip.py` proves add-then-remove
-    is byte-identical). A side table would need its own byte-exactness
-    contract, and there is exactly one file under that contract today.
-  * The region and the declaration cannot drift apart, because they are the
-    same element. A table keyed by object id breaks the moment an object is
-    removed and restored with a new id.
-  * `MapProperties` types them on write, so `pyoneer_cooldown_ms` reads back
-    as an int rather than the string "250".
+STORED AS PROPERTIES, NOT IN A SIDE TABLE
+-----------------------------------------
+Tiled renders custom properties, so a trigger is editable by hand in the
+dialog the author already uses; `MapDocument` writes them with a
+byte-minimal, exactly reversible diff; the region and its declaration are
+the same element and cannot drift apart; and `MapProperties` types them on
+write, so `pyoneer_cooldown_ms` reads back as an int rather than "250".
 
 THE PREFIX IS LOAD-BEARING
 --------------------------
@@ -42,59 +31,35 @@ are all plausible names for something on a trigger, and all of them are
 fatal. `check_property_name` exists so the authoring verb can refuse one
 before it is written rather than after the map stops loading.
 
-WHAT THE RUNTIME CAN DO WITH THIS TODAY: NOTHING
-------------------------------------------------
-Read that literally. This is the authoring half of a feature whose other
-half does not exist, and every one of these is a fact about the repo as it
-stands, not a caveat about polish:
-
-  * **There is no collision detection.** Not weak collision -- none.
-    `scripts/game/entity/game_bounding_box.py` defines `BoundingBox`, which
-    has zero importers anywhere in the repo, and whose `update(x, y)`
-    shadows `pygame.Rect.update(x, y, w, h)` and raises TypeError if it is
-    ever called.
-  * **Entities are not on the event bus.** `GameEntitySimple` derives
-    `PyoneerGameObject`, not `GameComponent`, so an entity cannot bind or
-    receive a bus event at all.
-  * **Nothing spawns entities from a map.** `scripts/loaders/map_loader.py`
-    is an empty docstring saying so; the `<objectgroup>` already in the
-    shipped map is read by no runtime code.
-  * **There are no MAP_TRIGGER_* event types yet.** `GameEventType` has 54
-    members and none of them are these.
-
-So a map authored with this vocabulary changes nothing about how the game
-behaves. That is the honest state, and it is written here rather than
-discovered later, because `pyoneer_passability` is already in the repo as a
-complete vocabulary with a complete parser and zero consumers.
+NOTHING READS THIS AT RUNTIME YET
+---------------------------------
+This is the authoring half of a feature whose other half does not exist:
+nothing under `scripts/` reads `pyoneer_trigger`, and `GameEventType` has no
+`MAP_TRIGGER_*` members. A map authored with this vocabulary changes nothing
+about how the game behaves.
 
 THE SEAM A RUNTIME WOULD READ THIS THROUGH
 ------------------------------------------
-Precisely, so the runtime half can be built against it without renegotiating
-anything:
-
   1. **Load.** Walk each `<objectgroup>`, call `read_all(layer)`. The
-     objectgroup declares which tile layer its regions are anchored to via
+     objectgroup names the tile layer its regions are anchored to via
      `pyoneer_trigger_layer`; empty means the whole map.
-  2. **Index.** Rasterize `event.cells(tile_width, tile_height)` once into a
-     `dict[int, MapEvent]` keyed by `cell_y * map_width + cell_x`. Once, at
-     load, never per frame. Do NOT build a GameComponent per region: that is
-     2621 us/frame at 256 regions against 1.7 us for the dict lookup.
-  3. **Per frame.** For each entity, look up its cell, compare with the cell
-     it occupied last frame, and derive enter/exit/stay from the pair. That
-     pass is O(entities), not O(entities x regions).
+  2. **Index.** Rasterize `event.cells(tile_width, tile_height)` once at
+     load into a `dict[int, MapEvent]` keyed by `cell_y * map_width +
+     cell_x`. Not a GameComponent per region: that is 2621 us/frame at 256
+     regions against 1.7 us for the dict lookup.
+  3. **Per frame.** For each entity, look up its cell and compare with last
+     frame's to derive enter/exit/stay. O(entities), not O(entities x
+     regions).
   4. **Filter.** `event.accepts(entity_class, entity_tags)` decides whether
-     this entity may fire this region. Entities have no `tags` field yet;
-     adding one is additive and is the runtime's job, not this module's.
+     an entity may fire a region. Entities have no `tags` field yet.
   5. **Dispatch.** One FRESH event object per firing, named
-     `event.event_name` -- the string that a future `GameEventType` member
-     must carry, e.g. `MAP_TRIGGER_ENTER = ("map_trigger_enter", None)`.
-     Never a shared event: consumption in this engine is not type-gated, so
-     one listener calling `handle()` on a shared event silences every
-     sibling for the rest of the frame.
+     `event.event_name` -- the string a future `GameEventType` member must
+     carry, e.g. `MAP_TRIGGER_ENTER = ("map_trigger_enter", None)`. Never a
+     shared event: consumption here is not type-gated, so one listener
+     calling `handle()` silences every sibling for the rest of the frame.
   6. **Blocking.** `event.blocks` is independent of `event.trigger`. A wall
-     is `blocks` with no trigger kind; a tripwire is a trigger kind with no
-     blocking; a door is both. Whoever writes the movement code reads
-     `blocks`; whoever writes the dispatch reads `trigger`.
+     blocks with no trigger kind; a tripwire triggers without blocking; a
+     door does both.
 
 `once` and `cooldown_ms` are authored NUMBERS that this module transports.
 It holds no clock and no fired-set, because it has no frame to hang them on.
@@ -120,16 +85,11 @@ that authoring one and removing it again reproduces the file byte for byte.
 
 WHERE THIS FILE BELONGS, EVENTUALLY
 -----------------------------------
-In `scripts/core/`, next to `layer_profile.py` -- the design phase called it
-`trigger_profile.py` -- because the engine is the side that will read it and
-`scripts/` may never import `editor/`. It is here because this pass owned
-this path. The move is mechanical: the module imports nothing from `editor/`
-except `Capability` (a plain frozen dataclass) and `RESERVED` (a fact about
-pytmx, which is engine knowledge that merely happens to be written down on
-the editor's side today). Both would move with it, and nothing else in this
-file would change. Until it moves, the engine cannot read this vocabulary --
-which is academic while no engine code reads triggers at all, and is the
-first thing to fix when some does.
+In `scripts/core/`, beside `layer_profile.py`, because the engine is the
+side that will read it and `scripts/` may never import `editor/`. The move
+is mechanical: the only names taken from `editor/` are `Capability` (a plain
+frozen dataclass) and `RESERVED` (a fact about pytmx), and both would move
+with it. Until it moves, the engine cannot read this vocabulary.
 """
 from __future__ import annotations
 
@@ -177,11 +137,9 @@ USE = "use"
 TRIGGER_KINDS: tuple[str, ...] = (ENTER, EXIT, STAY, USE)
 
 # The bus name each kind fires under. A future `GameEventType` member must
-# carry exactly this string as the first element of its value tuple. The
-# names are all distinct and all prefixed, which is what keeps a new member
-# from silently ALIASING an existing one -- an Enum member whose whole value
-# tuple duplicates another's is not a new member, it is a second name for the
-# old one, and nothing warns.
+# carry exactly this string as the first element of its value tuple. All four
+# are distinct and prefixed: an Enum member whose whole value tuple
+# duplicates another's is silently an alias for it, not a new member.
 EVENT_NAMES: dict[str, str] = {
     ENTER: "map_trigger_enter",
     EXIT: "map_trigger_exit",
@@ -391,19 +349,15 @@ def _as_int(value: Any, fallback: int = 0) -> int:
 class EntityFilter:
     """Which entities may fire a region.
 
-    Two independent whitelists. The semantics are worth stating exactly,
-    because the alternative reading is defensible and would be a trap:
+    Two independent whitelists:
 
         an empty axis passes everything
         within an axis the names are OR-ed
         across the axes they are AND-ed
 
     So `classes='Player' tags='ghost'` means "a Player that is also tagged
-    ghost", NOT "a Player or anything ghostly". AND is the safe direction:
-    it means adding a second axis can only ever NARROW what fires. Under OR,
-    an author adding `filter_class` to a working tag filter would suddenly
-    get MORE firings than before -- a filter that widens when you filter
-    harder is the kind of surprise that costs an afternoon.
+    ghost", NOT "a Player or anything ghostly" -- adding a second axis can
+    only ever NARROW what fires.
     """
 
     tags: frozenset[str] = frozenset()
@@ -586,11 +540,10 @@ class MapEvent:
     def to_properties(self) -> dict[str, Any]:
         """The tmx properties this declaration writes.
 
-        Defaults are OMITTED rather than written explicitly. That is not
-        tidiness: the file is under a byte-exactness contract, so every
-        property written is a line in the diff and a line the author has to
-        read past. An absent property and one set to its default mean the
-        same thing to `read`, so writing it says nothing and costs bytes.
+        Defaults are OMITTED rather than written explicitly: an absent
+        property and one set to its default mean the same thing to `read`,
+        and every property written is another line in the diff of a file
+        under a byte-exactness contract.
 
         Ordered by `FIELDS`, so the same declaration always produces the same
         bytes in the same order.

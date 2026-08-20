@@ -3,7 +3,7 @@
 
 # `scripts/core/ui/widget/behavior/mouse.py` — tier 2 #TAG:scripts/core/ui/widget/behavior/mouse.py
 
-`scripts.core.ui.widget.behavior.mouse` · 286 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.widget.behavior.mouse` · 277 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,18 +13,18 @@
 
 ### `class MouseComponentAsync(AsyncEventComponent)` #TAG:MouseComponentAsync
 
-`scripts/core/ui/widget/behavior/mouse.py:16`–`286`
+`scripts/core/ui/widget/behavior/mouse.py:16`–`277`
 
 - `scripts/core/ui/widget/behavior/mouse.py:40` `__init__(self, whitelist: list[int] | None=None, *args, **kwargs)` #TAG:MouseComponentAsync.__init__
 - `scripts/core/ui/widget/behavior/mouse.py:97` `has_mouse_listener(self, event_type: GameEventType) -> bool` #TAG:MouseComponentAsync.has_mouse_listener
 - `scripts/core/ui/widget/behavior/mouse.py:100` `bind_mouse_listener(self, event_type: GameEventType, callback: Callable)` #TAG:MouseComponentAsync.bind_mouse_listener
-- `scripts/core/ui/widget/behavior/mouse.py:110` `unbind_mouse_listener(self, event_type: GameEventType=None, callback: Callable=None)` #TAG:MouseComponentAsync.unbind_mouse_listener
-- `scripts/core/ui/widget/behavior/mouse.py:123` `send_mouse_event(self, event: PyoneerEvent)` #TAG:MouseComponentAsync.send_mouse_event
-- `scripts/core/ui/widget/behavior/mouse.py:126` `__event__mouse_scroll(self, event: PyoneerEvent)` #TAG:MouseComponentAsync.__event__mouse_scroll
-- `scripts/core/ui/widget/behavior/mouse.py:142` `__event__mouse_entered(self, event: PyoneerEvent)` #TAG:MouseComponentAsync.__event__mouse_entered
-- `scripts/core/ui/widget/behavior/mouse.py:150` `__execute_event_callbacks(self, event_type: GameEventType, event: list[PyoneerEvent] | PyoneerEvent, consumes: bool=False) -> None` #TAG:MouseComponentAsync.__execute_event_callbacks
-- `scripts/core/ui/widget/behavior/mouse.py:180` `__event__mouse_exited(self, event: PyoneerEvent)` #TAG:MouseComponentAsync.__event__mouse_exited
-- `scripts/core/ui/widget/behavior/mouse.py:188` `__event__mouse_down(self, event: PyoneerEvent | None)` #TAG:MouseComponentAsync.__event__mouse_down
-- `scripts/core/ui/widget/behavior/mouse.py:205` `__event__mouse_up(self, event: PyoneerEvent | None)` #TAG:MouseComponentAsync.__event__mouse_up
-- `scripts/core/ui/widget/behavior/mouse.py:248` `__event__mouse_move(self, event: PyoneerEvent | None)` #TAG:MouseComponentAsync.__event__mouse_move
-- `scripts/core/ui/widget/behavior/mouse.py:271` `__reset_mouse(self, event: PyoneerEvent | None=None)` #TAG:MouseComponentAsync.__reset_mouse
+- `scripts/core/ui/widget/behavior/mouse.py:109` `unbind_mouse_listener(self, event_type: GameEventType=None, callback: Callable=None)` #TAG:MouseComponentAsync.unbind_mouse_listener
+- `scripts/core/ui/widget/behavior/mouse.py:121` `send_mouse_event(self, event: PyoneerEvent)` #TAG:MouseComponentAsync.send_mouse_event
+- `scripts/core/ui/widget/behavior/mouse.py:124` `__event__mouse_scroll(self, event: PyoneerEvent)` #TAG:MouseComponentAsync.__event__mouse_scroll
+- `scripts/core/ui/widget/behavior/mouse.py:140` `__event__mouse_entered(self, event: PyoneerEvent)` #TAG:MouseComponentAsync.__event__mouse_entered
+- `scripts/core/ui/widget/behavior/mouse.py:148` `__execute_event_callbacks(self, event_type: GameEventType, event: list[PyoneerEvent] | PyoneerEvent, consumes: bool=False) -> None` #TAG:MouseComponentAsync.__execute_event_callbacks
+- `scripts/core/ui/widget/behavior/mouse.py:178` `__event__mouse_exited(self, event: PyoneerEvent)` #TAG:MouseComponentAsync.__event__mouse_exited
+- `scripts/core/ui/widget/behavior/mouse.py:186` `__event__mouse_down(self, event: PyoneerEvent | None)` #TAG:MouseComponentAsync.__event__mouse_down
+- `scripts/core/ui/widget/behavior/mouse.py:203` `__event__mouse_up(self, event: PyoneerEvent | None)` #TAG:MouseComponentAsync.__event__mouse_up
+- `scripts/core/ui/widget/behavior/mouse.py:239` `__event__mouse_move(self, event: PyoneerEvent | None)` #TAG:MouseComponentAsync.__event__mouse_move
+- `scripts/core/ui/widget/behavior/mouse.py:262` `__reset_mouse(self, event: PyoneerEvent | None=None)` #TAG:MouseComponentAsync.__reset_mouse

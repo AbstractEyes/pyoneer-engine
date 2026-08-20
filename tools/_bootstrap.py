@@ -4,10 +4,8 @@
 sys.path[0]. Anything outside the repo root -- tools, tests, a REPL -- does
 not get that, so every tool in this directory imports this module first.
 
-This is the one sanctioned replacement for PyCharm's 14 injected source
-roots. There is exactly one path entry (the repo root) and exactly one
-dotted name per module, which is what keeps `isinstance` working across
-the engine.
+Exactly one path entry (the repo root) and exactly one dotted name per
+module, which is what keeps `isinstance` working across the engine.
 """
 from __future__ import annotations
 

@@ -1,61 +1,38 @@
 """Which token means which behavior, and how a map declares a list of them.
 
-WHY THIS IS A HAND-WRITTEN TABLE
---------------------------------
-The same reason `scripts/core/spawn.py` is one, and the argument is quoted
-here rather than re-derived because it was already paid for: a scan cannot
-tell an abstract class from one it simply has not seen yet, so the failure
-lands at spawn time on the author's map instead of here, in a file a human
-reads. No scanning, no importlib, no decorator that fires on import order. An
-explicit table is a list of claims that are true when written and falsifiable
-by `tools/check_behavior.py` afterwards.
+The table at the bottom is hand-written: no scanning, no importlib, no
+import-order-sensitive decorator. A scan cannot tell an abstract class from
+one it has simply not seen yet, so its failures land at spawn time on the
+author's map rather than here, in a file a human reads.
 
-WHERE COMPOSITION IS DECLARED, AND WHY IT IS THE MAP
-----------------------------------------------------
-A `pyoneer_behaviors` property on the tmx OBJECT. Four sites were possible
-and three of them cannot do the job:
-
-  the spawn registry      keyed by class, so every object of a type gets the
-                          same list -- which is the "player is a more
-                          specific class" shape this design exists to end,
-                          wearing a dict as a disguise
-  an actors-table column  differs per ROW, and the object -> row link is
-                          `pyoneer_actor`, i.e. a per-object property -- the
-                          tmx property in disguise. (The engine does read
-                          `data/project/` now, via
-                          `scripts/loaders/table_file.py`; that supplies
-                          PARAMETERS per row, which is step 2 below, and is a
-                          different question from which behaviors compose.)
-  a genre-pack default    `editor/genres/` is under `editor/`, and `scripts/`
-                          may never import `editor/`. A default only the pack
-                          knows is a default the engine cannot apply, so the
-                          same map would play differently depending on
-                          whether the editor had ever opened it
-
-The genre pack keeps its default -- but as one the editor MATERIALISES into
-the object when the object is added, so the .tmx stays the whole truth and
-this module never needs to know a pack exists. Two objects of one class on
-one map can then differ, which is the property none of the other three has.
+WHERE COMPOSITION IS DECLARED
+-----------------------------
+On a `pyoneer_behaviors` property on the tmx OBJECT, so that two objects of
+one class on one map can differ. Not on the spawn registry (keyed by class),
+not in an actors-table column (keyed by row, reached through a per-object
+property anyway), and not in a genre pack (`editor/genres/` is under
+`editor/`, which `scripts/` may never import, so the same map would play
+differently depending on whether the editor had ever opened it). A pack still
+declares a default list, but the editor MATERIALISES it into the object when
+the object is added, so the .tmx stays the whole truth and this module never
+needs to know a pack exists.
 
 PARAMETERS NAME THE COLUMN THEY READ
 ------------------------------------
-A behavior does not get a private alias. It declares that it consumes
-`air_control`, which is an actors-table column name, and resolution runs
-most-specific-first exactly like `resolve_depth`:
+A behavior declares that it consumes `air_control`, which is also the
+actors-table column name -- there is no private alias. Resolution runs
+most-specific-first, the same shape as `resolve_depth`:
 
     1. `pyoneer_param_air_control` on the object   this object, this map
     2. the actors row's `air_control` column       this actor, everywhere
     3. `BehaviorParam.default`                     nobody said anything
 
-Step 2 needs a row, and THIS MODULE NEVER LOADS ONE -- that has not changed
-and is the point: the caller that has a row hands it in. What has changed is
-that a caller now does. `scripts/loaders/table_file.py` reads
+THIS MODULE NEVER LOADS A ROW: the caller that has one hands it in as
+`actors_row`. `scripts/loaders/table_file.py` reads
 `data/project/tables/*.json`, `actor_row` turns an object's `pyoneer_actor`
-into the row, and both spawn routes pass it as `actors_row`. `None` still
-means step 2 is skipped and step 3 answers, which is what an object naming no
-row resolves to -- every object on every map shipped today. A `required=True`
-parameter with nothing at either level raises, naming the object, the
-behavior and the key.
+into the row, and both spawn routes pass it. `None` skips step 2 and step 3
+answers. A `required=True` parameter with nothing at either level raises,
+naming the object, the behavior and the key.
 """
 from __future__ import annotations
 
@@ -83,17 +60,14 @@ def register(spec: BehaviorSpec,
              registry: MutableMapping[str, BehaviorSpec] | None = None) -> BehaviorSpec:
     """Bind one token to its spec.
 
-    Re-registering a name replaces it, deliberately and for the reason
-    `spawn.register` gives: a check that swaps a behavior in and puts the
-    original back is the only sanctioned way to drive this path without the
-    concrete behaviors, and refusing the second call would make that
-    impossible rather than safe.
+    Re-registering a name replaces it, so a check can swap a behavior in and
+    put the original back.
 
     Registering also STAMPS the spec onto the factory class when the class
-    does not already carry one, so an instance built by hand -- in a check, in
-    `main.py` -- still knows its own order. The first registration wins the
-    class stamp; an alias (two tokens, one class) leaves the second token's
-    instances to `build`, which stamps per instance and is always right.
+    does not already carry one, so an instance built by hand still knows its
+    own order. The first registration wins the class stamp; for an alias (two
+    tokens, one class) the second token's instances are stamped per instance
+    by `build`.
     """
     target = BEHAVIOR_REGISTRY if registry is None else registry
     target[spec.name] = spec
@@ -115,12 +89,10 @@ def resolve(name: str,
             registry: Mapping[str, BehaviorSpec] | None = None) -> BehaviorSpec:
     """The spec for `name`, or raise naming it and listing the whole registry.
 
-    Never falls back. A token that resolved to nothing would silently disarm
-    every object carrying it -- the exact failure a rename six weeks later
-    produces -- and unlike a missing behavior it looks like it worked.
-
-    The error carries the registry because "topdown_mvoe is not a behavior"
-    without the list is a message the author has to go read source to act on.
+    Never falls back: a token that resolved to nothing would silently disarm
+    every object carrying it, and would look exactly like the behavior
+    working. The error carries the registry so a typo can be fixed without
+    reading source.
     """
     table = BEHAVIOR_REGISTRY if registry is None else registry
     spec = table.get(name)
@@ -136,24 +108,19 @@ def resolve(name: str,
 # ---------------------------------------------------------------------------
 # The token list: lenient read, strict write
 #
-# The same pair `editor/core/map_events.py` uses for its argument lists, and
-# for the same reason -- a hand-edited .tmx should not be able to make the
-# reader raise on whitespace, and the writer should never emit something the
-# reader has to be lenient about.
+# A hand-edited .tmx must not make the reader raise on whitespace, and the
+# writer must never emit something the reader has to be lenient about.
 # ---------------------------------------------------------------------------
 
 def parse_list(value: Any) -> tuple[str, ...]:
     """Split an authored `pyoneer_behaviors` value into tokens. Never raises.
 
     Accepts None, a string, or an iterable of strings. Splits on commas and
-    on whitespace, strips, lowercases, and drops empties -- so
-    `" TopDown_Move , tile_collision "` and `"topdown_move,tile_collision"`
-    are the same list, which matters because Tiled's property editor is a
-    free-text box.
+    on whitespace, strips, lowercases, and drops empties, because Tiled's
+    property editor is a free-text box.
 
-    Duplicates are KEPT. This function's job is to say what the file says;
-    `validate_list` is the one that judges it, and a duplicate that vanished
-    here would be a typo nothing could report.
+    Duplicates are KEPT: this function says what the file says, and
+    `validate_list` is the one that judges it.
     """
     if value is None:
         return ()
@@ -175,9 +142,8 @@ def parse_list(value: Any) -> tuple[str, ...]:
 def format_list(names: Iterable[str]) -> str:
     """The canonical stored form of a token list. Strict: raises on nonsense.
 
-    Comma-separated, no spaces, in the given order -- order is authored data
-    only for humans reading the file, since the run order comes from
-    `spec.order` and not from this list.
+    Comma-separated, no spaces, in the given order. The stored order is for
+    humans only -- run order comes from `spec.order`, not from this list.
     """
     tokens = tuple(names)
     seen: set[str] = set()
@@ -200,8 +166,8 @@ def validate_list(value: Any,
     """Parse and judge a token list, returning it as authored.
 
     Raises on an unknown token, on a duplicate, and on a declared conflict.
-    Does NOT reorder: run order is `spec.order`'s business and lives in
-    `EntityBehaviors`, in one place, so that two orderings cannot disagree.
+    Does NOT reorder: run order belongs to `spec.order` and is applied in
+    `EntityBehaviors`, so two orderings cannot disagree.
     """
     tokens = parse_list(value)
     blame = (" (%s)" % where) if where else ""
@@ -234,11 +200,9 @@ def resolve_params(spec: BehaviorSpec,
     """The constructor keywords for one behavior on one object.
 
     Most specific first -- object property, then actors row, then the declared
-    default -- and `source` decides whether the middle step is consulted at
+    default -- with `source` deciding whether the middle step is consulted at
     all. A `source="object"` parameter is per-instance by declaration, so an
-    actors row carrying that column is a value nothing can read, and this
-    warns rather than ignoring it: authored content that did nothing is the
-    failure mode this engine reports.
+    actors row carrying that column WARNS rather than being ignored silently.
     """
     properties = properties or {}
     values: dict[str, Any] = {}
@@ -280,14 +244,11 @@ def read_requests(properties: Mapping[str, Any] | None = None,
 
     Reads the object's own properties: `pyoneer_behaviors` for the list and
     `pyoneer_param_*` for the overrides. Constructs NOTHING -- that is `build`
-    -- for the same reason `spawn_objects` binds nothing: a map read that
-    needed an entity in hand would not be drivable without a display, a scene
-    and a full boot.
+    -- so a map read stays drivable without a display, a scene or a full boot.
 
-    A `pyoneer_param_*` property that no listed behavior declares WARNS. It is
-    a typo by definition -- the parameter keys are generated into
-    BEHAVIORS.md, so there is no such thing as an undocumented one -- and this
-    repo has already lost 39 authored tiles to a silently-ignored name.
+    A `pyoneer_param_*` property that no listed behavior declares WARNS: every
+    legal key is generated into BEHAVIORS.md, so an unclaimed one is a typo,
+    and a silently-ignored authored name is how this repo once lost 39 tiles.
     """
     properties = properties or {}
     tokens = validate_list(properties.get(BEHAVIORS), registry, where)
@@ -317,11 +278,10 @@ def read_requests(properties: Mapping[str, Any] | None = None,
 def build(requests: Sequence[BehaviorRequest]) -> list[EntityBehavior]:
     """Construct one behavior per request. Nothing is attached.
 
-    `spec.factory(**values)` -- so a parameter the spec declares and the
-    constructor does not accept is a `TypeError` naming the keyword, from
-    Python itself, the first time one is built. That is why the resolved
-    values are keywords and not a dict argument: a dict would let the
-    declaration and the signature drift apart forever.
+    `spec.factory(**values)`, so a parameter the spec declares and the
+    constructor does not accept is a `TypeError` naming the keyword the first
+    time one is built. Passing the values as a dict instead would let the
+    declaration and the signature drift apart unnoticed.
     """
     behaviors: list[EntityBehavior] = []
     for request in requests:
@@ -520,21 +480,18 @@ _AXIS_DOC: dict[str, str] = {
 }
 """One sentence per axis, keyed by the field name `BodyState` actually has.
 
-Not a docstring scrape: a scrape would silently produce an empty row the day
-someone reflows a comment. `describe_all` cross-checks these keys against
-`BodyState().axes` and says so in the document when the two disagree, so an
-axis added without a sentence is visible in the generated file rather than
-absent from it.
+Written out rather than scraped from docstrings, which would produce an empty
+row the day someone reflows a comment. `describe_all` cross-checks these keys
+against `BodyState().axes`, so an axis with no sentence -- or a sentence with
+no axis -- shows up in the generated file instead of vanishing from it.
 """
 
 
 def _state_axes() -> list[str]:
     """The `state.<axis>` vocabulary the writes column above is spelled in.
 
-    Generated from `BodyState` itself. Without this table the writes column
-    names `state.support` and `state.facing` to a reader who has no way to
-    learn what either means, which is the breadcrumb this whole document
-    exists to lay.
+    Generated from `BodyState` itself, so the document explains every axis the
+    writes column can name.
     """
     lines = ["", "## The state axes", "",
              "`BodyState` (`scripts/game/behavior/state.py`) is what a body "
@@ -563,8 +520,8 @@ def describe_all(registry: Mapping[str, BehaviorSpec] | None = None) -> str:
     """Render BEHAVIORS.md from the same table the engine binds from.
 
     One source, so the document cannot describe a behavior the engine does not
-    have, and cannot omit a parameter the editor will offer. Written to disk
-    by whoever ships the docs bundle; this function only returns the text.
+    have, nor omit a parameter the editor will offer. Returns the text; the
+    caller writes it to disk.
     """
     table = BEHAVIOR_REGISTRY if registry is None else registry
     lines = [_PREAMBLE.format(behaviors=BEHAVIORS, param=PARAM_PREFIX,
@@ -638,17 +595,14 @@ def describe_all(registry: Mapping[str, BehaviorSpec] | None = None) -> str:
 # ---------------------------------------------------------------------------
 # The table
 #
-# One entry per concrete behavior, written by hand. No scanning, no importlib,
-# no import-order-sensitive decorator: this is a list of claims that are true
-# when written and falsifiable by `tools/check_behavior.py` and
-# `tools/check_movement.py` afterwards.
+# One entry per concrete behavior, written by hand and checked by
+# `tools/check_behavior.py` and `tools/check_movement.py`.
 #
-# The specs themselves live BESIDE their classes, in the module that
-# implements them, so a parameter and the constructor keyword it fills can be
-# read in one screen. This is the only place that says which token means
-# which spec, and the imports sit at the bottom because the modules they name
-# import `base` -- putting them at the top would make this module import
-# itself through the package.
+# Each spec lives BESIDE its class, so a parameter and the constructor keyword
+# it fills read in one screen; this is the only place that says which token
+# means which spec. The imports sit at the BOTTOM because the modules they
+# name import `base` -- at the top they would make this module import itself
+# through the package.
 #
 # `describe_all()` picks up a new entry with no edit here or in BEHAVIORS.md.
 # ---------------------------------------------------------------------------
@@ -656,9 +610,9 @@ def describe_all(registry: Mapping[str, BehaviorSpec] | None = None) -> str:
 from scripts.game.behavior.input import PLAYER_INPUT           # noqa: E402
 from scripts.game.behavior.movement import (ANIMATION_DRIVE,   # noqa: E402
                                             PLATFORMER_MOVE, TOPDOWN_MOVE)
-# Three tokens, ONE factory class -- the alias case `register` documents above.
-# The first of them stamps the class; every instance `build` produces is
-# stamped per instance, which is what keys each action's slot in the record.
+# Three tokens, ONE factory class -- the alias case `register` describes. The
+# first stamps the class; `build` stamps every instance it produces, which is
+# what keys each action's slot in the record.
 from scripts.game.behavior.action import (ACTION_RELAY,        # noqa: E402
                                           ACTION_SPECS)
 from scripts.game.behavior.lifecycle import LIFECYCLE_MARK      # noqa: E402

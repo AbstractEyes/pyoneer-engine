@@ -12,10 +12,6 @@ WHAT IS HERE
 
 THE WHOLE WIRE, END TO END, IN ONE SCREEN
 ------------------------------------------
-This is the breadcrumb trail. Every line of it is exercised by
-`tools/check_flow.py` against a real map, a real `SceneManager` and a real
-`GameWindow`:
-
     # 1. AUTHORED, in Tiled, on the object -- the map is the whole truth
     <property name="pyoneer_behaviors"
               value="player_input,interact_action,action_relay"/>
@@ -35,27 +31,17 @@ This is the breadcrumb trail. Every line of it is exercised by
     #      -> the flow advances; the window opens; the player stops walking
     #         and can still press continue
 
-WHY IT LIVES UNDER scripts/ AND NOT UNDER editor/
---------------------------------------------------
-Because the engine runs it. The editor MAY import this -- `editor/` may import
-`scripts/` and does so in eight places -- and an authoring panel for flows
-would read `FlowStep`'s fields the way `editor/core/inspect.py` reads a
-`Capability`. The reverse is the invariant: nothing here imports `editor/`,
-which is why `ADVANCE_TRIGGER_KIND` is the string `"use"` spelled out and
-asserted equal to `editor.core.map_events.USE` by a check under `tools/`
-rather than imported from it.
+CONSTRAINTS
+-----------
+Nothing here imports `editor/`, so `ADVANCE_TRIGGER_KIND` is the string
+`"use"` spelled out and asserted equal to `editor.core.map_events.USE` by a
+check rather than imported from it.
 
-THE EVENT SYSTEM IS NOT TOUCHED, BY CONSTRUCTION
--------------------------------------------------
-Neither module constructs a `PyoneerEvent`, calls `handle()` or
-`mark_event_handled`, binds a listener, or imports an event module.
-`tools/check_flow.py` proves that from the parse tree of both files, and
-proves the same scan finds a bus call when one is planted -- because a scan
-with the wrong name list looks exactly like a clean pass. The router is
-reached from `action_relay.update`, on the FRAME path where
-`GameScene.core_frame_update` builds a fresh event per object, and never from
-`core_input_receive`, which hands one shared event to every bound object
-including the whole UI tree.
+Neither module touches the event system -- no `PyoneerEvent`, no `handle()`,
+no listener. The router is reached from `action_relay.update` on the FRAME
+path, where `GameScene.core_frame_update` builds a fresh event per object,
+and never from `core_input_receive`, which hands one shared event to every
+bound object including the whole UI tree.
 """
 from __future__ import annotations
 

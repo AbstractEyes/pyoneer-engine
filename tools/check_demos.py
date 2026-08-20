@@ -3,11 +3,8 @@ proves.
 
 WHY THIS EXISTS
 ---------------
-A demo nobody runs is the orphan problem this repository already has a
-document about: `GameSceneMap` has zero production callers, `LayerProfile
-.renders` has zero consumers, and four of `OBJECT_CONVERTER`'s six keys name
-classes that do not exist. A prototype game is the easiest thing in the tree
-to let rot, because it looks fine right up until somebody runs it.
+A demo nobody runs rots the way anything unwired in this tree rots: it looks
+fine right up until somebody runs it.
 
 So each demo is booted for real -- `MainGame.__init__` -> `prepare` ->
 `build` -> `begin` -> `tick` -- and then driven. `tools/smoke.py` is the
@@ -124,8 +121,6 @@ def expect_raises(label, exception, call, *fragments):
 
     The fragments are the teeth: asserting only the exception TYPE passes for
     any raise anywhere inside the call, including a typo three frames down.
-    Copied in shape from tools/check_spawn_runtime.py, deliberately, so a
-    reader of either recognises the other.
     """
     global asserted
     asserted += 1
@@ -226,11 +221,10 @@ def distinct_colours(stride: int = 8) -> int:
     frame-hash assertion cannot tell from a correct frame without a baseline
     this check deliberately does not own.
 
-    DENSE and not a 12x12 grid, which is what this was first written as and
-    which FAILED on a correct frame: the sample points landed entirely inside
-    one tile colour, missed the 32px stripe and missed every 44x64 sprite, so
-    a fully rendered map reported one colour. A coarse sample of a tiled map
-    measures the tile size, not the render. 8px costs 11ms over 1024x768.
+    DENSE, because a coarse sample of a tiled map measures the tile size
+    rather than the render: a 12x12 grid lands entirely inside one tile
+    colour, misses the 32px stripe and every 44x64 sprite, and reports one
+    colour for a fully rendered map. 8px costs 11ms over 1024x768.
     """
     surface = pygame.display.get_surface()
     width, height = surface.get_size()
@@ -300,9 +294,9 @@ try:
                  if name in ("MapLayer", "MapComposite")), True)
 
     # `DemoGame.spawn` sets self.player, and main.py's arrow-key handler
-    # dereferences it unconditionally -- so leaving it None crashes inside the
-    # frame loop. Deleting the assignment left this check green, because
-    # booting one frame never presses a key.
+    # dereferences it unconditionally, so leaving it None crashes inside the
+    # frame loop. Asserted rather than observed, because booting one frame
+    # never presses a key.
     expect("boot leaves self.player pointing at a real entity",
            topdown.player is not None, True)
     expect("...and it is the object carrying player_input, not merely the "
@@ -404,9 +398,9 @@ try:
     #
     # `anchor_y` is what the COLLISION GATE decides: the tested point comes to
     # rest one EDGE_INSET above the top of the ground. It is true whatever the
-    # anchor is, which is why it cannot be the only assertion here -- a body
+    # anchor is, which is why it cannot be the only assertion here: a body
     # anchored at its head satisfies it while standing a whole sprite below
-    # the floor, and that is a real state this demo was measured in.
+    # the floor.
     anchor_y = mapgen.SIDESTEP_GROUND_TOP * mapgen.TILE - EDGE_INSET
     resting = anchor_y - body.collision_offset[1]
     expect("the tested point came to rest exactly on top of the authored floor",
@@ -644,10 +638,9 @@ try:
                       behaviors="player_input,patrol_input,topdown_move"),
                   "player_input", "patrol_input", "conflict")
 
-    # The freeze gate, BOTH directions. Neither was asserted: replacing the
-    # whole `can_move` branch with `if False:` left this check green, which is
-    # the recurring shape -- a gate proved to let something through and never
-    # proved to stop it. And the gate reads `can_move` but deliberately NOT
+    # The freeze gate, BOTH directions, or the whole `can_move` branch could
+    # be replaced with `if False:` and leave this check green. The gate reads
+    # `can_move` but deliberately NOT
     # `enabled_inputs`, so both halves of that choice are pinned here, since a
     # patroller that honoured `enabled_inputs` would be the harder bug: it
     # would freeze only on maps whose spawner happens to pass input_=None.

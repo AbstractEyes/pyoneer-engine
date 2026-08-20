@@ -1,7 +1,7 @@
 """Generate the minimum placeholder art needed to boot the engine.
 
 This repository ships without art (see docs/ASSETS.md). Three files are
-enough to get `python main.py` running and all 12 checks passing:
+enough to get `python main.py` running and the checks passing:
 
     .venv/Scripts/python.exe tools/make_placeholder_art.py
 

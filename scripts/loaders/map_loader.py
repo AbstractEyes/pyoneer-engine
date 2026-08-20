@@ -1,42 +1,30 @@
 """Turn a map's `<objectgroup>` entries into constructed entities.
 
-This is the read side of the seam the editor has been authoring against.
-`MapDocument` writes objects byte-exactly and the editor places them, but
-`LayerRenderer.__prepare_map_layers` skips anything that is not a
-`TiledTileLayer`, so until now an authored object had no runtime existence
-at all.
-
-WHAT THIS DOES AND DELIBERATELY DOES NOT DO
--------------------------------------------
 `spawn_objects` returns constructed, positioned entities paired with the
-depth each one belongs at. It binds NOTHING. Binding needs a scene and a
-renderer, both of which are the caller's, and a loader that reached into
-`SceneManager` would make the map read path untestable without a display,
-a camera and a full boot. The caller writes the two-line loop:
+depth each one belongs at. It binds NOTHING -- binding needs a scene and a
+renderer, so keeping it out leaves the map read path drivable without a
+display or a full boot. The caller writes the two-line loop:
 
     for spawned in spawn_objects(document, defaults=...):
         scene.bind(spawned.depth, spawned.entity)
 
 WHY IT READS MapDocument AND NOT pytmx
 --------------------------------------
-pytmx casts a custom property only when the file carries `type="int"`, and
-a property Tiled wrote without it comes back as the string `'50'`. That is
-survivable for a colour and fatal for a depth, because `'50'` is truthy, is
+pytmx casts a custom property only when the file carries `type="int"`, so a
+property Tiled wrote without one comes back as the string `'50'` -- truthy,
 not `50`, and indexes nothing. `MapProperties` applies the same typing rules
-from the same attribute, and it is the module that WRITES those properties,
+from the same attribute and is also the module that WRITES those properties,
 so read and write cannot drift apart.
 
-Two more pytmx facts that make it the wrong reader here: it renumbers gids
-(raw `layer.data` holds internal gids and `tiledgidmap` is needed to get
-back to file gids), and it injects a phantom layer for every per-tile
-collision `<objectgroup>` inside an embedded tileset, because it searches
-with `.//objectgroup` from the map root. This module searches for object
-groups that are direct descendants of the map and not of a tileset, which
-is what TMX actually means by an object layer.
+pytmx is also the wrong reader here because it renumbers gids, and because
+it injects a phantom layer for every per-tile collision `<objectgroup>`
+inside an embedded tileset (it searches `.//objectgroup` from the map root).
+This module takes object groups that are direct descendants of the map, which
+is what TMX means by an object layer.
 
 A `pytmx.TiledMap` is still accepted as an argument -- it is what the engine
-already has in hand at bind time -- but it is used only for its `filename`,
-and the properties are re-read from disk through `MapDocument`.
+has in hand at bind time -- but only its `filename` is used, and the
+properties are re-read from disk through `MapDocument`.
 
 THE Y-ORIGIN DECISION
 ---------------------
@@ -46,20 +34,15 @@ sprite tall:
     rectangle / ellipse / point / polygon    (x, y) is the TOP-left
     tile object (a `gid` attribute)          (x, y) is the BOTTOM-left
 
-`EntityLayer.core_render_blits` builds its rect with
-`image.get_rect(topleft=(position.x, position.y))`, unconditionally. So a
-gid-backed object has to be lifted by its own height on the way in, and
-everything else passes through. `object_top_left` is that conversion, and
-it is a named function rather than two lines inline so it can be tested
-against both shapes.
+`EntityLayer.core_render_blits` always builds its rect with
+`image.get_rect(topleft=(position.x, position.y))`, so a gid-backed object is
+lifted by its own height on the way in and everything else passes through.
+`object_top_left` is that conversion.
 
-The lift uses the OBJECT'S declared height, not the spawned sprite's. That
-is a choice, and the reason is that the object's height is the only one of
-the two an author can see while placing the object in Tiled. Anchoring to
-the sprite would mean the same map file spawns an entity in a different
-place the day its spritesheet gains a row -- a position that moves because
-of art the map does not mention. For a Tiled-authored tile object the two
-agree anyway: Tiled writes the tile's display size into width/height.
+The lift uses the OBJECT'S declared height and not the spawned sprite's,
+because the object's height is the one an author can see while placing it in
+Tiled -- anchoring to the sprite would move an entity the day its spritesheet
+gained a row. For a Tiled-authored tile object the two agree anyway.
 """
 from __future__ import annotations
 
@@ -99,7 +82,7 @@ class SpawnedEntity:
 
     Records rather than live behaviors, for the same reason this module
     returns entities and binds nothing: the caller acts. `()` for an object
-    that declares none, which is every object on every shipped map.
+    that declares none.
     """
 
 
@@ -110,11 +93,10 @@ class SpawnedEntity:
 def as_document(source: Any) -> MapDocument:
     """Coerce a MapDocument, a pytmx.TiledMap or a path into a MapDocument.
 
-    A `pytmx.TiledMap` is re-read FROM DISK via its `filename`. That is the
-    point -- pytmx's parse is what loses the property types -- but it also
-    means an in-memory edit made through pytmx is not visible here. Nothing
-    in the engine makes such an edit today; map edits go through
-    `MapDocument` and come back via `load_assets(name, reload=True)`.
+    A `pytmx.TiledMap` is re-read FROM DISK via its `filename`, because
+    pytmx's parse is what loses the property types. So an in-memory edit made
+    through pytmx is NOT visible here; map edits go through `MapDocument` and
+    come back via `load_assets(name, reload=True)`.
     """
     if isinstance(source, MapDocument):
         return source
@@ -133,23 +115,17 @@ def as_document(source: Any) -> MapDocument:
 def has_tmx_document(source: Any) -> bool:
     """Can `as_document` re-read this source's .tmx? A native map cannot.
 
-    A parsed `.tmx` remembers a `filename` that `MapDocument.load` can parse,
-    and so does a path or a `MapDocument` itself. A native `.blitmap` map ALSO
-    carries a `filename` -- `config/managers/map_data.py` sets it deliberately,
-    "because that is what pytmx calls it and what map_loader.as_document looks
-    for" -- but it names a binary file, and handing it to `MapDocument.load`
-    is an `ElementTree.ParseError` rather than a clean answer.
+    A native `.blitmap` map also carries a `filename`, but it names a binary
+    file, so handing it to `MapDocument.load` is an `ElementTree.ParseError`
+    rather than a clean answer.
 
-    The test is the METHOD `object_records`, not the class. That duck test is
-    the one `config/managers/map_data.py` documents as the way to recognise a
-    native map, and it is a duck test precisely so `scripts/loaders/` never
-    has to import `config/` to make the distinction.
+    The test is the METHOD `object_records`, not the class -- a duck test, so
+    `scripts/loaders/` never has to import `config/` to tell the two apart.
 
-    False is not an error and must not be reported as one: a caller that
-    re-reads the document for OPTIONAL information -- passability, say -- takes
-    it as "this map declares none", which is the same answer a `.tmx` with no
-    companion layer gets. A caller that genuinely needs the document still
-    calls `as_document` and still gets its raise.
+    False is not an error: a caller re-reading the document for OPTIONAL
+    information such as passability takes it as "this map declares none",
+    which is what a `.tmx` with no companion layer answers too. A caller that
+    needs the document calls `as_document` and still gets its raise.
     """
     return not callable(getattr(source, "object_records", None))
 
@@ -157,13 +133,11 @@ def has_tmx_document(source: Any) -> bool:
 def object_group_elements(document: MapDocument) -> list[ElementTree.Element]:
     """Every real `<objectgroup>` in the map, in document order.
 
-    "Real" excludes the ones nested inside an embedded `<tileset>`: those
-    are per-tile collision shapes, and TMX defines an object LAYER as a
-    child of `<map>` (or of a `<group>` under it) and nowhere else. pytmx
-    does not make this distinction -- it does `findall(".//objectgroup")`
-    from the root and hands back a phantom layer named None for every tile
-    that has a collision shape -- and inheriting that bug here would mean
-    walking collision geometry looking for entities to spawn.
+    "Real" excludes the ones nested inside an embedded `<tileset>`: those are
+    per-tile collision shapes, and TMX defines an object LAYER as a child of
+    `<map>` (or of a `<group>` under it) and nowhere else. Searching
+    `.//objectgroup` from the root instead -- which is what pytmx does --
+    yields a phantom layer for every tile that has a collision shape.
     """
     inside_tilesets = {element
                        for tileset in document.root.findall("tileset")
@@ -175,15 +149,13 @@ def object_group_elements(document: MapDocument) -> list[ElementTree.Element]:
 def object_top_left(obj: MapObject, tile_height: int) -> tuple[float, float]:
     """The object's position translated to the top-left origin the renderer uses.
 
-    See THE Y-ORIGIN DECISION in the module docstring. In short: a `gid`
-    means Tiled anchored this at the bottom-left, so lift it by its height;
-    anything else is already top-left.
+    A `gid` means Tiled anchored this at the bottom-left, so lift it by its
+    height; anything else is already top-left.
 
-    A gid object with no `height` is legal TMX that Tiled itself never
-    writes -- it means "draw at the tile's native size". The map's own tile
-    height is the closest thing this document can say without resolving the
-    tileset, and it warns rather than guessing quietly, because a tile
-    taller than the grid would land one grid cell low.
+    A gid object with no `height` is legal TMX meaning "draw at the tile's
+    native size". The map's own tile height is the closest answer available
+    without resolving the tileset, and it WARNS rather than guessing quietly,
+    because a tile taller than the grid would land one cell low.
     """
     if not obj.gid:
         return obj.x, obj.y
@@ -204,8 +176,7 @@ def _warn_unrotatable(obj: MapObject, layer_name: str) -> None:
 
     `EntityLayer.core_render_blits` blits the sprite as-is;
     `LayerRenderer.rotate_image` exists but nothing on the entity path calls
-    it. A silently-ignored rotation is authored content that did nothing,
-    which is the failure this engine warns about rather than swallows.
+    it, so an authored rotation would silently do nothing.
     """
     raw = obj.element.get("rotation")
     if raw in (None, "", "0", "0.0"):
@@ -247,17 +218,14 @@ def spawn_objects(document_or_tmx: Any,
     `tables` is the project's data tables, read by
     `scripts.loaders.table_file.load_tables`. An object naming a row with
     `pyoneer_actor` gets that row's columns as the MIDDLE rung of parameter
-    resolution -- under its own `pyoneer_param_*` properties and over each
+    resolution -- under its own `pyoneer_param_*` properties, over each
     parameter's declared default. None means the caller supplied no tables,
-    which is legal and costs nothing until an object names a row; naming one
-    then raises rather than falling to defaults, because a `pyoneer_actor`
-    that resolved to nothing is indistinguishable from one that worked.
+    which is legal until an object names a row; naming one then RAISES rather
+    than falling to defaults.
 
     An object with NO type is skipped, and the skipped ids are reported once
-    per layer. Untyped objects are ordinary in Tiled -- a rectangle marking
-    a region is not a spawn request -- but a MISSPELLED type field also
-    leaves the field looking empty in the file, and this project has already
-    lost 39 authored tiles to exactly that kind of silence.
+    per layer: untyped objects are ordinary in Tiled, but a misspelled type
+    also leaves the field looking empty in the file.
     """
     document = as_document(document_or_tmx)
     table = SPAWN_REGISTRY if registry is None else registry
@@ -280,10 +248,9 @@ def spawn_objects(document_or_tmx: Any,
             where = "tmx object id=%d on layer %r" % (obj.id, layer_name)
             entity = spawn(type_name, table, **argument_sets.get(type_name, {}))
             # moveto AFTER construction, never through the constructor:
-            # GameEntity accepts a `transform` keyword and discards it
-            # (GameEntitySimple builds its own from position/rotation/scale
-            # and never reads the argument), so a position passed in would
-            # be silently dropped. main.py has always done it this way.
+            # GameEntity accepts a `transform` keyword and DISCARDS it
+            # (GameEntitySimple builds its own from position/rotation/scale),
+            # so a position passed in would be silently dropped.
             entity.moveto(object_top_left(obj, tile_height))
             _warn_unrotatable(obj, layer_name)
             depth = resolve_depth(type_name,
@@ -292,18 +259,15 @@ def spawn_objects(document_or_tmx: Any,
                                   class_name=type(entity).__name__,
                                   where=where)
             # Raises on an unknown, duplicated or conflicting token, naming
-            # the object. No fallback, for the same reason resolve_factory
-            # has none: a token that resolved to nothing would silently
-            # disarm every object carrying it, and unlike a missing behavior
-            # it looks like it worked.
+            # the object. No fallback: a token that resolved to nothing would
+            # silently disarm every object carrying it and look like it
+            # worked.
             #
-            # `actor_row` is the second argument -- the rung between the
-            # object's own properties and each parameter's default -- and it
-            # is resolved HERE rather than inside read_requests because that
-            # module never opens a file and this one is the file layer. It
-            # returns None for an object with no `pyoneer_actor`, which is
-            # every object on every shipped map, so this call is byte-for-byte
-            # the old one until a map names a row.
+            # `actor_row` is the rung between the object's own properties and
+            # each parameter's default. It is resolved HERE rather than inside
+            # read_requests, because that module never opens a file and this
+            # one is the file layer; it answers None for an object with no
+            # `pyoneer_actor`.
             behaviors = read_requests(obj.properties,  # #TAG:behaviors_read_at_spawn
                                       actor_row(tables, obj.properties, where),
                                       where=where)

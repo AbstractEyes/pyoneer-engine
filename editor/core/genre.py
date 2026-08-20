@@ -101,22 +101,15 @@ class GenreTable:
 class GenreObjectClass:
     """One class on an object layer, and the behavior list a NEW one starts with.
 
-    THE ONE THING THIS IS NOT
-    -------------------------
-    It is not a fallback the engine resolves. The editor MATERIALISES this
-    list into `pyoneer_behaviors` on the object at the moment the object is
-    added, and then never looks at it again. Two reasons, both hard:
+    NOT A FALLBACK THE ENGINE RESOLVES. The editor MATERIALISES this list
+    into `pyoneer_behaviors` on the object as it is added, and never looks at
+    it again -- `scripts/` may not import `editor/`, so the engine cannot
+    read a pack, and the `.tmx` staying the whole truth is what makes a map
+    play the same whether or not the editor has ever opened it.
 
-      * `scripts/` may never import `editor/`, so the engine cannot read a
-        pack at all -- a default only the pack knew would be a default the
-        engine could not apply
-      * the `.tmx` staying the whole truth is what makes a map play the same
-        whether or not the editor has ever opened it
-
-    So this is a STARTING VALUE. An author who then edits the object's list
-    keeps their edit forever; nothing re-asserts this one, because nothing
-    reads it after the add. That is the difference between a default and a
-    policy, and it is the whole design.
+    So this is a STARTING VALUE, not a policy: an author who edits the
+    object's list keeps that edit forever, because nothing reads this after
+    the add.
 
     `behaviors` is validated at pack load against the live registry -- an
     unregistered token here would be written into every object placed from

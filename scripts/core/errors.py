@@ -1,19 +1,6 @@
 """Pyoneer's exception hierarchy.
 
-WHY THIS EXISTS
----------------
-The engine was built to fail quietly, which is the right trade while
-prototyping: a missing config key falls back to a default, an unroutable
-event returns None, a layer with no depth mapping is skipped. Nothing stops.
-
-That trade stops paying the moment someone other than the author is reading
-the code, because "it ran" carries no information. Silent fallbacks found in
-review included: dispatches with `event=None` returning None, `bind_component`'s
-whole command list no-opping, 39 authored map tiles being discarded because a
-layer name was misspelled, and `move_speed` falling back to 16 while 20 sat
-in the config file.
-
-So: contract violations raise, recoverable oddities warn.
+Contract violations raise, recoverable oddities warn:
 
   raise  - the caller asked for something impossible or incoherent, and any
            value returned would be a lie (unknown asset, unroutable event,
@@ -21,9 +8,9 @@ So: contract violations raise, recoverable oddities warn.
   warn   - the engine can carry on truthfully, but a human should know
            (a map layer with no depth mapping, an empty animation).
 
-Warnings go through the stdlib `warnings` module, so the prototype-speed
-quiet mode is still one flag away (`python -W ignore::UserWarning main.py`)
-without the engine needing a mode switch of its own.
+Warnings go through the stdlib `warnings` module, so quiet mode is one flag
+away (`python -W ignore::UserWarning main.py`) with no mode switch of the
+engine's own.
 
 NAMING
 ------
@@ -178,9 +165,8 @@ class PyoneerLayoutError(PyoneerError):
 class PyoneerAlreadyBoundError(PyoneerLifecycleError):
     """An object was bound twice, making the component tree a DAG.
 
-    Shipped for real: ScrollComponent bound its thumb as both "thumb" and
-    "scroll_bar", so that subtree received every event twice and queued
-    duplicate blit tokens.
+    Such a subtree receives every event twice and queues duplicate blit
+    tokens.
     """
 
 
@@ -211,9 +197,8 @@ class PyoneerEventDispatchError(PyoneerEventError):
 class PyoneerListenerContractError(PyoneerEventError):
     """A listener does not accept the event argument the dispatcher passes.
 
-    Shipped for real: DrawComponent.dispose_drawable took no `event`
-    parameter while being bound to DISPOSE, so the first teardown raised
-    TypeError from inside the dispatcher with no indication of the culprit.
+    A callback bound to an event while taking no `event` parameter would
+    otherwise raise TypeError from inside the dispatcher, naming no culprit.
     """
 
 

@@ -3,7 +3,7 @@
 
 # `scripts/core/scene/game_scene_map.py` — tier 2 #TAG:scripts/core/scene/game_scene_map.py
 
-`scripts.core.scene.game_scene_map` · 29 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.scene.game_scene_map` · 26 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,9 +13,9 @@
 
 ### `class GameSceneMap(GameScene)` #TAG:GameSceneMap
 
-`scripts/core/scene/game_scene_map.py:7`–`28`
+`scripts/core/scene/game_scene_map.py:7`–`25`
 
 > A scene whose contents come from a map file.
 
-- `scripts/core/scene/game_scene_map.py:24` `__init__(self, name: str)` #TAG:GameSceneMap.__init__
-- `scripts/core/scene/game_scene_map.py:27` `core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:GameSceneMap.core_lifecycle_build
+- `scripts/core/scene/game_scene_map.py:21` `__init__(self, name: str)` #TAG:GameSceneMap.__init__
+- `scripts/core/scene/game_scene_map.py:24` `core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:GameSceneMap.core_lifecycle_build

@@ -3,7 +3,7 @@
 
 # `scripts/core/ui/widget/containers/scroll.py` — tier 2 #TAG:scripts/core/ui/widget/containers/scroll.py
 
-`scripts.core.ui.widget.containers.scroll` · 359 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.widget.containers.scroll` · 341 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -19,7 +19,7 @@
 
 ### `class ScrollComponent(GameComponent)` #TAG:ScrollComponent
 
-`scripts/core/ui/widget/containers/scroll.py:19`–`359`
+`scripts/core/ui/widget/containers/scroll.py:19`–`341`
 
 - `scripts/core/ui/widget/containers/scroll.py:20` `__init__(self, scrollable_bounds: Rect | None=None, scroll_direction: ScrollDirection=ScrollDirection.Vertical, scroll_width: int=14, scroll_height: int=14, corner_deadzone: int=14, *args, **kwargs)` #TAG:ScrollComponent.__init__
 - `scripts/core/ui/widget/containers/scroll.py:51` `core_lifecycle_build(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.core_lifecycle_build
@@ -41,32 +41,32 @@
   - Same fraction, measured against the bar's usable length.
 - `scripts/core/ui/widget/containers/scroll.py:115` `__scroll_thumb_bounds(self) -> Rect` #TAG:ScrollComponent.__scroll_thumb_bounds
 - `scripts/core/ui/widget/containers/scroll.py:151` `__make(self)` #TAG:ScrollComponent.__make
-- `scripts/core/ui/widget/containers/scroll.py:198` `__event__update_scroll(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.__event__update_scroll
+- `scripts/core/ui/widget/containers/scroll.py:192` `__event__update_scroll(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.__event__update_scroll
   - Recompute the bar and thumb geometry for the current scroll state.
-- `scripts/core/ui/widget/containers/scroll.py:219` `relayout(self)` #TAG:ScrollComponent.relayout
+- `scripts/core/ui/widget/containers/scroll.py:205` `relayout(self)` #TAG:ScrollComponent.relayout
   - Re-place the bar, thumb and BOTH ARROWS against the current bounds.
-- `scripts/core/ui/widget/containers/scroll.py:235` `_on_size_changed(self, width: int | float, height: int | float)` #TAG:ScrollComponent._on_size_changed
-- `scripts/core/ui/widget/containers/scroll.py:239` `__event__mouse_clicked_within_scroll_bar(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.__event__mouse_clicked_within_scroll_bar
+- `scripts/core/ui/widget/containers/scroll.py:219` `_on_size_changed(self, width: int | float, height: int | float)` #TAG:ScrollComponent._on_size_changed
+- `scripts/core/ui/widget/containers/scroll.py:223` `__event__mouse_clicked_within_scroll_bar(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.__event__mouse_clicked_within_scroll_bar
   - Event if the mouse is down, check if it's within the scroll bar.
-- `scripts/core/ui/widget/containers/scroll.py:261` `__event__mouse_down_scroll_thumb(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.__event__mouse_down_scroll_thumb
+- `scripts/core/ui/widget/containers/scroll.py:245` `__event__mouse_down_scroll_thumb(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.__event__mouse_down_scroll_thumb
   - If the mouse is down within the scroll thumb this event is triggered.
-- `scripts/core/ui/widget/containers/scroll.py:268` `__event__mouse_drag_scroll_thumb(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.__event__mouse_drag_scroll_thumb
+- `scripts/core/ui/widget/containers/scroll.py:252` `__event__mouse_drag_scroll_thumb(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.__event__mouse_drag_scroll_thumb
   - Dragged after mouse is already clicked within the scroll thumb.
-- `scripts/core/ui/widget/containers/scroll.py:302` `__event__mouse_up_scroll_thumb(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.__event__mouse_up_scroll_thumb
+- `scripts/core/ui/widget/containers/scroll.py:285` `__event__mouse_up_scroll_thumb(self, event: Optional[PyoneerEvent]=None)` #TAG:ScrollComponent.__event__mouse_up_scroll_thumb
   - Mouse up releases the thumb at it's horizontal or vertical position and updates panel.
-- `scripts/core/ui/widget/containers/scroll.py:307` `__clamp_scroll(self)` #TAG:ScrollComponent.__clamp_scroll
+- `scripts/core/ui/widget/containers/scroll.py:290` `__clamp_scroll(self)` #TAG:ScrollComponent.__clamp_scroll
   - Clamps the scroll position to the scrollable bounds.
-- `scripts/core/ui/widget/containers/scroll.py:314` `__get_scroll_amount(self) -> Vector2` #TAG:ScrollComponent.__get_scroll_amount
+- `scripts/core/ui/widget/containers/scroll.py:297` `__get_scroll_amount(self) -> Vector2` #TAG:ScrollComponent.__get_scroll_amount
   - Calculates the amount to scroll based on the scroll rate.
-- `scripts/core/ui/widget/containers/scroll.py:319` `@property scroll_amount(self) -> int | float` #TAG:ScrollComponent.scroll_amount
+- `scripts/core/ui/widget/containers/scroll.py:302` `@property scroll_amount(self) -> int | float` #TAG:ScrollComponent.scroll_amount
   - Calculates the amount to scroll based on the scroll rate.
-- `scripts/core/ui/widget/containers/scroll.py:327` `__event__arrow_click_scroll_up(self, event: Optional[PyoneerEvent])` #TAG:ScrollComponent.__event__arrow_click_scroll_up
+- `scripts/core/ui/widget/containers/scroll.py:310` `__event__arrow_click_scroll_up(self, event: Optional[PyoneerEvent])` #TAG:ScrollComponent.__event__arrow_click_scroll_up
   - Scroll up by the scroll rate.
-- `scripts/core/ui/widget/containers/scroll.py:332` `__event__arrow_click_scroll_down(self, event: Optional[PyoneerEvent])` #TAG:ScrollComponent.__event__arrow_click_scroll_down
+- `scripts/core/ui/widget/containers/scroll.py:315` `__event__arrow_click_scroll_down(self, event: Optional[PyoneerEvent])` #TAG:ScrollComponent.__event__arrow_click_scroll_down
   - Scroll down by the scroll rate.
-- `scripts/core/ui/widget/containers/scroll.py:337` `__send_panel_scrolled_event(self, sender: Optional[PyoneerGameObject]=None)` #TAG:ScrollComponent.__send_panel_scrolled_event
+- `scripts/core/ui/widget/containers/scroll.py:320` `__send_panel_scrolled_event(self, sender: Optional[PyoneerGameObject]=None)` #TAG:ScrollComponent.__send_panel_scrolled_event
   - Send the panel scrolled event.
-- `scripts/core/ui/widget/containers/scroll.py:347` `scroll(self, scalar: float)` #TAG:ScrollComponent.scroll
+- `scripts/core/ui/widget/containers/scroll.py:329` `scroll(self, scalar: float)` #TAG:ScrollComponent.scroll
   - Scroll the panel by the self.scroll_amount * scalar with deployed events.
-- `scripts/core/ui/widget/containers/scroll.py:354` `scroll_to(self, position: int)` #TAG:ScrollComponent.scroll_to
+- `scripts/core/ui/widget/containers/scroll.py:336` `scroll_to(self, position: int)` #TAG:ScrollComponent.scroll_to
   - Scroll to a specific position.

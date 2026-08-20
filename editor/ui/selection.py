@@ -2,13 +2,12 @@
 
 WHY THIS EXISTS
 ---------------
-The first version gave every dock its own independent scope. That is right
-for the *prompt strip* -- a note left on the Layers panel is about layers,
-and a note on the Tables panel is about tables, and they should not drag
-each other around. It is wrong for everything else: clicking an object on
-the canvas has to light it up in the hierarchy, fill the inspector, and
-re-aim the prompt, and three panels each keeping their own idea of "the
-current thing" cannot do that.
+A dock's own scope is right for the *prompt strip* -- a note left on the
+Layers panel is about layers, a note on the Tables panel is about tables,
+and they should not drag each other around. It is wrong for everything else:
+clicking an object on the canvas has to light it up in the hierarchy, fill
+the inspector and re-aim the prompt, which three panels each keeping their
+own idea of "the current thing" cannot do.
 
 So there are two notions, deliberately:
 

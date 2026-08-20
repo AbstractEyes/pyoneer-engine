@@ -3,38 +3,38 @@
 
 # `scripts/core/blitpool.py` — tier 2 #TAG:scripts/core/blitpool.py
 
-`scripts.core.blitpool` · 147 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.blitpool` · 143 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
-- `scripts/core/blitpool.py:60` `ORGANIZED_BLITS` #TAG:ORGANIZED_BLITS
-- `scripts/core/blitpool.py:63` `CULLED_THIS_FRAME` #TAG:CULLED_THIS_FRAME
+- `scripts/core/blitpool.py:56` `ORGANIZED_BLITS` #TAG:ORGANIZED_BLITS
+- `scripts/core/blitpool.py:59` `CULLED_THIS_FRAME` #TAG:CULLED_THIS_FRAME
 
 ## Classes
 
 ### `class BlitToken` #TAG:BlitToken
 
-`scripts/core/blitpool.py:5`–`57`
+`scripts/core/blitpool.py:5`–`53`
 
 - `scripts/core/blitpool.py:6` `__init__(self, blit: BlitToken | None=None, image: Surface | None=None, destination: tuple[int | float, int | float] | Vector2 | None=Vector2(0, 0), draw_area: tuple[int | float, int | float, int | float, int | float] | None=Rect(0, 0, 0, 0), depth: int=0, priority: int=0, sender: object | None=None)` #TAG:BlitToken.__init__
-- `scripts/core/blitpool.py:24` `pygame_blit(self) -> tuple[Surface, tuple[int, int], Rect]` #TAG:BlitToken.pygame_blit
-- `scripts/core/blitpool.py:30` `__rect_or_tup(self, tup: tuple[int | float, int | float, int | float, int | float] | Rect)` #TAG:BlitToken.__rect_or_tup
-- `scripts/core/blitpool.py:39` `@staticmethod __tup_or_vec(tup: tuple[int | float, int | float] | Vector2)` #TAG:BlitToken.__tup_or_vec
-- `scripts/core/blitpool.py:45` `copy(self, blit: BlitToken | None=None) -> BlitToken` #TAG:BlitToken.copy
-- `scripts/core/blitpool.py:56` `__str__(self)` #TAG:BlitToken.__str__
+- `scripts/core/blitpool.py:22` `pygame_blit(self) -> tuple[Surface, tuple[int, int], Rect]` #TAG:BlitToken.pygame_blit
+- `scripts/core/blitpool.py:26` `__rect_or_tup(self, tup: tuple[int | float, int | float, int | float, int | float] | Rect)` #TAG:BlitToken.__rect_or_tup
+- `scripts/core/blitpool.py:35` `@staticmethod __tup_or_vec(tup: tuple[int | float, int | float] | Vector2)` #TAG:BlitToken.__tup_or_vec
+- `scripts/core/blitpool.py:41` `copy(self, blit: BlitToken | None=None) -> BlitToken` #TAG:BlitToken.copy
+- `scripts/core/blitpool.py:52` `__str__(self)` #TAG:BlitToken.__str__
 
 ### `class BlitPool` #TAG:BlitPool
 
-`scripts/core/blitpool.py:72`–`145`
+`scripts/core/blitpool.py:68`–`141`
 
 > global static access class for managing blits in a global manner.
 
-- `scripts/core/blitpool.py:76` `@staticmethod get_blit_pool(clear: bool=True) -> dict[int, list[BlitToken]] | dict[int, dict[int, list[BlitToken]]]` #TAG:BlitPool.get_blit_pool
-- `scripts/core/blitpool.py:84` `@staticmethod count_culled(n: int=1)` #TAG:BlitPool.count_culled
+- `scripts/core/blitpool.py:72` `@staticmethod get_blit_pool(clear: bool=True) -> dict[int, list[BlitToken]] | dict[int, dict[int, list[BlitToken]]]` #TAG:BlitPool.get_blit_pool
+- `scripts/core/blitpool.py:80` `@staticmethod count_culled(n: int=1)` #TAG:BlitPool.count_culled
   - Record that a draw was rejected as fully outside its clip region.
-- `scripts/core/blitpool.py:90` `@staticmethod culled() -> int` #TAG:BlitPool.culled
-- `scripts/core/blitpool.py:94` `@staticmethod get_blit_pool_pygame(clear: bool=True) -> list[tuple[Surface, tuple[int, int], Rect]]` #TAG:BlitPool.get_blit_pool_pygame
-- `scripts/core/blitpool.py:108` `@staticmethod clear_organized_blits()` #TAG:BlitPool.clear_organized_blits
-- `scripts/core/blitpool.py:113` `@staticmethod make_blit(image: Surface | None=None, destination: tuple[int | float, int | float] | Vector2 | None=None, draw_area: tuple[int | float, int | float, int | float, int | float] | Rect | None=None, depth: int=0, priority: int=0, sender: object | None=None) -> BlitToken` #TAG:BlitPool.make_blit
-- `scripts/core/blitpool.py:122` `@staticmethod blit_to_layer(depth: int=0, priority: int=0, image: Surface | None=None, destination: tuple[int | float, int | float] | Rect | Vector2 | None=None, draw_area: tuple[int | float, int | float, int | float, int | float] | Rect | None=None, blit: BlitToken | None=None, sender: object | None=None)` #TAG:BlitPool.blit_to_layer
+- `scripts/core/blitpool.py:86` `@staticmethod culled() -> int` #TAG:BlitPool.culled
+- `scripts/core/blitpool.py:90` `@staticmethod get_blit_pool_pygame(clear: bool=True) -> list[tuple[Surface, tuple[int, int], Rect]]` #TAG:BlitPool.get_blit_pool_pygame
+- `scripts/core/blitpool.py:104` `@staticmethod clear_organized_blits()` #TAG:BlitPool.clear_organized_blits
+- `scripts/core/blitpool.py:109` `@staticmethod make_blit(image: Surface | None=None, destination: tuple[int | float, int | float] | Vector2 | None=None, draw_area: tuple[int | float, int | float, int | float, int | float] | Rect | None=None, depth: int=0, priority: int=0, sender: object | None=None) -> BlitToken` #TAG:BlitPool.make_blit
+- `scripts/core/blitpool.py:118` `@staticmethod blit_to_layer(depth: int=0, priority: int=0, image: Surface | None=None, destination: tuple[int | float, int | float] | Rect | Vector2 | None=None, draw_area: tuple[int | float, int | float, int | float, int | float] | Rect | None=None, blit: BlitToken | None=None, sender: object | None=None)` #TAG:BlitPool.blit_to_layer
   - Blits directly to a layer in an unsafe global manner when the layered renderer is called./n

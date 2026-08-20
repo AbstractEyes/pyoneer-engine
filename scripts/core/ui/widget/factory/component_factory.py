@@ -67,19 +67,4 @@ class ComponentFactory:
 
 
 
-# register all components
-#class CallableClass:
-#    def __init__(self, test: str):
-#        self.test = test
-#        print(f"CallableClass created; {test}")
-#
-#    def __str__(self):
-#        return self.test
-
-
-
-
-#factory = ComponentFactory()
-#factory.register_all([("TestComponent", CallableClass)])
-#component: CallableClass = factory.make("TestComponent", None, *["test"])
 

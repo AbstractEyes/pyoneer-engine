@@ -3,7 +3,7 @@
 
 # `scripts/core/input.py` — tier 2 #TAG:scripts/core/input.py
 
-`scripts.core.input` · 236 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.input` · 233 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -26,7 +26,7 @@
 
 ### `class InputActionManager(CoreAsset)` #TAG:InputActionManager
 
-`scripts/core/input.py:73`–`235`
+`scripts/core/input.py:73`–`232`
 
 - `scripts/core/input.py:75` `__init__(self)` #TAG:InputActionManager.__init__
 - `scripts/core/input.py:92` `begin_text_capture(self, owner)` #TAG:InputActionManager.begin_text_capture
@@ -37,19 +37,19 @@
 - `scripts/core/input.py:106` `@property text_capture_owner(self)` #TAG:InputActionManager.text_capture_owner
 - `scripts/core/input.py:109` `update(self)` #TAG:InputActionManager.update
   - Sample every action once and derive this frame's edges.
-- `scripts/core/input.py:131` `pressed(self, action_name: str) -> bool` #TAG:InputActionManager.pressed
+- `scripts/core/input.py:129` `pressed(self, action_name: str) -> bool` #TAG:InputActionManager.pressed
   - True only on the frame the action went down. Use for menus, jumps.
-- `scripts/core/input.py:137` `released(self, action_name: str) -> bool` #TAG:InputActionManager.released
+- `scripts/core/input.py:135` `released(self, action_name: str) -> bool` #TAG:InputActionManager.released
   - True only on the frame the action came up.
-- `scripts/core/input.py:143` `held(self, action_name: str) -> bool` #TAG:InputActionManager.held
+- `scripts/core/input.py:141` `held(self, action_name: str) -> bool` #TAG:InputActionManager.held
   - True for every frame the action is down. Use for movement.
-- `scripts/core/input.py:149` `_is_down(self, action: BaseAction) -> bool` #TAG:InputActionManager._is_down
+- `scripts/core/input.py:147` `_is_down(self, action: BaseAction) -> bool` #TAG:InputActionManager._is_down
   - True if ANY input bound to this action is currently down.
-- `scripts/core/input.py:181` `prepare_inputs(self, rebind: dict | None=None) -> InputActionManager` #TAG:InputActionManager.prepare_inputs
-- `scripts/core/input.py:197` `validate_bindings(self)` #TAG:InputActionManager.validate_bindings
+- `scripts/core/input.py:179` `prepare_inputs(self, rebind: dict | None=None) -> InputActionManager` #TAG:InputActionManager.prepare_inputs
+- `scripts/core/input.py:194` `validate_bindings(self)` #TAG:InputActionManager.validate_bindings
   - Fail loudly at load time on an unknown key or malformed binding.
-- `scripts/core/input.py:221` `set_gamepad(self)` #TAG:InputActionManager.set_gamepad
-- `scripts/core/input.py:225` `load_assets(self, name: str)` #TAG:InputActionManager.load_assets
-- `scripts/core/input.py:228` `unload_assets(self, name: str)` #TAG:InputActionManager.unload_assets
-- `scripts/core/input.py:231` `reload(self, config: dict[str, any] | tuple[str, any])` #TAG:InputActionManager.reload
-- `scripts/core/input.py:234` `prepare(self, config: dict[str, any]) -> InputActionManager` #TAG:InputActionManager.prepare
+- `scripts/core/input.py:218` `set_gamepad(self)` #TAG:InputActionManager.set_gamepad
+- `scripts/core/input.py:222` `load_assets(self, name: str)` #TAG:InputActionManager.load_assets
+- `scripts/core/input.py:225` `unload_assets(self, name: str)` #TAG:InputActionManager.unload_assets
+- `scripts/core/input.py:228` `reload(self, config: dict[str, any] | tuple[str, any])` #TAG:InputActionManager.reload
+- `scripts/core/input.py:231` `prepare(self, config: dict[str, any]) -> InputActionManager` #TAG:InputActionManager.prepare

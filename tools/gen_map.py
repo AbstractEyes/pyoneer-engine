@@ -6,26 +6,16 @@
 
 WHY THIS IS GENERATED AND NOT WRITTEN
 -------------------------------------
-A hand-written index over 130 modules is dead in a week. `docs/history/ORPHANS.md` is
-what that looks like after one, and the nine documentation sites that stated
-the opposite of a shipped wire in one review pass are what it looks like after
-three. The strongest pattern already in this tree is `describe_all` ->
-`docs/BEHAVIORS.md`: a document that cannot describe a behavior that does not
-exist. This applies the same rule to the shape of the code itself. Nothing
-below is typed by a human, so nothing below can be wrong about what exists.
+A hand-written index over 130 modules is dead in a week. The pattern this
+follows is `describe_all` -> `docs/BEHAVIORS.md`: a document that cannot
+describe a behavior which does not exist. Nothing below is typed by a human,
+so nothing below can be wrong about what exists.
 
 WHY A #TAG AND NOT A LINE NUMBER
 --------------------------------
-Measured, and the reason this file exists: `CLAUDE.md`'s anchor table used to
-pin quoted source lines by `FILE:LINE`. A five-line docstring edit above one of
-them turned `check_docs` red --
-
-    game_entity.py:236 no longer contains 'if field is None or bit is None'
-    -- it moved to line 241
-
-The anchor was not wrong. The document was not stale. Nothing about the
-documented fact had changed. A line number is an address that every edit above
-it invalidates; a `#TAG:` is an address that survives one. So a document says
+A line number is an address that every edit above it invalidates, so a correct
+anchor on a current document goes red when a docstring five rows up grows a
+line. A `#TAG:` survives that. So a document says
 `#TAG:GameEntity.allowed_move` and a checker re-derives the line every run.
 
 THE TWO TIERS, AND WHY THERE ARE TWO

@@ -5,7 +5,7 @@
 
 > The game-side narrative kit: a dialogue box, a step adapter, and the wiring.
 
-`demos.narrative` · 232 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.narrative` · 197 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,44 +13,44 @@
 
 ## Module constants
 
-- `demos/narrative.py:57` `BOX_BOUNDS` #TAG:BOX_BOUNDS
+- `demos/narrative.py:40` `BOX_BOUNDS` #TAG:BOX_BOUNDS
 
 ## Functions
 
-- `demos/narrative.py:144` `build_flow(script: Sequence[tuple[str, str, float]], box: Any, bodies: Sequence[Any], *, name: str='opening') -> SceneFlow` #TAG:build_flow
+- `demos/narrative.py:120` `build_flow(script: Sequence[tuple[str, str, float]], box: Any, bodies: Sequence[Any], *, name: str='opening') -> SceneFlow` #TAG:build_flow
   - Turn `(step name, line, hold_ms)` rows into a running-ready `SceneFlow`.
 
 ## Classes
 
 ### `class StoryBox(GameWindow)` #TAG:StoryBox
 
-`demos/narrative.py:61`–`110`
+`demos/narrative.py:44`–`89`
 
 > A `GameWindow` with one line of text in it. That is the entire widget.
 
-- `demos/narrative.py:71` `__init__(self, *args, **kwargs)` #TAG:StoryBox.__init__
-- `demos/narrative.py:78` `build_content(self)` #TAG:StoryBox.build_content
-  - Called by `GameWindow` once the chrome exists.
-- `demos/narrative.py:98` `@property line(self) -> str` #TAG:StoryBox.line
+- `demos/narrative.py:53` `__init__(self, *args, **kwargs)` #TAG:StoryBox.__init__
+- `demos/narrative.py:60` `build_content(self)` #TAG:StoryBox.build_content
+  - Build the line of text. Called by `GameWindow` once the chrome exists.
+- `demos/narrative.py:79` `@property line(self) -> str` #TAG:StoryBox.line
   - The sentence currently shown. Assigning repaints it.
-- `demos/narrative.py:103` `@line.setter line(self, value: str) -> None` #TAG:StoryBox.line.setter
+- `demos/narrative.py:84` `@line.setter line(self, value: str) -> None` #TAG:StoryBox.line.setter
 
 ### `class StoryLine` #TAG:StoryLine
 
-`demos/narrative.py:113`–`141`
+`demos/narrative.py:92`–`117`
 
 > One beat's window: set the shared box's line, THEN open the box.
 
-- `demos/narrative.py:129` `__init__(self, box: Any, text: str)` #TAG:StoryLine.__init__
-- `demos/narrative.py:133` `open(self) -> None` #TAG:StoryLine.open
-- `demos/narrative.py:137` `close(self) -> None` #TAG:StoryLine.close
-- `demos/narrative.py:140` `__repr__(self) -> str` #TAG:StoryLine.__repr__
+- `demos/narrative.py:105` `__init__(self, box: Any, text: str)` #TAG:StoryLine.__init__
+- `demos/narrative.py:109` `open(self) -> None` #TAG:StoryLine.open
+- `demos/narrative.py:113` `close(self) -> None` #TAG:StoryLine.close
+- `demos/narrative.py:116` `__repr__(self) -> str` #TAG:StoryLine.__repr__
 
 ### `class StoryGame(DemoGame)` #TAG:StoryGame
 
-`demos/narrative.py:164`–`228`
+`demos/narrative.py:138`–`193`
 
 > A `DemoGame` that also mounts a scene flow over a dialogue box.
 
-- `demos/narrative.py:198` `load_test_objects(self)` #TAG:StoryGame.load_test_objects
+- `demos/narrative.py:167` `load_test_objects(self)` #TAG:StoryGame.load_test_objects
   - Let `DemoGame` place the camera, then mount the box and the flow.

@@ -5,7 +5,7 @@
 
 > The .blitmap file: this engine's own map format, and the tmx converter.
 
-`scripts.loaders.blitmap` · 1451 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.loaders.blitmap` · 1406 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,197 +13,197 @@
 
 ## Module constants
 
-- `scripts/loaders/blitmap.py:150` `MAGIC` #TAG:blitmap.MAGIC
-- `scripts/loaders/blitmap.py:151` `VERSION` #TAG:blitmap.VERSION
-- `scripts/loaders/blitmap.py:160` `GID_FLIP_HORIZONTAL` #TAG:GID_FLIP_HORIZONTAL
-- `scripts/loaders/blitmap.py:161` `GID_FLIP_VERTICAL` #TAG:GID_FLIP_VERTICAL
-- `scripts/loaders/blitmap.py:162` `GID_FLIP_DIAGONAL` #TAG:GID_FLIP_DIAGONAL
-- `scripts/loaders/blitmap.py:163` `GID_FLIP_MASK` #TAG:GID_FLIP_MASK
-- `scripts/loaders/blitmap.py:164` `GID_VALUE_MASK` #TAG:blitmap.GID_VALUE_MASK
+- `scripts/loaders/blitmap.py:128` `MAGIC` #TAG:blitmap.MAGIC
+- `scripts/loaders/blitmap.py:129` `VERSION` #TAG:blitmap.VERSION
+- `scripts/loaders/blitmap.py:138` `GID_FLIP_HORIZONTAL` #TAG:GID_FLIP_HORIZONTAL
+- `scripts/loaders/blitmap.py:139` `GID_FLIP_VERTICAL` #TAG:GID_FLIP_VERTICAL
+- `scripts/loaders/blitmap.py:140` `GID_FLIP_DIAGONAL` #TAG:GID_FLIP_DIAGONAL
+- `scripts/loaders/blitmap.py:141` `GID_FLIP_MASK` #TAG:GID_FLIP_MASK
+- `scripts/loaders/blitmap.py:142` `GID_VALUE_MASK` #TAG:blitmap.GID_VALUE_MASK
 
 ## Functions
 
-- `scripts/loaders/blitmap.py:179` `bare_gid(gid: int) -> int` #TAG:bare_gid
+- `scripts/loaders/blitmap.py:157` `bare_gid(gid: int) -> int` #TAG:bare_gid
   - A gid with its flip bits removed: the tile's identity alone.
-- `scripts/loaders/blitmap.py:184` `gid_flips(gid: int) -> tuple[bool, bool, bool]` #TAG:gid_flips
+- `scripts/loaders/blitmap.py:162` `gid_flips(gid: int) -> tuple[bool, bool, bool]` #TAG:gid_flips
   - (horizontal, vertical, diagonal), in the order pytmx's TileFlags uses.
-- `scripts/loaders/blitmap.py:656` `_split_id_and_name(line: Line, cursor: Cursor) -> tuple[int, str]` #TAG:_split_id_and_name
+- `scripts/loaders/blitmap.py:634` `_split_id_and_name(line: Line, cursor: Cursor) -> tuple[int, str]` #TAG:_split_id_and_name
   - `<keyword> <id> <name>`: the id is a number, the name is the rest.
-- `scripts/loaders/blitmap.py:672` `_read_tileset_link(header: Line, cursor: Cursor, path: str | None) -> TilesetLink` #TAG:_read_tileset_link
-- `scripts/loaders/blitmap.py:687` `_read_layer(header: Line, cursor: Cursor, path: str | None) -> Any` #TAG:_read_layer
-- `scripts/loaders/blitmap.py:697` `_read_tile_layer(header: Line, cursor: Cursor, path: str | None) -> TileLayer` #TAG:_read_tile_layer
-- `scripts/loaders/blitmap.py:731` `_read_data(header: Line, cursor: Cursor, path: str | None) -> list[int]` #TAG:_read_data
+- `scripts/loaders/blitmap.py:650` `_read_tileset_link(header: Line, cursor: Cursor, path: str | None) -> TilesetLink` #TAG:_read_tileset_link
+- `scripts/loaders/blitmap.py:665` `_read_layer(header: Line, cursor: Cursor, path: str | None) -> Any` #TAG:_read_layer
+- `scripts/loaders/blitmap.py:675` `_read_tile_layer(header: Line, cursor: Cursor, path: str | None) -> TileLayer` #TAG:_read_tile_layer
+- `scripts/loaders/blitmap.py:709` `_read_data(header: Line, cursor: Cursor, path: str | None) -> list[int]` #TAG:_read_data
   - The csv rows under a `data` line.
-- `scripts/loaders/blitmap.py:753` `_read_object_layer(header: Line, cursor: Cursor, path: str | None) -> ObjectLayer` #TAG:_read_object_layer
-- `scripts/loaders/blitmap.py:773` `_read_object(header: Line, cursor: Cursor, path: str | None) -> BlitObject` #TAG:_read_object
-- `scripts/loaders/blitmap.py:840` `_floats(line: Line, count: int, cursor: Cursor) -> list[float]` #TAG:_floats
-- `scripts/loaders/blitmap.py:852` `_read_points(line: Line, cursor: Cursor) -> tuple[tuple[float, float], ...]` #TAG:_read_points
-- `scripts/loaders/blitmap.py:865` `_read_image_layer(header: Line, cursor: Cursor, path: str | None) -> ImageLayer` #TAG:_read_image_layer
-- `scripts/loaders/blitmap.py:887` `_read_group(header: Line, cursor: Cursor, path: str | None) -> LayerGroup` #TAG:_read_group
-- `scripts/loaders/blitmap.py:1055` `load_map(path: str) -> LoadedMap` #TAG:load_map
+- `scripts/loaders/blitmap.py:731` `_read_object_layer(header: Line, cursor: Cursor, path: str | None) -> ObjectLayer` #TAG:_read_object_layer
+- `scripts/loaders/blitmap.py:751` `_read_object(header: Line, cursor: Cursor, path: str | None) -> BlitObject` #TAG:_read_object
+- `scripts/loaders/blitmap.py:818` `_floats(line: Line, count: int, cursor: Cursor) -> list[float]` #TAG:_floats
+- `scripts/loaders/blitmap.py:830` `_read_points(line: Line, cursor: Cursor) -> tuple[tuple[float, float], ...]` #TAG:_read_points
+- `scripts/loaders/blitmap.py:843` `_read_image_layer(header: Line, cursor: Cursor, path: str | None) -> ImageLayer` #TAG:_read_image_layer
+- `scripts/loaders/blitmap.py:865` `_read_group(header: Line, cursor: Cursor, path: str | None) -> LayerGroup` #TAG:_read_group
+- `scripts/loaders/blitmap.py:1030` `load_map(path: str) -> LoadedMap` #TAG:load_map
   - Load a .blitmap and every .tileset it links, resolved against IT.
-- `scripts/loaders/blitmap.py:1123` `layer_object_records(layer: ObjectLayer) -> list[MapObjectRecord]` #TAG:layer_object_records
+- `scripts/loaders/blitmap.py:1094` `layer_object_records(layer: ObjectLayer) -> list[MapObjectRecord]` #TAG:layer_object_records
   - One object layer's objects, in document order.
-- `scripts/loaders/blitmap.py:1138` `object_records(blitmap: Blitmap, layers: Any=None) -> list[MapObjectRecord]` #TAG:object_records
+- `scripts/loaders/blitmap.py:1109` `object_records(blitmap: Blitmap, layers: Any=None) -> list[MapObjectRecord]` #TAG:object_records
   - Every object on every object layer, in document order.
-- `scripts/loaders/blitmap.py:1194` `_int_attribute(element, key: str, default: int=0) -> int` #TAG:blitmap._int_attribute
-- `scripts/loaders/blitmap.py:1204` `_float_attribute(element, key: str, default: float=0.0) -> float` #TAG:_float_attribute
-- `scripts/loaders/blitmap.py:1214` `_object_from_tmx(element, dropped: list[str], where: str) -> BlitObject` #TAG:_object_from_tmx
-- `scripts/loaders/blitmap.py:1254` `_layer_from_tmx(document: MapDocument, element, dropped: list[str]) -> Any` #TAG:_layer_from_tmx
-- `scripts/loaders/blitmap.py:1304` `tileset_reference(name: str, directory: str='tilesets') -> str` #TAG:tileset_reference
+- `scripts/loaders/blitmap.py:1165` `_int_attribute(element, key: str, default: int=0) -> int` #TAG:blitmap._int_attribute
+- `scripts/loaders/blitmap.py:1175` `_float_attribute(element, key: str, default: float=0.0) -> float` #TAG:_float_attribute
+- `scripts/loaders/blitmap.py:1185` `_object_from_tmx(element, dropped: list[str], where: str) -> BlitObject` #TAG:_object_from_tmx
+- `scripts/loaders/blitmap.py:1225` `_layer_from_tmx(document: MapDocument, element, dropped: list[str]) -> Any` #TAG:_layer_from_tmx
+- `scripts/loaders/blitmap.py:1275` `tileset_reference(name: str, directory: str='tilesets') -> str` #TAG:tileset_reference
   - Where a tileset's own file sits, relative to the .blitmap.
-- `scripts/loaders/blitmap.py:1316` `declared_collision(element) -> str` #TAG:declared_collision
+- `scripts/loaders/blitmap.py:1287` `declared_collision(element) -> str` #TAG:declared_collision
   - The `.blitmask` a tmx `<tileset>` declares about ITSELF, or "".
-- `scripts/loaders/blitmap.py:1342` `from_tmx(document: MapDocument, *, tileset_dir: str='tilesets', collision_for=None) -> Conversion` #TAG:from_tmx
+- `scripts/loaders/blitmap.py:1308` `from_tmx(document: MapDocument, *, tileset_dir: str='tilesets', collision_for=None) -> Conversion` #TAG:from_tmx
   - Convert a loaded .tmx into a .blitmap plus one .tileset per tileset.
-- `scripts/loaders/blitmap.py:1420` `convert_file(tmx_path: str, *, tileset_dir: str='tilesets', collision_for=None) -> Conversion` #TAG:convert_file
+- `scripts/loaders/blitmap.py:1375` `convert_file(tmx_path: str, *, tileset_dir: str='tilesets', collision_for=None) -> Conversion` #TAG:convert_file
   - Load a .tmx from disk and convert it. Writes nothing.
-- `scripts/loaders/blitmap.py:1432` `write_conversion(conversion: Conversion, blitmap_path: str) -> list[str]` #TAG:write_conversion
+- `scripts/loaders/blitmap.py:1387` `write_conversion(conversion: Conversion, blitmap_path: str) -> list[str]` #TAG:write_conversion
   - Write the .blitmap and every .tileset it links. Returns the paths.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class Shape` #TAG:Shape
 
-`scripts/loaders/blitmap.py:204`–`239`
+`scripts/loaders/blitmap.py:182`–`217`
 
 > An object's geometry, when it is not a plain rectangle.
 
-- `scripts/loaders/blitmap.py:217` `__post_init__(self) -> None` #TAG:Shape.__post_init__
-- `scripts/loaders/blitmap.py:226` `render(self, depth: int=0) -> list[str]` #TAG:Shape.render
+- `scripts/loaders/blitmap.py:195` `__post_init__(self) -> None` #TAG:Shape.__post_init__
+- `scripts/loaders/blitmap.py:204` `render(self, depth: int=0) -> list[str]` #TAG:Shape.render
 
 ### `@dataclass(frozen=True) class BlitObject` #TAG:BlitObject
 
-`scripts/loaders/blitmap.py:249`–`296`
+`scripts/loaders/blitmap.py:227`–`274`
 
 > One placed object: where it is, what it is, and what it declares.
 
-- `scripts/loaders/blitmap.py:266` `__post_init__(self) -> None` #TAG:BlitObject.__post_init__
-- `scripts/loaders/blitmap.py:273` `render(self, depth: int=0) -> list[str]` #TAG:BlitObject.render
+- `scripts/loaders/blitmap.py:244` `__post_init__(self) -> None` #TAG:BlitObject.__post_init__
+- `scripts/loaders/blitmap.py:251` `render(self, depth: int=0) -> list[str]` #TAG:BlitObject.render
 
 ### `@dataclass(frozen=True) class TileLayer` #TAG:blitmap.TileLayer
 
-`scripts/loaders/blitmap.py:304`–`362`
+`scripts/loaders/blitmap.py:282`–`340`
 
 > A grid of gids, rendered as the grid it is.
 
-- `scripts/loaders/blitmap.py:321` `__post_init__(self) -> None` #TAG:blitmap.TileLayer.__post_init__
-- `scripts/loaders/blitmap.py:340` `at(self, x: int, y: int) -> int` #TAG:blitmap.TileLayer.at
-- `scripts/loaders/blitmap.py:345` `row(self, y: int) -> tuple[int, ...]` #TAG:blitmap.TileLayer.row
-- `scripts/loaders/blitmap.py:348` `rows(self) -> list[tuple[int, ...]]` #TAG:blitmap.TileLayer.rows
-- `scripts/loaders/blitmap.py:351` `render(self, depth: int=0) -> list[str]` #TAG:blitmap.TileLayer.render
+- `scripts/loaders/blitmap.py:299` `__post_init__(self) -> None` #TAG:blitmap.TileLayer.__post_init__
+- `scripts/loaders/blitmap.py:318` `at(self, x: int, y: int) -> int` #TAG:blitmap.TileLayer.at
+- `scripts/loaders/blitmap.py:323` `row(self, y: int) -> tuple[int, ...]` #TAG:blitmap.TileLayer.row
+- `scripts/loaders/blitmap.py:326` `rows(self) -> list[tuple[int, ...]]` #TAG:blitmap.TileLayer.rows
+- `scripts/loaders/blitmap.py:329` `render(self, depth: int=0) -> list[str]` #TAG:blitmap.TileLayer.render
 
 ### `@dataclass(frozen=True) class ObjectLayer` #TAG:blitmap.ObjectLayer
 
-`scripts/loaders/blitmap.py:366`–`388`
+`scripts/loaders/blitmap.py:344`–`366`
 
 > An object group: placements, not pixels.
 
-- `scripts/loaders/blitmap.py:375` `find(self, object_id: int) -> BlitObject | None` #TAG:blitmap.ObjectLayer.find
-- `scripts/loaders/blitmap.py:381` `render(self, depth: int=0) -> list[str]` #TAG:blitmap.ObjectLayer.render
+- `scripts/loaders/blitmap.py:353` `find(self, object_id: int) -> BlitObject | None` #TAG:blitmap.ObjectLayer.find
+- `scripts/loaders/blitmap.py:359` `render(self, depth: int=0) -> list[str]` #TAG:blitmap.ObjectLayer.render
 
 ### `@dataclass(frozen=True) class ImageLayer` #TAG:ImageLayer
 
-`scripts/loaders/blitmap.py:392`–`415`
+`scripts/loaders/blitmap.py:370`–`393`
 
 > A single image placed as a layer. Carried, not yet rendered anywhere.
 
-- `scripts/loaders/blitmap.py:407` `render(self, depth: int=0) -> list[str]` #TAG:ImageLayer.render
+- `scripts/loaders/blitmap.py:385` `render(self, depth: int=0) -> list[str]` #TAG:ImageLayer.render
 
 ### `@dataclass(frozen=True) class LayerGroup` #TAG:LayerGroup
 
-`scripts/loaders/blitmap.py:419`–`441`
+`scripts/loaders/blitmap.py:397`–`419`
 
 > A `<group>`: how this project's maps are actually organized.
 
-- `scripts/loaders/blitmap.py:434` `render(self, depth: int=0) -> list[str]` #TAG:LayerGroup.render
+- `scripts/loaders/blitmap.py:412` `render(self, depth: int=0) -> list[str]` #TAG:LayerGroup.render
 
 ### `@dataclass(frozen=True) class TilesetLink` #TAG:TilesetLink
 
-`scripts/loaders/blitmap.py:448`–`475`
+`scripts/loaders/blitmap.py:426`–`453`
 
 > Where a gid range comes from: a firstgid and a .tileset file.
 
-- `scripts/loaders/blitmap.py:461` `__post_init__(self) -> None` #TAG:TilesetLink.__post_init__
-- `scripts/loaders/blitmap.py:469` `render(self, depth: int=0) -> list[str]` #TAG:TilesetLink.render
+- `scripts/loaders/blitmap.py:439` `__post_init__(self) -> None` #TAG:TilesetLink.__post_init__
+- `scripts/loaders/blitmap.py:447` `render(self, depth: int=0) -> list[str]` #TAG:TilesetLink.render
 
 ### `@dataclass(frozen=True) class Blitmap` #TAG:Blitmap
 
-`scripts/loaders/blitmap.py:483`–`646`
+`scripts/loaders/blitmap.py:461`–`624`
 
 > A whole map, as a value.
 
-- `scripts/loaders/blitmap.py:506` `__post_init__(self) -> None` #TAG:Blitmap.__post_init__
-- `scripts/loaders/blitmap.py:521` `walk(self) -> Iterator[tuple[tuple[str, ...], Any]]` #TAG:Blitmap.walk
+- `scripts/loaders/blitmap.py:484` `__post_init__(self) -> None` #TAG:Blitmap.__post_init__
+- `scripts/loaders/blitmap.py:499` `walk(self) -> Iterator[tuple[tuple[str, ...], Any]]` #TAG:Blitmap.walk
   - Every layer, depth first, with the group path that reaches it.
-- `scripts/loaders/blitmap.py:531` `layer_names(self) -> list[str]` #TAG:Blitmap.layer_names
+- `scripts/loaders/blitmap.py:509` `layer_names(self) -> list[str]` #TAG:Blitmap.layer_names
   - Every layer and group name, in document order.
-- `scripts/loaders/blitmap.py:540` `tile_layers(self) -> list[TileLayer]` #TAG:Blitmap.tile_layers
-- `scripts/loaders/blitmap.py:543` `object_layers(self) -> list[ObjectLayer]` #TAG:Blitmap.object_layers
-- `scripts/loaders/blitmap.py:546` `layer(self, name: str) -> Any` #TAG:Blitmap.layer
-- `scripts/loaders/blitmap.py:553` `tileset_for_gid(self, gid: int) -> TilesetLink | None` #TAG:Blitmap.tileset_for_gid
+- `scripts/loaders/blitmap.py:518` `tile_layers(self) -> list[TileLayer]` #TAG:Blitmap.tile_layers
+- `scripts/loaders/blitmap.py:521` `object_layers(self) -> list[ObjectLayer]` #TAG:Blitmap.object_layers
+- `scripts/loaders/blitmap.py:524` `layer(self, name: str) -> Any` #TAG:Blitmap.layer
+- `scripts/loaders/blitmap.py:531` `tileset_for_gid(self, gid: int) -> TilesetLink | None` #TAG:Blitmap.tileset_for_gid
   - Which tileset owns a gid: the highest firstgid at or below it.
-- `scripts/loaders/blitmap.py:571` `render(self) -> str` #TAG:Blitmap.render
+- `scripts/loaders/blitmap.py:549` `render(self) -> str` #TAG:Blitmap.render
   - The file, as a string. Always ends in a newline.
-- `scripts/loaders/blitmap.py:585` `@classmethod parse(cls, text: str, *, path: str | None=None) -> 'Blitmap'` #TAG:Blitmap.parse
-- `scripts/loaders/blitmap.py:626` `@classmethod load(cls, path: str) -> 'Blitmap'` #TAG:Blitmap.load
-- `scripts/loaders/blitmap.py:630` `save(self, path: str) -> str` #TAG:Blitmap.save
+- `scripts/loaders/blitmap.py:563` `@classmethod parse(cls, text: str, *, path: str | None=None) -> 'Blitmap'` #TAG:Blitmap.parse
+- `scripts/loaders/blitmap.py:604` `@classmethod load(cls, path: str) -> 'Blitmap'` #TAG:Blitmap.load
+- `scripts/loaders/blitmap.py:608` `save(self, path: str) -> str` #TAG:Blitmap.save
   - Write it. newline='' so the bytes are the bytes on every platform.
-- `scripts/loaders/blitmap.py:640` `__str__(self) -> str` #TAG:Blitmap.__str__
-- `scripts/loaders/blitmap.py:643` `__repr__(self) -> str` #TAG:Blitmap.__repr__
+- `scripts/loaders/blitmap.py:618` `__str__(self) -> str` #TAG:Blitmap.__str__
+- `scripts/loaders/blitmap.py:621` `__repr__(self) -> str` #TAG:Blitmap.__repr__
 
 ### `@dataclass(frozen=True) class LinkedTileset` #TAG:LinkedTileset
 
-`scripts/loaders/blitmap.py:918`–`964`
+`scripts/loaders/blitmap.py:894`–`939`
 
 > A tileset link resolved to the file it names, and where that file is.
 
-- `scripts/loaders/blitmap.py:933` `@property name(self) -> str` #TAG:LinkedTileset.name
-- `scripts/loaders/blitmap.py:937` `@property first_gid(self) -> int` #TAG:LinkedTileset.first_gid
-- `scripts/loaders/blitmap.py:941` `@property last_gid(self) -> int` #TAG:LinkedTileset.last_gid
+- `scripts/loaders/blitmap.py:908` `@property name(self) -> str` #TAG:LinkedTileset.name
+- `scripts/loaders/blitmap.py:912` `@property first_gid(self) -> int` #TAG:LinkedTileset.first_gid
+- `scripts/loaders/blitmap.py:916` `@property last_gid(self) -> int` #TAG:LinkedTileset.last_gid
   - The highest gid this tileset owns.
-- `scripts/loaders/blitmap.py:951` `holds(self, gid: int) -> bool` #TAG:LinkedTileset.holds
-- `scripts/loaders/blitmap.py:954` `local_id(self, gid: int) -> int` #TAG:LinkedTileset.local_id
+- `scripts/loaders/blitmap.py:926` `holds(self, gid: int) -> bool` #TAG:LinkedTileset.holds
+- `scripts/loaders/blitmap.py:929` `local_id(self, gid: int) -> int` #TAG:LinkedTileset.local_id
   - The tile's index WITHIN this tileset. Negative if it is not ours.
-- `scripts/loaders/blitmap.py:958` `image_path(self) -> str` #TAG:LinkedTileset.image_path
+- `scripts/loaders/blitmap.py:933` `image_path(self) -> str` #TAG:LinkedTileset.image_path
   - Where this tileset's image actually is, absolutely.
-- `scripts/loaders/blitmap.py:962` `__repr__(self) -> str` #TAG:LinkedTileset.__repr__
+- `scripts/loaders/blitmap.py:937` `__repr__(self) -> str` #TAG:LinkedTileset.__repr__
 
 ### `@dataclass(frozen=True) class TileAddress` #TAG:TileAddress
 
-`scripts/loaders/blitmap.py:968`–`984`
+`scripts/loaders/blitmap.py:943`–`959`
 
 > Where one gid's pixels live: which tileset, which cell, which flips.
 
-- `scripts/loaders/blitmap.py:983` `@property flipped(self) -> bool` #TAG:TileAddress.flipped
+- `scripts/loaders/blitmap.py:958` `@property flipped(self) -> bool` #TAG:TileAddress.flipped
 
 ### `@dataclass(frozen=True) class LoadedMap` #TAG:LoadedMap
 
-`scripts/loaders/blitmap.py:988`–`1052`
+`scripts/loaders/blitmap.py:963`–`1027`
 
 > A .blitmap and every .tileset it links, as one value.
 
-- `scripts/loaders/blitmap.py:995` `tileset(self, name: str) -> LinkedTileset` #TAG:LoadedMap.tileset
-- `scripts/loaders/blitmap.py:1003` `tileset_for_gid(self, gid: int) -> LinkedTileset | None` #TAG:LoadedMap.tileset_for_gid
+- `scripts/loaders/blitmap.py:970` `tileset(self, name: str) -> LinkedTileset` #TAG:LoadedMap.tileset
+- `scripts/loaders/blitmap.py:978` `tileset_for_gid(self, gid: int) -> LinkedTileset | None` #TAG:LoadedMap.tileset_for_gid
   - The highest firstgid at or below `gid`. pytmx's rule, restated.
-- `scripts/loaders/blitmap.py:1022` `address(self, gid: int) -> TileAddress | None` #TAG:LoadedMap.address
+- `scripts/loaders/blitmap.py:997` `address(self, gid: int) -> TileAddress | None` #TAG:LoadedMap.address
   - Resolve one gid to a cell, or None when nothing can draw it.
-- `scripts/loaders/blitmap.py:1050` `__repr__(self) -> str` #TAG:LoadedMap.__repr__
+- `scripts/loaders/blitmap.py:1025` `__repr__(self) -> str` #TAG:LoadedMap.__repr__
 
 ### `@dataclass(frozen=True) class MapObjectRecord` #TAG:MapObjectRecord
 
-`scripts/loaders/blitmap.py:1090`–`1120`
+`scripts/loaders/blitmap.py:1065`–`1091`
 
 > One placed object, flattened to what the spawn path actually reads.
 
-- `scripts/loaders/blitmap.py:1118` `__post_init__(self) -> None` #TAG:MapObjectRecord.__post_init__
+- `scripts/loaders/blitmap.py:1089` `__post_init__(self) -> None` #TAG:MapObjectRecord.__post_init__
 
 ### `@dataclass(frozen=True) class Conversion` #TAG:Conversion
 
-`scripts/loaders/blitmap.py:1164`–`1191`
+`scripts/loaders/blitmap.py:1135`–`1162`
 
 > The result of converting one .tmx: the map, its tilesets, the losses.
 
-- `scripts/loaders/blitmap.py:1178` `@property complete(self) -> bool` #TAG:Conversion.complete
-- `scripts/loaders/blitmap.py:1181` `tileset(self, name: str) -> TilesetFile` #TAG:Conversion.tileset
-- `scripts/loaders/blitmap.py:1189` `__repr__(self) -> str` #TAG:Conversion.__repr__
+- `scripts/loaders/blitmap.py:1149` `@property complete(self) -> bool` #TAG:Conversion.complete
+- `scripts/loaders/blitmap.py:1152` `tileset(self, name: str) -> TilesetFile` #TAG:Conversion.tileset
+- `scripts/loaders/blitmap.py:1160` `__repr__(self) -> str` #TAG:Conversion.__repr__

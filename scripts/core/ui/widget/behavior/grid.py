@@ -1,20 +1,10 @@
 """Grid layout for components.
 
-WHAT WAS HERE BEFORE
---------------------
-A shell. `add_item` recorded a GridNode holding a (column, row) cell
-coordinate and never bound the component or gave it a pixel position, so items
-never entered the component tree and nothing was ever drawn. `row_height` and
-`max_rows` were stored and never read. There was no layout pass at all, and a
-`DummyParent` class that nothing referenced. It had never executed.
-
-WHAT IT DOES NOW
-----------------
 Items flow left-to-right, wrapping at `max_columns`, and `relayout()` assigns
-each one a real `local_bounds`. Column widths and row heights are measured from
-the items that occupy them unless fixed sizes are given, so a grid of mixed
-widgets lines up. The grid then resizes itself to fit its content, which is what
-lets a scrolling Panel know how far it can scroll.
+each one a real `local_bounds`. Column widths and row heights are measured
+from the items that occupy them unless fixed sizes are given, so a grid of
+mixed widgets lines up. The grid then resizes itself to fit its content, which
+is what lets a scrolling Panel know how far it can scroll.
 
     grid = GridComponent(parent=panel, bounds=Rect(0, 0, 200, 0), max_columns=2,
                          spacing=(4, 4), padding=(6, 6))
@@ -156,12 +146,11 @@ class GridComponent(GameComponent):
                  name: str | None = None) -> GridNode:
         """Place a component in the grid and BIND it so it actually exists.
 
-        The previous implementation recorded a cell coordinate and stopped,
-        which is why nothing ever appeared: an unbound component is not in the
-        tree, receives no events and is never drawn.
+        Recording a cell coordinate is not enough: an unbound component is not
+        in the tree, receives no events and is never drawn.
 
-        `cell` pins the item to an explicit (column, row) instead of taking the
-        next auto-flow slot.
+        `cell` pins the item to an explicit (column, row) instead of taking
+        the next auto-flow slot.
         """
         if cell is not None:
             placed = Vector2(_as_pair(cell))

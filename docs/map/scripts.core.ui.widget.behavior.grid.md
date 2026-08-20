@@ -5,7 +5,7 @@
 
 > Grid layout for components.
 
-`scripts.core.ui.widget.behavior.grid` · 528 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.widget.behavior.grid` · 517 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,69 +13,69 @@
 
 ## Functions
 
-- `scripts/core/ui/widget/behavior/grid.py:45` `_as_pair(value, default=(0, 0)) -> tuple[int, int]` #TAG:_as_pair
+- `scripts/core/ui/widget/behavior/grid.py:35` `_as_pair(value, default=(0, 0)) -> tuple[int, int]` #TAG:_as_pair
   - Accept a Vector2, a 2-tuple, or a single number for x/y pairs.
 
 ## Classes
 
 ### `class GridNode` #TAG:GridNode
 
-`scripts/core/ui/widget/behavior/grid.py:56`–`73`
+`scripts/core/ui/widget/behavior/grid.py:46`–`63`
 
 > One item's place in the grid.
 
-- `scripts/core/ui/widget/behavior/grid.py:59` `__init__(self, component: GameComponent, cell: Vector2)` #TAG:GridNode.__init__
-- `scripts/core/ui/widget/behavior/grid.py:65` `@property column(self) -> int` #TAG:GridNode.column
-- `scripts/core/ui/widget/behavior/grid.py:69` `@property row(self) -> int` #TAG:GridNode.row
-- `scripts/core/ui/widget/behavior/grid.py:72` `__repr__(self) -> str` #TAG:GridNode.__repr__
+- `scripts/core/ui/widget/behavior/grid.py:49` `__init__(self, component: GameComponent, cell: Vector2)` #TAG:GridNode.__init__
+- `scripts/core/ui/widget/behavior/grid.py:55` `@property column(self) -> int` #TAG:GridNode.column
+- `scripts/core/ui/widget/behavior/grid.py:59` `@property row(self) -> int` #TAG:GridNode.row
+- `scripts/core/ui/widget/behavior/grid.py:62` `__repr__(self) -> str` #TAG:GridNode.__repr__
 
 ### `class GridComponent(GameComponent)` #TAG:GridComponent
 
-`scripts/core/ui/widget/behavior/grid.py:76`–`527`
+`scripts/core/ui/widget/behavior/grid.py:66`–`516`
 
 > Lays its child components out on a grid and sizes itself to fit them.
 
-- `scripts/core/ui/widget/behavior/grid.py:79` `__init__(self, max_columns: int=-1, max_rows: int=-1, row_height: int=0, column_width: int=0, cell_size=None, spacing=(0, 0), padding=(0, 0), grow: bool=True, *args, **kwargs)` #TAG:GridComponent.__init__
+- `scripts/core/ui/widget/behavior/grid.py:69` `__init__(self, max_columns: int=-1, max_rows: int=-1, row_height: int=0, column_width: int=0, cell_size=None, spacing=(0, 0), padding=(0, 0), grow: bool=True, *args, **kwargs)` #TAG:GridComponent.__init__
   - max_columns wrap to a new row after this many columns; -1 = one row
-- `scripts/core/ui/widget/behavior/grid.py:137` `@property items(self) -> list[GameComponent]` #TAG:GridComponent.items
+- `scripts/core/ui/widget/behavior/grid.py:127` `@property items(self) -> list[GameComponent]` #TAG:GridComponent.items
   - The laid-out components, in insertion order.
-- `scripts/core/ui/widget/behavior/grid.py:142` `@property count(self) -> int` #TAG:GridComponent.count
-- `scripts/core/ui/widget/behavior/grid.py:145` `item(self, index: int) -> GameComponent` #TAG:GridComponent.item
-- `scripts/core/ui/widget/behavior/grid.py:148` `find(self, uuid: str) -> GridNode | None` #TAG:GridComponent.find
-- `scripts/core/ui/widget/behavior/grid.py:154` `add_item(self, component: GameComponent, cell: Vector2 | tuple | None=None, name: str | None=None) -> GridNode` #TAG:GridComponent.add_item
+- `scripts/core/ui/widget/behavior/grid.py:132` `@property count(self) -> int` #TAG:GridComponent.count
+- `scripts/core/ui/widget/behavior/grid.py:135` `item(self, index: int) -> GameComponent` #TAG:GridComponent.item
+- `scripts/core/ui/widget/behavior/grid.py:138` `find(self, uuid: str) -> GridNode | None` #TAG:GridComponent.find
+- `scripts/core/ui/widget/behavior/grid.py:144` `add_item(self, component: GameComponent, cell: Vector2 | tuple | None=None, name: str | None=None) -> GridNode` #TAG:GridComponent.add_item
   - Place a component in the grid and BIND it so it actually exists.
-- `scripts/core/ui/widget/behavior/grid.py:184` `remove_item(self, component: GameComponent) -> bool` #TAG:GridComponent.remove_item
-- `scripts/core/ui/widget/behavior/grid.py:197` `clear(self)` #TAG:GridComponent.clear
-- `scripts/core/ui/widget/behavior/grid.py:205` `_advance(self)` #TAG:GridComponent._advance
-- `scripts/core/ui/widget/behavior/grid.py:211` `_reflow_auto_cells(self)` #TAG:GridComponent._reflow_auto_cells
+- `scripts/core/ui/widget/behavior/grid.py:173` `remove_item(self, component: GameComponent) -> bool` #TAG:GridComponent.remove_item
+- `scripts/core/ui/widget/behavior/grid.py:186` `clear(self)` #TAG:GridComponent.clear
+- `scripts/core/ui/widget/behavior/grid.py:194` `_advance(self)` #TAG:GridComponent._advance
+- `scripts/core/ui/widget/behavior/grid.py:200` `_reflow_auto_cells(self)` #TAG:GridComponent._reflow_auto_cells
   - Re-pack auto-placed items after a removal, leaving pinned ones put.
-- `scripts/core/ui/widget/behavior/grid.py:221` `_check_row_limit(self, cell: Vector2)` #TAG:GridComponent._check_row_limit
-- `scripts/core/ui/widget/behavior/grid.py:237` `@property uniform(self) -> bool` #TAG:GridComponent.uniform
+- `scripts/core/ui/widget/behavior/grid.py:210` `_check_row_limit(self, cell: Vector2)` #TAG:GridComponent._check_row_limit
+- `scripts/core/ui/widget/behavior/grid.py:226` `@property uniform(self) -> bool` #TAG:GridComponent.uniform
   - True when cells have a fixed size and pixel<->cell is stable.
-- `scripts/core/ui/widget/behavior/grid.py:246` `cell_step(self) -> tuple[int, int]` #TAG:GridComponent.cell_step
+- `scripts/core/ui/widget/behavior/grid.py:235` `cell_step(self) -> tuple[int, int]` #TAG:GridComponent.cell_step
   - Pixel distance from one cell's origin to the next, including spacing.
-- `scripts/core/ui/widget/behavior/grid.py:262` `cell_origin(self, column: int, row: int) -> Vector2` #TAG:GridComponent.cell_origin
+- `scripts/core/ui/widget/behavior/grid.py:251` `cell_origin(self, column: int, row: int) -> Vector2` #TAG:GridComponent.cell_origin
   - Top-left of a cell, in grid-local pixels.
-- `scripts/core/ui/widget/behavior/grid.py:281` `cell_rect(self, column: int, row: int) -> Rect` #TAG:GridComponent.cell_rect
+- `scripts/core/ui/widget/behavior/grid.py:270` `cell_rect(self, column: int, row: int) -> Rect` #TAG:GridComponent.cell_rect
   - Pixel rect of a cell, in grid-local space.
-- `scripts/core/ui/widget/behavior/grid.py:290` `cell_at(self, point, *, clamp: bool=False) -> Vector2 | None` #TAG:GridComponent.cell_at
+- `scripts/core/ui/widget/behavior/grid.py:279` `cell_at(self, point, *, clamp: bool=False) -> Vector2 | None` #TAG:GridComponent.cell_at
   - Which cell contains a grid-LOCAL point. None if outside the grid.
-- `scripts/core/ui/widget/behavior/grid.py:335` `@staticmethod __index_from_runs(offset: float, runs: list[int], gap: int) -> int | None` #TAG:GridComponent.__index_from_runs
+- `scripts/core/ui/widget/behavior/grid.py:324` `@staticmethod __index_from_runs(offset: float, runs: list[int], gap: int) -> int | None` #TAG:GridComponent.__index_from_runs
   - Which run contains `offset`, walking measured column/row sizes.
-- `scripts/core/ui/widget/behavior/grid.py:346` `world_cell_at(self, world_point, *, clamp: bool=False) -> Vector2 | None` #TAG:GridComponent.world_cell_at
+- `scripts/core/ui/widget/behavior/grid.py:335` `world_cell_at(self, world_point, *, clamp: bool=False) -> Vector2 | None` #TAG:GridComponent.world_cell_at
   - Which cell contains a SCREEN/world point.
-- `scripts/core/ui/widget/behavior/grid.py:361` `occupant(self, column: int, row: int) -> GameComponent | None` #TAG:GridComponent.occupant
+- `scripts/core/ui/widget/behavior/grid.py:350` `occupant(self, column: int, row: int) -> GameComponent | None` #TAG:GridComponent.occupant
   - The component in a cell, or None.
-- `scripts/core/ui/widget/behavior/grid.py:368` `is_free(self, column: int, row: int) -> bool` #TAG:GridComponent.is_free
-- `scripts/core/ui/widget/behavior/grid.py:371` `snap(self, component: GameComponent, point, *, world: bool=False, clamp: bool=True, on_occupied: str='raise', name: str | None=None) -> GridNode` #TAG:GridComponent.snap
+- `scripts/core/ui/widget/behavior/grid.py:357` `is_free(self, column: int, row: int) -> bool` #TAG:GridComponent.is_free
+- `scripts/core/ui/widget/behavior/grid.py:360` `snap(self, component: GameComponent, point, *, world: bool=False, clamp: bool=True, on_occupied: str='raise', name: str | None=None) -> GridNode` #TAG:GridComponent.snap
   - Place a component into the cell containing `point`.
-- `scripts/core/ui/widget/behavior/grid.py:428` `measure(self) -> tuple[list[int], list[int]]` #TAG:GridComponent.measure
+- `scripts/core/ui/widget/behavior/grid.py:417` `measure(self) -> tuple[list[int], list[int]]` #TAG:GridComponent.measure
   - Column widths and row heights.
-- `scripts/core/ui/widget/behavior/grid.py:460` `content_size(self) -> tuple[int, int]` #TAG:GridComponent.content_size
+- `scripts/core/ui/widget/behavior/grid.py:449` `content_size(self) -> tuple[int, int]` #TAG:GridComponent.content_size
   - Pixel size the items occupy, including padding. (0, 0) when empty.
-- `scripts/core/ui/widget/behavior/grid.py:471` `relayout(self)` #TAG:GridComponent.relayout
+- `scripts/core/ui/widget/behavior/grid.py:460` `relayout(self)` #TAG:GridComponent.relayout
   - Assign every item its pixel rect, then fit the grid to its content.
-- `scripts/core/ui/widget/behavior/grid.py:511` `_on_size_changed(self, width: int | float, height: int | float)` #TAG:GridComponent._on_size_changed
+- `scripts/core/ui/widget/behavior/grid.py:500` `_on_size_changed(self, width: int | float, height: int | float)` #TAG:GridComponent._on_size_changed
   - Re-flow when the grid itself is resized.
-- `scripts/core/ui/widget/behavior/grid.py:520` `core_lifecycle_build(self, event=None)` #TAG:GridComponent.core_lifecycle_build
-- `scripts/core/ui/widget/behavior/grid.py:524` `__repr__(self) -> str` #TAG:GridComponent.__repr__
+- `scripts/core/ui/widget/behavior/grid.py:509` `core_lifecycle_build(self, event=None)` #TAG:GridComponent.core_lifecycle_build
+- `scripts/core/ui/widget/behavior/grid.py:513` `__repr__(self) -> str` #TAG:GridComponent.__repr__

@@ -1,60 +1,42 @@
 """The .blitmap file: this engine's own map format, and the tmx converter.
 
-WHY STOP USING TILED'S FORMAT
------------------------------
-Nothing is wrong with .tmx as a file. What is wrong is depending on it, and
-the dependency has three separate costs that only look like one:
-
-  * **pytmx decides what a map means.** It RENUMBERS gids, so `layer.data`
-    holds internal ids and `tmx.tiledgidmap` is mandatory to get back to what
-    the file says. It RAISES on a custom property that shadows one of its
-    attribute names -- `opacity`, `visible`, `offsetx`, `name`, `data`, `id`
-    -- which is the entire reason every capability in
-    `scripts/core/layer_profile.py` wears a `pyoneer_` prefix. It cannot read
-    Wang sets at all, so the terrain the editor authors is invisible to it.
-    It invents a layer named None for every per-tile collision shape. Each of
-    those is a workaround this engine carries in production code.
-  * **XML costs more than it returns.** `map_document.py` is 1,981 lines, and
-    the large majority of them exist to reproduce punctuation: the original
-    declaration byte for byte, CRLF, tabs on the first elements and spaces on
-    the rest, `</data>` at column 0, no space before `/>`. That work is
-    correct and necessary -- for a file Tiled also writes.
-  * **A tileset is trapped inside whichever map embedded it.** Two maps using
-    TileA2 carry two copies of its 768-tile declaration, and the copies drift.
-
-So this format. It is not a better XML; it is a different trade.
-
-THE TRADE, STATED PLAINLY
--------------------------
-`map_document.py` PRESERVES punctuation because another program writes those
+WHAT IT TRADES AGAINST .tmx
+---------------------------
+`map_document.py` PRESERVES punctuation because Tiled also writes those
 bytes. This format has exactly ONE writer, so it is CANONICAL instead: one
-spelling per model, and byte-exactness stops being bookkeeping and becomes
-two theorems that `tools/check_blitmap.py` asserts directly --
+spelling per model, and byte-exactness becomes two theorems
+`tools/check_blitmap.py` asserts directly --
 
     parse(render(model)) == model       for every model
     render(parse(text))  == text        for every text render() can emit
 
+It also owns its own gids. pytmx RENUMBERS them (so `layer.data` needs
+`tmx.tiledgidmap` to get back to the file's), RAISES on a custom property
+shadowing one of its attribute names, cannot read Wang sets, and invents a
+layer named None for every per-tile collision shape -- workarounds this
+engine carries in production code. And a tmx tileset is trapped inside
+whichever map embedded it, so two maps using TileA2 carry two copies of its
+768-tile declaration and the copies drift.
+
 DIFFABLE BY A HUMAN
 -------------------
 Line oriented, one tab per level of nesting, and the tile data is a grid the
-shape of the map. A changed tile is a changed token on the line whose number
-is its row -- so `git diff` points at a place on the map, not at an offset
-into a base64 blob. That is the same reasoning `.blitmask` uses, and the two
-formats are deliberately readable side by side.
+shape of the map, so a changed tile is a changed token on the line whose
+number is its row. The same reasoning `.blitmask` uses; the two formats read
+side by side.
 
 CHEAP TO LOAD
 -------------
-No XML parser, no DOM, no gid renumbering, no second pass to undo the
-renumbering. `str.splitlines`, `str.partition`, and `int()` per csv token.
-Loading is one forward pass and the gids that come out are the gids in the
-file -- `tiledgidmap` has nothing to be the inverse of.
+No XML parser, no DOM, no gid renumbering. `str.splitlines`,
+`str.partition`, and `int()` per csv token, in one forward pass, and the gids
+that come out are the gids in the file.
 
 VERSIONED
 ---------
-The first line is `blitmap 1`. The magic word is the extension, exactly as
-`.blitmask` already does (`blitmask 1`) and `.tileset` now does
-(`tileset 1`), so `head -1` identifies any file in the family and a reader
-built for version 1 refuses version 2 out loud instead of guessing.
+The first line is `blitmap 1`. The magic word is the extension, as
+`.blitmask` (`blitmask 1`) and `.tileset` (`tileset 1`) also do, so `head -1`
+identifies any file in the family and a reader built for version 1 refuses
+version 2 out loud instead of guessing.
 
 WHAT IT CARRIES
 ---------------
@@ -88,15 +70,11 @@ measured against:
 FIRST-CLASS NAMES, AND THE `attr` PRESSURE VALVE
 ------------------------------------------------
 The rule for what gets its own keyword is: **what the engine reads.** Map
-size and tile size, layer nesting, gids, object placement, custom
-properties -- those the renderer and the (still unbuilt) spawn path act on.
-Tiled's `tiledversion`, `compressionlevel`, `locked`, `nextlayerid` are
-bookkeeping we neither interpret nor are entitled to throw away, so they ride
-along as `attr` lines, in document order, untouched.
-
-That valve is what keeps the format from growing a field every time Tiled
-grows one, and it is why the converter can claim fidelity for attributes it
-has never heard of.
+size and tile size, layer nesting, gids, object placement, custom properties.
+Tiled's `tiledversion`, `compressionlevel`, `locked` and `nextlayerid` are
+bookkeeping this format neither interprets nor may throw away, so they ride
+along as `attr` lines, in document order, untouched -- which is how the
+converter keeps fidelity for attributes it has never heard of.
 
 WHAT THE CONVERTER DOES NOT CARRY
 ---------------------------------
@@ -906,12 +884,10 @@ def _read_group(header: Line, cursor: Cursor, path: str | None) -> LayerGroup:
 # ---------------------------------------------------------------------------
 # Loading a map WITH the tilesets it links
 #
-# `Blitmap.load` reads one file and follows nothing, which is the right
-# default for a caller that wants to look at layers: splitting the tileset
-# out of the map is worthless if reading the map still drags every tileset
-# in. But a caller that wants to DRAW has no gid ranges until the links are
-# followed -- a TilesetLink carries a firstgid and a name and no tile count
-# -- so that caller asks for it explicitly, here.
+# `Blitmap.load` reads one file and follows nothing, so a caller that only
+# wants the layers does not drag every tileset in. A caller that wants to
+# DRAW has no gid ranges until the links are followed -- a TilesetLink
+# carries a firstgid and a name and no tile count -- and asks for that here.
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -919,10 +895,9 @@ class LinkedTileset:
     """A tileset link resolved to the file it names, and where that file is.
 
     `path` is carried rather than derived because a .tileset's `image` line
-    is relative to the .TILESET, not to the map that links it. Two levels of
-    indirection, and resolving the second against the wrong base is the same
-    working-directory trap `resolve_map_path` exists for -- except it fails
-    later and quieter, as a tileset that loads and draws nothing.
+    is relative to the .TILESET, not to the map that links it. Resolving it
+    against the wrong base fails quietly, as a tileset that loads and draws
+    nothing.
     """
 
     link: TilesetLink
@@ -1090,16 +1065,12 @@ def load_map(path: str) -> LoadedMap:
 class MapObjectRecord:
     """One placed object, flattened to what the spawn path actually reads.
 
-    Deliberately shaped like `map_document.MapObject` -- same `id`, `gid`,
-    `x`, `y`, `height` -- so `map_loader.object_top_left` works on one of
-    these unchanged. The alternative is writing the bottom-left-versus-
-    top-left rule down a second time, and two spellings of that rule means
-    one spelling that is wrong by a sprite's height and looks deliberate.
+    Shaped like `map_document.MapObject` -- same `id`, `gid`, `x`, `y`,
+    `height` -- so `map_loader.object_top_left` works on one of these
+    unchanged, and the bottom-left-versus-top-left rule is spelled once.
 
-    `properties` is a plain dict of TYPED values, because that is what
-    `spawn.resolve_depth` checks: it refuses a depth that arrives as the
-    string '50' rather than coercing it, so handing it raw text would turn
-    every authored depth into a raise.
+    `properties` is a plain dict of TYPED values, because `spawn.resolve_depth`
+    REFUSES a depth that arrives as the string '50' rather than coercing it.
     """
 
     id: int
@@ -1317,21 +1288,16 @@ def declared_collision(element) -> str:
     """The `.blitmask` a tmx `<tileset>` declares about ITSELF, or "".
 
     `pyoneer_collision` is written onto the `<tileset>` element by
-    `map.tileset.mask.set` the first time an author paints a tile mask, so
-    for any map authored with that verb this -- not an injection -- is where
-    the reference lives. Reading it is the difference between converting
-    that map and quietly converting everything except the masks.
+    `map.tileset.mask.set` the first time an author paints a tile mask, so for
+    any map authored with that verb this is where the reference lives.
 
-    Empty means the tileset declares nothing, which is the ordinary case and
-    stays free: every map authored before tile masks existed converts exactly
-    as it did before. That is not law 7's plausible default -- it is the
-    documented meaning of an absent property, the same line
+    Empty means the tileset declares nothing, which is the ordinary case: an
+    absent property has a documented meaning here, the same line
     `collision_runtime.tileset_defaults` draws between "not authored" and
     "authored wrong".
 
-    `_properties_of` rather than a second walk over `<properties>`: the
-    multi-line-body case it handles is one pytmx raises on, and a converter
-    with its own property reader is a converter missing that guard.
+    Reads through `_properties_of` rather than walking `<properties>` again,
+    because that handles the multi-line-body case pytmx raises on.
     """
     for prop in _properties_of(element):
         if prop.name == DEFAULTS_PROPERTY:
@@ -1343,38 +1309,27 @@ def from_tmx(document: MapDocument, *, tileset_dir: str = "tilesets",
              collision_for=None) -> Conversion:
     """Convert a loaded .tmx into a .blitmap plus one .tileset per tileset.
 
-    No pytmx. The source is `MapDocument`, which reads the FILE's gids
-    rather than pytmx's renumbered internal ones, so no `tiledgidmap`
-    inversion is needed and no property can make the load fail by shadowing
-    a reader's attribute name.
+    No pytmx. The source is `MapDocument`, which reads the FILE's gids rather
+    than pytmx's renumbered internal ones, so no `tiledgidmap` inversion is
+    needed and no property can fail the load by shadowing a reader's
+    attribute name.
 
     WHERE A TILESET'S `.blitmask` REFERENCE COMES FROM
     --------------------------------------------------
-    From the `<tileset>` itself, and from `collision_for` only when a caller
-    supplies one. That order is a correction, not a preference. This
-    argument was originally the ONLY source, justified by "`scripts/` may
-    never import the editor code that reads the mask" -- a reason that
-    stopped being true when the reader moved into `scripts/` at `6794bde`,
-    while the `<tileset>` being converted carried `pyoneer_collision` on it
-    the whole time. A caller who did not know to inject one therefore
-    converted a map and silently lost the masks its author had painted: the
-    `Paralax` shape, one format conversion later. What made it invisible is
-    that the reference was never truly gone -- it rode along in the
-    unmodelled property bag, so the .tileset still SAID `Art.blitmask`
-    somewhere, on a line no reader of this format consults.
+    From the `<tileset>` element's own `pyoneer_collision`, which
+    `map.tileset.mask.set` writes when an author paints a tile mask, and from
+    `collision_for(tileset_name) -> str` when a caller supplies one.
 
-    `collision_for(tileset_name) -> str` therefore OVERRIDES the
-    declaration, and returning "" defers to it rather than erasing it. The
-    caller is the half that knows a base this module does not -- the mask
-    sits beside the ART -- so a caller with an answer wins, and a caller
-    with nothing to say about this particular tileset must not be able to
-    silently unpaint it.
+    The callback OVERRIDES the declaration, because the caller is the half
+    that knows where the mask sits beside the ART. Returning "" DEFERS to the
+    declaration rather than erasing it, so a caller with nothing to say about
+    a particular tileset cannot silently unpaint it.
 
     Both spellings survive into the .tileset: `collision` is the modelled
-    declaration this format's readers consult, and the `pyoneer_collision`
-    property rides along in the passthrough bag exactly as every other tmx
-    property does. They agree because one is derived from the other here,
-    in one place, and `tools/check_blitmap.py` asserts they still do.
+    declaration this format's readers consult, and `pyoneer_collision` rides
+    along in the passthrough bag as every other tmx property does. One is
+    derived from the other here, and `tools/check_blitmap.py` asserts they
+    still agree.
     """
     dropped: list[str] = []
     tilesets: list[TilesetLink] = []

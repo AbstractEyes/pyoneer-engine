@@ -5,7 +5,7 @@
 
 > Patrol demo: two bodies, one movement behavior, two different drivers.
 
-`demos.patrol` · 49 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.patrol` · 36 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,6 +15,6 @@
 
 ### `class PatrolDemo(DemoGame)` #TAG:PatrolDemo
 
-`demos/patrol.py:43`–`44`
+`demos/patrol.py:30`–`31`
 
 - (no methods)

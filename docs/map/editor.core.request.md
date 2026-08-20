@@ -5,7 +5,7 @@
 
 > Requests -- how a note typed under a panel becomes work an AI can do.
 
-`editor.core.request` · 540 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.request` · 538 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,66 +13,66 @@
 
 ## Module constants
 
-- `editor/core/request.py:58` `REQUESTS_DIR` #TAG:REQUESTS_DIR
-- `editor/core/request.py:60` `NOTE_KINDS` #TAG:NOTE_KINDS
-- `editor/core/request.py:62` `RESPONSE_FILE` #TAG:RESPONSE_FILE
-- `editor/core/request.py:63` `NOTES_FILE` #TAG:NOTES_FILE
+- `editor/core/request.py:56` `REQUESTS_DIR` #TAG:REQUESTS_DIR
+- `editor/core/request.py:58` `NOTE_KINDS` #TAG:NOTE_KINDS
+- `editor/core/request.py:60` `RESPONSE_FILE` #TAG:RESPONSE_FILE
+- `editor/core/request.py:61` `NOTES_FILE` #TAG:NOTES_FILE
 
 ## Functions
 
-- `editor/core/request.py:175` `write_bundle(project: Any, manifest: Manifest, *, requests_dir: str | None=None) -> Bundle` #TAG:write_bundle
+- `editor/core/request.py:173` `write_bundle(project: Any, manifest: Manifest, *, requests_dir: str | None=None) -> Bundle` #TAG:write_bundle
   - Write a self-contained request directory. Returns where it went.
-- `editor/core/request.py:212` `_next_id(base: str, title: str) -> str` #TAG:_next_id
-- `editor/core/request.py:220` `_brief(project: Any, manifest: Manifest, identifier: str) -> str` #TAG:_brief
-- `editor/core/request.py:282` `_request(project: Any, manifest: Manifest) -> str` #TAG:_request
-- `editor/core/request.py:304` `_rules(project: Any) -> str` #TAG:_rules
-- `editor/core/request.py:334` `_context(project: Any, manifest: Manifest) -> str` #TAG:_context
-- `editor/core/request.py:354` `describe_scope(project: Any, scope: Scope) -> list[str]` #TAG:describe_scope
+- `editor/core/request.py:210` `_next_id(base: str, title: str) -> str` #TAG:_next_id
+- `editor/core/request.py:218` `_brief(project: Any, manifest: Manifest, identifier: str) -> str` #TAG:_brief
+- `editor/core/request.py:280` `_request(project: Any, manifest: Manifest) -> str` #TAG:_request
+- `editor/core/request.py:302` `_rules(project: Any) -> str` #TAG:_rules
+- `editor/core/request.py:332` `_context(project: Any, manifest: Manifest) -> str` #TAG:_context
+- `editor/core/request.py:352` `describe_scope(project: Any, scope: Scope) -> list[str]` #TAG:describe_scope
   - A compact, factual rendering of one scope. Shared with the UI.
-- `editor/core/request.py:381` `_describe_project(project: Any) -> list[str]` #TAG:request._describe_project
-- `editor/core/request.py:390` `_describe_map(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_map
-- `editor/core/request.py:401` `_describe_layer(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_layer
-- `editor/core/request.py:438` `_describe_object(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_object
-- `editor/core/request.py:456` `_describe_table(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_table
-- `editor/core/request.py:484` `_describe_row(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_row
-- `editor/core/request.py:497` `parse_response(text: str, *, source: str='response.jsonl') -> list[Command]` #TAG:parse_response
+- `editor/core/request.py:379` `_describe_project(project: Any) -> list[str]` #TAG:request._describe_project
+- `editor/core/request.py:388` `_describe_map(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_map
+- `editor/core/request.py:399` `_describe_layer(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_layer
+- `editor/core/request.py:436` `_describe_object(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_object
+- `editor/core/request.py:454` `_describe_table(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_table
+- `editor/core/request.py:482` `_describe_row(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_row
+- `editor/core/request.py:495` `parse_response(text: str, *, source: str='response.jsonl') -> list[Command]` #TAG:parse_response
   - Turn a JSON Lines response into commands, loudly.
-- `editor/core/request.py:533` `read_response(path: str) -> list[Command]` #TAG:read_response
+- `editor/core/request.py:531` `read_response(path: str) -> list[Command]` #TAG:read_response
 
 ## Classes
 
 ### `@dataclass class Note` #TAG:Note
 
-`editor/core/request.py:71`–`96`
+`editor/core/request.py:69`–`94`
 
 > One comment left on one part of the project.
 
-- `editor/core/request.py:79` `__post_init__(self) -> None` #TAG:Note.__post_init__
-- `editor/core/request.py:89` `to_json(self) -> dict[str, Any]` #TAG:Note.to_json
-- `editor/core/request.py:94` `@classmethod from_json(cls, raw: dict[str, Any]) -> 'Note'` #TAG:Note.from_json
+- `editor/core/request.py:77` `__post_init__(self) -> None` #TAG:Note.__post_init__
+- `editor/core/request.py:87` `to_json(self) -> dict[str, Any]` #TAG:Note.to_json
+- `editor/core/request.py:92` `@classmethod from_json(cls, raw: dict[str, Any]) -> 'Note'` #TAG:Note.from_json
 
 ### `@dataclass class Manifest` #TAG:Manifest
 
-`editor/core/request.py:100`–`151`
+`editor/core/request.py:98`–`149`
 
 > The staged notes, waiting to be shipped as one request.
 
-- `editor/core/request.py:106` `add(self, note: Note) -> Note` #TAG:Manifest.add
-- `editor/core/request.py:110` `remove(self, index: int) -> Note` #TAG:Manifest.remove
-- `editor/core/request.py:117` `clear(self) -> None` #TAG:Manifest.clear
-- `editor/core/request.py:122` `@property empty(self) -> bool` #TAG:Manifest.empty
-- `editor/core/request.py:125` `scopes(self) -> list[Scope]` #TAG:Manifest.scopes
+- `editor/core/request.py:104` `add(self, note: Note) -> Note` #TAG:Manifest.add
+- `editor/core/request.py:108` `remove(self, index: int) -> Note` #TAG:Manifest.remove
+- `editor/core/request.py:115` `clear(self) -> None` #TAG:Manifest.clear
+- `editor/core/request.py:120` `@property empty(self) -> bool` #TAG:Manifest.empty
+- `editor/core/request.py:123` `scopes(self) -> list[Scope]` #TAG:Manifest.scopes
   - Every distinct scope, in first-mentioned order.
-- `editor/core/request.py:133` `grouped(self) -> list[tuple[Scope, list[Note]]]` #TAG:Manifest.grouped
-- `editor/core/request.py:137` `suggested_title(self) -> str` #TAG:Manifest.suggested_title
-- `editor/core/request.py:144` `to_json(self) -> dict[str, Any]` #TAG:Manifest.to_json
-- `editor/core/request.py:149` `@classmethod from_json(cls, raw: dict[str, Any]) -> 'Manifest'` #TAG:Manifest.from_json
+- `editor/core/request.py:131` `grouped(self) -> list[tuple[Scope, list[Note]]]` #TAG:Manifest.grouped
+- `editor/core/request.py:135` `suggested_title(self) -> str` #TAG:Manifest.suggested_title
+- `editor/core/request.py:142` `to_json(self) -> dict[str, Any]` #TAG:Manifest.to_json
+- `editor/core/request.py:147` `@classmethod from_json(cls, raw: dict[str, Any]) -> 'Manifest'` #TAG:Manifest.from_json
 
 ### `@dataclass class Bundle` #TAG:Bundle
 
-`editor/core/request.py:159`–`172`
+`editor/core/request.py:157`–`170`
 
 > A written request on disk.
 
-- `editor/core/request.py:167` `@property response_path(self) -> str` #TAG:Bundle.response_path
-- `editor/core/request.py:171` `@property has_response(self) -> bool` #TAG:Bundle.has_response
+- `editor/core/request.py:165` `@property response_path(self) -> str` #TAG:Bundle.response_path
+- `editor/core/request.py:169` `@property has_response(self) -> bool` #TAG:Bundle.has_response

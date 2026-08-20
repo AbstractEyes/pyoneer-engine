@@ -866,17 +866,10 @@ try:
     # prose says those, and a rule that fires on a docstring is a rule that
     # gets deleted rather than fixed.
     #
-    # THIS PIN WAS WRITTEN TO GO RED, AND IT DID. Its second half used to
-    # assert that no caller anywhere handed a row over, and its comment said
-    # "the day a table reader lands and passes a row, this goes red and that
-    # paragraph gets rewritten". The reader landed --
-    # `scripts/loaders/table_file.py` -- so the half is inverted below and
-    # DESIGN_TEMPLATE.md's "honest about a hole" section is rewritten to
-    # match. The half that measured a string ("actors_row" appearing in a
-    # file) is deliberately not kept even inverted: the supplying call spells
-    # the name `actor_row`, so the old scan would have passed unchanged while
-    # asserting the opposite of the truth. What is measured now is the CALL
-    # and the VALUE.
+    # Measured as a CALL and a VALUE, never as a string in a file:
+    # `scripts/loaders/table_file.py` supplies the row through `actor_row`,
+    # so a scan for the spelling `actors_row` would pass unchanged while
+    # asserting the opposite of the truth.
     #
     # Half one: step 2 of parameter resolution is BUILT. `read_requests` takes
     # an actors row and applies it over the declared default.

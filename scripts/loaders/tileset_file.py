@@ -3,41 +3,31 @@
 WHY A TILESET IS ITS OWN FILE
 -----------------------------
 In .tmx a tileset is either EMBEDDED -- copied whole into every map that uses
-it -- or EXTERNAL, in a .tsx that is a second XML document with its own
-parser, its own escaping and its own round-trip problem. Embedding means the
-same 768-tile declaration lives in five maps and drifts in four of them.
-Externalizing means a second copy of the .tmx machinery.
-
-So: one tileset, one file, always. `mapname.blitmap` points at
-`tilesetname.tileset` the way a stylesheet points at a font. Sharing is the
-default rather than the advanced option, a tileset's collision defaults have
-somewhere to live that is not "inside whichever map was saved last", and the
-map file stops carrying a copy of data it does not own.
+it, so one 768-tile declaration lives in five maps and drifts in four -- or
+EXTERNAL, in a .tsx that is a second XML document with its own round-trip
+problem. Here it is always one tileset, one file: `mapname.blitmap` points at
+`tilesetname.tileset` the way a stylesheet points at a font, sharing is the
+default, and a tileset's collision defaults have somewhere to live that is
+not "inside whichever map was saved last".
 
 THE MAGIC WORD IS THE EXTENSION
 -------------------------------
-`.blitmask` already ships and its first line is `blitmask 1`. This file
-follows that rule exactly: the first line of a `.tileset` is `tileset 1`, and
-the first line of a `.blitmap` is `blitmap 1`. One rule, no table to
-remember, and `head -1` identifies any file in the family.
+The first line of a `.tileset` is `tileset 1`, of a `.blitmask` is
+`blitmask 1`, of a `.blitmap` is `blitmap 1`. One rule, no table to remember,
+and `head -1` identifies any file in the family.
 
-WHAT THIS FORMAT DOES *NOT* DO, DELIBERATELY
---------------------------------------------
-It does not preserve punctuation. `map_document.py` goes to enormous lengths
-to reproduce Tiled's tabs, spaces, CRLFs and self-closing tags, and it is
-right to: that file is written by someone else's program and a reflow makes
-every future human diff unreadable.
-
-This format is OURS. Nobody else writes it. So it takes the opposite trade
-and is CANONICAL: exactly one spelling per model. That turns byte-exactness
-from a thousand lines of whitespace bookkeeping into two theorems --
+IT DOES NOT PRESERVE PUNCTUATION
+--------------------------------
+`map_document.py` reproduces Tiled's tabs, CRLFs and self-closing tags
+because Tiled writes those bytes too. Nobody else writes THIS format, so it
+takes the opposite trade and is CANONICAL: exactly one spelling per model.
+Byte-exactness is then two theorems rather than whitespace bookkeeping --
 
     parse(render(model)) == model        for every model
     render(parse(text))  == text         for every text render() can emit
 
--- and a reader that hand-edits a file into a non-canonical shape gets it
-normalized on the next save rather than silently preserved. The whole
-apparatus of `prev_tail`, `parent_text` and `__sibling_shape` disappears.
+-- and a hand edit into a non-canonical shape is normalized on the next save
+rather than silently preserved.
 
 THE GRAMMAR
 -----------
@@ -61,10 +51,9 @@ Zero-valued optionals (`margin 0`, `spacing 0`) are omitted, because a file
 that states every default is a file where the two lines that matter are
 invisible.
 
-Tabs, not spaces, and it RAISES on a space indent rather than accepting it.
-Being lenient here would mean two spellings of the same tree, which breaks
-the second theorem above -- and the failure of a lenient reader is silent,
-while the failure of a strict one names the line.
+Tabs, not spaces, and it RAISES on a space indent: accepting both would be
+two spellings of one tree, breaking the second theorem above. A strict
+reader's failure names the line; a lenient one's is silent.
 
 ESCAPING
 --------
@@ -76,13 +65,12 @@ some editor will silently trim.
 
 PROPERTIES KEEP THEIR ON-DISK TEXT
 ----------------------------------
-A property is stored as (type, name, RAW TEXT) rather than as a Python
-value, and that is not laziness. Tiled's `color`, `file` and `object` types
-all read back as `str`, so a round trip through Python values would rewrite
-`type="color"` as a plain string and the colour picker would be gone the
-next time the map opened in Tiled. `.value` casts on demand through
-`map_document.parse_property`, which is the same function the engine's read
-path uses, so there is one caster and it cannot drift.
+A property is stored as (type, name, RAW TEXT) rather than as a Python value.
+Tiled's `color`, `file` and `object` types all read back as `str`, so a round
+trip through Python values would rewrite `type="color"` as a plain string and
+lose the colour picker the next time Tiled opened the map. `.value` casts on
+demand through `map_document.parse_property`, the same function the engine's
+read path uses, so there is one caster and it cannot drift.
 """
 from __future__ import annotations
 
@@ -135,10 +123,9 @@ class PyoneerBlitFormatError(PyoneerConfigError):
 # ---------------------------------------------------------------------------
 # Text primitives
 #
-# These live in this module rather than in blitmap.py because the dependency
-# between the two runs one way: a .blitmap references .tileset files, so
-# blitmap.py imports this and never the reverse. Putting the shared grammar
-# in the leaf is what keeps that direction true without a third module.
+# These live here rather than in blitmap.py because the dependency runs one
+# way: a .blitmap references .tileset files, so blitmap.py imports this and
+# never the reverse. The shared grammar sits in the leaf to keep it so.
 # ---------------------------------------------------------------------------
 
 _INDENT = "\t"
@@ -446,31 +433,25 @@ class TileEntry:
 class TilesetFile:
     """One tileset: the image, the grid over it, and what its tiles mean.
 
-    Frozen, like everything else a command has to be able to invert from
-    stored state. An edit produces a NEW TilesetFile and the old one IS the
-    undo value -- nothing to copy defensively, nothing that can change
-    underneath a stored reference. `replace()` from dataclasses is the
-    editing verb.
+    Frozen, like everything a command has to be able to invert from stored
+    state: an edit produces a NEW TilesetFile and the old one IS the undo
+    value. `replace()` from dataclasses is the editing verb.
 
     COLLISION IS A REFERENCE, NOT A COPY
     ------------------------------------
     `collision` names a `.blitmask` sitting beside the image. That format
-    lives in `scripts/core/collision_runtime.py`, it is already grid-shaped
-    to the tileset (`TilesetDefaults.opinions` is row-major over
-    columns x rows), and it is already round-trip tested. Re-encoding those
-    opinions inside this file would be a second spelling of the same data,
-    and the second spelling is always the one that rots.
+    lives in `scripts/core/collision_runtime.py`, is already grid-shaped to
+    the tileset (`TilesetDefaults.opinions` is row-major over
+    columns x rows), and is already round-trip tested, so re-encoding those
+    opinions here would be a second spelling of the same data.
 
-    WHAT READS IT TODAY, AND WHAT DOES NOT. The engine reads per-tile masks
-    on the .tmx path: a tmx `<tileset>` declares `pyoneer_collision`,
+    NOTHING READS THIS LINE YET. The engine reads per-tile masks on the .tmx
+    path -- a tmx `<tileset>` declares `pyoneer_collision`,
     `collision_runtime.tileset_defaults` loads the file it names, and
-    `field_from_map` stacks it under the companion levels. Nothing reads
-    THIS line yet, because the .blitmap path has no collision read at all --
-    `field_from_map` answers None for a native map, by design and with its
-    reasons written down. When that path grows one, this field is the
-    declaration it should use, and the parser is now on this side of the
-    fence: the old reason it could not be read here (`scripts/` may never
-    import `editor/`) stopped applying the day the format moved.
+    `field_from_map` stacks it under the companion levels -- but
+    `field_from_map` answers None for a native map, so the .blitmap path has
+    no collision read at all. When it grows one, this field is the
+    declaration it should use.
     """
 
     name: str
@@ -814,9 +795,8 @@ def from_tmx_tileset(element, *, dropped: list[str] | None = None,
 # ---------------------------------------------------------------------------
 # Asset interning
 #
-# "if the tilemap is pointing at some file, we copy that into our asset
-# management directory." The interesting half of that sentence is WHEN NOT TO
-# -- an intern that overwrites is an intern that can destroy art -- so the
+# A tileset's image is copied into the managed asset directory. The hard half
+# is WHEN NOT TO -- an intern that overwrites can destroy art -- so the
 # decision is computed as a value first and executed second.
 # ---------------------------------------------------------------------------
 
@@ -830,15 +810,13 @@ OCCUPIED = "occupied"
 class InternPlan:
     """What interning one image WOULD do. Computing this touches nothing.
 
-    Split from the copy for two reasons. The obvious one is testability: a
-    check can exercise every branch with a fake `exists` and never go near
-    the author's files. The load-bearing one is that three of the four
-    outcomes are not copies -- an image already inside the managed directory
-    must not be copied onto itself, a missing image must not create an empty
-    file, and a DIFFERENT image already holding the destination name must
-    stop the operation rather than overwrite it. Two tilesets in different
-    folders both called `tiles.png` is not a hypothetical; it is what an art
-    directory looks like.
+    Three of the four outcomes are NOT copies: an image already inside the
+    managed directory must not be copied onto itself, a missing image must
+    not create an empty file, and a DIFFERENT image already holding the
+    destination name must stop the operation rather than overwrite it -- two
+    folders each holding a `tiles.png` is what an art directory looks like.
+    Splitting the decision from the copy also lets a check exercise every
+    branch with a fake `exists`.
     """
 
     source: str
@@ -904,16 +882,14 @@ def plan_intern(tileset: TilesetFile, *, tileset_path: str, managed_root: str,
                 name: str | None = None) -> InternPlan:
     """Decide what interning `tileset`'s image would do. Pure.
 
-    Both filesystem probes are injected rather than assumed, so the whole
-    decision table can be exercised without a filesystem and without going
-    near the author's art. `name` overrides the destination file name for a
-    caller that wants `TileA2.png` from two different folders to land as two
-    different files rather than collide.
+    Both filesystem probes are injected, so the whole decision table can be
+    exercised without a filesystem. `name` overrides the destination file
+    name, for a caller that wants `TileA2.png` from two folders to land as
+    two files rather than collide.
 
-    The `keep` branch for an identical file is what makes interning
-    IDEMPOTENT. Without it, running the importer twice would report a
-    collision against the copy it made itself, and the obvious fix -- to
-    overwrite -- is the one branch that can destroy art.
+    The `keep` branch for an identical file makes interning IDEMPOTENT:
+    without it, running the importer twice reports a collision against the
+    copy it made itself, and overwriting is the one branch that destroys art.
     """
     source = resolve_image(tileset, tileset_path)
     if not source:

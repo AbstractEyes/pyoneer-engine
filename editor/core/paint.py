@@ -1,18 +1,14 @@
 """Tile painting -- what a drag on the canvas means, as pure logic.
 
 No Qt, no pygame, no document. Every function here takes plain numbers and
-a `read(x, y) -> gid` callable and returns a list of `(x, y, gid)` edits.
-That makes the interesting parts -- flood fill, rectangle, stamp
-placement -- testable without opening a window, which is the only reason
-their edge cases got found.
+a `read(x, y) -> gid` callable and returns a list of `(x, y, gid)` edits, so
+flood fill, rectangle and stamp placement are testable without a window.
 
 ONE STROKE IS ONE UNDO STEP
 ---------------------------
-The first canvas emitted `map.tile.set` per click, so dragging a brush
-across forty cells produced forty transactions and forty undos. A stroke
-accumulates here and commits as a single `map.tile.set_many`, which is both
-the correct undo granularity and dramatically cheaper -- the tmx csv payload
-is re-rendered once per transaction, not once per cell.
+A stroke accumulates here and commits as a single `map.tile.set_many`, which
+is both the correct undo granularity and much cheaper than one command per
+cell: the tmx csv payload is re-rendered once per transaction.
 
 STAMPS
 ------
@@ -23,12 +19,8 @@ would mean two code paths that drift.
 
 A SIZE IS NOT A PATTERN, AND A GRID IS NOT A BRUSH
 --------------------------------------------------
-Two quantities used to be one number -- the map's tile size decided how big
-the displayed grid was, what a click snapped to, AND how much one press
-painted -- so none of the three could move without the others.
-
-They are separated here, and the separation is only sound because of two
-measurements:
+How big the grid is, what a click snaps to and how much one press paints are
+three separate quantities here. That separation rests on two measurements:
 
   * A brush FOOTPRINT is real for `Tool.BRUSH` and `Tool.ERASER` and
     provably inert for `RECTANGLE`, `FILLED_RECT` and `FILL`. Those three
@@ -117,19 +109,17 @@ class Tool(Enum):
     def uses_size(self) -> bool:
         """Does a brush FOOTPRINT change what this tool writes?
 
-        Not a synonym for `uses_stamp`, and the two disagree in both
-        directions -- which is exactly why this exists rather than reusing
-        that one:
+        Not a synonym for `uses_stamp`; the two disagree in both directions:
 
           * AUTOTILE has `uses_stamp` False (it cannot take a pattern) and
             `uses_size` True (it takes a block of cells and sets their
             corners).
           * RECTANGLE, FILLED_RECT and FILL have `uses_stamp` True and
-            `uses_size` False. Measured: those three reach `Stroke.__cover`,
-            which treats the stamp as a repeating pattern keyed on MAP
+            `uses_size` False. Those three reach `Stroke.__cover`, which
+            treats the stamp as a repeating pattern keyed on MAP
             coordinates, so a uniform 3x3 tiles to itself and yields the
-            same edits, cell for cell and gid for gid, as a 1x1. A size
-            control wired to them would move a number and change nothing.
+            same edits as a 1x1. A size control wired to them would move a
+            number and change nothing.
 
         PICKER edits nothing at all, so it has no footprint either.
         """
@@ -140,16 +130,12 @@ class EditMode(Enum):
     """What the tools act ON. Deliberately not what the tools ARE.
 
     A mode that rebinds B/R/G/E/I is a mode nobody learns -- the same key has
-    to mean the same tool or the muscle memory is worse than no mode at all.
-    So brush still brushes, fill still fills, and the only thing that changes
-    is which layer receives the write and what the palette offers to write.
+    to mean the same tool. So brush still brushes, fill still fills, and the
+    only thing that changes is which layer receives the write and what the
+    palette offers to write.
 
-    It lives beside `Tool` rather than beside the collision overlay it was
-    written for, because it is a fact about what a drag MEANS and that is
-    this module's entire subject. While it sat in `editor/ui/collision_view`
-    the enum that gates the feature could only be reached by importing Qt, so
-    the canvas never consulted it and the mode was unreachable.
-    `collision_view` re-exports it for the callers that already had it.
+    It lives beside `Tool`, in a module that imports no Qt, because it is a
+    fact about what a drag MEANS; `collision_view` re-exports it.
     """
 
     TILES = "tiles"
@@ -172,31 +158,22 @@ class EditMode(Enum):
     def subdivides(self) -> bool:
         """Does a stroke in this mode land on the active layer's COMPANION?
 
-        WHICH LAYER, never how finely. The name is older than the answer, so
-        read this before trusting it: grepping every non-definition read of
-        `.subdivides` leaves exactly one, `MapCanvas.paint_unit`, and there it
-        picks the layer a stroke is measured against and written to -- the
-        active layer's passability companion in COLLISION, the active layer
-        itself in TILES. The RESOLUTION is then read off whichever layer that
-        turned out to be, from that layer's own `pyoneer_subcell`. This
-        property does NOT decide what one addressable cell IS, and the number
-        cannot live here at all: it belongs to a specific layer of a specific
-        map, and this module holds no document by design.
+        WHICH LAYER, never how finely. Its one reader is
+        `MapCanvas.paint_unit`, where it picks the layer a stroke is measured
+        against and written to -- the active layer's passability companion in
+        COLLISION, the active layer itself in TILES. The RESOLUTION is then
+        read off whichever layer that turned out to be, from that layer's own
+        `pyoneer_subcell`; it cannot live here, because it belongs to one
+        layer of one map and this module holds no document by design.
 
-        TREATING THE MODE AS THE CELL-SIZE AUTHORITY COST 1,200px, and the
-        measurement is in `paint_unit`'s own docstring rather than restated
-        here. The short of it: a companion is a selectable row in the Layers
-        panel, so an author can select one and paint it in TILE mode, where
-        "a cell is a tile" is then false. A click at px(1599,1599) on a
-        100x100 map wrote companion cell (99,99) -- which owns x396..399 --
-        with only 6% of the companion reachable at all, and because the
-        collision tileset shares the palette those were real masks. So the
-        resolution follows the layer being painted, in either mode.
+        Treating the mode as the cell-size authority costs 1,200px: a
+        companion is a selectable row in the Layers panel, so an author can
+        paint one in TILE mode, where "a cell is a tile" is false and every
+        mask lands in the wrong sub-cell.
 
-        False for TILES on purpose, and it is not an oversight waiting to be
-        generalised: in TILES the author is painting the row they selected,
-        whatever kind of layer it is, and redirecting that write to a
-        companion would make the selected row unpaintable.
+        False for TILES on purpose: there the author is painting the row they
+        selected, whatever kind of layer it is, and redirecting that write to
+        a companion would make the selected row unpaintable.
         """
         return self is EditMode.COLLISION
 
@@ -204,11 +181,8 @@ class EditMode(Enum):
     def disabled_tools(self) -> frozenset[Tool]:
         """Tools with no meaning in this mode.
 
-        Terrain is the only one, and it is not a gap to be filled later with
-        the same code: autotile indexes a 47-tile corner sheet, and there is
-        no mask sheet to index. The useful tool for that slot derives the
-        four direction bits from the boundary of a painted solid region --
-        same 'look at the neighbours' shape, entirely different algorithm.
+        Terrain is the only one: autotile indexes a 47-tile corner sheet, and
+        in collision mode there is no such sheet to index.
         """
         if self is EditMode.COLLISION:
             return frozenset({Tool.AUTOTILE})
@@ -253,11 +227,11 @@ class Stamp:
     def uniform(cls, gid: int, size: int) -> "Stamp":
         """A size x size FOOTPRINT of one gid.
 
-        Uniform on purpose, and it is the whole reason `footprint()` refuses
-        to grow a picked pattern: a uniform block has no phase, so it reads
-        the same whether it is placed by `place()` under a cursor or tiled
-        by `Stroke.__cover` across an area. A grown 2x2 pattern does not --
-        measured, all 16 cells of a 4x4 disagree between those two routes.
+        Uniform on purpose, and the reason `footprint()` refuses to grow a
+        picked pattern: a uniform block has no phase, so it reads the same
+        whether `place()` puts it under a cursor or `Stroke.__cover` tiles it
+        across an area. A grown 2x2 pattern disagrees between those routes in
+        every cell.
         """
         if size < 1:
             raise ValueError(f"a brush footprint must be at least 1 cell, "
@@ -326,10 +300,8 @@ def footprint(stamp: Stamp, size: int) -> tuple[Stamp, tuple[int, int]]:
     you place it by the corner you selected -- and wrong for a swept
     footprint, so the two are distinguished here rather than in `place`.
 
-    A picked PATTERN comes back untouched at any size, and this is the rule
-    that keeps the feature from changing anything that already works: the
-    pattern's own dimensions are its footprint, exactly as before. Only a
-    single stamp grows, and it grows into `Stamp.uniform`.
+    A picked PATTERN comes back untouched at any size -- its own dimensions
+    are its footprint. Only a single stamp grows, into `Stamp.uniform`.
 
     Even sizes cannot be centred on a cell -- there is no middle -- so they
     bias up and left, which is `(size - 1) // 2` and needs no special case.
@@ -346,15 +318,9 @@ def footprint(stamp: Stamp, size: int) -> tuple[Stamp, tuple[int, int]]:
 def grid_lines(count: int, step: int) -> list[int]:
     """Which of `count` cells' boundaries the displayed grid draws.
 
-    ALWAYS A SUBSET of `range(count + 1)`, never a superset, and that is
-    the whole rule the setting exists under. A grid drawn finer than the
-    cell a click addresses shows the author boundaries no click can land
-    on -- measured, `MapCanvas.cell_at` and `MapCanvas.__draw_grid` read
-    the tile size independently and nothing couples them, so a free
-    "8px grid" option over 16px tiles would have drawn sixteen visible
-    cells per addressable one and painted the same tile for all of them.
-    A coarser grid is honest because every line it draws is a real
-    boundary; it just draws fewer of them.
+    ALWAYS A SUBSET of `range(count + 1)`, never a superset: a grid finer
+    than the cell a click addresses would show boundaries no click can land
+    on. A coarser grid draws fewer lines, and every one of them is real.
 
     The far edge is always included, so the map never ends on a step
     boundary it does not have.
@@ -414,10 +380,9 @@ def flood(read: Reader, bounds: Bounds, x: int, y: int, *,
           limit: int = 40_000) -> list[tuple[int, int]]:
     """Four-connected flood of the region matching the gid at (x, y).
 
-    `limit` is a real guard, not decoration: filling an empty 100x100 layer
-    is 10,000 cells and a larger map is trivially bigger. Returning a
-    truncated region silently would be worse than refusing, so the caller is
-    told -- see `flood_or_raise`.
+    `limit` is a real guard: filling an empty 100x100 layer is 10,000 cells.
+    A truncated region must not be returned silently, so the caller is told
+    -- see `flood_or_raise`.
     """
     if not bounds.contains(x, y):
         return []

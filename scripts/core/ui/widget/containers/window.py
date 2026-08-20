@@ -31,12 +31,10 @@ class GameWindow(GameComponent):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         config = Config.config.get("theme")["widget"]
-        # `active` is inherited and defaults True: the window participates in
-        # input from the moment it is constructed. It used to be forced False
-        # here and flipped True on click, because `active` was doing duty as
-        # the focus flag -- now that focus lives on `focused`, forcing it
-        # False here would disable the entire window subtree, since input
-        # dispatch is gated on `active`.
+        # `active` is inherited and defaults True: the window participates
+        # in input from the moment it is constructed. Focus lives on
+        # `focused`, so forcing `active` False here would disable the entire
+        # window subtree -- input dispatch is gated on it.
         # -------------------------------------------------
         # core components
         self.active_component: GameComponent | None = None
@@ -142,8 +140,6 @@ class GameWindow(GameComponent):
             self.mouse.bind_mouse_listener(GameEventType.MOUSE_UP, self.__event_mouse_up_dropping_window)
             self.mouse.bind_mouse_listener(GameEventType.MOUSE_DRAGGING, self.__event_mouse_dragging_window)
             self.keyboard.bind_keys([pygame.K_LEFT, pygame.K_RIGHT])
-            #self.keyboard.bind_key_event(KeyBindingType.KeyDown, self.__event__key_down)
-            # -------------------------
             if self.resizable:
                 self.__build_resize_grip(config)
             self.build_content()
@@ -152,10 +148,8 @@ class GameWindow(GameComponent):
     def __build_resize_grip(self, config):
         """A drag handle in the bottom-right corner.
 
-        `resizable` has been a constructor argument since the beginning and did
-        nothing, because resizing a window used to leave every child at its
-        original size. Anchors made the resize meaningful, so the grip can
-        exist now.
+        Meaningful only because anchors reflow the children; without them a
+        resize would leave every child at its original size.
         """
         size = 14
         self.resize_grip = ShapeComponent(
@@ -207,11 +201,8 @@ class GameWindow(GameComponent):
     def build_content(self):
         """Override to put widgets in the window. Chrome is already built.
 
-        This is the seam that keeps GameWindow reusable. It used to construct a
-        checkbox, two Panels, a TextBox and four more checkboxes inline, at
-        literal offsets like Rect(4, header + 4 + 40 + 4 + 40 + 4, 40, 40) --
-        112 components for an empty window, none of which any other window
-        would want. That demo tree now lives in scripts/game/demo_window.py.
+        The seam that keeps GameWindow reusable: this class builds no content
+        of its own. See scripts/game/demo_window.py for a filled-in example.
         """
 
     def __event_mouse_down_within_header(self, event: PyoneerEvent):
@@ -245,12 +236,11 @@ class GameWindow(GameComponent):
         return top_widget
 
     def __end_drag(self):
-        """Clear drag state. The offset resets to zero, not None.
+        """Clear drag state. The offset resets to zero, NOT None.
 
-        It used to be set to None on drag end and on a failed press, while
-        __event_mouse_dragging_window subtracted it unguarded - so any
-        MOUSE_DRAGGING that arrived while not dragging raised
-        `TypeError: unsupported operand type(s) for -: 'Vector2' and 'NoneType'`.
+        `__event_mouse_dragging_window` subtracts it unguarded, so a None here
+        raises TypeError on any MOUSE_DRAGGING that arrives while not
+        dragging.
         """
         self.dragging_component = False
         self.dragging_offset = Vector2(0, 0)
@@ -269,14 +259,11 @@ class GameWindow(GameComponent):
         """Resolve which descendant was clicked and move focus to it.
 
         Focus is tracked with `focused`, not `active`. `active` means "this
-        window participates in input at all"; a window that is hidden but
-        still active must keep eating clicks, so overloading it for
-        click-focus made the two states impossible to express together.
+        window participates in input at all", and a hidden-but-active window
+        must keep eating clicks, so one flag cannot carry both states.
 
-        This no longer names a concrete child type. It previously branched on
-        `self.text_box` in four places with no None guard, so removing the
-        demo widgets from this class turned every left-click into an
-        AttributeError.
+        Names no concrete child type, so a window that builds different
+        content still focuses correctly.
         """
         if not self.clickable or event_.event.button != pygame.BUTTON_LEFT:
             self.set_focus(None)
@@ -315,21 +302,15 @@ class GameWindow(GameComponent):
         """Hide the window, disable it, and drop focus.
 
         Clears `active` as well as `visible`. Hiding alone is not enough:
-        input is gated on `active`, so a merely-invisible window would keep
-        swallowing clicks in the rectangle it used to occupy -- which is the
-        exact behaviour that is correct for a hidden-but-live window and
-        wrong for a closed one.
+        input is gated on `active`, so a merely-invisible window keeps
+        swallowing clicks in the rectangle it occupied -- correct for a
+        hidden-but-live window, wrong for a closed one.
 
-        Deliberately hides rather than unbinding, and that is now a CHOICE
-        rather than the absence of an alternative: `LayerRenderer.unbind` and
-        `SceneManager.despawn` exist and would take this window out of its
-        `GameComponentLayer` entirely. A closed window is meant to be
-        re-openable -- `open()` is its exact inverse and `SceneFlow` reopens
-        the same widget on every replay of a dialogue -- and unbinding would
-        make reopening a rebind, which allocates a new layer at
-        `depth + len(layers[depth])` and can cost a ~350ms regroup. Destroy a
-        window with `SceneManager.despawn(window)` when it is genuinely
-        finished with.
+        Deliberately hides rather than unbinding. A closed window is meant to
+        be re-openable -- `open()` is its exact inverse -- and reopening an
+        unbound one would be a rebind, which allocates a new layer at
+        `depth + len(layers[depth])` and can buy a full regroup. Use
+        `SceneManager.despawn(window)` when it is genuinely finished with.
         """
         self.visible = False
         self.active = False

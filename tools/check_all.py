@@ -92,10 +92,9 @@ skipped = []
 for name, blurb in CHECKS:
     path = os.path.join(ROOT, "tools", f"check_{name}.py")
     # timeout is not belt-and-braces: a check that blocks on a modal dialog
-    # makes this script never return, and a suite that hangs is strictly
-    # worse than one that fails -- it looks like a slow machine. Measured:
-    # check_collision_mount blocked on QMessageBox.question for 40+ minutes
-    # with zero output and no way to tell it from a long run.
+    # makes this script never return, and a suite that hangs is strictly worse
+    # than one that fails -- it is indistinguishable from a slow machine
+    # (law 13).
     try:
         proc = subprocess.run([PYTHON, path], capture_output=True, text=True,
                               cwd=ROOT, timeout=600)
@@ -127,10 +126,9 @@ smoke = subprocess.run(
      "--frames", "60", "--baseline", os.path.join(ROOT, "tools", "baseline.json")],
     capture_output=True, text=True, cwd=ROOT,
 )
-# Distinguish "the frame changed" from "the harness could not run". Both used
-# to print DRIFT and invite a re-baseline -- so a crash that never rendered a
-# frame looked like an intentional visual change, and the suggested fix was to
-# bless it.
+# Distinguish "the frame changed" from "the harness could not run". Reporting
+# both as DRIFT makes a crash that never rendered a frame look like an
+# intentional visual change, with re-baselining as the suggested fix.
 smoke_ran = "frame_hash" in smoke.stdout
 drift_ok = smoke.returncode == 0
 if not smoke_ran:

@@ -3,27 +3,27 @@
 
 # `scripts/core/transform2d.py` — tier 2 #TAG:scripts/core/transform2d.py
 
-`scripts.core.transform2d` · 194 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.transform2d` · 159 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Classes
 
 ### `class Transform2D` #TAG:Transform2D
 
-`scripts/core/transform2d.py:6`–`193`
+`scripts/core/transform2d.py:6`–`158`
 
 > Where a component sits, and the arithmetic that puts it there.
 
-- `scripts/core/transform2d.py:50` `__init__(self, bounds: Rect | None=None)` #TAG:Transform2D.__init__
-- `scripts/core/transform2d.py:76` `resolve(self, parent_world: Rect | None) -> None` #TAG:Transform2D.resolve
+- `scripts/core/transform2d.py:31` `__init__(self, bounds: Rect | None=None)` #TAG:Transform2D.__init__
+- `scripts/core/transform2d.py:55` `resolve(self, parent_world: Rect | None) -> None` #TAG:Transform2D.resolve
   - Recompute world as `local + parent_world + offset`.
-- `scripts/core/transform2d.py:93` `resync(self, local: Rect, parent_world: Rect | None) -> None` #TAG:Transform2D.resync
+- `scripts/core/transform2d.py:70` `resync(self, local: Rect, parent_world: Rect | None) -> None` #TAG:Transform2D.resync
   - Recompute world from a KNOWN local, root or not.
-- `scripts/core/transform2d.py:121` `move(self, x: int | float, y: int | float, parented: bool) -> None` #TAG:Transform2D.move
+- `scripts/core/transform2d.py:94` `move(self, x: int | float, y: int | float, parented: bool) -> None` #TAG:Transform2D.move
   - Move to local position (x, y).
-- `scripts/core/transform2d.py:147` `set_world(self, bounds: Rect) -> None` #TAG:Transform2D.set_world
+- `scripts/core/transform2d.py:118` `set_world(self, bounds: Rect) -> None` #TAG:Transform2D.set_world
   - Assign world bounds from an outside rect, defensively copied.
-- `scripts/core/transform2d.py:157` `adopt_world_as_local(self) -> None` #TAG:Transform2D.adopt_world_as_local
+- `scripts/core/transform2d.py:126` `adopt_world_as_local(self) -> None` #TAG:Transform2D.adopt_world_as_local
   - Rewrite local to match world, IN PLACE.
-- `scripts/core/transform2d.py:179` `shift_point(self, point: Vector2) -> Vector2` #TAG:Transform2D.shift_point
+- `scripts/core/transform2d.py:147` `shift_point(self, point: Vector2) -> Vector2` #TAG:Transform2D.shift_point
   - Carry a point across the same local -> world boundary as `offset`.
-- `scripts/core/transform2d.py:191` `__str__(self)` #TAG:Transform2D.__str__
+- `scripts/core/transform2d.py:156` `__str__(self)` #TAG:Transform2D.__str__

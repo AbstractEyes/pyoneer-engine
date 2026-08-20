@@ -5,7 +5,7 @@
 
 > The panels.
 
-`editor.ui.docks` · 363 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.docks` · 357 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -33,38 +33,38 @@
 
 ### `class ProblemsDock(ScopedDock)` #TAG:ProblemsDock
 
-`editor/ui/docks.py:130`–`217`
+`editor/ui/docks.py:130`–`215`
 
 > Soft rule violations, and anything else the author needs to have SEEN.
 
-- `editor/ui/docks.py:154` `build_content(self) -> QWidget` #TAG:ProblemsDock.build_content
-- `editor/ui/docks.py:162` `post(self, violation: RuleViolation, *, key: str, detail: str='') -> None` #TAG:ProblemsDock.post
+- `editor/ui/docks.py:152` `build_content(self) -> QWidget` #TAG:ProblemsDock.build_content
+- `editor/ui/docks.py:160` `post(self, violation: RuleViolation, *, key: str, detail: str='') -> None` #TAG:ProblemsDock.post
   - Show something that happened. `detail` goes in the tooltip.
-- `editor/ui/docks.py:175` `clear_notices(self, key: str | None=None) -> None` #TAG:ProblemsDock.clear_notices
+- `editor/ui/docks.py:173` `clear_notices(self, key: str | None=None) -> None` #TAG:ProblemsDock.clear_notices
   - Retire a notice whose situation is over. No key clears them all.
-- `editor/ui/docks.py:183` `notice_keys(self) -> list[str]` #TAG:ProblemsDock.notice_keys
-- `editor/ui/docks.py:188` `refresh(self) -> None` #TAG:ProblemsDock.refresh
-- `editor/ui/docks.py:214` `__on_activate(self, item) -> None` #TAG:ProblemsDock.__on_activate
+- `editor/ui/docks.py:181` `notice_keys(self) -> list[str]` #TAG:ProblemsDock.notice_keys
+- `editor/ui/docks.py:186` `refresh(self) -> None` #TAG:ProblemsDock.refresh
+- `editor/ui/docks.py:212` `__on_activate(self, item) -> None` #TAG:ProblemsDock.__on_activate
 
 ### `class HistoryDock(ScopedDock)` #TAG:HistoryDock
 
-`editor/ui/docks.py:224`–`243`
+`editor/ui/docks.py:222`–`241`
 
 > Every command that has run, human or AI. This is the review surface.
 
-- `editor/ui/docks.py:227` `build_content(self) -> QWidget` #TAG:HistoryDock.build_content
-- `editor/ui/docks.py:236` `refresh(self) -> None` #TAG:HistoryDock.refresh
+- `editor/ui/docks.py:225` `build_content(self) -> QWidget` #TAG:HistoryDock.build_content
+- `editor/ui/docks.py:234` `refresh(self) -> None` #TAG:HistoryDock.refresh
 
 ### `class ManifestDock(ScopedDock)` #TAG:ManifestDock
 
-`editor/ui/docks.py:250`–`362`
+`editor/ui/docks.py:248`–`356`
 
 > The staged notes, and the button that turns them into a request.
 
-- `editor/ui/docks.py:255` `build_content(self) -> QWidget` #TAG:ManifestDock.build_content
-- `editor/ui/docks.py:291` `__selected_index(self) -> int | None` #TAG:ManifestDock.__selected_index
-- `editor/ui/docks.py:298` `__sync_buttons(self) -> None` #TAG:ManifestDock.__sync_buttons
-- `editor/ui/docks.py:307` `__on_unstage(self) -> None` #TAG:ManifestDock.__on_unstage
-- `editor/ui/docks.py:314` `__on_unstage_all(self) -> None` #TAG:ManifestDock.__on_unstage_all
-- `editor/ui/docks.py:334` `refresh(self) -> None` #TAG:ManifestDock.refresh
-- `editor/ui/docks.py:357` `__on_remove(self, item) -> None` #TAG:ManifestDock.__on_remove
+- `editor/ui/docks.py:253` `build_content(self) -> QWidget` #TAG:ManifestDock.build_content
+- `editor/ui/docks.py:289` `__selected_index(self) -> int | None` #TAG:ManifestDock.__selected_index
+- `editor/ui/docks.py:296` `__sync_buttons(self) -> None` #TAG:ManifestDock.__sync_buttons
+- `editor/ui/docks.py:305` `__on_unstage(self) -> None` #TAG:ManifestDock.__on_unstage
+- `editor/ui/docks.py:312` `__on_unstage_all(self) -> None` #TAG:ManifestDock.__on_unstage_all
+- `editor/ui/docks.py:328` `refresh(self) -> None` #TAG:ManifestDock.refresh
+- `editor/ui/docks.py:351` `__on_remove(self, item) -> None` #TAG:ManifestDock.__on_remove

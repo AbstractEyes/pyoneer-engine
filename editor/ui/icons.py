@@ -5,19 +5,17 @@ that needs a PNG to be legible would be the one place that quietly stops
 working on a fresh clone. These are drawn with QPainter at request time and
 cached, so they cost nothing after the first paint.
 
-TWO THINGS LEARNED THE HARD WAY
--------------------------------
-**Ink comes from the palette, never from a constant.** The first version
-hardcoded a near-white ink, which was invisible on a light theme -- the
-author's actual toolbar. `_ink()` reads `QPalette.ButtonText` and pushes it
-to full contrast, so the glyphs are dark on a light theme and light on a
-dark one, and the cache is keyed on the result so a theme change re-renders
-rather than serving the old colour.
+TWO RULES
+---------
+**Ink comes from the palette, never from a constant.** A hardcoded
+near-white ink is invisible on a light theme. `_ink()` reads
+`QPalette.ButtonText` and pushes it to full contrast, so glyphs are dark on
+a light theme and light on a dark one, and the cache is keyed on the result
+so a theme change re-renders rather than serving the old colour.
 
-**Each tool gets its own hue.** A row of seven identical grey silhouettes
-is a memory test. Colour is what makes a toolbar scannable, so the bucket is
-blue, the eraser is pink, the picker is teal, terrain is green -- the
-conventions every paint program already trained people on.
+**Each tool gets its own hue.** A row of seven identical grey silhouettes is
+a memory test, so the bucket is blue, the eraser is pink, the picker is
+teal and terrain is green -- the conventions every paint program uses.
 """
 from __future__ import annotations
 

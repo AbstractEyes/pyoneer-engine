@@ -755,8 +755,7 @@ try:
     print("a row reference that cannot resolve stops the bind, naming the object")
     # Each of these is the failure that would otherwise be INVISIBLE: the body
     # spawns, every number quietly sits at its default, and the map looks like
-    # a map where the Database does nothing -- which is exactly what it was
-    # before this landed.
+    # one where the Database does nothing.
     unwired = LayerRenderer(SCREEN)
     unwired.bind_camera(GameCamera(pygame.Vector2(128, 128),
                                    pygame.Rect(0, 0, 128, 128), scale=1))

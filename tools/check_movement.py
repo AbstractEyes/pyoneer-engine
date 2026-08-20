@@ -20,15 +20,15 @@ symptom until an entity silently stops doing something:
      8. composition comes off a tmx property mapping, runs in DECLARED order,
         and refuses a conflicting or duplicated list
      9. main.py's demo is composed from that same vocabulary
-    10. an empty behavior set moves nothing, which is why this landed with no
-        smoke drift
+    10. an empty behavior set moves nothing, so an entity that declares none
+        is inert rather than half-driven
 
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
 Every collision field below is built here from a few lines of ASCII.
 `data/maps/test.tmx` is the author's canvas and is never read: a check that
 pins map CONTENT goes red the next time he paints while the code it guards is
-working perfectly, and that has cost this repo five red suites.
+working perfectly (law 4).
 
 The platformer parameter DEFAULTS are deliberately NOT pinned against
 `editor/genres/platformer/genre.json` -- retuning gravity is authoring, and a
@@ -951,10 +951,9 @@ expect("a behavior reports an unmet requirement instead of refusing to attach",
 # ===========================================================================
 print("\n11. the gates, both sides -- and the halves nothing else probes")
 # ===========================================================================
-# Every assertion below covers a line that a mutation pass flipped with the
-# whole suite staying green. Each one is one HALF of an invariant whose other
-# half was already tested, which is the shape a toothless check takes here:
-# the gate is proved to let movement through and never proved to stop it.
+# Every assertion below is the MISSING HALF of an invariant whose other half
+# is tested above -- the gate proved to let movement through and never proved
+# to stop it, which is the shape a toothless check takes here.
 
 # The clear-before-gate ordering. The existing gate test sets can_move False
 # on the FIRST frame, where the intent is already zero, so moving

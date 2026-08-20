@@ -156,8 +156,7 @@ expect("at least one inner-corner tile was used", bool(concave), True)
 # x 1..5 at y<=3; the narrow arm covers x 1..3 at y>=4. So cell (3,3) has
 # corners (3,3),(4,3),(3,4) set and (4,4) clear -> mask 1110 -> gid 36.
 # The cell to its right, (4,3), has only its top two corners and is
-# correctly a bottom EDGE, not a corner -- which is what the first version
-# of this assertion got wrong.
+# correctly a bottom EDGE, not a corner.
 expect("the inner corner sits inside the elbow", grid[3][3], 36)
 expect("the cell beyond the elbow is a plain bottom edge", grid[3][4], 162)
 

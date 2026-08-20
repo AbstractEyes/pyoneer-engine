@@ -5,7 +5,7 @@
 
 > The Inspector dock -- everything about the selected thing, editable.
 
-`editor.ui.inspector` · 56 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.inspector` · 54 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,8 +15,8 @@
 
 ### `class InspectorDock(ScopedDock)` #TAG:InspectorDock
 
-`editor/ui/inspector.py:36`–`55`
+`editor/ui/inspector.py:34`–`53`
 
-- `editor/ui/inspector.py:39` `build_content(self) -> QWidget` #TAG:InspectorDock.build_content
-- `editor/ui/inspector.py:46` `refresh(self) -> None` #TAG:InspectorDock.refresh
-- `editor/ui/inspector.py:50` `__on_command(self, command) -> None` #TAG:InspectorDock.__on_command
+- `editor/ui/inspector.py:37` `build_content(self) -> QWidget` #TAG:InspectorDock.build_content
+- `editor/ui/inspector.py:44` `refresh(self) -> None` #TAG:InspectorDock.refresh
+- `editor/ui/inspector.py:48` `__on_command(self, command) -> None` #TAG:InspectorDock.__on_command

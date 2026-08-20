@@ -1,9 +1,10 @@
 """Headless smoke harness: boot the engine, run N frames, report what happened.
 
-This is the instrument the rest of the improvement plan is verified against.
-Every structural change should leave `frame_hash` and `component_census`
+A structural change should leave `frame_hash` and `component_census`
 identical unless it is *supposed* to change them -- and when it is, the diff
-tells you exactly what moved.
+names exactly what moved. Note that smoke injects NO input, so "no drift"
+never means "nothing changed": it cannot see anything that only happens while
+walking.
 
     .venv/Scripts/python.exe tools/smoke.py --frames 120 --out run.json
     .venv/Scripts/python.exe tools/smoke.py --frames 120 --baseline tools/baseline.json

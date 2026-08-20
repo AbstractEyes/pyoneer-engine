@@ -5,7 +5,7 @@
 
 > The test window: one live example of every control, added as it is built.
 
-`scripts.game.demo_window` · 136 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.demo_window` · 134 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,24 +13,24 @@
 
 ## Module constants
 
-- `scripts/game/demo_window.py:27` `TILE_COLOURS` #TAG:TILE_COLOURS
+- `scripts/game/demo_window.py:25` `TILE_COLOURS` #TAG:TILE_COLOURS
 
 ## Classes
 
 ### `class DemoWindow(GameWindow)` #TAG:DemoWindow
 
-`scripts/game/demo_window.py:33`–`135`
+`scripts/game/demo_window.py:31`–`133`
 
 > Every control the engine has, in one resizable window.
 
-- `scripts/game/demo_window.py:36` `__init__(self, *args, **kwargs)` #TAG:DemoWindow.__init__
-- `scripts/game/demo_window.py:48` `build_content(self)` #TAG:DemoWindow.build_content
+- `scripts/game/demo_window.py:34` `__init__(self, *args, **kwargs)` #TAG:DemoWindow.__init__
+- `scripts/game/demo_window.py:46` `build_content(self)` #TAG:DemoWindow.build_content
   - Called by GameWindow once the chrome exists.
-- `scripts/game/demo_window.py:62` `__build_toggle(self, top: int)` #TAG:DemoWindow.__build_toggle
+- `scripts/game/demo_window.py:60` `__build_toggle(self, top: int)` #TAG:DemoWindow.__build_toggle
   - A single checkbox, directly on the window.
-- `scripts/game/demo_window.py:68` `__build_scroll_panel(self, bounds: Rect)` #TAG:DemoWindow.__build_scroll_panel
+- `scripts/game/demo_window.py:66` `__build_scroll_panel(self, bounds: Rect)` #TAG:DemoWindow.__build_scroll_panel
   - A scrolling panel holding a text box and a column of checkboxes.
-- `scripts/game/demo_window.py:95` `__build_grid_panel(self, bounds: Rect)` #TAG:DemoWindow.__build_grid_panel
+- `scripts/game/demo_window.py:93` `__build_grid_panel(self, bounds: Rect)` #TAG:DemoWindow.__build_grid_panel
   - A GridComponent of snappable tiles inside a scrolling panel.
-- `scripts/game/demo_window.py:126` `cell_under(self, screen_point) -> tuple[int, int] | None` #TAG:DemoWindow.cell_under
+- `scripts/game/demo_window.py:124` `cell_under(self, screen_point) -> tuple[int, int] | None` #TAG:DemoWindow.cell_under
   - Which grid cell a screen position falls in, or None.

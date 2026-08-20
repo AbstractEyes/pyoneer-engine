@@ -5,7 +5,7 @@
 
 > Collision as authored data: three levels, one resolution, one baked field.
 
-`editor.core.collision` · 245 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.collision` · 221 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,15 +13,15 @@
 
 ## Functions
 
-- `editor/core/collision.py:166` `field_from_blitmask(blitmask: Blitmask, *, tile_width: int=16, tile_height: int=16, outside: int=BLOCK_ALL, undecided: int=PASS_ALL) -> CollisionField` #TAG:field_from_blitmask
+- `editor/core/collision.py:145` `field_from_blitmask(blitmask: Blitmask, *, tile_width: int=16, tile_height: int=16, outside: int=BLOCK_ALL, undecided: int=PASS_ALL) -> CollisionField` #TAG:field_from_blitmask
   - A field straight from a file. NO_DATA cells become `undecided`, so
-- `editor/core/collision.py:187` `blitmask_from_field(field_in: CollisionField, **meta: str) -> Blitmask` #TAG:blitmask_from_field
+- `editor/core/collision.py:163` `blitmask_from_field(field_in: CollisionField, **meta: str) -> Blitmask` #TAG:blitmask_from_field
   - The field as a file. Every cell is a real mask by now, so a round trip
-- `editor/core/collision.py:197` `describe_stack(layers: Sequence[CollisionLayer], x: int, y: int) -> str` #TAG:describe_stack
+- `editor/core/collision.py:173` `describe_stack(layers: Sequence[CollisionLayer], x: int, y: int) -> str` #TAG:describe_stack
   - Every layer's opinion at one cell, topmost first, for a tooltip.
-- `editor/core/collision.py:212` `blitmask_from_companion(read: Reader, width: int, height: int, first_gid: int, **meta: str) -> Blitmask` #TAG:blitmask_from_companion
+- `editor/core/collision.py:188` `blitmask_from_companion(read: Reader, width: int, height: int, first_gid: int, **meta: str) -> Blitmask` #TAG:blitmask_from_companion
   - A companion tile layer, exported as a .blitmask.
-- `editor/core/collision.py:225` `companion_gids(blitmask: Blitmask, first_gid: int) -> Iterator[tuple[int, int, int]]` #TAG:companion_gids
+- `editor/core/collision.py:201` `companion_gids(blitmask: Blitmask, first_gid: int) -> Iterator[tuple[int, int, int]]` #TAG:companion_gids
   - The inverse: (x, y, gid) triples ready for `map.tile.set_many`.
-- `editor/core/collision.py:238` `as_mapping(blitmask: Blitmask) -> Mapping[tuple[int, int], int]` #TAG:as_mapping
+- `editor/core/collision.py:214` `as_mapping(blitmask: Blitmask) -> Mapping[tuple[int, int], int]` #TAG:as_mapping
   - The declared cells only, as the sparse dict `CollisionLayer.overrides`

@@ -98,7 +98,6 @@ class MouseComponentAsync(AsyncEventComponent):
         return event_type in self.mouse_listeners
 
     def bind_mouse_listener(self, event_type: GameEventType, callback: Callable):
-        #self.bind_async_listener(event_type, callback)
         if event_type in self.EVENT_TYPES:
             if event_type in self.mouse_listeners:
                 self.mouse_listeners[event_type].append(callback)
@@ -108,7 +107,6 @@ class MouseComponentAsync(AsyncEventComponent):
             debug("Invalid event type for mouse listener.")
 
     def unbind_mouse_listener(self, event_type: GameEventType = None, callback: Callable = None):
-        #self.unbind_async_listener(event_type, callback)
         if event_type is None:
             self.mouse_listeners.clear()
             return
@@ -222,20 +220,13 @@ class MouseComponentAsync(AsyncEventComponent):
                             self.__execute_event_callbacks(GameEventType.MOUSE_CLICK_INSIDE, event, False)
                     else:
                         self.__execute_event_callbacks(GameEventType.MOUSE_CLICK_INSIDE, event, False)
-                #print ("Mouse click completed inside: ", self.parent, self.mouse_down_pos)
-                #self.__execute_event_callbacks(GameEventType.MOUSE_CLICK_INSIDE, event, False)
             else: ...
-                # print ("Mouse drag finished outside of the original point: ", self.parent, self.mouse_down_pos, self.mouse_up_pos)
-               # self.__execute_event_callbacks(GameEventType.MOUSE_DRAG_END, event, False)
         elif not self.mouse_inside:
             # Mouse is outside and the mouse button is released.
             if self.mouse_down_inside:
-                # print ("Mouse click completed outside: ", self.parent, self.mouse_down_pos)
                 self.__execute_event_callbacks(GameEventType.MOUSE_UP_OUTSIDE, event, False)
             else:
                 ...
-                #print ("Mouse drag completed outside: ", self.parent, self.mouse_click_pos, self.mouse_release_pos)
-                #self.__execute_event_callbacks(GameEventType.MOUSE_UP_OUTSIDE, event, False)
         self.mouse_down_time = 0
         self.mouse_down = False
         self.mouse_down_inside = False

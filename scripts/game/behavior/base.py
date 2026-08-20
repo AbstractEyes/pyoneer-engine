@@ -1,23 +1,11 @@
 """What a behavior IS: the contract, the declaration, and the per-frame drive.
 
-WHY A BEHAVIOR IS NOT A GameComponent
--------------------------------------
-`GameComponent` is the widget machinery -- bounds, anchor, viewport, a
-`callbacks` dict, `bind_sync_listener`, `send_event_advanced`. An entity
-wants none of it. `GameEntity` derives `PyoneerGameObject` and is driven by a
-plain method call from `GameScene.core_frame_update`, not by the event bus,
-so composing behavior onto an entity needs no event-system change at all --
-which is the whole reason this file can exist without touching the rule that
-says the event system does not get restructured.
-
-A behavior therefore binds NO listeners and consumes NO events. It is called,
-it is not dispatched to. That is not a limitation being worked around, it is
-the property that makes it safe: consumption in this engine is not
-type-gated, so one stray `event.handle()` inside a fan-out silences every
-sibling for the rest of the frame. A behavior that can never reach the bus
-can never do that. `BehaviorSpec.binds` exists to DECLARE the exception if
-one is ever written, and `describe_all` prints it in the same sentence as the
-behavior's name, so the exception is loud rather than discovered.
+A behavior is CALLED, never dispatched to: it binds no listeners and consumes
+no events. Event consumption in this engine is not type-gated, so one stray
+`event.handle()` inside a fan-out silences every sibling for the rest of the
+frame, and a behavior that never reaches the bus cannot do that.
+`BehaviorSpec.binds` exists to DECLARE the exception if one is ever written,
+and `describe_all` prints it beside the behavior's name.
 
 THE THREE-METHOD LIFECYCLE
 --------------------------
@@ -25,25 +13,20 @@ THE THREE-METHOD LIFECYCLE
     update(entity, event)   once per frame, in declared order
     detach(entity)          once, when it leaves (or the entity is disposed)
 
-`update` is abstract and the other two are not, because a behavior that does
-nothing per frame is not a behavior -- it is a field assignment, and it
-should be one.
+`update` is abstract and the other two are not: a behavior that does nothing
+per frame should be a field assignment instead.
 
-There is no `prepare`. Deliberately: `GameScene.begin` calls
-`core_lifecycle_prepare` a SECOND time on every bound object after `main.py`
-has already run the full prepare triple, so anything that allocated in
-prepare would allocate twice. `attach` runs exactly once, from
-`EntityBehaviors.attach`, and is the place to allocate.
+There is no `prepare` hook. `GameScene.begin` calls `core_lifecycle_prepare`
+a SECOND time on every bound object, so anything allocated there allocates
+twice; `attach` runs exactly once and is the place to allocate.
 
 ORDER IS DECLARED, NEVER INCIDENTAL
 -----------------------------------
-Two behaviors on one entity run in `spec.order` order, low first. Attach
-order breaks a tie -- but only when the tie is harmless, and this module
-decides what harmless means rather than hoping: if two behaviors share an
-`order` AND their declared `writes` sets intersect, attaching the second
-RAISES. That is the exact failure the composition model has to refuse, since
-two behaviors both writing `transform.position` with one silently winning is
-indistinguishable from a physics bug for as long as it takes to find.
+Two behaviors on one entity run in `spec.order` order, low first, with attach
+order breaking a tie. If two share an `order` AND their declared `writes` sets
+intersect, attaching the second RAISES -- two behaviors both writing
+`transform.position` with one silently winning is indistinguishable from a
+physics bug.
 
 WHAT A BEHAVIOR MUST NOT ASSUME
 -------------------------------
@@ -75,23 +58,12 @@ from scripts.core.log import trace_lifecycle
 # The vocabulary
 #
 # Every one of these is PREFIX + something, and PREFIX is IMPORTED rather than
-# retyped. pytmx raises and makes the whole map unloadable if a custom
-# property shadows one of its own attribute names, so the prefix is not a
-# style choice, and two hand-kept copies of it would drift silently -- a
-# property written under one spelling and read under another simply does
-# nothing. `tools/check_behavior.py` asserts this package contains no literal
-# copy of the prefix string.
-#
-# SPELLING: the tree is genuinely split between the American and British
-# forms of this word -- counted at HEAD, neither is a clear majority, and the
-# docstrings and the author's prose lean the other way from the directories.
-# `pyoneer_behaviors` is a FILE FORMAT string: once one .tmx carries it,
-# changing the spelling means touching maps. So it is settled here, once, and
-# settled towards the form the tree already has PATHS in --
-# `scripts/core/ui/widget/behavior/` is a real directory and
-# `tools/check_imports.py` already names it -- because a path is the one
-# spelling that cannot be fixed with a search and replace. Every module in
-# this package uses that form and nothing else, and the check enforces it.
+# retyped: pytmx raises and makes the whole map unloadable if a custom
+# property shadows one of its own attribute names, and two hand-kept copies of
+# the prefix would drift silently. `tools/check_behavior.py` asserts this
+# package contains no literal copy of the prefix string, and that every module
+# here spells "behavior" that one way -- `pyoneer_behaviors` is a file-format
+# string, so the spelling cannot be changed without touching maps.
 # ---------------------------------------------------------------------------
 
 PREFIX: str = layer_profile.PREFIX
@@ -110,10 +82,9 @@ ACTOR: str = PREFIX + "actor"
 Optional. Absent means "this object has no actor row", and every
 `source="actors"` parameter then falls to its declared default unless the
 object overrides it. Present and naming a row that does not exist RAISES,
-naming the object: a reference that resolved to nothing would leave every
-parameter quietly at its default and look exactly like one that worked.
+naming the object.
 
-THIS MODULE NEVER OPENS A FILE, and that is unchanged. The reader is
+This module never opens a file. The reader is
 `scripts/loaders/table_file.py` and the row is handed in --
 `map_loader.spawn_objects` for an authored object, `SceneManager.spawn` for a
 runtime one, both through `table_file.actor_row`.
@@ -137,10 +108,9 @@ the set of valid suffixes is whatever the attached behaviors declare.
 TOKEN = re.compile(r"^[a-z][a-z0-9_]*$")
 """What a behavior token may look like: snake_case, starting with a letter.
 
-Same stability rule the genre packs already give table row ids -- stable once
-referenced, never renamed. A token renamed six weeks later silently disarms
-every object carrying the old one, which is why `resolve` raises on an
-unknown token instead of skipping it.
+A token is a file-format string: stable once referenced, never renamed. A
+renamed token silently disarms every object carrying the old one, which is
+why `resolve` raises on an unknown token instead of skipping it.
 """
 
 PARAM_TYPES: dict[str, type] = {"int": int, "float": float,
@@ -161,26 +131,16 @@ PARAM_SOURCES: tuple[str, ...] = ("object", "actors")
 STATUSES: tuple[str, ...] = ("live", "authoring-only", "needs-host")
 """Whether anything in the engine actually runs this behavior.
 
-`authoring-only` is not a shameful state, it is an honest one. This repo has
-shipped authoring ahead of runtime three times (`pyoneer_passability`, map
-events, `.blitmap`) and every one of them wrote the caveat into the generated
-surface rather than letting a reader assume.
+    "live"            the engine binds and drives it
+    "authoring-only"  authored today, no runtime reader yet
+    "needs-host"      it runs correctly, but requires something no part of
+                      the ENGINE assigns, so it does nothing until the GAME
+                      provides it
 
-`needs-host` is the third honest state, and it is NOT the same as either. The
-behavior runs, and runs correctly -- but it requires something no part of the
-ENGINE assigns, so it does nothing until the GAME provides it. Such a behavior
-is excluded from the generated "a complete, legal list" column, because that
-column is read as a recommendation and recommending one silently does nothing
--- `requires` is REPORTED, never enforced, so there is no crash to reveal the
-mistake.
-
-NOTHING IS `needs-host` TODAY, and that is worth saying rather than leaving to
-be inferred. `action_relay` was the standing case -- it calls
-`entity.action_sink` and no part of the engine assigned one -- and
-`SceneManager` now does, on both binding routes, so it is `live`. The status
-stays in the vocabulary because the state is real and will recur; a behavior
-whose host is genuinely the game's declares it and is kept out of the
-recommendation column until the day something in `scripts/` supplies one.
+`needs-host` is excluded from the generated "a complete, legal list" column,
+which is read as a recommendation: `requires` is REPORTED, never enforced, so
+a recommended behavior that silently does nothing produces no crash to reveal
+the mistake.
 """
 
 
@@ -192,15 +152,10 @@ recommendation column until the day something in `scripts/` supplies one.
 class BehaviorParam:
     """One value a behavior consumes, declared so nothing has to read source.
 
-    Shaped like `editor.core.layers.Capability` on purpose -- the editor
-    already renders a layer's capabilities generically from that shape, so an
-    inspector for behaviors is the same function with a different tuple. It is
-    NOT that class: `Capability` lives under `editor/` and the engine may
-    never import it, and the two disagree on the one thing that matters.
-    `Capability.coerce` falls back to the default for a nonsense value,
-    because a layer with a broken capability should still render. A behavior
-    parameter RAISES, because a `gravity` of `'9o'` quietly becoming 900 is
-    the plausible-wrong-value failure this codebase refuses.
+    Shaped like `editor.core.layers.Capability` so one inspector can render
+    both, but deliberately a separate class: `Capability.coerce` falls back to
+    the default for a nonsense value, while `coerce` here RAISES rather than
+    let a `gravity` of `'9o'` quietly become 900.
     """
 
     key: str
@@ -235,11 +190,10 @@ class BehaviorParam:
     def coerce(self, value: Any, where: str = "") -> Any:
         """Bring an authored value to the declared type, or raise saying why.
 
-        `bool` is tested before `int` in both directions, because in Python
-        `True` IS an int: without the guard a `gravity` property typed bool
-        resolves to 1 and nothing complains. An `int` widens to `float`
-        because Tiled writes `900` for a float-typed property and losing that
-        would make every whole-number float an authoring error.
+        `bool` is tested before `int` because in Python `True` IS an int, so
+        without the guard a `gravity` property typed bool resolves to 1. An
+        `int` widens to `float`, because Tiled writes `900` for a float-typed
+        property.
         """
         want = PARAM_TYPES[self.type]
         blame = ("%s: " % where) if where else ""
@@ -268,14 +222,10 @@ class BehaviorParam:
 class BehaviorSpec:
     """Everything about a behavior that is true without constructing one.
 
-    This is the registry's record, the editor's inspector source and the
-    generated document's source, all one object -- so the document cannot
-    describe a behavior the engine does not bind, and the inspector cannot
-    offer a parameter the behavior does not read.
-
-    `hooks` is deliberately NOT a field. It is derived from the factory class,
-    so it cannot lie about which of the three lifecycle methods a behavior
-    actually implements.
+    One object serves as the registry's record, the editor's inspector source
+    and the generated document's source, so the document cannot describe a
+    behavior the engine does not bind. `hooks` is derived from the factory
+    class rather than declared, so it cannot go stale.
     """
 
     name: str
@@ -329,14 +279,10 @@ class BehaviorSpec:
     def hooks(self) -> tuple[str, ...]:
         """Which lifecycle methods this behavior actually implements.
 
-        Read off the class, never declared, so it is incapable of being
-        stale. `update` is abstract on the base, so every concrete behavior
-        appears here with at least that -- the informative part is whether
-        `attach` and `detach` show up, because those are the ones a reader
-        would otherwise have to open the file to learn.
-
-        Empty for a factory that is a plain function rather than a class:
-        there is nothing to read, and guessing would be worse than silence.
+        Read off the class, never declared. Every concrete behavior overrides
+        `update`, so the informative part is whether `attach` and `detach`
+        appear. Empty for a factory that is a plain function rather than a
+        class.
         """
         target = self.factory
         if not (isinstance(target, type) and issubclass(target, EntityBehavior)):
@@ -360,10 +306,8 @@ class BehaviorSpec:
 class BehaviorRequest:
     """One behavior an object asked for, with its parameters already resolved.
 
-    Produced by reading a map; consumed by `build`. It is a record and not a
-    behavior for the same reason `SpawnedEntity` is a record and not a bound
-    entity: reading a map should be drivable without a display, a scene or an
-    entity in hand, and a reader that constructed things would not be.
+    Produced by reading a map; consumed by `build`. A plain record, so reading
+    a map stays drivable without a display, a scene or an entity in hand.
 
     `where` names the .tmx object that asked, so a failure four frames later
     can still say which `<object>` produced it.
@@ -381,37 +325,30 @@ class BehaviorRequest:
 class EntityBehavior:
     """A small object attached to an entity and updated once per frame.
 
-    Not an ABC by inheritance from `abc.ABC`: `GameEntity` is already an ABC
-    with two abstract methods and the entity hierarchy is confusing enough.
-    `update` raises `NotImplementedError` instead, which fails at the first
-    frame rather than at construction -- an intentional trade, because the
-    thing a reader needs to see is a stack trace naming the behavior, and
-    `Can't instantiate abstract class` names only the class.
+    Not an `abc.ABC`: `update` raises `NotImplementedError` instead, so a
+    behavior that forgot to implement it fails at the first frame with a stack
+    trace naming the behavior, rather than at construction naming the class.
 
     Subclasses take their resolved parameters as CONSTRUCTOR KEYWORDS, named
     exactly for the keys the spec declares. `build` calls
-    `spec.factory(**values)`, so the declaration and the signature are checked
-    against each other by Python itself the first time one is built.
+    `spec.factory(**values)`, so Python itself checks the declaration against
+    the signature the first time one is built.
     """
 
     enabled: bool = True
     """Whether the drive calls this behavior at all.
 
     A class attribute, so a subclass that never calls `super().__init__()`
-    still has one. Assigning `behavior.enabled = False` shadows it per
-    instance. This is the equivalent of the `state.can_move` flag that keeps
-    five of the six demo players inert -- a gate that suppresses the WORK
-    without unpicking the composition.
+    still has one; assigning `behavior.enabled = False` shadows it per
+    instance. Suppresses the work without unpicking the composition.
     """
 
     spec: Optional[BehaviorSpec] = None
     """The registry record this behavior was built from.
 
     Stamped on the instance by `registry.build`, and on the class by
-    `registry.register` for the benefit of hand-constructed instances. It is
-    required by `EntityBehaviors.attach`, because a behavior with no spec has
-    no declared `order` -- and an undeclared order is exactly the incidental
-    ordering this design exists to end.
+    `registry.register` for hand-constructed instances. Required by
+    `EntityBehaviors.attach`: a behavior with no spec has no declared `order`.
     """
 
     @property
@@ -455,18 +392,12 @@ class EntityBehaviors:
     """The ordered set of behaviors composed onto one entity.
 
     One of these lives on `GameEntity` as `self.behaviors`, and
-    `GameEntity.core_frame_update` -- which is `pass` today -- calls
-    `self.behaviors.update(event)`. Both halves are two lines, and while the
-    set is empty the call is frame-neutral, which is what makes landing this
-    on every entity in the shipped tree a no-op the smoke baseline agrees
-    with.
+    `GameEntity.core_frame_update` calls `self.behaviors.update(event)`. An
+    empty set is frame-neutral.
 
-    It owns its entity rather than being handed one per call. That removes a
-    whole failure mode -- a set attached to entity A and driven with entity B
-    would move the wrong thing and raise nothing -- and it makes the
-    integration one attribute instead of a loop the entity has to get right.
-    The reference cycle entity -> behaviors -> entity is ordinary and
-    collectable.
+    It owns its entity rather than being handed one per call, so a set
+    attached to entity A cannot be driven with entity B. The reference cycle
+    entity -> behaviors -> entity is ordinary and collectable.
     """
 
     def __init__(self, owner: Any):
@@ -485,9 +416,7 @@ class EntityBehaviors:
     def ordered(self) -> tuple[EntityBehavior, ...]:
         """The behaviors in the order `update` will run them, low order first.
 
-        A tuple, and rebuilt on mutation rather than sorted per frame: this is
-        read once per entity per frame and sorting a three-element list 60
-        times a second for every entity on the map is a cost with no reader.
+        Rebuilt on mutation rather than sorted per frame.
         """
         return self._ordered
 
@@ -517,7 +446,7 @@ class EntityBehaviors:
     def attach(self, behavior: EntityBehavior) -> EntityBehavior:
         """Compose `behavior` onto the owner, or raise saying why it cannot be.
 
-        Three refusals, and each one is a bug that is otherwise invisible:
+        Four refusals, each an otherwise invisible bug:
 
           no spec        an undeclared order is an incidental order
           same token     two of one behavior is a typo in the token list
@@ -525,10 +454,8 @@ class EntityBehaviors:
           same order,
           same writes    both write the attribute and one silently wins
 
-        The last is the one worth the code. Two behaviors at the same order
-        with DISJOINT writes are fine and stay fine -- their relative order
-        genuinely does not matter, and refusing them would make `order` a
-        registration number instead of a statement.
+        Two behaviors at the same order with DISJOINT writes are fine: their
+        relative order genuinely does not matter.
         """
         if not isinstance(behavior, EntityBehavior):
             raise PyoneerConfigError(
@@ -566,12 +493,10 @@ class EntityBehaviors:
         self._sequence += 1
         self._resort()
         # The entry goes in BEFORE the hook runs, so an `attach` that inspects
-        # its siblings sees the finished set -- but a hook that RAISES must not
-        # leave a half-attached behavior behind. `player_input.attach` is
-        # designed to raise on an unbound verb, so this is the expected path,
-        # not a defensive one: without the rollback the refused behavior stays
-        # in `_entries` and is driven every frame by an entity whose
-        # composition was rejected.
+        # its siblings sees the finished set; the rollback keeps a hook that
+        # RAISES from leaving a half-attached behavior in `_entries`.
+        # `player_input.attach` raises on an unbound verb, so this path is
+        # expected rather than defensive.
         try:
             behavior.attach(self._owner)
         except BaseException:
@@ -590,8 +515,7 @@ class EntityBehaviors:
         """Remove one behavior by object or token, calling its `detach`.
 
         Returns the behavior that left, or None if there was nothing to
-        remove. Silent on a miss rather than raising: `detach("x")` on an
-        entity that never had `x` is a request that is already satisfied.
+        remove. A miss is silent rather than a raise.
         """
         for index, (_, behavior) in enumerate(self._entries):
             hit = (behavior is target if not isinstance(target, str)
@@ -605,11 +529,8 @@ class EntityBehaviors:
         return None
 
     def detach_all(self) -> None:
-        """Remove every behavior, in reverse run order.
-
-        Reverse because teardown mirrors setup: whatever ran last and may be
-        holding something the earlier ones produced lets go of it first.
-        """
+        """Remove every behavior, in reverse run order, so teardown mirrors
+        setup."""
         for behavior in reversed(self._ordered):
             self.detach(behavior)
 
@@ -618,17 +539,12 @@ class EntityBehaviors:
     def update(self, event: Any) -> None:
         """Run every enabled behavior once, in declared order.
 
-        Iterates a SNAPSHOT. A behavior that detaches itself -- or attaches
-        another -- from inside its own `update` is a normal thing to want (a
-        one-shot spawn effect, a state machine swapping its own movement), and
-        mutating the list being iterated would either skip its neighbour or
-        raise. The snapshot means this frame runs the set as it was when the
-        frame began, and the change lands on the next one.
+        Iterates a SNAPSHOT, so a behavior may attach or detach another -- or
+        itself -- from inside its own `update`: this frame runs the set as it
+        was when the frame began and the change lands on the next one.
 
         Failures are NOT swallowed. A behavior that raises takes the frame
-        down, loudly, with the behavior and the entity named -- because an
-        entity that silently stopped moving is the single hardest bug in this
-        engine to trace back to its cause.
+        down with the behavior and the entity named.
         """
         for behavior in self._ordered:
             if not behavior.enabled:
@@ -644,12 +560,9 @@ class EntityBehaviors:
     def missing_requirements(self) -> tuple[tuple[str, str], ...]:
         """(behavior name, requirement) for every declared need the owner lacks.
 
-        Reported, never enforced, and the distinction is deliberate. A
-        `GamePlayer` built with `input_=None` legitimately has
-        `action_manager is None` -- that is how five of the six demo players
-        stay inert -- so refusing to attach would break a shipped
-        configuration to prevent a problem that has not happened. The editor
-        and the generated document can show this; the drive does not read it.
+        REPORTED, never enforced: a `GamePlayer` built with `input_=None`
+        legitimately has `action_manager is None`. The editor and the
+        generated document show this; the drive does not read it.
 
         Dotted requirements (`transform.position`) are followed step by step.
         """
@@ -673,10 +586,8 @@ class EntityBehaviors:
     def _resort(self) -> None:
         """Rebuild the run order: declared order first, attach order to break ties.
 
-        `sorted` is stable, so passing the attach sequence explicitly is
-        belt-and-braces -- but only explicitly. A key of `spec.order` alone
-        would leave the tie to whatever `list.sort` happened to do with the
-        entries, which is the definition of incidental.
+        The attach sequence is part of the sort key explicitly rather than
+        relying on `sorted` being stable, so a tie is never incidental.
         """
         self._ordered = tuple(behavior for _, behavior in
                               sorted(self._entries,

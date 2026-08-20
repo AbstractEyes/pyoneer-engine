@@ -40,7 +40,6 @@ class DrawComponent(GameComponent):
         self.__make()
 
     def __make(self):
-        #self.viewport = GameCamera #Viewport(parent=self, bounds=self.bounds, full_bounds=self.bounds, offset=self.viewport_offset)
         self.bind_sync_listener(GameEventType.DISPOSE, self.dispose_drawable)
         self.bind_sync_listener(GameEventType.BLITS, self.__blits)
 
@@ -48,16 +47,10 @@ class DrawComponent(GameComponent):
     def allocate_surface(width: int | float, height: int | float) -> Surface:
         """Allocate a blank, FULLY TRANSPARENT surface of at least 1x1.
 
-        The SRCALPHA flag is the point. This used to read
-        `Surface((w, h)).convert_alpha()`, and a plain Surface has no alpha
-        channel -- convert_alpha() gives it one and fills it with 255, so
-        every freshly allocated surface was OPAQUE BLACK, measured as
-        (0, 0, 0, 255) at every pixel.
-
-        Subclasses that repaint on PREPARE hid it: ShapeComponent and
-        TextComponent both open with `self.image.fill((0, 0, 0, 0))`. The
-        drawables that own a surface and never paint it did not -- Panel and
-        TextBox -- so those punched solid black rectangles into the frame.
+        The SRCALPHA flag is the point. A plain `Surface((w, h))` has no alpha
+        channel, and `.convert_alpha()` gives it one filled with 255, so the
+        surface comes out OPAQUE BLACK -- invisible in a subclass that
+        repaints on PREPARE, and a solid black rectangle in one that does not.
         """
         return Surface((max(1, int(width)), max(1, int(height))),
                        pygame.SRCALPHA).convert_alpha()
@@ -67,9 +60,8 @@ class DrawComponent(GameComponent):
 
         Deliberately not `pygame.transform.scale`. ShapeComponent and
         TextComponent repaint themselves from `world_bounds` whenever PREPARE
-        fires, so stretching the old pixels and then repainting would apply
-        the size change twice -- once in the stretch, once in the repaint.
-        Reallocating blank and re-firing PREPARE applies it exactly once.
+        fires, so stretching and then repainting would apply the size change
+        twice. Reallocating blank and re-firing PREPARE applies it once.
 
         PREPARE is re-fired on THIS component only (`send_event_to_self`),
         not fanned out: a child's surface size is not a function of its
@@ -93,17 +85,13 @@ class DrawComponent(GameComponent):
     def scale_surface(self, width: int, height: int, destination: Surface | None = None):
         """Stretch this component's surface to a new pixel size.
 
-        Renamed off `scale`. That name OVERRODE GameComponent.scale(scale,
-        sender) with an incompatible signature, and component.py:266 calls
-        `self.scale(scale, self)` when a TRANSFORM event carries scale data --
-        which on any DrawComponent would arrive here as width=Vector2,
-        height=self. Latent only because nothing currently writes "scale" into
-        TRANSFORM data; it would have fired the first time anything did.
+        NOT named `scale`: that would override `GameComponent.scale(scale,
+        sender)` with an incompatible signature, and a TRANSFORM event
+        carrying scale data would arrive here as width=Vector2, height=self.
 
-        Note this stretches existing pixels. ShapeComponent and TextComponent
-        redraw themselves from world_bounds, so for those a reallocate-and-
-        repaint is correct instead -- use resize() below. This remains only
-        for the case where stretching the EXISTING artwork is what is wanted.
+        This stretches EXISTING pixels. ShapeComponent and TextComponent
+        redraw themselves from `world_bounds`, so for those `resize()` -- a
+        reallocate and repaint -- is the correct call instead.
         """
         self._image = pygame.transform.scale(self._image, (width, height), destination)
 
@@ -157,10 +145,9 @@ class DrawComponent(GameComponent):
             source_origin = (0, 0)
 
         # Second clip, against the screen. The viewport clip above only asks
-        # "is this inside my panel" -- a panel can itself be off-screen, and
-        # a component with no viewport was never clipped at all. Measured:
-        # dragging the test window off the left edge left 51 of 63 tokens
-        # fully outside the screen, still built and still handed to SDL.
+        # "is this inside my panel", and a panel can itself be off-screen --
+        # without this, a component with no viewport is never clipped at all
+        # and off-screen tokens are still built and handed to SDL.
         clip_region = None
         if event is not None and event.data is not None:
             clip_region = event.data.get("screen")
@@ -187,25 +174,4 @@ class DrawComponent(GameComponent):
                                sender=self,
                                draw_area=clipped.source_area)
 
-    #def __blits(self, event: Optional[PyoneerEvent] = None):
-        #if not self.draws:
-        #    return
-        #depth, priority = self.depth, self.priority
-        #if event is not None and event.data.get("layer_depth") is not None:
-        #    depth += event.data["layer_depth"]
-        #viewport_component = self.get_viewport_component
-        #if viewport_component is not None:
-        #    viewport = viewport_component.world_bounds.copy()
-        #    """This is the viewport's representative bounds."""
-        #    world_bounds = self.world_bounds.copy()
-        #    """This is the representative bounds from the world."""
-        #    drawn_screen_section = world_bounds.clip(viewport)
-        #    # now we need to get the local drawn offset and width/height for blitting the image to the larger image
-        #    drawn_section = Rect(drawn_screen_section.x - world_bounds.x,
-        #                         drawn_screen_section.y - world_bounds.y,
-        #                         drawn_screen_section.width,
-        #                         drawn_screen_section.height)
-        #    BlitPool.blit_to_layer(depth, priority, self.image(), destination=world_bounds.topleft, sender=self, draw_area=drawn_section)
-        #else: # no viewport, draw to the whatever
-        #    BlitPool.blit_to_layer(depth, priority, self.image(), destination=self.world_bounds, sender=self, draw_area=self.image().get_rect())
 

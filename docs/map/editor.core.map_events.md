@@ -5,7 +5,7 @@
 
 > Map events: authorable collision triggers, stored as tmx object properties.
 
-`editor.core.map_events` · 844 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.map_events` · 797 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,108 +13,108 @@
 
 ## Module constants
 
-- `editor/core/map_events.py:161` `TRIGGER` #TAG:TRIGGER
-- `editor/core/map_events.py:162` `FILTER_TAGS` #TAG:FILTER_TAGS
-- `editor/core/map_events.py:163` `FILTER_CLASS` #TAG:FILTER_CLASS
-- `editor/core/map_events.py:164` `BLOCKS` #TAG:BLOCKS
-- `editor/core/map_events.py:165` `ONCE` #TAG:ONCE
-- `editor/core/map_events.py:166` `COOLDOWN_MS` #TAG:COOLDOWN_MS
-- `editor/core/map_events.py:167` `PAYLOAD` #TAG:PAYLOAD
-- `editor/core/map_events.py:168` `ARGS` #TAG:ARGS
-- `editor/core/map_events.py:173` `ENTER` #TAG:ENTER
-- `editor/core/map_events.py:174` `EXIT` #TAG:EXIT
-- `editor/core/map_events.py:175` `STAY` #TAG:STAY
-- `editor/core/map_events.py:176` `USE` #TAG:USE
-- `editor/core/map_events.py:177` `TRIGGER_KINDS` #TAG:TRIGGER_KINDS
-- `editor/core/map_events.py:185` `EVENT_NAMES` #TAG:EVENT_NAMES
-- `editor/core/map_events.py:196` `FIELDS` #TAG:FIELDS
-- `editor/core/map_events.py:242` `BY_KEY` #TAG:map_events.BY_KEY
-- `editor/core/map_events.py:243` `BY_PROPERTY` #TAG:map_events.BY_PROPERTY
-- `editor/core/map_events.py:247` `KNOWN` #TAG:map_events.KNOWN
+- `editor/core/map_events.py:121` `TRIGGER` #TAG:TRIGGER
+- `editor/core/map_events.py:122` `FILTER_TAGS` #TAG:FILTER_TAGS
+- `editor/core/map_events.py:123` `FILTER_CLASS` #TAG:FILTER_CLASS
+- `editor/core/map_events.py:124` `BLOCKS` #TAG:BLOCKS
+- `editor/core/map_events.py:125` `ONCE` #TAG:ONCE
+- `editor/core/map_events.py:126` `COOLDOWN_MS` #TAG:COOLDOWN_MS
+- `editor/core/map_events.py:127` `PAYLOAD` #TAG:PAYLOAD
+- `editor/core/map_events.py:128` `ARGS` #TAG:ARGS
+- `editor/core/map_events.py:133` `ENTER` #TAG:ENTER
+- `editor/core/map_events.py:134` `EXIT` #TAG:EXIT
+- `editor/core/map_events.py:135` `STAY` #TAG:STAY
+- `editor/core/map_events.py:136` `USE` #TAG:USE
+- `editor/core/map_events.py:137` `TRIGGER_KINDS` #TAG:TRIGGER_KINDS
+- `editor/core/map_events.py:143` `EVENT_NAMES` #TAG:EVENT_NAMES
+- `editor/core/map_events.py:154` `FIELDS` #TAG:FIELDS
+- `editor/core/map_events.py:200` `BY_KEY` #TAG:map_events.BY_KEY
+- `editor/core/map_events.py:201` `BY_PROPERTY` #TAG:map_events.BY_PROPERTY
+- `editor/core/map_events.py:205` `KNOWN` #TAG:map_events.KNOWN
 
 ## Functions
 
-- `editor/core/map_events.py:254` `parse_names(text: Any, *, fold: bool=False) -> frozenset[str]` #TAG:parse_names
+- `editor/core/map_events.py:212` `parse_names(text: Any, *, fold: bool=False) -> frozenset[str]` #TAG:parse_names
   - A comma-separated filter list as a set. Never raises.
-- `editor/core/map_events.py:269` `format_names(names: Iterable[str], *, fold: bool=False) -> str` #TAG:format_names
+- `editor/core/map_events.py:227` `format_names(names: Iterable[str], *, fold: bool=False) -> str` #TAG:format_names
   - The inverse, sorted so the same filter always writes the same bytes.
-- `editor/core/map_events.py:289` `parse_args(text: Any) -> tuple[tuple[str, str], ...]` #TAG:map_events.parse_args
+- `editor/core/map_events.py:247` `parse_args(text: Any) -> tuple[tuple[str, str], ...]` #TAG:map_events.parse_args
   - 'a=1;b=2' as ordered pairs. Never raises; keeps the authored order.
-- `editor/core/map_events.py:310` `format_args(pairs: Iterable[tuple[str, Any]] | Mapping[str, Any]) -> str` #TAG:format_args
+- `editor/core/map_events.py:268` `format_args(pairs: Iterable[tuple[str, Any]] | Mapping[str, Any]) -> str` #TAG:format_args
   - The inverse. Raises on anything that could not be read back.
-- `editor/core/map_events.py:338` `_text(properties: Mapping[str, Any], name: str) -> str` #TAG:_text
-- `editor/core/map_events.py:347` `_flag(properties: Mapping[str, Any], name: str, fallback: bool) -> bool` #TAG:map_events._flag
+- `editor/core/map_events.py:296` `_text(properties: Mapping[str, Any], name: str) -> str` #TAG:_text
+- `editor/core/map_events.py:305` `_flag(properties: Mapping[str, Any], name: str, fallback: bool) -> bool` #TAG:map_events._flag
   - Read a bool from a value that may already be one, or may be text.
-- `editor/core/map_events.py:362` `_int(properties: Mapping[str, Any], name: str, fallback: int) -> int` #TAG:_int
-- `editor/core/map_events.py:372` `_float(value: Any, fallback: float=0.0) -> float` #TAG:_float
-- `editor/core/map_events.py:379` `_as_int(value: Any, fallback: int=0) -> int` #TAG:_as_int
-- `editor/core/map_events.py:626` `_authored(event: MapEvent, key: str) -> Any` #TAG:_authored
+- `editor/core/map_events.py:320` `_int(properties: Mapping[str, Any], name: str, fallback: int) -> int` #TAG:_int
+- `editor/core/map_events.py:330` `_float(value: Any, fallback: float=0.0) -> float` #TAG:_float
+- `editor/core/map_events.py:337` `_as_int(value: Any, fallback: int=0) -> int` #TAG:_as_int
+- `editor/core/map_events.py:579` `_authored(event: MapEvent, key: str) -> Any` #TAG:_authored
   - One field of a MapEvent as the value its tmx property would hold.
-- `editor/core/map_events.py:643` `_properties_of(obj: Any) -> Mapping[str, Any]` #TAG:map_events._properties_of
+- `editor/core/map_events.py:596` `_properties_of(obj: Any) -> Mapping[str, Any]` #TAG:map_events._properties_of
   - The property mapping of a MapDocument object, a pytmx one, or a stub.
-- `editor/core/map_events.py:661` `read(obj: Any, *, layer: str='', source_layer: str='') -> MapEvent` #TAG:map_events.read
+- `editor/core/map_events.py:614` `read(obj: Any, *, layer: str='', source_layer: str='') -> MapEvent` #TAG:map_events.read
   - Read one object's declaration. NEVER raises.
-- `editor/core/map_events.py:712` `read_anchor(layer: Any) -> str` #TAG:read_anchor
+- `editor/core/map_events.py:665` `read_anchor(layer: Any) -> str` #TAG:read_anchor
   - Which tile layer an objectgroup's regions are anchored to.
-- `editor/core/map_events.py:728` `read_all(layer: Any) -> tuple[MapEvent, ...]` #TAG:read_all
+- `editor/core/map_events.py:681` `read_all(layer: Any) -> tuple[MapEvent, ...]` #TAG:read_all
   - Every declared map event on one object layer, in document order.
-- `editor/core/map_events.py:749` `validate(key: str, value: Any) -> Any` #TAG:validate
+- `editor/core/map_events.py:702` `validate(key: str, value: Any) -> Any` #TAG:validate
   - Check one field by key. Raises ValueError with a usable message.
-- `editor/core/map_events.py:789` `validate_properties(properties: Mapping[str, Any]) -> dict[str, Any]` #TAG:validate_properties
+- `editor/core/map_events.py:742` `validate_properties(properties: Mapping[str, Any]) -> dict[str, Any]` #TAG:validate_properties
   - Check a whole `pyoneer_` property dict, by property NAME.
-- `editor/core/map_events.py:806` `check_property_name(name: str) -> str` #TAG:check_property_name
+- `editor/core/map_events.py:759` `check_property_name(name: str) -> str` #TAG:check_property_name
   - Refuse a property name that would make the map unloadable.
-- `editor/core/map_events.py:831` `describe_all() -> str` #TAG:map_events.describe_all
+- `editor/core/map_events.py:784` `describe_all() -> str` #TAG:map_events.describe_all
   - Markdown for the generated request bundle, mirroring the layer table.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class EntityFilter` #TAG:EntityFilter
 
-`editor/core/map_events.py:391`–`435`
+`editor/core/map_events.py:349`–`389`
 
 > Which entities may fire a region.
 
-- `editor/core/map_events.py:413` `@property universal(self) -> bool` #TAG:EntityFilter.universal
+- `editor/core/map_events.py:367` `@property universal(self) -> bool` #TAG:EntityFilter.universal
   - True when nothing is declared, so every entity passes.
-- `editor/core/map_events.py:417` `matches(self, entity_class: str='', tags: Iterable[str]=()) -> bool` #TAG:EntityFilter.matches
+- `editor/core/map_events.py:371` `matches(self, entity_class: str='', tags: Iterable[str]=()) -> bool` #TAG:EntityFilter.matches
   - Does this entity pass every declared axis?
-- `editor/core/map_events.py:427` `describe(self) -> str` #TAG:EntityFilter.describe
+- `editor/core/map_events.py:381` `describe(self) -> str` #TAG:EntityFilter.describe
 
 ### `@dataclass(frozen=True) class Region` #TAG:Region
 
-`editor/core/map_events.py:443`–`528`
+`editor/core/map_events.py:397`–`482`
 
 > An axis-aligned rectangle in PIXELS, top-left anchored.
 
-- `editor/core/map_events.py:459` `@property right(self) -> float` #TAG:Region.right
-- `editor/core/map_events.py:463` `@property bottom(self) -> float` #TAG:Region.bottom
-- `editor/core/map_events.py:467` `@property is_point(self) -> bool` #TAG:Region.is_point
+- `editor/core/map_events.py:413` `@property right(self) -> float` #TAG:Region.right
+- `editor/core/map_events.py:417` `@property bottom(self) -> float` #TAG:Region.bottom
+- `editor/core/map_events.py:421` `@property is_point(self) -> bool` #TAG:Region.is_point
   - A zero-sized object: an authored CELL rather than a region.
-- `editor/core/map_events.py:472` `@classmethod of_object(cls, obj: Any) -> 'Region'` #TAG:Region.of_object
+- `editor/core/map_events.py:426` `@classmethod of_object(cls, obj: Any) -> 'Region'` #TAG:Region.of_object
   - Read an object's rectangle, correcting for the tile-object anchor.
-- `editor/core/map_events.py:494` `contains(self, px: float, py: float) -> bool` #TAG:Region.contains
+- `editor/core/map_events.py:448` `contains(self, px: float, py: float) -> bool` #TAG:Region.contains
   - Half-open containment, so abutting regions never both claim a point.
-- `editor/core/map_events.py:504` `cells(self, tile_width: int, tile_height: int) -> tuple[tuple[int, int], ...]` #TAG:Region.cells
+- `editor/core/map_events.py:458` `cells(self, tile_width: int, tile_height: int) -> tuple[tuple[int, int], ...]` #TAG:Region.cells
   - Every cell this region touches, row-major.
-- `editor/core/map_events.py:525` `covers_cell(self, cell_x: int, cell_y: int, tile_width: int, tile_height: int) -> bool` #TAG:Region.covers_cell
+- `editor/core/map_events.py:479` `covers_cell(self, cell_x: int, cell_y: int, tile_width: int, tile_height: int) -> bool` #TAG:Region.covers_cell
   - Whether one cell is in `cells()`, without building the tuple.
 
 ### `@dataclass(frozen=True) class MapEvent` #TAG:MapEvent
 
-`editor/core/map_events.py:536`–`623`
+`editor/core/map_events.py:490`–`576`
 
 > One authored region: what collides, where, and what happens.
 
-- `editor/core/map_events.py:558` `@property declared(self) -> bool` #TAG:MapEvent.declared
+- `editor/core/map_events.py:512` `@property declared(self) -> bool` #TAG:MapEvent.declared
   - Is this object a map event at all?
-- `editor/core/map_events.py:568` `@property fires(self) -> bool` #TAG:MapEvent.fires
-- `editor/core/map_events.py:572` `@property event_name(self) -> str` #TAG:MapEvent.event_name
+- `editor/core/map_events.py:522` `@property fires(self) -> bool` #TAG:MapEvent.fires
+- `editor/core/map_events.py:526` `@property event_name(self) -> str` #TAG:MapEvent.event_name
   - The bus name a runtime dispatches under, or '' if it never fires.
-- `editor/core/map_events.py:577` `@property arguments(self) -> dict[str, str]` #TAG:MapEvent.arguments
-- `editor/core/map_events.py:580` `accepts(self, entity_class: str='', tags: Iterable[str]=()) -> bool` #TAG:MapEvent.accepts
-- `editor/core/map_events.py:583` `cells(self, tile_width: int, tile_height: int) -> tuple[tuple[int, int], ...]` #TAG:MapEvent.cells
-- `editor/core/map_events.py:586` `to_properties(self) -> dict[str, Any]` #TAG:MapEvent.to_properties
+- `editor/core/map_events.py:531` `@property arguments(self) -> dict[str, str]` #TAG:MapEvent.arguments
+- `editor/core/map_events.py:534` `accepts(self, entity_class: str='', tags: Iterable[str]=()) -> bool` #TAG:MapEvent.accepts
+- `editor/core/map_events.py:537` `cells(self, tile_width: int, tile_height: int) -> tuple[tuple[int, int], ...]` #TAG:MapEvent.cells
+- `editor/core/map_events.py:540` `to_properties(self) -> dict[str, Any]` #TAG:MapEvent.to_properties
   - The tmx properties this declaration writes.
-- `editor/core/map_events.py:605` `describe(self) -> str` #TAG:MapEvent.describe
+- `editor/core/map_events.py:558` `describe(self) -> str` #TAG:MapEvent.describe
   - One line, for a tooltip or a generated report.

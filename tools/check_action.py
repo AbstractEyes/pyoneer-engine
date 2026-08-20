@@ -27,11 +27,11 @@ symptom until an entity silently stops -- or never stops -- doing something:
 
 EVERY ASSERTION IS A PAIR
 -------------------------
-The standing correction on this repo is that a gate gets proved to let
-something through and never proved to stop it, so each rule above is written
-as two assertions with opposite expectations. The pairs that matter most are
-marked BOTH HALVES in the source, and the mutation table in the summary
-records what each one turned red for.
+A gate proved to let something through and never proved to stop it is the
+commonest toothless shape here, so each rule above is written as two
+assertions with opposite expectations. The pairs that matter most are marked
+BOTH HALVES in the source, and the mutation table in the summary records what
+each one turned red for.
 
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------

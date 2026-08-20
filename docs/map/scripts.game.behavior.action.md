@@ -5,7 +5,7 @@
 
 > What an entity DID this frame: the action behaviors and their record.
 
-`scripts.game.behavior.action` · 624 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.behavior.action` · 547 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,87 +13,87 @@
 
 ## Module constants
 
-- `scripts/game/behavior/action.py:105` `SLOT_PREFIX` #TAG:SLOT_PREFIX
-- `scripts/game/behavior/action.py:253` `NO_ACTIONS` #TAG:NO_ACTIONS
-- `scripts/game/behavior/action.py:506` `ORDER` #TAG:action.ORDER
-- `scripts/game/behavior/action.py:509` `RELAY_ORDER` #TAG:RELAY_ORDER
-- `scripts/game/behavior/action.py:549` `ATTACK_ACTION` #TAG:ATTACK_ACTION
-- `scripts/game/behavior/action.py:563` `INTERACT_ACTION` #TAG:INTERACT_ACTION
-- `scripts/game/behavior/action.py:577` `PAUSE_ACTION` #TAG:PAUSE_ACTION
-- `scripts/game/behavior/action.py:590` `ACTION_RELAY` #TAG:ACTION_RELAY
-- `scripts/game/behavior/action.py:616` `ACTION_SPECS` #TAG:ACTION_SPECS
+- `scripts/game/behavior/action.py:65` `SLOT_PREFIX` #TAG:SLOT_PREFIX
+- `scripts/game/behavior/action.py:203` `NO_ACTIONS` #TAG:NO_ACTIONS
+- `scripts/game/behavior/action.py:430` `ORDER` #TAG:action.ORDER
+- `scripts/game/behavior/action.py:433` `RELAY_ORDER` #TAG:RELAY_ORDER
+- `scripts/game/behavior/action.py:472` `ATTACK_ACTION` #TAG:ATTACK_ACTION
+- `scripts/game/behavior/action.py:486` `INTERACT_ACTION` #TAG:INTERACT_ACTION
+- `scripts/game/behavior/action.py:500` `PAUSE_ACTION` #TAG:PAUSE_ACTION
+- `scripts/game/behavior/action.py:513` `ACTION_RELAY` #TAG:ACTION_RELAY
+- `scripts/game/behavior/action.py:539` `ACTION_SPECS` #TAG:ACTION_SPECS
 
 ## Functions
 
-- `scripts/game/behavior/action.py:262` `actions_of(entity: Any) -> ActionIntent` #TAG:actions_of
+- `scripts/game/behavior/action.py:211` `actions_of(entity: Any) -> ActionIntent` #TAG:actions_of
   - The entity's own action record, or the shared inert one.
-- `scripts/game/behavior/action.py:274` `_own_intent(entity: Any) -> ActionIntent` #TAG:_own_intent
+- `scripts/game/behavior/action.py:221` `_own_intent(entity: Any) -> ActionIntent` #TAG:_own_intent
   - The entity's writable record, allocating one if it has none.
-- `scripts/game/behavior/action.py:292` `require_verbs(manager: Any, verbs: Iterable[str], *, behavior: str, entity: str) -> tuple[str, ...]` #TAG:require_verbs
+- `scripts/game/behavior/action.py:239` `require_verbs(manager: Any, verbs: Iterable[str], *, behavior: str, entity: str) -> tuple[str, ...]` #TAG:require_verbs
   - Prove every named verb is bound, or raise at composition time.
-- `scripts/game/behavior/action.py:513` `_params(default_verb: str) -> tuple[BehaviorParam, ...]` #TAG:_params
+- `scripts/game/behavior/action.py:437` `_params(default_verb: str) -> tuple[BehaviorParam, ...]` #TAG:_params
   - The four parameters every action takes, with this action's verb default.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class ActionFired` #TAG:ActionFired
 
-`scripts/game/behavior/action.py:120`–`141`
+`scripts/game/behavior/action.py:79`–`96`
 
 > One action, once, on the frame its verb went down.
 
-- `scripts/game/behavior/action.py:139` `__repr__(self) -> str` #TAG:ActionFired.__repr__
+- `scripts/game/behavior/action.py:94` `__repr__(self) -> str` #TAG:ActionFired.__repr__
 
 ### `class ActionIntent` #TAG:ActionIntent
 
-`scripts/game/behavior/action.py:144`–`250`
+`scripts/game/behavior/action.py:99`–`200`
 
 > Which of this entity's actions fired this frame, one slot per action.
 
-- `scripts/game/behavior/action.py:159` `__init__(self, locked: bool=False)` #TAG:ActionIntent.__init__
-- `scripts/game/behavior/action.py:165` `__setattr__(self, name: str, value: Any) -> None` #TAG:ActionIntent.__setattr__
+- `scripts/game/behavior/action.py:112` `__init__(self, locked: bool=False)` #TAG:ActionIntent.__init__
+- `scripts/game/behavior/action.py:118` `__setattr__(self, name: str, value: Any) -> None` #TAG:ActionIntent.__setattr__
   - Refuse every write. `NO_ACTIONS` is the only instance that is locked.
-- `scripts/game/behavior/action.py:177` `_refuse(self, what: str) -> None` #TAG:ActionIntent._refuse
-- `scripts/game/behavior/action.py:187` `@property locked(self) -> bool` #TAG:ActionIntent.locked
-- `scripts/game/behavior/action.py:192` `clear(self, name: str) -> None` #TAG:ActionIntent.clear
+- `scripts/game/behavior/action.py:127` `_refuse(self, what: str) -> None` #TAG:ActionIntent._refuse
+- `scripts/game/behavior/action.py:137` `@property locked(self) -> bool` #TAG:ActionIntent.locked
+- `scripts/game/behavior/action.py:142` `clear(self, name: str) -> None` #TAG:ActionIntent.clear
   - Allocate `name`'s slot and empty it. Called at the top of a poll.
-- `scripts/game/behavior/action.py:197` `record(self, name: str, fired: ActionFired) -> ActionFired` #TAG:ActionIntent.record
+- `scripts/game/behavior/action.py:147` `record(self, name: str, fired: ActionFired) -> ActionFired` #TAG:ActionIntent.record
   - Record that `name` fired this frame.
-- `scripts/game/behavior/action.py:208` `release(self, name: str) -> None` #TAG:ActionIntent.release
+- `scripts/game/behavior/action.py:158` `release(self, name: str) -> None` #TAG:ActionIntent.release
   - Forget the slot entirely. Called from `detach`.
-- `scripts/game/behavior/action.py:220` `fired(self, name: str) -> Optional[ActionFired]` #TAG:ActionIntent.fired
+- `scripts/game/behavior/action.py:170` `fired(self, name: str) -> Optional[ActionFired]` #TAG:ActionIntent.fired
   - `name`'s firing this frame, or None. Never raises on an unknown name.
-- `scripts/game/behavior/action.py:225` `@property fired_names(self) -> tuple[str, ...]` #TAG:ActionIntent.fired_names
+- `scripts/game/behavior/action.py:175` `@property fired_names(self) -> tuple[str, ...]` #TAG:ActionIntent.fired_names
   - Every action that fired this frame, SORTED.
-- `scripts/game/behavior/action.py:235` `@property records(self) -> tuple[ActionFired, ...]` #TAG:ActionIntent.records
-- `scripts/game/behavior/action.py:239` `@property slots(self) -> tuple[str, ...]` #TAG:ActionIntent.slots
+- `scripts/game/behavior/action.py:185` `@property records(self) -> tuple[ActionFired, ...]` #TAG:ActionIntent.records
+- `scripts/game/behavior/action.py:189` `@property slots(self) -> tuple[str, ...]` #TAG:ActionIntent.slots
   - Every action composed onto this entity, fired or not. Sorted.
-- `scripts/game/behavior/action.py:243` `__contains__(self, name: Any) -> bool` #TAG:ActionIntent.__contains__
-- `scripts/game/behavior/action.py:246` `__len__(self) -> int` #TAG:ActionIntent.__len__
-- `scripts/game/behavior/action.py:249` `__repr__(self) -> str` #TAG:ActionIntent.__repr__
+- `scripts/game/behavior/action.py:193` `__contains__(self, name: Any) -> bool` #TAG:ActionIntent.__contains__
+- `scripts/game/behavior/action.py:196` `__len__(self) -> int` #TAG:ActionIntent.__len__
+- `scripts/game/behavior/action.py:199` `__repr__(self) -> str` #TAG:ActionIntent.__repr__
 
 ### `class GameActionInputBehavior(EntityBehavior)` #TAG:GameActionInputBehavior
 
-`scripts/game/behavior/action.py:335`–`450`
+`scripts/game/behavior/action.py:281`–`386`
 
 > Poll one verb's RISING EDGE and record a firing for one action.
 
-- `scripts/game/behavior/action.py:350` `__init__(self, verb: str='', cooldown_ms: int=0, once: bool=False, payload: str='')` #TAG:GameActionInputBehavior.__init__
-- `scripts/game/behavior/action.py:377` `@property cooldown_left(self) -> float` #TAG:GameActionInputBehavior.cooldown_left
+- `scripts/game/behavior/action.py:293` `__init__(self, verb: str='', cooldown_ms: int=0, once: bool=False, payload: str='')` #TAG:GameActionInputBehavior.__init__
+- `scripts/game/behavior/action.py:320` `@property cooldown_left(self) -> float` #TAG:GameActionInputBehavior.cooldown_left
   - Milliseconds until this action may fire again. 0.0 when ready.
-- `scripts/game/behavior/action.py:382` `@property spent(self) -> bool` #TAG:GameActionInputBehavior.spent
+- `scripts/game/behavior/action.py:325` `@property spent(self) -> bool` #TAG:GameActionInputBehavior.spent
   - True when `once` was declared and the one firing has happened.
-- `scripts/game/behavior/action.py:387` `@property ready(self) -> bool` #TAG:GameActionInputBehavior.ready
-- `scripts/game/behavior/action.py:392` `attach(self, entity: Any) -> None` #TAG:GameActionInputBehavior.attach
+- `scripts/game/behavior/action.py:330` `@property ready(self) -> bool` #TAG:GameActionInputBehavior.ready
+- `scripts/game/behavior/action.py:335` `attach(self, entity: Any) -> None` #TAG:GameActionInputBehavior.attach
   - Prove the verb is bound, then allocate this action's slot.
-- `scripts/game/behavior/action.py:404` `detach(self, entity: Any) -> None` #TAG:GameActionInputBehavior.detach
+- `scripts/game/behavior/action.py:346` `detach(self, entity: Any) -> None` #TAG:GameActionInputBehavior.detach
   - Forget the slot. The cooldown and `once` state stay on the instance.
-- `scripts/game/behavior/action.py:415` `update(self, entity: Any, event: Any) -> None` #TAG:GameActionInputBehavior.update
+- `scripts/game/behavior/action.py:356` `update(self, entity: Any, event: Any) -> None` #TAG:GameActionInputBehavior.update
 
 ### `class GameActionRelayBehavior(EntityBehavior)` #TAG:GameActionRelayBehavior
 
-`scripts/game/behavior/action.py:453`–`487`
+`scripts/game/behavior/action.py:389`–`414`
 
 > Hand every firing to `entity.action_sink`, by CALLING it.
 
-- `scripts/game/behavior/action.py:477` `update(self, entity: Any, event: Any) -> None` #TAG:GameActionRelayBehavior.update
+- `scripts/game/behavior/action.py:407` `update(self, entity: Any, event: Any) -> None` #TAG:GameActionRelayBehavior.update

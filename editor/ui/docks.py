@@ -136,13 +136,11 @@ class ProblemsDock(ScopedDock):
     rejected command, a response file arriving on disk -- and they are the
     reason this dock exists as a surface rather than a report.
 
-    They were modal dialogs, every one of them. A rejection is a NORMAL
-    outcome here (`map.tileset.remove` refusing while gids still point into
-    its range is a designed refusal with a long, useful message), and a
-    dialog for a normal outcome is a decision with no choice in it. It also
-    made the suite hangable: `EditorWindow.run` popped a box on the ordinary
-    edit path, so the only check that builds a real window survived solely
-    by stubbing `QMessageBox` globally.
+    None of them is a dialog. A rejection is a NORMAL outcome here
+    (`map.tileset.remove` refusing while gids still point into its range is
+    a designed refusal with a long, useful message), and a dialog for a
+    normal outcome is a decision with no choice in it -- as well as a modal
+    on the ordinary edit path, where it can hang a headless check.
 
     A notice is a `RuleViolation` -- the same record the validator emits, so
     the row renders, colours and double-click-to-scope identically and there
@@ -267,8 +265,8 @@ class ManifestDock(ScopedDock):
         self.list.currentItemChanged.connect(lambda *_a: self.__sync_buttons())
         layout.addWidget(self.list, 1)
 
-        # Unstaging used to be double-click only, which is not a feature
-        # anybody finds. A destructive action needs a visible control.
+        # A destructive action needs a visible control, not just the
+        # double-click above.
         row = QHBoxLayout()
         self.unstage = QPushButton("Unstage")
         self.unstage.clicked.connect(self.__on_unstage)
@@ -315,13 +313,9 @@ class ManifestDock(ScopedDock):
         count = len(self.session.manifest.notes)
         if not count:
             return
-        # The one surviving confirmation in the whole editor, and the reason
-        # the seam is worth having: a staged note has never entered the
-        # command stream, so there is no inverse to fall back on and this is
-        # the only click here that undo cannot reach. Everything else that
-        # used to ask -- removing a layer, deleting a row, dropping a
-        # trigger declaration -- says "Ctrl+Z restores it" in its own dialog
-        # body, which is an argument that the dialog is unnecessary.
+        # The only confirmation in the editor, because it is the only click
+        # undo cannot reach: a staged note never entered the command stream,
+        # so there is no inverse to fall back on.
         if not self.confirm(
                 self, "Unstage all",
                 f"Discard {count} staged note{'' if count == 1 else 's'}?\n\n"

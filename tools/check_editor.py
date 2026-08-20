@@ -433,8 +433,7 @@ try:
     # IDENTITY, not equality. Scope is frozen and value-comparing, so an
     # `==` assertion here passes whether known_scopes() shares the module
     # singletons or re-parses three fresh literals -- it cannot tell the
-    # wire from its absence. Measured: reverting session.py to
-    # Scope.of("project") left the previous assertion printing ok.
+    # wire from its absence.
     leading = session.known_scopes()[:3]
     expect("known_scopes shares the singleton INSTANCES, not equal copies",
            [leading[0] is PROJECT, leading[1] is GENRE, leading[2] is ASSETS],
@@ -569,10 +568,9 @@ try:
 
     print()
     print("a factor the dimensions do not support is refused, by both numbers")
-    # The other half. A gate proved to let a 4x layer through and never
-    # proved to stop a mismatched one is the failure shape this repo keeps
-    # measuring, and the previous pass measured exactly this case surviving:
-    # a 32x32 field baked from an 8x8 layer's worth of data, no complaint.
+    # The other half. A gate proved to let a 4x layer through and never proved
+    # to stop a mismatched one bakes a 32x32 field from an 8x8 layer's worth of
+    # data and complains about nothing.
     expect_raises_naming(
         "explicit dimensions contradicting the factor",
         PyoneerCommandApplyError,
@@ -622,9 +620,8 @@ try:
 
     print()
     print("layer capabilities are declared data, not inferred behaviour")
-    # A layer could previously be told exactly one thing -- its name. These
-    # are tmx custom properties, so Tiled shows them and a human edits them
-    # in the dialog they already use.
+    # Capabilities are tmx custom properties, so Tiled shows them and a human
+    # edits them in the dialog they already use.
     from editor.core import layers as layers_module  # noqa: E402
 
     # Declare on a layer this test CREATES, never on one the shipped map
@@ -922,15 +919,14 @@ try:
     print()
     print("removing a NON-RECTANGULAR object still undoes byte-exactly")
     # ---------------------------------------------------------------
-    # This is a regression guard for a data-destroying bug. `map.object.remove`
-    # used to invert to `map.object.add`, which rebuilds an object from eight
-    # attributes -- so undo silently dropped rotation, visible, template and
-    # every shape child (<polygon>, <polyline>, <point>, <ellipse>, <text>).
+    # A guard against a data-destroying inverse. Inverting `map.object.remove`
+    # to `map.object.add` rebuilds an object from eight attributes, so undo
+    # silently drops rotation, visible, template and every shape child
+    # (<polygon>, <polyline>, <point>, <ellipse>, <text>).
     #
-    # The earlier byte-identity assertions did not catch it because the only
-    # objects they ever removed were plain rectangles they had created
-    # themselves two lines earlier: the test compared the code against itself.
-    # Nothing in the shipped map has a shape, so this needs its own fixture.
+    # Its own fixture, because a byte-identity assertion that only ever removes
+    # a plain rectangle the check created two lines earlier compares the code
+    # against itself -- and nothing in the shipped map has a shape.
     RICH = b"""<?xml version="1.0" encoding="UTF-8"?>
 <map version="1.10" tiledversion="1.10.2" orientation="orthogonal" \
 renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" \

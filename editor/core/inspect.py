@@ -1,8 +1,7 @@
 """What to show when something is selected, as data.
 
-The inspector is the panel that replaced a fixed table of actors, and it has
-to render very different things -- a map object, a tile layer, a row of a
-data table, the map itself. Writing a Qt widget per kind would mean four
+The inspector renders very different things -- a map object, a tile layer, a
+row of a data table, the map itself. A Qt widget per kind would mean four
 places to add a field and four places to get the command wrong.
 
 So the description is DATA and the widget is a renderer. `describe(session,
@@ -12,8 +11,7 @@ editors from the type and never touches a verb.
 
 That split is also the only reason this is testable. A check can assert
 "the inspector offers `x` as a float and editing it produces
-map.object.move" without opening a window, and the first run of that check
-found two fields wired to the wrong verb.
+map.object.move" without opening a window.
 
 WHAT IS DELIBERATELY READ-ONLY
 ------------------------------

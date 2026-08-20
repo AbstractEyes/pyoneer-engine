@@ -5,83 +5,83 @@
 
 > Tile painting -- what a drag on the canvas means, as pure logic.
 
-`editor.core.paint` · 575 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.paint` · 540 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Functions
 
-- `editor/core/paint.py:307` `place(stamp: Stamp, x: int, y: int, bounds: Bounds) -> list[Edit]` #TAG:place
+- `editor/core/paint.py:281` `place(stamp: Stamp, x: int, y: int, bounds: Bounds) -> list[Edit]` #TAG:place
   - Put a stamp with its top-left at (x, y), clipped to the layer.
-- `editor/core/paint.py:319` `footprint(stamp: Stamp, size: int) -> tuple[Stamp, tuple[int, int]]` #TAG:footprint
+- `editor/core/paint.py:293` `footprint(stamp: Stamp, size: int) -> tuple[Stamp, tuple[int, int]]` #TAG:footprint
   - What a brush of `size` cells actually places, and where.
-- `editor/core/paint.py:346` `grid_lines(count: int, step: int) -> list[int]` #TAG:grid_lines
+- `editor/core/paint.py:318` `grid_lines(count: int, step: int) -> list[int]` #TAG:grid_lines
   - Which of `count` cells' boundaries the displayed grid draws.
-- `editor/core/paint.py:370` `line(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]` #TAG:line
+- `editor/core/paint.py:336` `line(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]` #TAG:line
   - Bresenham. A mouse move skips cells at speed; without this a fast
-- `editor/core/paint.py:393` `rectangle(x0: int, y0: int, x1: int, y1: int, *, filled: bool) -> list[tuple[int, int]]` #TAG:rectangle
+- `editor/core/paint.py:359` `rectangle(x0: int, y0: int, x1: int, y1: int, *, filled: bool) -> list[tuple[int, int]]` #TAG:rectangle
   - Cells of a rectangle between two corners, in either order.
-- `editor/core/paint.py:413` `flood(read: Reader, bounds: Bounds, x: int, y: int, *, limit: int=40000) -> list[tuple[int, int]]` #TAG:flood
+- `editor/core/paint.py:379` `flood(read: Reader, bounds: Bounds, x: int, y: int, *, limit: int=40000) -> list[tuple[int, int]]` #TAG:flood
   - Four-connected flood of the region matching the gid at (x, y).
-- `editor/core/paint.py:447` `flood_or_raise(read: Reader, bounds: Bounds, x: int, y: int, *, limit: int=40000) -> list[tuple[int, int]]` #TAG:flood_or_raise
-- `editor/core/paint.py:572` `edits_to_triples(edits: Iterable[Edit]) -> list[list[int]]` #TAG:edits_to_triples
+- `editor/core/paint.py:412` `flood_or_raise(read: Reader, bounds: Bounds, x: int, y: int, *, limit: int=40000) -> list[tuple[int, int]]` #TAG:flood_or_raise
+- `editor/core/paint.py:537` `edits_to_triples(edits: Iterable[Edit]) -> list[list[int]]` #TAG:edits_to_triples
   - map.tile.set_many wants JSON-shaped [x, y, gid] lists.
 
 ## Classes
 
 ### `class Tool(Enum)` #TAG:Tool
 
-`editor/core/paint.py:76`–`136`
+`editor/core/paint.py:68`–`126`
 
-- `editor/core/paint.py:89` `@property label(self) -> str` #TAG:Tool.label
-- `editor/core/paint.py:101` `@property is_drag(self) -> bool` #TAG:Tool.is_drag
+- `editor/core/paint.py:81` `@property label(self) -> str` #TAG:Tool.label
+- `editor/core/paint.py:93` `@property is_drag(self) -> bool` #TAG:Tool.is_drag
   - Does dragging extend the operation, or just repeat it?
-- `editor/core/paint.py:106` `@property edits(self) -> bool` #TAG:Tool.edits
+- `editor/core/paint.py:98` `@property edits(self) -> bool` #TAG:Tool.edits
   - False for tools that only read (the picker).
-- `editor/core/paint.py:111` `@property uses_stamp(self) -> bool` #TAG:Tool.uses_stamp
+- `editor/core/paint.py:103` `@property uses_stamp(self) -> bool` #TAG:Tool.uses_stamp
   - Terrain derives its tiles from a rule, not from the palette
-- `editor/core/paint.py:117` `@property uses_size(self) -> bool` #TAG:Tool.uses_size
+- `editor/core/paint.py:109` `@property uses_size(self) -> bool` #TAG:Tool.uses_size
   - Does a brush FOOTPRINT change what this tool writes?
 
 ### `class EditMode(Enum)` #TAG:EditMode
 
-`editor/core/paint.py:139`–`222`
+`editor/core/paint.py:129`–`196`
 
 > What the tools act ON. Deliberately not what the tools ARE.
 
-- `editor/core/paint.py:159` `@property label(self) -> str` #TAG:EditMode.label
-- `editor/core/paint.py:164` `@property tip(self) -> str` #TAG:EditMode.tip
-- `editor/core/paint.py:172` `@property subdivides(self) -> bool` #TAG:EditMode.subdivides
+- `editor/core/paint.py:145` `@property label(self) -> str` #TAG:EditMode.label
+- `editor/core/paint.py:150` `@property tip(self) -> str` #TAG:EditMode.tip
+- `editor/core/paint.py:158` `@property subdivides(self) -> bool` #TAG:EditMode.subdivides
   - Does a stroke in this mode land on the active layer's COMPANION?
-- `editor/core/paint.py:204` `@property disabled_tools(self) -> frozenset[Tool]` #TAG:EditMode.disabled_tools
+- `editor/core/paint.py:181` `@property disabled_tools(self) -> frozenset[Tool]` #TAG:EditMode.disabled_tools
   - Tools with no meaning in this mode.
-- `editor/core/paint.py:217` `allows(self, tool: Tool) -> bool` #TAG:EditMode.allows
-- `editor/core/paint.py:221` `@property other(self) -> 'EditMode'` #TAG:EditMode.other
+- `editor/core/paint.py:191` `allows(self, tool: Tool) -> bool` #TAG:EditMode.allows
+- `editor/core/paint.py:195` `@property other(self) -> 'EditMode'` #TAG:EditMode.other
 
 ### `@dataclass(frozen=True) class Stamp` #TAG:Stamp
 
-`editor/core/paint.py:226`–`291`
+`editor/core/paint.py:200`–`265`
 
 > A rectangle of gids to place as a unit.
 
-- `editor/core/paint.py:238` `__post_init__(self) -> None` #TAG:Stamp.__post_init__
-- `editor/core/paint.py:249` `@classmethod single(cls, gid: int) -> 'Stamp'` #TAG:Stamp.single
-- `editor/core/paint.py:253` `@classmethod uniform(cls, gid: int, size: int) -> 'Stamp'` #TAG:Stamp.uniform
+- `editor/core/paint.py:212` `__post_init__(self) -> None` #TAG:Stamp.__post_init__
+- `editor/core/paint.py:223` `@classmethod single(cls, gid: int) -> 'Stamp'` #TAG:Stamp.single
+- `editor/core/paint.py:227` `@classmethod uniform(cls, gid: int, size: int) -> 'Stamp'` #TAG:Stamp.uniform
   - A size x size FOOTPRINT of one gid.
-- `editor/core/paint.py:268` `@classmethod from_rows(cls, rows: list[list[int]]) -> 'Stamp'` #TAG:Stamp.from_rows
-- `editor/core/paint.py:278` `@property is_single(self) -> bool` #TAG:Stamp.is_single
-- `editor/core/paint.py:282` `@property primary(self) -> int` #TAG:Stamp.primary
+- `editor/core/paint.py:242` `@classmethod from_rows(cls, rows: list[list[int]]) -> 'Stamp'` #TAG:Stamp.from_rows
+- `editor/core/paint.py:252` `@property is_single(self) -> bool` #TAG:Stamp.is_single
+- `editor/core/paint.py:256` `@property primary(self) -> int` #TAG:Stamp.primary
   - The top-left gid -- what flood fill and single-cell tools use.
-- `editor/core/paint.py:286` `gid_at(self, column: int, row: int) -> int` #TAG:Stamp.gid_at
-- `editor/core/paint.py:289` `cells(self) -> Iterator[tuple[int, int, int]]` #TAG:Stamp.cells
+- `editor/core/paint.py:260` `gid_at(self, column: int, row: int) -> int` #TAG:Stamp.gid_at
+- `editor/core/paint.py:263` `cells(self) -> Iterator[tuple[int, int, int]]` #TAG:Stamp.cells
 
 ### `@dataclass class Bounds` #TAG:paint.Bounds
 
-`editor/core/paint.py:295`–`300`
+`editor/core/paint.py:269`–`274`
 
-- `editor/core/paint.py:299` `contains(self, x: int, y: int) -> bool` #TAG:paint.Bounds.contains
+- `editor/core/paint.py:273` `contains(self, x: int, y: int) -> bool` #TAG:paint.Bounds.contains
 
 ### `class FloodTooLargeError(Exception)` #TAG:FloodTooLargeError
 
-`editor/core/paint.py:443`–`444`
+`editor/core/paint.py:408`–`409`
 
 > A flood fill would touch more cells than the caller allowed.
 
@@ -89,21 +89,21 @@
 
 ### `@dataclass class Stroke` #TAG:Stroke
 
-`editor/core/paint.py:462`–`569`
+`editor/core/paint.py:427`–`534`
 
 > One press-drag-release, accumulated into a single transaction.
 
-- `editor/core/paint.py:489` `begin(self, x: int, y: int) -> None` #TAG:Stroke.begin
-- `editor/core/paint.py:495` `extend(self, x: int, y: int) -> None` #TAG:Stroke.extend
+- `editor/core/paint.py:454` `begin(self, x: int, y: int) -> None` #TAG:Stroke.begin
+- `editor/core/paint.py:460` `extend(self, x: int, y: int) -> None` #TAG:Stroke.extend
   - A mouse move. For drag tools this redefines the shape; for
-- `editor/core/paint.py:514` `__apply_at(self, x: int, y: int) -> None` #TAG:Stroke.__apply_at
+- `editor/core/paint.py:479` `__apply_at(self, x: int, y: int) -> None` #TAG:Stroke.__apply_at
   - Apply the tool at one cursor position -- a POINT operation.
-- `editor/core/paint.py:532` `__cover(self, cells: Iterable[tuple[int, int]]) -> None` #TAG:Stroke.__cover
+- `editor/core/paint.py:497` `__cover(self, cells: Iterable[tuple[int, int]]) -> None` #TAG:Stroke.__cover
   - Apply the tool over an AREA the tool itself defined.
-- `editor/core/paint.py:548` `__put(self, x: int, y: int, gid: int) -> None` #TAG:Stroke.__put
-- `editor/core/paint.py:554` `preview(self) -> list[Edit]` #TAG:Stroke.preview
+- `editor/core/paint.py:513` `__put(self, x: int, y: int, gid: int) -> None` #TAG:Stroke.__put
+- `editor/core/paint.py:519` `preview(self) -> list[Edit]` #TAG:Stroke.preview
   - Every cell this stroke currently covers, changed or not.
-- `editor/core/paint.py:559` `edits(self) -> list[Edit]` #TAG:Stroke.edits
+- `editor/core/paint.py:524` `edits(self) -> list[Edit]` #TAG:Stroke.edits
   - Only the cells whose value would actually change.
-- `editor/core/paint.py:565` `@property empty(self) -> bool` #TAG:Stroke.empty
-- `editor/core/paint.py:568` `__len__(self) -> int` #TAG:Stroke.__len__
+- `editor/core/paint.py:530` `@property empty(self) -> bool` #TAG:Stroke.empty
+- `editor/core/paint.py:533` `__len__(self) -> int` #TAG:Stroke.__len__

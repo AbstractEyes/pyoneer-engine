@@ -1,9 +1,9 @@
 """Verify CoreAssetManager is constructed once and never silently rebuilt.
 
-Regression guard: Singleton.__new__ returned the cached instance, but Python
-still calls __init__ on it, so every `CoreAssetManager()` -- including the
+`Singleton.__new__` returning the cached instance is not enough: Python still
+calls `__init__` on it, so every `CoreAssetManager()` -- including the
 module-scope `Config = CoreAssetManager()` in component.py and window.py --
-rebuilt every sub-manager and dropped the parsed tmx cache.
+would rebuild every sub-manager and drop the parsed tmx cache.
 """
 from __future__ import annotations
 

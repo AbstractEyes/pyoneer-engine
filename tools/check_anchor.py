@@ -1,10 +1,9 @@
 """Verify anchor-based reflow: children adapt when their parent resizes.
 
-Nothing reflowed before this. Measured: resizing a Panel 200x120 -> 320x220
-left its background, both scrollbars and its dead corner at their original
-sizes, and resizing a GameWindow left body, title bar, title text, close button
-and both inner panels untouched -- which is why window resize was never
-finished.
+Without it a Panel resized 200x120 -> 320x220 keeps its background, both
+scrollbars and its dead corner at their original sizes, and a resized
+GameWindow leaves body, title bar, title text, close button and both inner
+panels untouched.
 """
 from __future__ import annotations
 

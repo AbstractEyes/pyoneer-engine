@@ -41,12 +41,10 @@ class ShapeComponent(DrawComponent):
         self.border_thickness: Rect = border_thickness if border_thickness is not None else Rect(config["background"]["border_thickness"])
         self.shape: ShapeType = shape
         self.bind_sync_listener(GameEventType.PREPARE, self.prepare_background)
-        #self.bind_sync_listener(GameEventType.BLITS, self.blits_background)
 
     def prepare_background(self, sender: Optional[PyoneerGameObject]):
         self.image.fill((0, 0, 0, 0))
         if self.visible:
-            #self._image.fill(self.border_color)
             if self.shape == ShapeType.Rectangle:
                 if self.background_color.a > 0:
                     if self.border_visible:
@@ -73,7 +71,4 @@ class ShapeComponent(DrawComponent):
                     if self.background_visible:
                         pygame.draw.polygon(self.image, self.background_color.color(), [(self.world_bounds.width // 2, 0), (0, self.world_bounds.height), (self.world_bounds.width, self.world_bounds.height)])
                     self.image.convert_alpha()
-
-    #def blits_background(self, event: Optional[PyoneerEvent]) -> list[tuple[Surface, Vector2]]:
-    #    return [(self.image(), Vector2(self.bounds.x, self.bounds.y))] if self.visible else []
 

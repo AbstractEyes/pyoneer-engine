@@ -3,13 +3,10 @@ the state axes it writes, and every reason the engine would refuse it.
 
 WHY THIS IS DATA AND NOT A WIDGET
 ---------------------------------
-Same argument `editor/core/inspect.py` makes and `editor/ui/actions_panel.py`
-repeats: `describe_behaviors` returns an `Inspection`, so `InspectionView`
-renders it with typed editors, per-field remove buttons and command emission
-already written, and a check can assert "ticking `platformer_move` on a
-top-down body emits nothing and names both sides" without opening a window.
-The first run of the equivalent check on the Inspector found two fields wired
-to the wrong verb.
+`describe_behaviors` returns an `Inspection`, so `InspectionView` renders it
+with typed editors, per-field remove buttons and command emission already
+written -- and a check can assert "ticking `platformer_move` on a top-down
+body emits nothing and names both sides" without opening a window.
 
 THE ENGINE IS THE AUTHORITY, ALWAYS
 -----------------------------------
@@ -21,35 +18,27 @@ rows are `BehaviorParam`, which was deliberately shaped like
 loop with a different tuple. The axis rows come from `BodyState().axes`.
 
 And the refusals are the ENGINE'S refusals, obtained by RUNNING it:
-`refusals()` calls `validate_list`, and then drives a real `EntityBehaviors`
-with inert stand-ins carrying the real specs. That matters because the four
-refusal rules are split across two files -- `validate_list` knows unknown,
-duplicate and declared-conflict; `EntityBehaviors.attach` knows those three
-PLUS "same order and intersecting writes", which needs the spec pair and
-exists nowhere else. A panel that only called `validate_list` would bless
-lists the engine rejects at load, which is worse than no panel; a panel that
-re-spelled the fourth rule would be the second implementation this repo
-deletes 425 lines of at a time. Driving the real judge is neither.
+`refusals()` calls `validate_list`, then drives a real `EntityBehaviors`
+with inert stand-ins carrying the real specs. Both are needed because the
+four refusal rules are split -- `validate_list` knows unknown, duplicate and
+declared-conflict; `EntityBehaviors.attach` knows those three PLUS "same
+order and intersecting writes", which needs the spec pair and exists nowhere
+else. Calling only the first would bless lists the engine rejects at load.
 
 WHAT THIS MODULE COSTS
 ----------------------
-Importing it imports `scripts.game.behavior.registry`, which imports
-`pygame` (through `scripts.core.event_types`, which `base.py` needs to
-validate `BehaviorSpec.binds`). `editor/requirements.txt` already lists
-`pygame~=2.6.0`, so it costs nothing at runtime -- but this module is no
-longer pygame-free and that is worth knowing before it is imported from
-somewhere that assumed otherwise. It imports no Qt and must not: the
-one-way rule is `editor/` may import `scripts/`, and `editor/core/` may not
-import `editor/ui/`.
+Importing it imports `scripts.game.behavior.registry`, and so `pygame`
+(through `scripts.core.event_types`). `editor/requirements.txt` lists
+pygame, so this costs nothing at runtime, but this module is not pygame-free.
+It imports no Qt and must not: `editor/core/` may not import `editor/ui/`.
 
 A BEHAVIOR REGISTERED BY THE GAME IS NOT IN THIS LIST
 ------------------------------------------------------
-`demos/behaviors.py` registers `patrol_input` at import, and `docs/DEMOS.md`
-calls that a proven extension point. The editor does not import `demos/`, so
-such a token is not in `BEHAVIOR_REGISTRY` here. It renders as a ticked row
-that can be UNTICKED, never silently dropped, and the section note says the
-checklist is the engine's registry rather than an exhaustive list of what may
-run.
+A game may register its own tokens at import (`demos/behaviors.py` does), and
+the editor does not import the game, so such a token is not in
+`BEHAVIOR_REGISTRY` here. It renders as a ticked row that can be UNTICKED,
+never silently dropped, and the section note says the checklist is the
+engine's registry rather than an exhaustive list of what may run.
 """
 from __future__ import annotations
 
@@ -75,11 +64,10 @@ from scripts.game.behavior.state import BodyState
 STATE_PREFIX = "state."
 
 #: One sentence per axis, borrowed from the table that generates BEHAVIORS.md
-#: rather than re-written here -- there is one home for those sentences and a
-#: second copy would rot against it. Read through `getattr` because the name
-#: is private to a module this pass does not own: if it is ever renamed the
-#: panel loses its tooltips, which is a degradation, where an ImportError
-#: would be the whole editor failing to start.
+#: rather than re-written here -- one home for those sentences, so a copy
+#: cannot rot against it. Read through `getattr` because the name is private:
+#: a rename costs this panel its tooltips, where an ImportError would cost
+#: the whole editor its start.
 _AXIS_DOC: Mapping[str, str] = getattr(behavior_registry, "_AXIS_DOC", {})
 
 _NO_OBJECT = ("Select an object on an object layer. `pyoneer_behaviors` is a "
@@ -135,11 +123,10 @@ def object_at(session, scope: Scope):
     undo, a layer renamed under it -- and every caller wants the same answer
     for all of them.
 
-    THE headless home, and the only one. `editor/ui/actions_panel.py` used to
-    carry a byte-identical copy; a Qt module cannot be the shared home, since
-    `editor/core/` may not import `editor/ui/`, so the direction that works is
-    the panel importing this. `tools/check_behavior_ui.py` asserts there is
-    exactly one definition of it in `editor/`.
+    THE headless home, and the only one: a Qt module cannot be the shared
+    one, since `editor/core/` may not import `editor/ui/`, so panels import
+    this. `tools/check_behavior_ui.py` asserts there is exactly one
+    definition of it in `editor/`.
     """
     if scope.kind != "object":
         return None, None
@@ -201,14 +188,8 @@ def refusals(tokens: Sequence[str],
                                 implemented only there
 
     Returns at most one sentence: both authorities raise on the first problem
-    they find rather than collecting, and a panel that invented a
-    collect-everything pass would be inventing a judgement rather than
-    reporting one.
-
-    There is deliberately no `owner` argument. The only message that would use
-    one is `attach`'s duplicate refusal, and `validate_list` reaches a
-    duplicate first, so the name could never appear -- a parameter nothing can
-    reach is the orphan shape this repo keeps a document about.
+    they find rather than collecting, and collecting here would be inventing
+    a judgement rather than reporting one.
     """
     try:
         behavior_registry.validate_list(list(tokens), registry)
@@ -386,11 +367,10 @@ def _toggle_block(tokens: Sequence[str], spec: BehaviorSpec,
     """Why this row cannot be ticked, or empty. Engine refusals ONLY.
 
     `blocked_reason` means one thing here: the engine would refuse the
-    resulting list. It deliberately does NOT carry the genre mismatch, which
-    the label and the tooltip carry instead -- `spec.genres` is read by
-    `describe_all` and by nothing else in `scripts/`, so blocking on it would
-    be the editor inventing a refusal the engine does not have, which is how a
-    tool ends up reported as unable to do something it merely will not.
+    resulting list. It does NOT carry the genre mismatch, which the label and
+    the tooltip carry instead -- `spec.genres` is read by `describe_all` and
+    by nothing else in `scripts/`, so blocking on it would be the editor
+    inventing a refusal the engine does not have.
 
     Two rules, and the second is the subtle half:
 
@@ -413,15 +393,12 @@ def _toggle_emitter(scope: Scope, tokens: Sequence[str], token: str,
                     present: bool, on_error: Callable[[str], None]):
     """Ticking or unticking one token, as one command over the whole list.
 
-    `map.object.property.set`, not a new verb. `pyoneer_behaviors` IS an
-    ordinary tmx custom property, that pair already writes any property and
-    already returns the exact inverse -- a `.set` carrying the value it FOUND
-    when the key existed, a `.remove` when it did not -- and it is under
-    `tools/check_editor.py` already. A `map.object.behaviors.*` family would
-    be a second door onto one property, and the only thing it could add is
-    validation, which has to happen HERE anyway: a refused list must never
-    reach the command stream, because a command that raises inside a
-    transaction takes the rollback with it.
+    `map.object.property.set`, not a new verb: `pyoneer_behaviors` is an
+    ordinary tmx custom property, and that pair already returns the exact
+    inverse -- a `.set` carrying the value it FOUND when the key existed, a
+    `.remove` when it did not. Validation happens HERE rather than in a verb:
+    a refused list must never reach the command stream, because a command
+    that raises inside a transaction takes the rollback with it.
     """
     def emit(value: Any) -> Command | None:
         want = bool(value)
@@ -515,14 +492,12 @@ def _parameters(scope: Scope, tokens: Sequence[str],
 def _current(param: BehaviorParam, raw: Any) -> tuple[Any, str]:
     """(what to show in the editor, what is wrong with the file), never raises.
 
-    `BehaviorParam.coerce` RAISES where `Capability.coerce` falls back, and
-    that difference is deliberate and documented: a `gravity` of `'9o'`
-    quietly becoming 900 is the plausible-wrong-value failure this codebase
-    refuses. So the panel cannot show "what the reader will make of it" the
-    way the layer inspector does -- there is nothing the reader will make of
-    it. It offers the DEFAULT as an editable legal value and names the file's
-    actual contents in the doc, so the row is repairable rather than merely
-    red.
+    `BehaviorParam.coerce` RAISES where `Capability.coerce` falls back: a
+    `gravity` of `'9o'` quietly becoming 900 is exactly the plausible-wrong
+    value this codebase refuses. So there is no "what the reader will make of
+    it" to show. The row offers the DEFAULT as an editable legal value and
+    names the file's actual contents in the doc, so it is repairable rather
+    than merely red.
     """
     if raw is None:
         return param.default, ""
@@ -704,18 +679,14 @@ def _declared_params(tokens: Sequence[str],
 def strip_vocabulary(inspection: Inspection) -> Inspection:
     """Take the behavior vocabulary out of a generic Properties section.
 
-    The Inspector renders every custom property as an untyped text box. For
-    `pyoneer_behaviors` that is the worst authoring surface in the editor --
-    no completion, no types, and no refusal, so a conflicting list typed there
-    would bypass every check this module performs and land in the file. Two
-    doors onto one property where one of them validates is the same thing as
-    no validation.
+    The Inspector renders every custom property as an untyped text box, and a
+    conflicting list typed into one would bypass every check this module
+    performs and land in the file. Two doors onto one property, where only
+    one validates, is the same thing as no validation.
 
-    Matches the Properties section the way `InspectionView` already does, by
-    title and object scope (fields.py, where the "+ property" button is added
-    under exactly that test). Mutates in place and returns the same object,
-    because `describe` builds a fresh Inspection per call and there is nothing
-    to preserve.
+    Matches the Properties section the way `InspectionView` does, by title
+    and object scope. Mutates in place and returns the same object, because
+    `describe` builds a fresh Inspection per call.
     """
     if inspection.scope.kind != "object":
         return inspection

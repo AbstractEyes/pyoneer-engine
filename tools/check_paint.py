@@ -11,8 +11,8 @@ none of them are visible at a glance:
   * a drag tool accumulating instead of redefining, so the rectangle can
     only ever grow
   * a stroke committing one transaction per cell, making undo useless
-  * `EditMode` growing back into the cell-size authority its docstring once
-    claimed it was -- the assumption that cost 1,200px
+  * `EditMode` growing into a cell-size authority, which it is not: assuming
+    the mode decides how finely a click addresses is the 1,200px defect
 
 No Qt, no pygame, no map. Runs on a bare clone.
 """
@@ -198,9 +198,9 @@ expect("each cell appears once", len(positions), len(set(positions)))
 print()
 print("area tools TILE the stamp; point tools ANCHOR it")
 # --------------------------------------------------------------------------
-# This is the bug this file was written to catch. A filled rectangle used to
-# stamp the entire pattern at every cell of the rectangle, which spilled one
-# row and one column past the drag and produced a smeared pattern.
+# An area tool TILES its pattern across the rectangle. Stamping the entire
+# pattern at every cell spills one row and one column past the drag and
+# produces a smear.
 pattern = Stamp.from_rows([[1, 2], [3, 4]])
 stroke = Stroke(Tool.FILLED_RECT, pattern, BOUNDS, empty)
 stroke.begin(0, 0)
@@ -440,13 +440,12 @@ expect_raises("a step below one raises rather than drawing nothing",
 print()
 print("EditMode answers WHICH LAYER a stroke lands on, never HOW FINELY")
 # --------------------------------------------------------------------------
-# `subdivides` was documented as deciding "what one addressable cell IS in
-# this mode". It does not, and had not for a while: its one non-definition
-# reader is `MapCanvas.paint_unit`, which uses it to pick the layer a stroke
-# is measured against and written to, and reads the RESOLUTION off that
-# layer's own `pyoneer_subcell`. Assuming the mode was the authority is the
-# 1,200px defect `paint_unit`'s docstring measures. These guard the structure
-# that keeps the number out of this module -- which is the half a rewritten
+# `subdivides` does not decide what one addressable cell IS. Its one
+# non-definition reader is `MapCanvas.paint_unit`, which uses it to pick the
+# layer a stroke is measured against and written to, then reads the RESOLUTION
+# off that layer's own `pyoneer_subcell`. Treating the mode as the authority
+# is the 1,200px defect `paint_unit`'s docstring measures, so these assertions
+# guard the structure that keeps the number out of this module -- the half a
 # docstring cannot guarantee on its own.
 #
 # WHICH mode subdivides is asserted in `tools/check_collision_view.py` and

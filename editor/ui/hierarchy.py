@@ -1,8 +1,8 @@
 """The hierarchy -- one tree for the whole map, Unity/Godot style.
 
-Replaces the separate Layers and Objects panels. Keeping them apart meant
-the thing you clicked and the thing you were editing lived in different
-boxes, and a group element could be selected as though it were a layer.
+One tree rather than separate Layers and Objects panels, so the thing you
+click and the thing you edit are in the same box and a group element cannot
+be selected as though it were a layer.
 
     map:test
       ▾ Graphic                    (group -- structure, not selectable)
@@ -142,9 +142,8 @@ class HierarchyDock(ScopedDock):
                           "hierarchy marks such a layer in yellow.",
                       choices=tuple(self.__known_names(kind, taken)))]
         if groups:
-            # One dialog, not two. It used to ask for the name, then ask for
-            # the group in a second modal -- and cancelling the second threw
-            # away the name that had just been typed into the first.
+            # One dialog, not two: a second modal for the group would throw
+            # away the typed name if it were cancelled.
             rows.append(Field("group", "Inside", "choice", _TOP_LEVEL,
                               doc="A Tiled group is organisation only; it "
                                   "does not change what draws or when.",
@@ -167,11 +166,8 @@ class HierarchyDock(ScopedDock):
         layer = self._scope.get("layer")
         if layer is None or self._scope.kind == "object":
             return
-        # No confirmation. It used to ask "Remove 'Roof' and everything on
-        # it?" and then reassure, in the same box, that "undo restores the
-        # layer byte-for-byte" -- a dialog whose body is the argument that
-        # the dialog is unnecessary. The reassurance was the only useful
-        # half, so it moved to where it is read AFTER the click.
+        # No confirmation: undo restores the layer byte-for-byte, and that
+        # reassurance is reported after the click rather than asked before it.
         if self.window().run(Command(
                 "map.layer.remove",
                 Scope.of(("map", self._scope.require("map")),

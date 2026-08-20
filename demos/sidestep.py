@@ -1,11 +1,9 @@
 """Side-on demo: the same class as the top-down one, one token different.
 
-WHAT THIS PROVES
-----------------
-That genre lives in map data. `demo_sidestep.tmx` places the same
+Genre lives in map data. `demo_sidestep.tmx` places the same
 `<object type="GamePlayer">` on the same kind of object layer at the same
-depth as `demo_topdown.tmx`, and the only thing that makes it a platformer
-is the word `platformer_move` where the other map says `topdown_move`:
+depth as `demo_topdown.tmx`; the only thing that makes it a platformer is the
+word `platformer_move` where the other map says `topdown_move`:
 
     demo_topdown    player_input,topdown_move,animation_drive
     demo_sidestep   player_input,platformer_move,animation_drive
@@ -13,27 +11,16 @@ is the word `platformer_move` where the other map says `topdown_move`:
                     pyoneer_param_initial_sequence = idle_right
                     pyoneer_param_gravity          = 900
 
-There is no `GamePlatformerPlayer`, and adding one would undo the point.
-
 The second object carries `platformer_move,animation_drive` and NOT
 `player_input`, so nothing steers it and it only falls. Both bodies come to
-rest on the same floor row at the same y -- which is the sharper half of the
-claim: `player_input` is about being STEERED, not about being SIMULATED.
+rest on the same floor row: `player_input` decides whether a body is STEERED,
+not whether it is SIMULATED.
 
-WHAT THIS DEMO STANDS ON
-`platformer_move` only lands because something gated it. `LayerRenderer`
-bakes the map's passability once at bind (`field_from_map`) and hands the
-field to every entity it binds -- a sweep at the end of `__bind_map` for
-map-placed objects, and `__bind_entity` for hand-built ones. Note it is NOT
-`__prepare_entity_layers`, which says in its own docstring that it does not
-gate what it binds.
-
-`demos/` deliberately does not assign the field privately: a demo that gated
-only its own entities would work while every other map-driven game stayed
-ungated, and would hide a gap rather than report it. So if this demo ever
-falls through the floor again, the wire is gone or the map lost its mask --
-and `tools/check_demos.py` fails loudly in those words rather than papering
-over it.
+The floor holds because `LayerRenderer` bakes the map's passability once at
+bind (`field_from_map`) and hands the field to every entity it binds. The
+demo does not assign a field of its own; if a body falls through the floor,
+the map lost its mask or that wire is gone, and `tools/check_demos.py` says
+so.
 
     .venv/Scripts/python.exe -m demos.sidestep
 

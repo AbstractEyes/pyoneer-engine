@@ -5,7 +5,7 @@
 
 > Side-on demo: the same class as the top-down one, one token different.
 
-`demos.sidestep` · 73 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.sidestep` · 60 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,6 +15,6 @@
 
 ### `class SidestepDemo(DemoGame)` #TAG:SidestepDemo
 
-`demos/sidestep.py:51`–`68`
+`demos/sidestep.py:38`–`55`
 
 - (no methods)

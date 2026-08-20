@@ -3,7 +3,7 @@
 
 # `scripts/core/depth.py` — tier 2 #TAG:scripts/core/depth.py
 
-`scripts.core.depth` · 55 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.depth` · 53 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
@@ -15,5 +15,5 @@
 
 ## Functions
 
-- `scripts/core/depth.py:46` `resolve_layer_depth(layer_name: str | None) -> int | None` #TAG:resolve_layer_depth
+- `scripts/core/depth.py:44` `resolve_layer_depth(layer_name: str | None) -> int | None` #TAG:resolve_layer_depth
   - Depth for a map layer name, or None when the name is unmapped.

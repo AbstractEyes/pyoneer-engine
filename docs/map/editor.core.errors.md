@@ -5,7 +5,7 @@
 
 > The editor's exception hierarchy.
 
-`editor.core.errors` · 216 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.errors` · 213 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,15 +13,15 @@
 
 ## Functions
 
-- `editor/core/errors.py:184` `_nearest(needle: str, haystack: list[str]) -> str | None` #TAG:_nearest
+- `editor/core/errors.py:181` `_nearest(needle: str, haystack: list[str]) -> str | None` #TAG:_nearest
   - Cheapest useful typo hint: longest shared prefix, then edit distance.
-- `editor/core/errors.py:201` `_similarity(a: str, b: str) -> float` #TAG:_similarity
+- `editor/core/errors.py:198` `_similarity(a: str, b: str) -> float` #TAG:_similarity
 
 ## Classes
 
 ### `class PyoneerEditorError(PyoneerError)` #TAG:PyoneerEditorError
 
-`editor/core/errors.py:50`–`51`
+`editor/core/errors.py:47`–`48`
 
 > Base for every editor error.
 
@@ -29,7 +29,7 @@
 
 ### `class PyoneerCommandError(PyoneerEditorError)` #TAG:PyoneerCommandError
 
-`editor/core/errors.py:58`–`59`
+`editor/core/errors.py:55`–`56`
 
 > A command could not be validated or run.
 
@@ -37,15 +37,15 @@
 
 ### `class PyoneerCommandUnknownError(PyoneerCommandError, KeyError)` #TAG:PyoneerCommandUnknownError
 
-`editor/core/errors.py:62`–`73`
+`editor/core/errors.py:59`–`70`
 
 > No such verb is registered.
 
-- `editor/core/errors.py:69` `__init__(self, verb: str, known: list[str] | None=None, **context: Any)` #TAG:PyoneerCommandUnknownError.__init__
+- `editor/core/errors.py:66` `__init__(self, verb: str, known: list[str] | None=None, **context: Any)` #TAG:PyoneerCommandUnknownError.__init__
 
 ### `class PyoneerCommandArgumentError(PyoneerCommandError)` #TAG:PyoneerCommandArgumentError
 
-`editor/core/errors.py:76`–`77`
+`editor/core/errors.py:73`–`74`
 
 > A command's arguments are missing, unknown, or the wrong type.
 
@@ -53,7 +53,7 @@
 
 ### `class PyoneerCommandScopeError(PyoneerCommandError)` #TAG:PyoneerCommandScopeError
 
-`editor/core/errors.py:80`–`81`
+`editor/core/errors.py:77`–`78`
 
 > A command was aimed at a scope its verb cannot act on.
 
@@ -61,15 +61,15 @@
 
 ### `class PyoneerCommandApplyError(PyoneerCommandError)` #TAG:PyoneerCommandApplyError
 
-`editor/core/errors.py:84`–`97`
+`editor/core/errors.py:81`–`94`
 
 > A command raised while being applied.
 
-- `editor/core/errors.py:92` `__init__(self, message: str, *, rolled_back: bool=True, **context: Any)` #TAG:PyoneerCommandApplyError.__init__
+- `editor/core/errors.py:89` `__init__(self, message: str, *, rolled_back: bool=True, **context: Any)` #TAG:PyoneerCommandApplyError.__init__
 
 ### `class PyoneerScopeError(PyoneerEditorError)` #TAG:PyoneerScopeError
 
-`editor/core/errors.py:104`–`105`
+`editor/core/errors.py:101`–`102`
 
 > A scope path is malformed or does not resolve.
 
@@ -77,7 +77,7 @@
 
 ### `class PyoneerScopeSyntaxError(PyoneerScopeError)` #TAG:PyoneerScopeSyntaxError
 
-`editor/core/errors.py:108`–`109`
+`editor/core/errors.py:105`–`106`
 
 > A scope string is not `kind:name/kind:name/...`.
 
@@ -85,7 +85,7 @@
 
 ### `class PyoneerScopeMissingError(PyoneerScopeError, KeyError)` #TAG:PyoneerScopeMissingError
 
-`editor/core/errors.py:112`–`113`
+`editor/core/errors.py:109`–`110`
 
 > A well-formed scope points at something that is not there.
 
@@ -93,7 +93,7 @@
 
 ### `class PyoneerGenreError(PyoneerEditorError)` #TAG:PyoneerGenreError
 
-`editor/core/errors.py:120`–`121`
+`editor/core/errors.py:117`–`118`
 
 > A genre pack is missing, malformed, or contradicts the project.
 
@@ -101,7 +101,7 @@
 
 ### `class PyoneerGenreMissingError(PyoneerGenreError, KeyError)` #TAG:PyoneerGenreMissingError
 
-`editor/core/errors.py:124`–`125`
+`editor/core/errors.py:121`–`122`
 
 > No genre pack by that id.
 
@@ -109,7 +109,7 @@
 
 ### `class PyoneerRuleViolationError(PyoneerGenreError)` #TAG:PyoneerRuleViolationError
 
-`editor/core/errors.py:128`–`135`
+`editor/core/errors.py:125`–`132`
 
 > A command would break a hard rule the current genre declares.
 
@@ -117,7 +117,7 @@
 
 ### `class PyoneerProjectError(PyoneerEditorError)` #TAG:PyoneerProjectError
 
-`editor/core/errors.py:142`–`143`
+`editor/core/errors.py:139`–`140`
 
 > The project on disk cannot be used as-is.
 
@@ -125,7 +125,7 @@
 
 ### `class PyoneerTableMissingError(PyoneerProjectError, KeyError)` #TAG:PyoneerTableMissingError
 
-`editor/core/errors.py:146`–`147`
+`editor/core/errors.py:143`–`144`
 
 > A data table was addressed by a name the project does not define.
 
@@ -133,7 +133,7 @@
 
 ### `class PyoneerRowMissingError(PyoneerProjectError, KeyError)` #TAG:PyoneerRowMissingError
 
-`editor/core/errors.py:150`–`151`
+`editor/core/errors.py:147`–`148`
 
 > A row id was addressed and is not in the table.
 
@@ -141,7 +141,7 @@
 
 ### `class PyoneerFieldMissingError(PyoneerProjectError, KeyError)` #TAG:PyoneerFieldMissingError
 
-`editor/core/errors.py:154`–`155`
+`editor/core/errors.py:151`–`152`
 
 > A column was addressed and is not in the table's schema.
 
@@ -149,7 +149,7 @@
 
 ### `class PyoneerRequestError(PyoneerEditorError)` #TAG:PyoneerRequestError
 
-`editor/core/errors.py:162`–`163`
+`editor/core/errors.py:159`–`160`
 
 > A request bundle could not be written, or a response could not be read.
 
@@ -157,8 +157,8 @@
 
 ### `class PyoneerResponseParseError(PyoneerRequestError)` #TAG:PyoneerResponseParseError
 
-`editor/core/errors.py:166`–`177`
+`editor/core/errors.py:163`–`174`
 
 > A response file is not the agreed format.
 
-- `editor/core/errors.py:173` `__init__(self, message: str, *, line: int | None=None, **context: Any)` #TAG:PyoneerResponseParseError.__init__
+- `editor/core/errors.py:170` `__init__(self, message: str, *, line: int | None=None, **context: Any)` #TAG:PyoneerResponseParseError.__init__

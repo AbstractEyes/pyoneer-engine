@@ -721,9 +721,9 @@ print("a 4px sub-cell still reads as red, amber and washed")
 # --------------------------------------------------------------------------
 # `pyoneer_subcell="4"` asks this module to draw a quarter-tile cell. Every
 # accent here has a one-device-pixel floor that the shape underneath it does
-# not, so at 4px the 1px keyline exactly covered the 1px bar and the star's
-# 1px outline swallowed its 0.6px ring. Measured before `_wants_keyline`: a
-# fully blocked 4px cell held ZERO pixels of BAR and rendered near-black.
+# not, so without `_wants_keyline` the 1px keyline exactly covers the 1px bar
+# and the star's 1px outline swallows its 0.6px ring: a fully blocked 4px cell
+# holds ZERO pixels of BAR and renders near-black.
 SUB = 4
 
 
@@ -829,12 +829,10 @@ FIRST_GID = 5
 class _Cells:
     """A stand-in for `MapDocument`'s TileLayer, INCLUDING the part that bites.
 
-    The previous version of this fixture answered 0 for any coordinate,
-    which made every read past its edge look harmless -- and that is exactly
-    why the crash below shipped: the real layer RAISES out of range, so the
-    check proved the scale arithmetic against a reader that behaves like
-    nothing in production. `get_tile` raises here for the same reason, and
-    `document_gid_reader` is now asserted never to call it out of range.
+    `get_tile` RAISES out of range, exactly as the real layer does. A fixture
+    answering 0 for any coordinate would prove the scale arithmetic against a
+    reader that behaves like nothing in production, and `document_gid_reader`
+    is asserted below never to call it out of range.
     """
 
     name = "ForegroundCollision"
@@ -872,13 +870,10 @@ def stack_member(layer, first_gid, *, scale=1):
     composes level TWO -- `companion_reader` over `document_gid_reader`, both
     the engine's.
 
-    Spelled out here rather than taken from a helper on purpose. The editor
-    used to own a `layer_from_companion` that did exactly this, and once
-    `collision_stack` started delegating to `collision_layers` that helper
-    became a second way to build a member which no longer had to agree with
-    the first -- so a check written through it would keep passing on the day
-    the real composition changed. This fixture is two engine calls; if either
-    one moves, this moves with it or goes red.
+    Spelled out here rather than taken from an editor-side helper: a helper is
+    a second way to build a member, and a check written through it keeps
+    passing on the day the real composition changes. This fixture is two
+    engine calls; if either one moves, this moves with it or goes red.
     """
     return view.CollisionLayer(
         name=getattr(layer, "name", ""),
@@ -895,9 +890,9 @@ expect("...where the unscaled read puts the same wall four times higher",
        (answers(plain_layer, 0, 3), answers(plain_layer, 0, 12)),
        (BLOCK_ALL, NO_DATA))
 
-# The other half, and the one that used to take the editor down: `resolve`
-# reads a coordinate past a layer as abstention, and `MapDocument` reads it
-# as an error.
+# The other half, and the one that takes the editor down if it is wrong:
+# `resolve` reads a coordinate past a layer as abstention, and `MapDocument`
+# reads it as an error.
 expect("a read past a companion's own edge abstains rather than raising",
        [answers(plain_layer, x, y) for x, y in ((4, 0), (0, 4), (99, 99))],
        [NO_DATA] * 3)

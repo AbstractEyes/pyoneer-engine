@@ -24,7 +24,7 @@ THE FIXTURE IS THIS FILE'S OWN
 Every behavior below is defined here and registered into a SCRATCH registry.
 `data/maps/test.tmx` is the author's canvas and is never read: a check that
 pins map CONTENT goes red the next time he paints, while the code it guards
-is working perfectly. That has cost this repo five red suites.
+is working perfectly (law 4).
 
 `BEHAVIOR_REGISTRY` itself is asserted for SHAPE, not for emptiness: the four
 concrete behaviors that ship on top of this base -- `player_input`,
@@ -385,8 +385,8 @@ PLAIN = BehaviorSpec("plain", "Built by a function.", _plain_factory, order=63)
 # factory class only when it is unstamped, so `_Params.spec` is PARAMS
 # forever and an instance built from PARAMS_ALIAS can only know its own name
 # if `build` stamped the INSTANCE. Without the alias, "the instance is
-# stamped" is an assertion that passes on the class attribute and therefore
-# cannot fail -- which is exactly how it behaved before this comment existed.
+# stamped" is an assertion satisfied by the class attribute, and therefore one
+# that cannot fail.
 for _spec in (ALPHA, ZED, UPDATE_ONLY, SOLO, DUO, CLASH_A, CLASH_B,
               DISJOINT_A, DISJOINT_B, SELF_DETACH, RAISES_PYONEER,
               RAISES_VALUE, RAISES_ON_ATTACH, NUDGE, PARAMS, PARAMS_ALIAS,

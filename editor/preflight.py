@@ -3,15 +3,12 @@
 WHY
 ---
 The editor is a tool for changing a codebase that is, by design, being
-changed underneath it. So the interesting question is not "does the engine
-work" -- it is "what happens to the editor while the engine is broken".
-
-Measured answer, before this module existed: a syntax error anywhere in the
-three engine modules the editor imports killed it with a bare traceback at
-`editor/app.py`, above argparse, above the PySide6 check, above
-`QApplication`. The QMessageBox fallback wrapped only `Session.open` and
-never ran. For anyone who launched from a shortcut, that is a window that
-simply never appears.
+changed underneath it, so the question that matters is what happens to the
+editor while the engine is broken. Without this, a syntax error in any of
+the three engine modules the editor imports kills it with a bare traceback
+at `editor/app.py` -- above argparse, above the PySide6 check, above
+`QApplication`, and above the QMessageBox fallback. Launched from a
+shortcut, that is a window that simply never appears.
 
 WHAT THIS DOES
 --------------
@@ -26,8 +23,6 @@ It cannot be broken by the code it is checking.
 
 WHAT AST CANNOT TELL YOU
 ------------------------
-Stated because trusting it too far is the obvious next mistake:
-
   * nothing about inheritance across files -- it cannot know that
     `PyoneerGameObject`'s abstract methods make `GameEntity` uninstantiable
   * nothing about decorators -- `editor/core/verbs.py`'s verbs exist only
@@ -172,10 +167,9 @@ def enforce(root: str, *, skip: bool = False) -> None:
         return
 
     text = report(problems)
-    # stderr FIRST and unconditionally. A modal dialog that nobody is there
-    # to dismiss is worse than no dialog: under an automation platform the
-    # first version of this hung forever instead of exiting, which is the
-    # one behaviour a crash gate must never have.
+    # stderr FIRST and unconditionally. A modal dialog nobody is there to
+    # dismiss hangs forever instead of exiting, which is the one behaviour a
+    # crash gate must never have.
     print(text, file=sys.stderr)
     if _can_show_a_dialog():
         try:

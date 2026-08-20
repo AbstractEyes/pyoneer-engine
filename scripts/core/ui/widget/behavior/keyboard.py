@@ -173,9 +173,6 @@ class KeyboardComponentAsync(AsyncEventComponent):
                 callback(event)
 
     def __key_up(self, event: Optional[PyoneerEvent] = None):
-        #if KeyBindingType.KeyUp not in self.key_callbacks:
-        #    return
-        #unpacked_keys = self.unpack(data)
         unpacked_key = event.event.key
         if unpacked_key in self.keys_down.keys():
             trace_keyboard("up %s on %s", unpacked_key,

@@ -1,11 +1,10 @@
-"""Regression guard for the Segment 0 import decoupling.
+"""Fail if any engine module is reachable under two distinct module names.
 
-Fails if any engine module is reachable under two distinct module names.
 That duplication makes `component.GameComponent is not
 scripts.core.component.GameComponent`, so every `isinstance` check in
-LayerRenderer.bind silently rejects perfectly valid widgets -- and the
-error message names the type, not the real cause, which makes it
-near-undebuggable. Keep this in CI.
+LayerRenderer.bind silently rejects perfectly valid widgets -- and the error
+message names the type rather than the real cause, which makes it
+near-undebuggable.
 
     .venv/Scripts/python.exe tools/check_imports.py
 """

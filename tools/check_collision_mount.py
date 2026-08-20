@@ -1,93 +1,52 @@
 """Assert the collision stack is actually WIRED to the canvas.
 
-`check_collision.py` and `check_collision_view.py` already prove the model
-and the pixmap are correct. They proved that while nothing in the editor
-imported either one -- 2,794 lines of verified code with zero production
-importers. This file covers the seam those two cannot see: that a real
+`check_collision.py` and `check_collision_view.py` prove the model and the
+pixmap in isolation. This file covers the seam neither can see: that a real
 `MapCanvas` mounts the overlay, that the mode changes where a drag lands,
 and that a collision stroke is one transaction with an exact inverse.
 
-CLICKING A COLLISION TILE PAINTS A MASK. That is the whole requirement, and
-the second half of this file is about the three ways it used not to be:
+What it proves:
 
-  * a 191-word modal dialog on the first press, which also consumed the
-    stroke that raised it ("paint again"), also fired on right-click erase,
-    also fired before the cheaper "select a tile layer" refusal, and whose
-    Yes button left behind a map that raises FileNotFoundError at load;
-  * the sufficiency guard, which protected only the ADD path -- so a map
-    already declaring a five-tile `collision` tileset painted gids past the
-    end of its own sheet, silently. That is the law-5 shape: an invariant
-    proved in the permissive direction only;
-  * `QImage.save` returning False and raising nothing, which would have
-    turned an unwritable target into a declaration pointing at no file.
+  1. CLICKING A COLLISION TILE PAINTS A MASK, and everything a first stroke
+     needs -- the mask sheet on disk, the `collision` tileset declared, the
+     gids in range -- is arranged inside that one transaction, with no
+     dialog on any path.
+  2. NO MODAL CAN REACH THE PAINT PATH, proved three ways rather than
+     trusted: every `QMessageBox` entry point raises for the whole run
+     (law 13), `MapCanvas` carries no `confirm` seam, and
+     `editor/ui/canvas.py`'s import graph is walked with `ast` to assert
+     `QMessageBox` is not imported at all.
+  3. THE MASK LANDS WHERE THE AUTHOR CLICKED, on a `pyoneer_subcell="4"`
+     map and on a 1x one. Driven and asserted in scene PIXELS: the painted
+     sub-cell must CONTAIN the clicked pixel, because an assertion phrased
+     in cells is phrased in the unit under test.
+  4. THE OVERLAY'S CELLS ARE THE COMPANION'S CELLS, a 1x layer read into a
+     4x field lands over its own map tile, and a stroke whose paint unit
+     and companion disagree is refused rather than written elsewhere.
+  5. THE COMPANION THE EDITOR CREATES FOR ITSELF takes the author's chosen
+     resolution -- driven at 1x, 4x and 16x from a map with no companion at
+     all, since `map.layer.set` cannot write `pyoneer_subcell` and no verb
+     re-scales one afterwards.
+  6. A TILE CARRIES ITS OWN MASK, from one pick in the palette.
+     `MapCanvas.set_stamp` is the seam: in collision mode a tile pick is
+     not a brush, it is the TARGET the current mask is written onto. Both
+     halves of the mode gate, both halves of the readout (the resolved view
+     moves, the single-layer view does not and says why), and the refusals
+     -- an empty cell, a gid no tileset owns.
 
-NO MODAL CAN REACH THE PAINT PATH, and this file proves it three ways
-rather than trusting it: every `QMessageBox` entry point raises for the
-whole run (so a dialog is a red check, not a 40-minute hang -- law 13, and
-this exact file is where that cost was paid), `MapCanvas` is asserted to
-carry no `confirm` seam, and `editor/ui/canvas.py`'s import graph is walked
-with `ast` to assert `QMessageBox` is not imported at all.
-
-AND IT LANDS WHERE THE AUTHOR CLICKED. The engine learned to read a
-companion four times finer than the map -- `pyoneer_subcell="4"`, sixteen
-masks per tile -- and every check that existed still passed while the editor
-addressed whole tiles over such a map. Measured at the commit before this
-one, on the 4x fixture below: a click at scene pixel (26, 26) wrote sub-cell
-(1, 1), which is pixels 4..7, so the mask landed 20px up and 20px left of
-the cursor and 1,188px away on a 100x100 map. Nothing was red, because no
-check had ever opened a 4x map in a MapCanvas.
-
-So the last third of this file does exactly that, and asserts the thing the
-author can see rather than the thing the code returns: the painted sub-cell
-must CONTAIN the clicked pixel. Then the 1x case in the same shape, because
-a resolution change breaks the map that did not change far more often than
-the one that did; then that the overlay's cells are the COMPANION's cells;
-then that a 1x layer read into a 4x field lands over its own map tile rather
-than four times too close to the origin; and finally the guard, which
-refuses a stroke whose paint unit and companion disagree instead of writing
-a mask it cannot place.
-
-AND THE COMPANION THE EDITOR CREATES FOR ITSELF. Every 4x assertion in that
-third gets its resolution from a fixture that was hand-written with
-`pyoneer_subcell="4"` already on it, so for a whole pass nothing drove the
-path a real author takes first: a map with no companion at all, one stroke,
-and whatever resolution the editor decides. Measured, that was 1x always --
-`map.layer.add` was emitted with no `subcell` argument -- and since
-`map.layer.set` deliberately cannot write `pyoneer_subcell` and no verb
-re-scales a companion, "paint collision, then decide you want 4x" was a dead
-end. Proved for the pre-made case, never for the created one, which is the
-same shape that let the 1,200px bug through one level down. The last section
-drives the created case at 1x, 4x and 16x from a companion-less map.
-
-AND A TILE THAT CARRIES ITS OWN MASK, from one pick in the palette. The
-verb that writes a tileset's `.blitmask` shipped, worked end to end, and was
-reachable from no click at all -- measured, `map.tileset.mask.set` appeared
-outside `editor/core/verbs.py` only in generated docs and in its own check.
-The last section drives the seam that closes it, `MapCanvas.set_stamp`: in
-collision mode a tile pick is not a brush, it is the TARGET the current mask
-is written onto. Both halves of the gate (a pick in tiles mode writes
-nothing), both halves of the readout (the resolved view moves, the
-single-layer view does not and says why), and the refusals -- an empty cell,
-a gid no tileset owns -- because a mask that lands nowhere and says nothing
-is the failure the whole feature is made of.
-
-Against its OWN fixture map, never `data/maps/test.tmx`. The author paints
-in that file constantly, and four red suites have come from a check that
-pinned its contents. The fixture here declares exactly what the feature
-needs and nothing else: a `collision` tileset to store masks in, an art
-layer with no companion (so the create-on-first-stroke path runs), and one
-that already declares its companion (so the layer stack has two members to
-resolve).
+Against its OWN fixture map, never `data/maps/test.tmx` (law 4). The
+fixture declares exactly what the feature needs: a `collision` tileset to
+store masks in, an art layer with no companion (so the create-on-first-
+stroke path runs), and one that already declares its companion (so the
+layer stack has two members to resolve).
 
 The window wiring -- toolbar buttons, the mask palette dock, the C
 shortcut -- belongs to `main_window.py` and is deliberately NOT exercised
-here. This drives the canvas through a minimal harness that supplies the
-one thing it asks of its window, `run(commands)`, so a failure here is a
-failure in the canvas rather than in whatever the toolbar happens to look
-like today.
+here. This drives the canvas through a minimal harness supplying the one
+thing it asks of its window, `run(commands)`, so a failure here is a
+failure in the canvas rather than in the toolbar.
 
-Skips cleanly when PySide6 is not installed; the engine does not depend on
-it and a bare clone should not fail here.
+Skips cleanly when PySide6 is not installed.
 """
 from __future__ import annotations
 
@@ -162,13 +121,9 @@ failures: list[str] = []
 # --------------------------------------------------------------------------
 # No modal may reach anything below
 # --------------------------------------------------------------------------
-# Armed for the WHOLE run, not around one block. Law 13's cost was measured
-# in this very file: `QMessageBox.question` blocked check_all.py for 40+
-# minutes with zero output, indistinguishable from a slow machine, which is
-# why there is now a 600s timeout and a HANG verdict. A stub that RAISES
-# turns that hang into a red line naming the caller, and -- unlike the
-# `confirm`-seam stub this replaces -- it covers dialogs nobody thought to
-# leave a seam for.
+# Armed for the WHOLE run, not around one block: a stub that RAISES turns a
+# dialog into a red line naming the caller instead of a hang (law 13), and
+# it covers entry points nobody thought to leave a seam for.
 
 modals: list[str] = []
 
@@ -254,13 +209,11 @@ tilecount="256" columns="16">
 def fixture(collision_tiles: int | None = len(MASK_DOMAIN)) -> str:
     """The map, declaring a `collision` tileset of N tiles -- or none.
 
-    Three shapes from one template, because all three are states a real map
-    reaches. SEVENTEEN is a map somebody already painted collision on.
-    NONE is what every map starts as, and is the state the provisioning
-    path exists for. FEWER THAN SEVENTEEN is the state nothing guarded: the
-    map declares the tileset, the canvas finds a firstgid, and masks are
-    written as gids the declared sheet does not own -- silently, because
-    `CollisionTilesetOffer.sufficient` was consulted only on the way IN.
+    Three shapes from one template, all three states a real map reaches.
+    SEVENTEEN is a map somebody already painted collision on. NONE is what
+    every map starts as, and is what the provisioning path exists for.
+    FEWER THAN SEVENTEEN declares the tileset but cannot hold every mask,
+    so a stroke would encode gids the declared sheet does not own.
 
     The conflict cell is authored only when the tileset can actually hold
     the mask it stores, so the smaller fixtures do not smuggle in the very
@@ -285,11 +238,10 @@ FIXTURE = fixture()
 # --------------------------------------------------------------------------
 # The sub-cell fixture
 # --------------------------------------------------------------------------
-# A SECOND map, deliberately, and not a parameter on the first: everything
-# above is about a 1x map and has to keep being about a 1x map. This one is
-# small enough that every cell can be named -- 4x4 tiles at 16px, so 64x64
-# scene pixels, and a `pyoneer_subcell="4"` companion divides that into
-# 16x16 cells of 4px each.
+# A SECOND map rather than a parameter on the first, so everything above
+# stays about a 1x map. Small enough that every cell can be named: 4x4 tiles
+# at 16px, so 64x64 scene pixels, and a `pyoneer_subcell="4"` companion
+# divides that into 16x16 cells of 4px each.
 
 FINE_TILES = 4                        # map tiles per axis
 FINE_SUB = 4                          # sub-cells per tile per axis
@@ -382,12 +334,11 @@ def fine_fixture(*, declare: str | None = "4", side: int = FINE_SIDE,
 # --------------------------------------------------------------------------
 # The BAKED-IN fixture: masks that live on the tile
 # --------------------------------------------------------------------------
-# A THIRD map, for the same reason the second one exists: everything above
-# is about maps whose only collision is painted, and it has to keep being
-# about them. This one gives the ART tileset a `.blitmask` -- level ONE --
-# so that stamping a tile is the whole of authoring a wall, and then paints
-# over two of those tiles to prove the levels compose in the readout the way
-# they compose in the field.
+# A THIRD map, so everything above stays about maps whose only collision is
+# painted. This one gives the ART tileset a `.blitmask` -- level ONE -- so
+# stamping a tile is the whole of authoring a wall, and then paints over two
+# of those tiles to prove the levels compose in the readout the way they
+# compose in the field.
 #
 # It is a real workspace with a real sidecar on disk, because
 # `tileset_defaults` resolves the reference relative to the .tmx and a
@@ -408,8 +359,7 @@ BAKED_MASK_ROW[WALL_GID - 1] = "f"                            # BLOCK_ALL
 BAKED_MASK_ROW[LEDGE_GID - 1] = "8"                           # BLOCK_UP
 
 #: Where each level is exercised. Named rather than inlined because every
-#: assertion below is about one of these five cells and a bare pair of
-#: numbers three hundred lines from its fixture is unreadable.
+#: assertion below is about one of these five cells.
 TILE_WALL = (1, 1)          # blocked by the TILE alone; nothing painted here
 PAINTED_OPEN = (2, 1)       # a wall tile with PASS_ALL painted over it
 STARRED = (3, 1)            # a wall tile with a STAR painted over it
@@ -420,10 +370,9 @@ ROOF_WALL = (1, 3)          # a wall tile on a layer that has NO companion
 def blitmask_text(name: str = "Art") -> str:
     """The sidecar, written the way `Blitmask.render` writes one.
 
-    Spelled out rather than produced by `Blitmask.render` on purpose: this
-    file is the FORMAT the engine reads, and a fixture generated by the same
-    code that parses it would agree with itself no matter what either one
-    said.
+    Spelled out rather than produced by `Blitmask.render`: this file is the
+    FORMAT the engine reads, and a fixture generated by the same code that
+    parses it would agree with itself whatever either one said.
     """
     head = ["blitmask 1", "size 16 1"]
     if name:
@@ -486,8 +435,7 @@ def baked_fixture(*, reference: str | None = "art.blitmask",
     `with_collision_tileset` False removes the `collision` tileset, which is
     the shape a map takes when the author has painted NOTHING and the tiles
     carry everything: there is no firstgid, no mask can be encoded, and level
-    one is the only level there is. That is the case the overlay used to
-    refuse outright.
+    one is the only level there is.
     """
     collision = _COLLISION_TILESET.format(
         first=COLLISION_FIRST_GID, count=len(MASK_DOMAIN),
@@ -618,10 +566,10 @@ def click_px(application, canvas, px: float, py: float,
 
     The `mouse`/`drag` pair above speaks in cells, which is the right unit
     for asserting that a drag covers three of them and the wrong one for
-    asserting where a cell IS: a check that clicks 'cell (6, 6)' and finds a
-    mask in cell (6, 6) passes whatever `paint_width` says, because both
-    halves went through the same broken number. A pixel is the only
-    coordinate the canvas does not get to choose.
+    asserting where a cell IS: clicking 'cell (6, 6)' and finding a mask in
+    cell (6, 6) passes whatever `paint_width` says, because both halves went
+    through the same number. A pixel is the only coordinate the canvas does
+    not get to choose.
     """
     point = QPointF(canvas.mapFromScene(px, py))
     for kind, handler in ((QEvent.Type.MouseButtonPress,
@@ -699,11 +647,10 @@ def sheet_path(fixture_path: str) -> str:
 def among(needle: str, lines: list[str]) -> bool:
     """Was this said at all, anywhere in the gesture?
 
-    NOT `lines[-1]`. A refused press starts no stroke, so the mouse moves
-    that follow it fall through to the collision-mode cell readout and that
-    is what ends up last -- which is true of every refusal on this path and
-    always has been. What is under test is that the editor SAID why, in the
-    channel the author is looking at, rather than doing nothing.
+    NOT `lines[-1]`: a refused press starts no stroke, so the mouse moves
+    after it fall through to the collision-mode cell readout and that ends up
+    last. What is under test is that the editor SAID why, in the channel the
+    author is looking at, rather than doing nothing.
     """
     return any(needle in line for line in lines)
 
@@ -1013,11 +960,8 @@ try:
     print()
     print("A MAP WITH NO COLLISION TILESET: the cheap refusals come first")
     # ==================================================================
-    # Nothing may be provisioned for a gesture that was going to be refused
-    # anyway. Before this pass the tileset gate ran FIRST, so clicking with
-    # no layer selected produced a 191-word dialog, and the "select a tile
-    # layer" message five lines below it was unreachable until the tileset
-    # existed.
+    # Nothing may be provisioned for a gesture that is going to be refused
+    # anyway, so the cheap refusals have to run BEFORE the tileset gate.
     _ws, bare_path, bare = open_workspace(fixture(None))
     BARE_ORIGINAL = bare.project.map("fixture").to_bytes()
     SHEET = sheet_path(bare_path)
@@ -1171,9 +1115,9 @@ try:
     print()
     print("an author's own sheet is measured, never overwritten")
     # ==================================================================
-    # The deleted dialog's stated fear -- "undo must not delete a file you
-    # may have since painted" -- is answered by create-only-if-absent, and
-    # this is the half of that invariant that a permissive check skips.
+    # Undo must not delete a sheet the author may have painted since, which
+    # create-only-if-absent answers. This is the half of that invariant a
+    # permissive check skips.
     sentinel = QImage(16 * len(MASK_DOMAIN), 32, QImage.Format_ARGB32)
     sentinel.fill(Qt.magenta)
     expect("a two-row sheet of the author's own is put in place",
@@ -1267,11 +1211,10 @@ try:
     print()
     print("A DECLARED TILESET TOO SMALL FOR THE MASKS REFUSES THE STROKE")
     # ==================================================================
-    # The bug this pass found, and the half of the invariant that did not
-    # exist. `sufficient` guarded only the ADD path, so a map that already
-    # declared a five-tile `collision` tileset painted masks as gids past
-    # the end of its own sheet -- BLOCK_ALL is firstgid+15 against a range
-    # that stops at firstgid+4 -- with no status line from anywhere.
+    # `sufficient` has to guard the ALREADY-DECLARED path too, not just the
+    # ADD path: a map declaring a five-tile `collision` tileset would encode
+    # BLOCK_ALL as firstgid+15 against a range stopping at firstgid+4, and
+    # say nothing.
     _ws, small_path, small = open_workspace(fixture(5))
     SMALL_ORIGINAL = small.project.map("fixture").to_bytes()
     window = collision_canvas(small)
@@ -1309,14 +1252,12 @@ try:
     print()
     print("THE SAVED MAP STILL BOOTS -- the assertion the old design failed")
     # ==================================================================
-    # This is the one that matters. The deleted dialog's Yes button wrote a
-    # <tileset> pointing at a PNG it refused to create, and `pygame.image
-    # .load` raises FileNotFoundError inside pytmx's image loader, so the
-    # editor drove the project into a state the engine cannot open --
-    # through its own command stream, to protect an inverse. Both halves
-    # here: WITH the provisioned sheet the map loads, and WITHOUT it the
-    # same map raises. The second half is what says the file is load-bearing
-    # rather than decorative.
+    # The end-to-end claim: a declared <tileset> whose PNG is not on disk
+    # raises FileNotFoundError inside pytmx's image loader, so an editor
+    # that declares without provisioning drives the project into a state the
+    # engine cannot open. Both halves, because only the second says the file
+    # is load-bearing: WITH the provisioned sheet the map loads, WITHOUT it
+    # the same map raises.
     if (importlib.util.find_spec("pygame") is None
             or importlib.util.find_spec("pytmx") is None):
         print("  ....  skipped: pygame/pytmx not installed")
@@ -1356,10 +1297,10 @@ try:
     print()
     print("A 4x MAP IN A REAL CANVAS: the mask lands UNDER THE CURSOR")
     # ==================================================================
-    # The check whose absence let a whole pass ship green. Everything here
-    # is driven in scene PIXELS and asserted in pixels, because the failure
-    # was that the canvas and the file disagreed about what a cell is -- and
-    # any assertion phrased in cells is phrased in the very unit under test.
+    # Driven in scene PIXELS and asserted in pixels throughout: the failure
+    # this section covers is the canvas and the file disagreeing about what a
+    # cell IS, and an assertion phrased in cells is phrased in the very unit
+    # under test.
     _ws, fine_path, fine = open_workspace(fine_fixture())
     FINE_ORIGINAL = fine.project.map("fixture").to_bytes()
     window = collision_canvas(fine)
@@ -1393,9 +1334,9 @@ try:
     expect("...which is that sub-cell and no other", marks, [(6, 6)])
     expect("...and it is the mask the brush held",
            companion.get_tile(6, 6), COLLISION_FIRST_GID + BLOCK_ALL)
-    # The bug, named as a number rather than as a memory. Cell (1, 1) is
-    # where a canvas addressing whole tiles would have put this, and it owns
-    # pixels 4..7 -- so the wall would have been 20px up and 20px left.
+    # The wrong answer, named. Cell (1, 1) is where a canvas addressing whole
+    # tiles puts this, and it owns pixels 4..7 -- 20px up and 20px left of
+    # the cursor.
     expect("...NOT the whole-tile cell, which owns pixels 4..7",
            covers((1, 1), FINE_CELL, CLICK), False)
     expect("...and that cell is empty, so nothing was written twice",
@@ -1463,9 +1404,9 @@ try:
     # And the resolved view over that same partial map. The field is as big
     # as the FINEST layer, so every cell past this companion's edge is a read
     # it cannot answer -- 192 of the 256. `MapDocument.get_tile` raises on
-    # those, so before a stack member went through the engine's
-    # `document_gid_reader` this turned All layers into a PyoneerConfigError
-    # mid-rebuild, on a map shape the runtime supports on purpose.
+    # those, so a stack member has to read through the engine's
+    # `document_gid_reader` or All layers dies mid-rebuild on a map shape the
+    # runtime supports on purpose.
     bakes.clear()
     resolved = "built"
     try:
@@ -1542,15 +1483,11 @@ try:
     application.processEvents()
     window.close()
 
-    # THE HALF THAT WAS MISSING, and it is the whole reason the 1,200px bug
-    # survived a pass that was chartered to kill exactly it. The block above
-    # selects the ART layer and proves a tile-mode cell is a tile. Nobody
-    # selected the DATA layer -- and a companion is a selectable row in the
-    # Layers panel, so an author reaches it with one click. Proved for the art
-    # layer, never proved for the data layer: the repo's dominant shape.
+    # The DATA layer selected, not the art layer. A companion is a selectable
+    # row in the Layers panel, so an author reaches it with one click, and the
+    # block above only proves a tile-mode cell is a tile for the ART layer.
     # A FRESH fixture, because the blocks above have painted this one and an
-    # absolute assertion would be measuring their residue rather than this
-    # stroke -- which is how a placement bug hides inside a passing check.
+    # absolute assertion would measure their residue rather than this stroke.
     _ws2, _fine2_path, fine2 = open_workspace(fine_fixture())
     window = collision_canvas(fine2, layer="FloorCollision")
     canvas = window.canvas
@@ -1579,7 +1516,7 @@ try:
     print()
     print("A MIXED STACK: a 1x layer read at 4x stays where it was painted")
     # ==================================================================
-    # Gap 4. `collision_stack` builds one `CollisionLayer` per companion and
+    # `collision_stack` builds one `CollisionLayer` per companion and
     # the resolved view reads them all at the FINEST resolution in the map.
     # Without a scale, a 1x companion asked for sub-cell (8, 0) answers with
     # its own cell (8, 0) -- which does not exist -- and its wall on map cell
@@ -1644,11 +1581,10 @@ try:
     print("THE GUARD: a stroke it cannot place is refused, not misplaced")
     # ==================================================================
     # Unreachable while `paint_unit` is the only thing that resolves a cell
-    # -- which is the point of closing gap 2, and is why the guard reads the
-    # declaration a SECOND time straight off the document instead of asking
-    # the funnel whether it agrees with itself. Reached here by breaking the
-    # funnel the way the next change will break it: reporting whole tiles on
-    # a map whose companion stores quarter-tiles.
+    # -- which is why the guard reads the declaration a SECOND time straight
+    # off the document instead of asking the funnel whether it agrees with
+    # itself. Reached here by breaking the funnel the way a future change
+    # would: reporting whole tiles on a map storing quarter-tiles.
     window = collision_canvas(fine, layer="Floor")
     canvas = window.canvas
     said = []
@@ -1736,13 +1672,11 @@ try:
     print()
     print("...AND THE READOUT SAYS SO TOO, rather than drawing a quiet 1x")
     # ----------------------------------------------------------------
-    # The other half, and it is the half that shipped. `stack_subcell`
-    # degrades to 1 on a map `field_subcell` refuses -- correctly, because an
-    # editor that cannot draw a broken map cannot fix one -- and for as long
-    # as that was the whole story the All layers view drew a plausible 1x
-    # readout over a map that RAISES at load and said nothing whatsoever.
-    # The author learned from the stroke path, in a message about the stroke,
-    # and only if a stroke happened.
+    # The other half. `stack_subcell` degrades to 1 on a map `field_subcell`
+    # refuses -- correctly, because an editor that cannot draw a broken map
+    # cannot fix one -- so without this the All layers view would draw a
+    # plausible 1x readout over a map that RAISES at load and say nothing,
+    # leaving the author to find out only by attempting a stroke.
     expect("the resolved view still degrades rather than raising",
            canvas.stack_subcell(), 1)
     expect("...and it does not raise on the mouse-move path either",
@@ -1790,23 +1724,17 @@ try:
     print("THE COMPANION THE EDITOR CREATES FOR ITSELF, at the resolution "
           "the author asked for")
     # ==================================================================
-    # THE GAP THAT LET THE 1x AUTO-CREATE SHIP GREEN. Every 4x assertion
-    # above starts from `fine_fixture()`, whose companion is hand-written
-    # with `pyoneer_subcell="4"` already on it. Nothing drove the path a real
-    # author takes FIRST -- a map with no companion at all, one stroke, and
-    # whatever resolution the editor decides to create. Measured before this
-    # section existed: `map.layer.add {"name": ..., "kind": "tile"}` with no
-    # `subcell` at all, so every companion the editor ever made for itself
-    # was 1x, `map.layer.set` deliberately cannot write `pyoneer_subcell`,
-    # and there is no verb to re-scale one -- "paint collision, then decide
-    # you want 4x" was a dead end that raises at load.
+    # THE COMPANION THE EDITOR CREATES FOR ITSELF. Every 4x assertion above
+    # starts from `fine_fixture()`, whose companion is hand-written with
+    # `pyoneer_subcell="4"` already on it. This section drives the path a real
+    # author takes FIRST: a map with no companion at all, one stroke, and
+    # whatever resolution the editor decides to create. It is the only chance
+    # to get that resolution right -- `map.layer.set` deliberately cannot
+    # write `pyoneer_subcell` and no verb re-scales a companion.
     #
-    # Proved for the pre-made case, never for the created one: the same shape
-    # that let the 1,200px bug through one level down.
-    #
-    # Driven in scene PIXELS for that same reason: the created layer's cells
-    # and the clicked cell went through one funnel, so any assertion phrased
-    # in cells would be satisfied by the funnel agreeing with itself.
+    # Driven in scene PIXELS, because the created layer's cells and the
+    # clicked cell go through one funnel and an assertion phrased in cells
+    # would be satisfied by that funnel agreeing with itself.
     FRESH_CLICK = (26.0, 26.0)
     for wanted in (1, FINE_SUB, 16):
         print(f"  -- the author asks for {wanted} sub-cells per tile")
@@ -1985,13 +1913,11 @@ try:
     print()
     print("BAKED-IN MASKS: the overlay shows what the GAME walks")
     # ==================================================================
-    # THE HALF THAT DID NOT SHIP. The engine stacks a tileset's own
-    # `.blitmask` under every companion, and for one commit `collision_stack`
-    # still built its members with `companion=` alone. So an author painted a
-    # mask, read ONE level off the overlay, and the player obeyed three: a
-    # wall nobody painted stopped him, the readout drew nothing there, and
-    # the only way to find out was to walk into it. An instrument that
-    # disagrees with the thing it measures is worse than no instrument.
+    # The engine stacks a tileset's own `.blitmask` under every companion, so
+    # `collision_stack` has to as well. A builder using `companion=` alone
+    # reads ONE level while the player obeys three: a wall nobody painted
+    # stops him, the readout draws nothing there, and the only way to find
+    # out is to walk into it.
     _ws, baked_path, baked = open_baked()
     BAKED_ORIGINAL = baked.project.map("fixture").to_bytes()
     window = collision_canvas(baked, layer="Floor")
@@ -2004,10 +1930,10 @@ try:
            [layer.name for layer in stack], ["Roof", "Floor"])
     expect("...and every member now carries level ONE",
            [layer.defaults is not None for layer in stack], [True, True])
-    # The membership half, and the one a check about levels alone would
-    # miss: `Roof` declares no companion at all. Under the old builder it was
-    # not in the stack, so a wall stamped on it was invisible here and solid
-    # in the game.
+    # The membership half, and the one a check about levels alone would miss:
+    # `Roof` declares no companion at all. A builder that only walks companions
+    # leaves it out of the stack, so a wall stamped on it is invisible here and
+    # solid in the game.
     expect("...INCLUDING A LAYER THAT DECLARES NO COMPANION",
            (canvas.companion_name("Roof") in
             baked.project.map("fixture").tile_layer_names(),
@@ -2097,8 +2023,8 @@ try:
     print()
     print("...AND IT AGREES WITH field_from_map CELL FOR CELL")
     # ----------------------------------------------------------------
-    # THE ASSERTION THIS WHOLE PASS EXISTS FOR. Everything above says the
-    # overlay shows the right thing on cells somebody chose; this says it
+    # THE WHOLE-MAP AGREEMENT. Everything above says the overlay shows the
+    # right thing on cells somebody chose; this says it
     # shows the same thing as the engine EVERYWHERE, including the cells
     # nobody thought about. The two now build their stack with one function
     # over one document, so agreement is structural -- and this is what goes
@@ -2217,14 +2143,11 @@ try:
     print()
     print("A MAP WITH NO collision TILESET, whose tiles carry everything")
     # ----------------------------------------------------------------
-    # The shape the overlay used to refuse outright: `collision_stack`
-    # returned [] the moment `collision_first_gid` was None, and
-    # `__bake_overlay` returned before it even asked. That reasoning is right
-    # about level TWO -- with no firstgid no gid can encode a mask -- and
-    # false about level one, which lives in a file beside the .tmx and needs
-    # no gid at all. So the one map shape where the author paints NOTHING
-    # and the tiles carry everything drew a blank overlay over a map the
-    # player cannot cross.
+    # NO `collision` TILESET AT ALL, which is not a reason to draw nothing.
+    # A missing firstgid rules out level TWO -- no gid can encode a mask --
+    # and says nothing about level one, which lives in a file beside the .tmx
+    # and needs no gid. This is the map shape where the author paints NOTHING
+    # and the tiles carry everything.
     _ws, _only_path, only = open_baked(with_collision_tileset=False)
     window = collision_canvas(only, layer="Floor")
     canvas = window.canvas
@@ -2323,19 +2246,12 @@ try:
     print()
     print("ONE PICK IN THE TILE PALETTE BAKES THAT TILE'S OWN MASK")
     # ----------------------------------------------------------------
-    # THE CLICK THE VERB WAS MISSING. `map.tileset.mask.set` shipped, worked
-    # end to end and was reachable from nothing: measured at the commit
-    # before this one, the verb's name appeared in `editor/core/verbs.py`,
-    # in the generated docs and in `check_tileset_verbs.py`, and in NO
-    # surface an author can click. A verb no gesture reaches is the same
-    # half-delivery `check_collision_mount` was written for -- 2,794 lines
-    # of verified collision model with zero production importers.
-    #
-    # The gesture is the two-step the author already knows for CELLS, with
-    # the tileset palette standing in for the map: pick the mask, then pick
-    # what it applies to. `MapCanvas.set_stamp` is the whole seam, and it is
-    # what `EditorWindow.__on_stamp` calls for a real click on the palette
-    # -- driven for real, through the real window, in `check_editor_ui.py`.
+    # THE CLICK THAT REACHES `map.tileset.mask.set`. The gesture is the
+    # two-step the author already knows for CELLS, with the tileset palette
+    # standing in for the map: pick the mask, then pick what it applies to.
+    # `MapCanvas.set_stamp` is the whole seam, and it is what
+    # `EditorWindow.__on_stamp` calls for a real click on the palette --
+    # driven through the real window in `check_editor_ui.py`.
     #
     # AND THE HALF A COMMAND-LEVEL CHECK CANNOT SEE. A mask set writes the
     # SIDECAR and the tileset's declaration, so a check that stops at "the
@@ -2367,12 +2283,9 @@ try:
 
     expect("ONE transaction for the whole gesture",
            len(baking.history()) - before, 1)
-    # Hoisted, and compared as a WHOLE LIST rather than indexed. `[0]` on an
+    # Hoisted, and compared as a WHOLE LIST rather than indexed: `[0]` on an
     # empty history raises IndexError, and a check that turns a red line into
-    # a traceback hides every assertion after it -- measured here: with the
-    # bake mutated away, the two expects above reported honestly and this one
-    # crashed, taking the overlay-redrew assertion, the undo, the redo, the
-    # TILES-mode half and both refusals down with it.
+    # a traceback hides every assertion after it.
     baked_commands = last_commands(baking)
     expect("...and it is the mask verb, once",
            [c.verb for c in baked_commands], ["map.tileset.mask.set"])

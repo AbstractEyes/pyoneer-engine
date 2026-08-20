@@ -5,7 +5,7 @@
 
 > The composition of the selected object, as a checklist rather than a string.
 
-`editor.ui.behavior_panel` · 139 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.behavior_panel` · 129 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,18 +13,18 @@
 
 ## Module constants
 
-- `editor/ui/behavior_panel.py:69` `IS_WIRED` #TAG:IS_WIRED
+- `editor/ui/behavior_panel.py:60` `IS_WIRED` #TAG:IS_WIRED
 
 ## Classes
 
 ### `class BehaviorDock(ScopedDock)` #TAG:BehaviorDock
 
-`editor/ui/behavior_panel.py:84`–`138`
+`editor/ui/behavior_panel.py:75`–`128`
 
 > Which behaviors the selected object composes, and what they read.
 
-- `editor/ui/behavior_panel.py:89` `build_content(self) -> QWidget` #TAG:BehaviorDock.build_content
-- `editor/ui/behavior_panel.py:118` `refresh(self) -> None` #TAG:BehaviorDock.refresh
-- `editor/ui/behavior_panel.py:126` `report(self, message: str) -> None` #TAG:BehaviorDock.report
+- `editor/ui/behavior_panel.py:80` `build_content(self) -> QWidget` #TAG:BehaviorDock.build_content
+- `editor/ui/behavior_panel.py:108` `refresh(self) -> None` #TAG:BehaviorDock.refresh
+- `editor/ui/behavior_panel.py:116` `report(self, message: str) -> None` #TAG:BehaviorDock.report
   - Show why an edit produced no command, or clear it.
-- `editor/ui/behavior_panel.py:133` `__on_command(self, command: Any) -> None` #TAG:BehaviorDock.__on_command
+- `editor/ui/behavior_panel.py:123` `__on_command(self, command: Any) -> None` #TAG:BehaviorDock.__on_command

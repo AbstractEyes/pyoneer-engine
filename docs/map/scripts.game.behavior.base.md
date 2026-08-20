@@ -5,7 +5,7 @@
 
 > What a behavior IS: the contract, the declaration, and the per-frame drive.
 
-`scripts.game.behavior.base` · 685 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.behavior.base` · 596 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,51 +13,51 @@
 
 ## Module constants
 
-- `scripts/game/behavior/base.py:97` `PREFIX` #TAG:base.PREFIX
-- `scripts/game/behavior/base.py:99` `BEHAVIORS` #TAG:BEHAVIORS
-- `scripts/game/behavior/base.py:107` `ACTOR` #TAG:ACTOR
-- `scripts/game/behavior/base.py:122` `PARAM_PREFIX` #TAG:PARAM_PREFIX
-- `scripts/game/behavior/base.py:130` `KNOWN` #TAG:base.KNOWN
-- `scripts/game/behavior/base.py:137` `TOKEN` #TAG:TOKEN
-- `scripts/game/behavior/base.py:146` `PARAM_TYPES` #TAG:PARAM_TYPES
-- `scripts/game/behavior/base.py:150` `PARAM_SOURCES` #TAG:PARAM_SOURCES
-- `scripts/game/behavior/base.py:161` `STATUSES` #TAG:STATUSES
+- `scripts/game/behavior/base.py:69` `PREFIX` #TAG:base.PREFIX
+- `scripts/game/behavior/base.py:71` `BEHAVIORS` #TAG:BEHAVIORS
+- `scripts/game/behavior/base.py:79` `ACTOR` #TAG:ACTOR
+- `scripts/game/behavior/base.py:93` `PARAM_PREFIX` #TAG:PARAM_PREFIX
+- `scripts/game/behavior/base.py:101` `KNOWN` #TAG:base.KNOWN
+- `scripts/game/behavior/base.py:108` `TOKEN` #TAG:TOKEN
+- `scripts/game/behavior/base.py:116` `PARAM_TYPES` #TAG:PARAM_TYPES
+- `scripts/game/behavior/base.py:120` `PARAM_SOURCES` #TAG:PARAM_SOURCES
+- `scripts/game/behavior/base.py:131` `STATUSES` #TAG:STATUSES
 
 ## Functions
 
-- `scripts/game/behavior/base.py:444` `_dotted(target: Any, path: str) -> Any` #TAG:_dotted
+- `scripts/game/behavior/base.py:381` `_dotted(target: Any, path: str) -> Any` #TAG:_dotted
   - Follow `a.b.c` from `target`, or None if any step is missing.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class BehaviorParam` #TAG:BehaviorParam
 
-`scripts/game/behavior/base.py:192`–`264`
+`scripts/game/behavior/base.py:152`–`218`
 
 > One value a behavior consumes, declared so nothing has to read source.
 
-- `scripts/game/behavior/base.py:215` `__post_init__(self) -> None` #TAG:BehaviorParam.__post_init__
-- `scripts/game/behavior/base.py:231` `@property property_name(self) -> str` #TAG:BehaviorParam.property_name
+- `scripts/game/behavior/base.py:170` `__post_init__(self) -> None` #TAG:BehaviorParam.__post_init__
+- `scripts/game/behavior/base.py:186` `@property property_name(self) -> str` #TAG:BehaviorParam.property_name
   - The tmx object property that overrides this parameter.
-- `scripts/game/behavior/base.py:235` `coerce(self, value: Any, where: str='') -> Any` #TAG:BehaviorParam.coerce
+- `scripts/game/behavior/base.py:190` `coerce(self, value: Any, where: str='') -> Any` #TAG:BehaviorParam.coerce
   - Bring an authored value to the declared type, or raise saying why.
 
 ### `@dataclass(frozen=True) class BehaviorSpec` #TAG:BehaviorSpec
 
-`scripts/game/behavior/base.py:268`–`356`
+`scripts/game/behavior/base.py:222`–`302`
 
 > Everything about a behavior that is true without constructing one.
 
-- `scripts/game/behavior/base.py:294` `__post_init__(self) -> None` #TAG:BehaviorSpec.__post_init__
-- `scripts/game/behavior/base.py:329` `@property hooks(self) -> tuple[str, ...]` #TAG:BehaviorSpec.hooks
+- `scripts/game/behavior/base.py:244` `__post_init__(self) -> None` #TAG:BehaviorSpec.__post_init__
+- `scripts/game/behavior/base.py:279` `@property hooks(self) -> tuple[str, ...]` #TAG:BehaviorSpec.hooks
   - Which lifecycle methods this behavior actually implements.
-- `scripts/game/behavior/base.py:347` `param(self, key: str) -> BehaviorParam | None` #TAG:BehaviorSpec.param
+- `scripts/game/behavior/base.py:293` `param(self, key: str) -> BehaviorParam | None` #TAG:BehaviorSpec.param
   - The declared parameter for `key`, or None.
-- `scripts/game/behavior/base.py:355` `@property param_keys(self) -> tuple[str, ...]` #TAG:BehaviorSpec.param_keys
+- `scripts/game/behavior/base.py:301` `@property param_keys(self) -> tuple[str, ...]` #TAG:BehaviorSpec.param_keys
 
 ### `@dataclass(frozen=True) class BehaviorRequest` #TAG:BehaviorRequest
 
-`scripts/game/behavior/base.py:360`–`374`
+`scripts/game/behavior/base.py:306`–`318`
 
 > One behavior an object asked for, with its parameters already resolved.
 
@@ -65,47 +65,47 @@
 
 ### `class EntityBehavior` #TAG:EntityBehavior
 
-`scripts/game/behavior/base.py:381`–`437`
+`scripts/game/behavior/base.py:325`–`374`
 
 > A small object attached to an entity and updated once per frame.
 
-- `scripts/game/behavior/base.py:418` `@property name(self) -> str` #TAG:EntityBehavior.name
-- `scripts/game/behavior/base.py:421` `attach(self, entity: Any) -> None` #TAG:EntityBehavior.attach
+- `scripts/game/behavior/base.py:355` `@property name(self) -> str` #TAG:EntityBehavior.name
+- `scripts/game/behavior/base.py:358` `attach(self, entity: Any) -> None` #TAG:EntityBehavior.attach
   - Called once, when this behavior joins `entity`. Allocate here.
-- `scripts/game/behavior/base.py:424` `update(self, entity: Any, event: Any) -> None` #TAG:EntityBehavior.update
+- `scripts/game/behavior/base.py:361` `update(self, entity: Any, event: Any) -> None` #TAG:EntityBehavior.update
   - Called once per frame, in declared order. `event.data['delta']`.
-- `scripts/game/behavior/base.py:431` `detach(self, entity: Any) -> None` #TAG:EntityBehavior.detach
+- `scripts/game/behavior/base.py:368` `detach(self, entity: Any) -> None` #TAG:EntityBehavior.detach
   - Called once, when this behavior leaves `entity`. Release here.
-- `scripts/game/behavior/base.py:434` `__repr__(self) -> str` #TAG:EntityBehavior.__repr__
+- `scripts/game/behavior/base.py:371` `__repr__(self) -> str` #TAG:EntityBehavior.__repr__
 
 ### `class EntityBehaviors` #TAG:EntityBehaviors
 
-`scripts/game/behavior/base.py:454`–`684`
+`scripts/game/behavior/base.py:391`–`595`
 
 > The ordered set of behaviors composed onto one entity.
 
-- `scripts/game/behavior/base.py:472` `__init__(self, owner: Any)` #TAG:EntityBehaviors.__init__
-- `scripts/game/behavior/base.py:481` `@property owner(self) -> Any` #TAG:EntityBehaviors.owner
-- `scripts/game/behavior/base.py:485` `@property ordered(self) -> tuple[EntityBehavior, ...]` #TAG:EntityBehaviors.ordered
+- `scripts/game/behavior/base.py:403` `__init__(self, owner: Any)` #TAG:EntityBehaviors.__init__
+- `scripts/game/behavior/base.py:412` `@property owner(self) -> Any` #TAG:EntityBehaviors.owner
+- `scripts/game/behavior/base.py:416` `@property ordered(self) -> tuple[EntityBehavior, ...]` #TAG:EntityBehaviors.ordered
   - The behaviors in the order `update` will run them, low order first.
-- `scripts/game/behavior/base.py:495` `@property names(self) -> tuple[str, ...]` #TAG:EntityBehaviors.names
-- `scripts/game/behavior/base.py:498` `get(self, name: str) -> EntityBehavior | None` #TAG:EntityBehaviors.get
-- `scripts/game/behavior/base.py:504` `__len__(self) -> int` #TAG:EntityBehaviors.__len__
-- `scripts/game/behavior/base.py:507` `__iter__(self) -> Iterator[EntityBehavior]` #TAG:EntityBehaviors.__iter__
-- `scripts/game/behavior/base.py:510` `__contains__(self, item: Any) -> bool` #TAG:EntityBehaviors.__contains__
-- `scripts/game/behavior/base.py:517` `attach(self, behavior: EntityBehavior) -> EntityBehavior` #TAG:EntityBehaviors.attach
+- `scripts/game/behavior/base.py:424` `@property names(self) -> tuple[str, ...]` #TAG:EntityBehaviors.names
+- `scripts/game/behavior/base.py:427` `get(self, name: str) -> EntityBehavior | None` #TAG:EntityBehaviors.get
+- `scripts/game/behavior/base.py:433` `__len__(self) -> int` #TAG:EntityBehaviors.__len__
+- `scripts/game/behavior/base.py:436` `__iter__(self) -> Iterator[EntityBehavior]` #TAG:EntityBehaviors.__iter__
+- `scripts/game/behavior/base.py:439` `__contains__(self, item: Any) -> bool` #TAG:EntityBehaviors.__contains__
+- `scripts/game/behavior/base.py:446` `attach(self, behavior: EntityBehavior) -> EntityBehavior` #TAG:EntityBehaviors.attach
   - Compose `behavior` onto the owner, or raise saying why it cannot be.
-- `scripts/game/behavior/base.py:585` `attach_all(self, behaviors: Iterable[EntityBehavior]) -> tuple[EntityBehavior, ...]` #TAG:EntityBehaviors.attach_all
+- `scripts/game/behavior/base.py:510` `attach_all(self, behaviors: Iterable[EntityBehavior]) -> tuple[EntityBehavior, ...]` #TAG:EntityBehaviors.attach_all
   - Attach a sequence, in the sequence's order. Ordering is by spec.
-- `scripts/game/behavior/base.py:589` `detach(self, target: 'EntityBehavior | str') -> EntityBehavior | None` #TAG:EntityBehaviors.detach
+- `scripts/game/behavior/base.py:514` `detach(self, target: 'EntityBehavior | str') -> EntityBehavior | None` #TAG:EntityBehaviors.detach
   - Remove one behavior by object or token, calling its `detach`.
-- `scripts/game/behavior/base.py:607` `detach_all(self) -> None` #TAG:EntityBehaviors.detach_all
-  - Remove every behavior, in reverse run order.
-- `scripts/game/behavior/base.py:618` `update(self, event: Any) -> None` #TAG:EntityBehaviors.update
+- `scripts/game/behavior/base.py:531` `detach_all(self) -> None` #TAG:EntityBehaviors.detach_all
+  - Remove every behavior, in reverse run order, so teardown mirrors
+- `scripts/game/behavior/base.py:539` `update(self, event: Any) -> None` #TAG:EntityBehaviors.update
   - Run every enabled behavior once, in declared order.
-- `scripts/game/behavior/base.py:644` `missing_requirements(self) -> tuple[tuple[str, str], ...]` #TAG:EntityBehaviors.missing_requirements
+- `scripts/game/behavior/base.py:560` `missing_requirements(self) -> tuple[tuple[str, str], ...]` #TAG:EntityBehaviors.missing_requirements
   - (behavior name, requirement) for every declared need the owner lacks.
-- `scripts/game/behavior/base.py:663` `describe(self) -> str` #TAG:EntityBehaviors.describe
+- `scripts/game/behavior/base.py:576` `describe(self) -> str` #TAG:EntityBehaviors.describe
   - One line per behavior, in run order. For traces and for errors.
-- `scripts/game/behavior/base.py:673` `_resort(self) -> None` #TAG:EntityBehaviors._resort
+- `scripts/game/behavior/base.py:586` `_resort(self) -> None` #TAG:EntityBehaviors._resort
   - Rebuild the run order: declared order first, attach order to break ties.

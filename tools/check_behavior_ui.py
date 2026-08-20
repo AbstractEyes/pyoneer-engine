@@ -1,8 +1,8 @@
 """The editor's behavior surface: the checklist, the refusals, the undo.
 
-`pyoneer_behaviors` is the declaration site of the composition model and the
-editor rendered it as an untyped text box. This file covers the panel that
-replaced it, and it is written against the two ways that panel could be wrong
+`pyoneer_behaviors` is the declaration site of the composition model, so the
+editor offers a typed checklist for it rather than a text box. This file
+covers that panel, and is written against the two ways it could be wrong
 without anyone noticing:
 
   * IT COULD KEEP ITS OWN LIST. A hand-kept checklist agrees with the engine
@@ -26,11 +26,9 @@ conflict is refused AND a compatible token is accepted; an out-of-genre token
 is named AND still offered; the parameters of a ticked behavior are offered
 AND withdrawn when it is unticked.
 
-Against its OWN fixture, never `data/maps/test.tmx`: the author repaints that
-file and five red suites have come from a check that pinned its contents.
+Against its OWN fixture, never `data/maps/test.tmx` (law 4).
 
-Skips cleanly when PySide6 is absent; the engine does not depend on it and a
-bare clone should not fail here.
+Skips cleanly when PySide6 is absent.
 """
 from __future__ import annotations
 
@@ -762,13 +760,12 @@ try:
     print()
     print("13. the two Qt traps this repo has already paid for")
     # ------------------------------------------------------------------
-    # `widget.setParent(None)` PROMOTES a widget to a top-level window (about
-    # twenty flashing on every Ctrl+Z; 59 top-levels at rest -> 85 after one
-    # undo), and `QScrollArea.setWidget()` frees the old body SYNCHRONOUSLY,
-    # which freed a check box while its own `toggled` signal was on the stack
-    # -- STATUS_HEAP_CORRUPTION, 0xC0000374. The cure for either is the cause
-    # of the other. This panel refreshes from a check box's own signal, so it
-    # is exactly that path and both have to be asserted here too.
+    # `widget.setParent(None)` PROMOTES a widget to a top-level window, and
+    # `QScrollArea.setWidget()` frees the old body SYNCHRONOUSLY -- freeing a
+    # check box while its own `toggled` signal is on the stack, which is
+    # STATUS_HEAP_CORRUPTION (law 12). The cure for either is the cause of the
+    # other. This panel refreshes from a check box's own signal, so it is
+    # exactly that path and both have to be asserted here too.
     def top_levels() -> int:
         return len([w for w in QApplication.topLevelWidgets()
                     if w is not window and w.parent() is None])

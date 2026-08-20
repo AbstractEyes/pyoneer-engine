@@ -2,8 +2,7 @@
 
 MOUSE CONVENTIONS
 -----------------
-Taken from Tiled and Aseprite, because a tile editor that invents its own
-are the ones nobody keeps using:
+Taken from Tiled and Aseprite:
 
     left drag        paint with the current tool
     right drag       erase (a temporary eraser, whatever the tool)
@@ -12,16 +11,11 @@ are the ones nobody keeps using:
     ctrl + wheel     zoom under the cursor
     alt + click      pick the tile under the cursor into the brush
 
-The first version required `alt+click` to paint at all and panned with a
-plain drag, which is backwards: panning is the occasional act and painting
-is the constant one.
-
 ONE STROKE, ONE TRANSACTION
 ---------------------------
 Press-drag-release accumulates in an `editor.core.paint.Stroke` and commits
-a single `map.tile.set_many` on release. Before this, dragging across forty
-cells produced forty transactions, so undo walked back one tile at a time
-and the tmx csv payload was re-rendered forty times.
+a single `map.tile.set_many` on release, so undo takes back the whole stroke
+and the tmx csv payload is re-rendered once.
 
 While the stroke is live the canvas draws a translucent GHOST of what it
 would do. Nothing is committed until the button comes up, so dragging out a
@@ -42,23 +36,18 @@ exactly what erasing collision should mean, and is NOT the same claim as
 "open". Committing is the same `map.tile.set_many`, so a collision stroke
 inherits one-transaction undo and an exact inverse for free.
 
-The mode reaches the PALETTE by the same rule, and that is the one place it
-did not used to. A tile picked in collision mode set a brush the mode cannot
-paint with -- a live control that did nothing -- so it now writes that tile's
-own mask instead, everywhere the tile is ever stamped. Same two-step as a
-cell: pick the mask, then pick what it applies to. See `set_stamp` and
-`bake_tile_mask`.
+The mode reaches the PALETTE by the same rule. Picking a tile in collision
+mode writes that tile's own mask -- level one, so it applies everywhere the
+tile is ever stamped -- rather than setting a brush the mode cannot paint
+with. Same two-step as a cell: pick the mask, then pick what it applies to.
+See `set_stamp` and `bake_tile_mask`.
 
 The companion layer is created by the FIRST stroke that needs it, inside the
 same transaction as the tiles. Three commands land together or none do, and
 one undo takes the layer, its declaration and its tiles back out in reverse.
 
-The mask TILESET is created the same way, by the same stroke. It used to be
-the one thing that was not: a 191-word modal dialog explained gid arithmetic
-mid-gesture, refused to write the PNG it named, consumed the stroke that
-asked, and left behind a map that raised `FileNotFoundError` on load. The
-whole of that reasoning, and what replaced it, is at
-`CollisionTilesetOffer` and `write_mask_sheet`.
+The mask TILESET, and the PNG it names, are provisioned by that same stroke
+and never by a dialog -- see `CollisionTilesetOffer` and `write_mask_sheet`.
 """
 from __future__ import annotations
 
@@ -138,23 +127,19 @@ _MASK_GHOST_FILL = QColor(120, 200, 255, 60)
 _MASK_GHOST_PEN = QColor(120, 200, 255, 140)
 #: The tile palette's marker for "this tile carries its own mask".
 #:
-#: A GLYPH ALONE CANNOT CARRY IT, and that is the whole reason this colour
-#: exists rather than just drawing the overlay's glyph. `PASS_ALL`'s glyph is
-#: deliberately EMPTY -- an open cell is more than half of a map and absence
-#: is the cheapest possible signal -- so a tile baked OPEN would look exactly
-#: like a tile nobody has ever touched. "Open" and "nobody said anything" are
-#: the one distinction level one exists to make, and a palette that cannot
-#: show it is a palette the author cannot use to find their own work.
+#: A glyph alone cannot say it: `PASS_ALL`'s glyph is deliberately EMPTY, so a
+#: tile baked OPEN would look exactly like a tile nobody has ever touched --
+#: and "open" versus "nobody said anything" is the distinction level one
+#: exists to make.
 _BAKED_PEN = QColor(255, 206, 74)
 
 # COLLISION_TILESET and COMPANION_SUFFIX are imported from
 # `scripts/core/collision_runtime.py` above and re-exported here, because
 # `from editor.ui.canvas import COLLISION_TILESET` is what the checks and the
-# rest of the UI already write. They used to be spelled a second time in this
-# file. A map is PAINTED against that tileset name here and READ back by it in
-# the engine; two copies means a map painted against one spelling and read
-# against the other, which is collision the player cannot feel -- no error, no
-# warning, just walls that are not there.
+# rest of the UI already write. A map is PAINTED against that tileset name
+# here and READ back by it in the engine, so a second copy of the spelling
+# would be collision the player cannot feel -- no error, no warning, just
+# walls that are not there.
 #
 # A map without the tileset is GIVEN one by the stroke that needs it -- see
 # `CollisionTilesetOffer` -- appended above every gid range the map already
@@ -162,10 +147,8 @@ _BAKED_PEN = QColor(255, 206, 74)
 
 #: Where the offer proposes the mask sheet. Written into the tmx and therefore
 #: RELATIVE TO THE .tmx, which is what Tiled and the engine both resolve an
-#: `<image source>` against, and spelled with forward slashes for the same
-#: reason `tileset_dialog.relative_image_path` does: a backslash here is a
-#: path that only opens on Windows. It sits beside the sheets the shipped map
-#: already names.
+#: `<image source>` against, and spelled with forward slashes because a
+#: backslash here is a path that only opens on Windows.
 COLLISION_IMAGE = "../graphics/tilesets/System/Collision.png"
 
 
@@ -173,31 +156,20 @@ def write_mask_sheet(path: str, tile_width: int, tile_height: int) -> bool:
     """Put the mask sheet on disk. CREATE-ONLY-IF-ABSENT, never overwrite.
 
     Returns True when it wrote one and False when a file was already there.
-    That asymmetry is the whole reason this is safe to run inside an
-    undoable gesture: calling it again is a no-op, so undo/redo/undo can
-    cycle for as long as the author likes without ever touching a sheet
-    they have since replaced with their own. Undo removes the `<tileset>`
-    DECLARATION -- the document edit, which the command stream owns and
-    inverts exactly -- and leaves the file. An unreferenced PNG on disk is
-    harmless; a map that raises `FileNotFoundError` at load is not.
+    Being idempotent is what makes it safe inside an undoable gesture:
+    undo/redo/undo can cycle without ever touching a sheet the author has
+    since replaced with their own. Undo removes the `<tileset>` DECLARATION
+    and leaves the file -- an unreferenced PNG is harmless, a map that raises
+    `FileNotFoundError` at load is not.
 
-    Raises OSError when it cannot write. `QImage.save` returns False and
-    raises NOTHING -- measured, over a read-only target -- so an unchecked
-    call reports success and lets the caller declare a tileset whose image
-    is not there, which is the exact failure this function exists to
-    remove. Law 7: raise, never fall back to a plausible default.
+    Raises OSError when it cannot write, because `QImage.save` returns False
+    and raises nothing: an unchecked call reports success and leaves a
+    tileset declared over an image that is not there.
 
-    Tile N of the sheet IS mask N, because a mask is stored as
-    `first_gid + mask`, so the glyphs are laid out in `MASK_DOMAIN` order --
-    the same order the Collision palette shows. NOTHING READS THESE PIXELS:
-    the editor draws its own glyphs from `glyph_pixmaps` and the engine
-    reads numbers. They are drawn anyway so the sheet is legible to a human
-    who opens it in Tiled, which is why `demos/mapgen.py` hand-draws the
-    same seventeen. That one is pygame and cannot be called from here --
-    the editor is deliberately pygame-free -- and
-    `tools/make_placeholder_art.py` is a script with a hardcoded three-entry
-    table and no importable API, so this is a third caller of Qt's painter
-    rather than a second implementation of anything.
+    Tile N of the sheet IS mask N -- a mask is stored as `first_gid + mask`
+    -- so the glyphs are laid out in `MASK_DOMAIN` order. Nothing reads these
+    pixels; they are drawn so the sheet is legible to whoever opens it in
+    Tiled.
     """
     if os.path.exists(path):
         return False
@@ -229,33 +201,17 @@ class CollisionTilesetOffer:
     """What declaring a `collision` tileset on one map would write.
 
     Plain data, Qt-free once built, and derived without a window, so the
-    decision is checkable headlessly. `TilesetImport` is the same shape for
-    the same reason.
+    decision is checkable headlessly. `TilesetImport` is the same shape.
 
-    WHY THE PIXELS ARE PROVISIONED RATHER THAN ASKED FOR. The sheet exists
-    for one reason: pytmx opens every `<image source>` it parses, and
-    `pygame.image.load` raises FileNotFoundError, which stops the whole map
-    loading -- measured, on a tmx declaring an absent image. Nothing reads
-    what is ON it. The editor renders masks from
-    `collision_view.glyph_pixmaps`, a companion layer declares
-    `pyoneer_renders=false` so `rebuild()` skips it, and the engine reads
-    numbers. So the file has to EXIST at the declared size and its contents
-    are irrelevant.
-
-    This class used to carry a `prompt()` -- 191 words, 16 lines, on a
-    left-click -- whose argument was that a written PNG has no inverse and
-    so the author must go and create the file by hand. That argument does
-    not survive measurement, and both halves were measured:
-
-      * the tmx bytes `map.tileset.add` produces are BIT-IDENTICAL whether
-        or not the PNG is on disk, and add/undo/redo/undo/redo/undo is
-        byte-exact at every step. Provisioning cannot reach the document,
-        the inverse, or the byte-exactness contract, so there is no
-        coupling to protect;
-      * the outcome it chose instead was a project that will not boot.
-
-    `write_mask_sheet` is create-only-if-absent, which is idempotent, so
-    the undo cycle it was afraid of is safe without ever deleting anything.
+    The sheet's PIXELS are provisioned rather than asked for. pytmx opens
+    every `<image source>` it parses and `pygame.image.load` raises
+    FileNotFoundError, which stops the whole map loading, so the file has to
+    EXIST at the declared size -- but nothing reads what is on it: the editor
+    renders masks from `collision_view.glyph_pixmaps`, a companion layer
+    declares `pyoneer_renders=false` so `rebuild()` skips it, and the engine
+    reads numbers. Writing it costs the document nothing, because the tmx
+    bytes `map.tileset.add` produces are identical either way and undo
+    removes only the declaration.
     """
 
     name: str
@@ -284,12 +240,10 @@ class CollisionTilesetOffer:
     def command_args(self) -> dict[str, Any]:
         """Arguments for `map.tileset.add`.
 
-        `image_width` and `image_height` are handed over EXPLICITLY, not left
-        to be measured. `MapDocument.add_tileset` reads the PNG header when
-        they are absent and raises when the file is not there -- and the
-        whole point of this offer is that the file is usually not there yet.
-        Passing them is what lets a map declare the tileset today and the
-        author drop the sheet in afterwards.
+        `image_width` and `image_height` are handed over EXPLICITLY:
+        `MapDocument.add_tileset` reads the PNG header when they are absent
+        and raises when the file is not there, and the file is usually not
+        there yet when this offer is made.
         """
         return {
             "name": self.name,
@@ -323,19 +277,14 @@ class PaintUnit:
     Resolved in one place -- `MapCanvas.paint_unit` -- so that the displayed
     grid, the cell a click snaps to, the ghost, the bounds a stroke clips to
     and the mask that gets written cannot be reading five different numbers.
-    Before this it was five reads of `document.tile_width`, and on a map whose
-    companion declares `pyoneer_subcell="4"` all five were wrong the same way:
-    the canvas addressed whole tiles and the file stored quarter-tiles, so a
-    click wrote a mask up to 1,188px from the cursor on a 100x100 map and 20px
-    from it on the 4x4 fixture below.
 
     `refusal` is the one thing this cannot resolve: a companion whose
     declaration cannot be read at all. It is carried rather than raised
     because this is consulted on every mouse move and every grid line, and an
     exception on that path takes the editor down over a property an author
     can fix in Tiled. The stroke is refused instead -- see
-    `MapCanvas.collision_stroke_refusal`, which is where law 7 is actually
-    paid: nothing is written, and the reason is said out loud.
+    `MapCanvas.collision_stroke_refusal`: nothing is written, and the reason
+    is said out loud.
     """
 
     #: How many addressable cells one map TILE divides into, per axis.
@@ -384,15 +333,14 @@ class MapCanvas(QGraphicsView):
         #: cell a click addresses before the companion exists is the cell
         #: the companion is about to hold.
         #:
-        #: 1 by DEFAULT, and that number is not timidity: measured on a
-        #: 100x100 map, a 4x companion is 8.6x the file bytes and +271ms per
-        #: companion at load. The author opts in, and an existing companion
-        #: keeps whatever it declares -- there is no verb to re-scale one.
+        #: 1 by DEFAULT: measured on a 100x100 map, a 4x companion is 8.6x
+        #: the file bytes and +271ms per companion at load. The author opts
+        #: in, and an existing companion keeps whatever it declares -- there
+        #: is no verb to re-scale one.
         self.collision_subcell = 1
-        #: The brush footprint, in paint cells, for the tools that have
-        #: one. Transient like `tool` and `stamp` and deliberately not
-        #: persisted: it is a moment-to-moment choice, not a view
-        #: preference, and every editor the author has used forgets it.
+        #: The brush footprint, in paint cells, for the tools that have one.
+        #: Transient like `tool` and `stamp`, and not persisted: it is a
+        #: moment-to-moment choice rather than a view preference.
         self.brush_size = 1
         #: The tileset this stroke will declare in front of its tiles, or
         #: None. Set at press by `provision_collision_tileset`, consumed by
@@ -404,11 +352,9 @@ class MapCanvas(QGraphicsView):
         #: the stroke, rather than as a second message about plumbing.
         self.__wrote_sheet = False
 
-        # This canvas holds NO `confirm` seam and this module imports no
-        # QMessageBox. Both facts are asserted structurally by
-        # `tools/check_collision_mount.py`, because a modal on the paint
-        # path is not only bad UX -- law 13 -- it is a measured way to wedge
-        # the check suite for 40 minutes with no output.
+        # This canvas holds NO `confirm` seam and imports no QMessageBox: a
+        # modal on the paint path blocks a headless check forever, and
+        # `tools/check_collision_mount.py` asserts both facts structurally.
 
         self.setScene(QGraphicsScene(self))
         self.setRenderHint(QPainter.SmoothPixmapTransform, False)
@@ -443,10 +389,8 @@ class MapCanvas(QGraphicsView):
         # The overlay is kept current cell by cell as strokes commit, so it
         # has to be told when the document moved some OTHER way -- an undo, a
         # redo, an applied response, a command from a panel. The stream
-        # announces every one of those and this is the only way to hear about
-        # them; without it the readout would quietly disagree with the map
-        # after the first Ctrl+Z, which is the worst failure an instrument
-        # can have.
+        # announces every one of those, and without this the readout would
+        # disagree with the map after the first Ctrl+Z.
         self.session.stream.subscribe(self.__on_transaction)
         self.rebuild()
 
@@ -466,70 +410,34 @@ class MapCanvas(QGraphicsView):
 
     # -- the paint unit ----------------------------------------------------
     #
-    # THE ONE NUMBER THAT USED TO DO THREE JOBS. `document.tile_width`
-    # decided how big the displayed grid was, what a click snapped to, and
-    # how much a single press painted, and it reached all three through
-    # separate reads -- so nothing coupled them and nothing could move one
-    # without the others.
-    #
-    # Everything that means "an addressable CELL" reads `paint_width` /
-    # `paint_height`, and everything that means "the size of a tile's ART"
-    # -- the atlas, the tile ghost, the terrain ghost, an object's default
-    # box -- still reads `tile_width` / `tile_height`.
-    #
-    # THE SEAM IS NOW LOAD-BEARING. The split shipped as a rename with no
-    # behaviour in it, against the day a companion layer would divide a tile.
-    # That day is here: a companion declaring `pyoneer_subcell="4"` stores
-    # four masks per tile per axis, and until this funnel subdivided, the
-    # canvas still reported 16 on such a map -- the click snapped to a whole
-    # tile, the mask went into the sub-cell of the same index, and the wall
-    # landed a long way from the cursor. Measured on the 4x4 fixture in
-    # `tools/check_collision_mount.py`: a click at scene pixel (26, 26)
-    # wrote sub-cell (1, 1), which is pixels 4..7 -- 20px up and 20px left of
-    # where the author clicked, and 1,188px on a 100x100 map.
+    # TWO SIZES, NEVER ONE. Everything that means "an addressable CELL" reads
+    # `paint_width` / `paint_height`, and everything that means "the size of a
+    # tile's ART" -- the atlas, the tile ghost, the terrain ghost, an object's
+    # default box -- reads `tile_width` / `tile_height`. They differ whenever
+    # the layer being painted declares `pyoneer_subcell`: a companion at "4"
+    # stores four masks per tile per axis, so a canvas that addressed whole
+    # tiles there would drop each mask up to 1,188px from the cursor on a
+    # 100x100 map.
 
     def paint_unit(self) -> PaintUnit:
-        """One addressable cell, resolved from the MODE and the companion.
+        """One addressable cell, resolved from the LAYER BEING PAINTED.
 
-        WHICH mode subdivides is the mode's own business -- `EditMode
-        .subdivides` -- and is asked here rather than tested against
-        `EditMode.COLLISION`, so the enum that declares what a drag means
-        also declares whether the thing being dragged can be smaller than a
-        tile. In tile mode a cell is a tile: nothing about a passability
-        layer's resolution should move the grid the author paints art on.
+        `mode.subdivides` picks WHICH layer that is -- in collision mode the
+        companion this stroke would write into, in tile mode the active layer
+        itself, which may well be a companion the author selected in the
+        Layers panel and is painting masks onto directly.
 
-        HOW FINELY is the map's business, and cannot live on the enum: it is
-        `pyoneer_subcell` on the companion this stroke would write into, a
-        FILE FORMAT string read through the engine's own `companion_subcell`
-        rather than re-spelled here, so the cell the editor addresses is the
-        cell the runtime bakes.
+        HOW FINELY is then the map's business: `pyoneer_subcell` on that
+        layer, a FILE FORMAT string read through the engine's own
+        `companion_subcell` rather than re-spelled here, so the cell the
+        editor addresses is the cell the runtime bakes. A layer with no
+        declaration answers 1, so an art layer is unaffected.
 
         A companion that does not exist yet resolves to the resolution this
-        canvas would CREATE it at -- `collision_subcell`, the author's own
-        preference -- and not to 1. The two have to be the same number or
-        the first stroke on a fresh map is the 1,200px bug with the roles
-        swapped: the click addresses a whole tile and the layer created to
-        hold it stores sixteen masks per tile, so the mask lands in the
-        top-left sixteenth of the tile the author clicked.
-
-        THE MODE IS NOT THE WHOLE ANSWER, and assuming it was cost 1,200px.
-        `mode.subdivides` says WHICH LAYER a stroke goes to, and the sentence
-        above -- "in tile mode a cell is a tile" -- quietly assumed the active
-        layer is an ART layer. A companion is a selectable row in the Layers
-        panel, so an author can click it and paint on it in TILE mode. Then
-        the assumption is false: measured, a click at px(1599,1599) on a
-        100x100 map wrote companion cell (99,99), which owns x396..399 --
-        1,200 pixels away -- and only 6% of the companion (10,000 of 160,000
-        cells) was addressable at all. The collision tileset lives in the same
-        palette, so this wrote REAL masks: a wall baked at sub-cell (1,1) for
-        a click on (6,6). That is the original defect verbatim, on a surface
-        none of the five named gaps covered.
-
-        So the resolution comes from the LAYER BEING PAINTED, whichever that
-        is. In collision mode that is the companion this stroke would write
-        into; in tile mode it is the active layer itself. A layer with no
-        declaration answers 1, so an art layer is unaffected and this stays
-        one read.
+        canvas would CREATE it at -- `collision_subcell`, the author's
+        preference -- and not to 1, or the first stroke on a fresh map would
+        address a whole tile while the layer created to hold it stored
+        sixteen masks per tile.
         """
         document = self.document
         tile_w, tile_h = document.tile_width, document.tile_height
@@ -544,21 +452,16 @@ class MapCanvas(QGraphicsView):
 
         The ONE read of `pyoneer_subcell` on this class. `paint_unit` and
         `overlay_subcell` both come through here, so the cell a click lands
-        in and the cell the readout draws are the same cell by construction
-        rather than by two functions agreeing.
+        in and the cell the readout draws are the same cell by construction.
 
-        An absent property means 1 -- that is the file format's documented
-        default, decided at `SUBCELL` in `scripts/core/collision_runtime.py`,
-        not a guess made here.
+        An absent property means 1, the file format's default, decided at
+        `SUBCELL` in `scripts/core/collision_runtime.py`.
 
-        A layer that does not exist yet is two different questions wearing
-        one shape. If it is the COMPANION this canvas would create, the
-        answer is `__pending_subcell`: `map.layer.add` now takes a
-        resolution, so the layer is about to be whatever the author asked
-        for and the click has to address that same cell. Anything else --
-        no active layer, an object layer, a name this map does not have --
-        is 1, which is what a tile-mode stroke on an art layer has always
-        wanted.
+        A layer that does not exist yet is two questions in one shape. If it
+        is the COMPANION this canvas would create, the answer is
+        `__pending_subcell` -- `map.layer.add` takes a resolution, so the
+        click has to address the cell that layer is about to hold. Anything
+        else (no active layer, an object layer, an unknown name) is 1.
 
         The error is RETURNED rather than raised because this is consulted on
         every mouse move and every grid line; see `PaintUnit.refusal`.
@@ -576,22 +479,16 @@ class MapCanvas(QGraphicsView):
     def __pending_subcell(self) -> tuple[int, str | None]:
         """(resolution, why not) for the companion the next stroke CREATES.
 
-        `collision_subcell` is a PREFERENCE and the map is a FACT, and the
-        two are reconciled here -- once, into the same `(value, refusal)`
-        pair `__declared_subcell` hands back for a companion that already
-        exists. So `paint_unit` cannot tell the created case from the
-        pre-made one, which is exactly the distinction that let the 4x
-        assertions all start from a hand-written 4x fixture and never once
-        drive the path an author actually takes first.
+        `collision_subcell` is a PREFERENCE and the map is a FACT; the two
+        are reconciled here into the same `(value, refusal)` pair
+        `__declared_subcell` returns for a companion that already exists, so
+        `paint_unit` cannot tell the two cases apart.
 
-        THE REFUSAL IS `companion_subcell`'S OWN RULE, spelled here because
-        that reader needs a LAYER and this runs before one exists. A mirror
-        rots, so it is not left to be trusted: `tools/check_collision_mount
-        .py` asserts both sides on the same map -- that this refuses, and
-        that `map.layer.add` carrying the same factor raises there too. Law 7
-        decides the shape rather than a fallback: a factor the map cannot
-        hold draws at 1x and REFUSES to write, the same as an unreadable
-        declaration one branch up.
+        The refusal restates `companion_subcell`'s own rule, because that
+        reader needs a LAYER and this runs before one exists;
+        `tools/check_collision_mount.py` asserts both sides agree. A factor
+        the map cannot hold draws at 1x and REFUSES to write rather than
+        falling back, the same as an unreadable declaration one branch up.
         """
         document = self.document
         wanted = int(self.collision_subcell)
@@ -632,10 +529,9 @@ class MapCanvas(QGraphicsView):
         """The stamp this press should place, and where it sits.
 
         The gate is `self.tool.uses_size` -- the SELECTED tool, not the
-        effective one. A right-drag substitutes the eraser, which does take
-        a footprint, but the toolbar's size control is greyed or lit for
-        what is selected: making the two disagree would give the author a
-        greyed control that quietly changed the size of a right-drag.
+        effective one. A right-drag substitutes the eraser, which does take a
+        footprint, but the toolbar's size control is lit for what is
+        selected, and a greyed control must not still size a right-drag.
         """
         size = self.brush_size if self.tool.uses_size else 1
         return footprint(self.stamp if stamp is None else stamp, size)
@@ -657,27 +553,21 @@ class MapCanvas(QGraphicsView):
         because without it a mask cannot be encoded OR decoded.
 
         The engine's own function, called rather than mirrored: this canvas
-        WRITES the gids that function READS, and the two answering from
-        separate copies of "the tileset called collision, case-insensitively"
-        is a difference the author would only meet as a wall that is not
-        there.
+        WRITES the gids that function READS.
         """
         return engine_collision_first_gid(self.document)
 
     def collision_tileset_offer(self) -> CollisionTilesetOffer:
         """What declaring the mask tileset on THIS map would write.
 
-        The geometry comes from `tileset_geometry`, which is the function
-        `MapDocument.add_tileset` itself uses to write `columns` and
-        `tilecount` -- so what the offer describes and what the file records
-        come from one function rather than from two divisions that agree
-        until margins exist.
+        The geometry comes from `tileset_geometry`, the same function
+        `MapDocument.add_tileset` uses to write `columns` and `tilecount`, so
+        what the offer describes and what the file records cannot disagree
+        once margins exist.
 
-        A sheet already on disk is MEASURED rather than assumed, because the
+        A sheet already on disk is MEASURED rather than assumed, since the
         author may have supplied one of their own shape. One that is present
-        but undecodable counts as absent: the canonical size is the better
-        guess, and a file Qt cannot read is a file the author has to replace
-        anyway.
+        but undecodable counts as absent.
         """
         document = self.document
         directory = os.path.dirname(document.path or "")
@@ -725,12 +615,9 @@ class MapCanvas(QGraphicsView):
         either "carry on painting" or "refuse the gesture, say why in one
         line, change nothing".
 
-        This does not touch the document. The DECLARATION is a document
-        change and stays in the command stream with an exact inverse, in
-        the same transaction as the tiles it exists for -- provisioning an
-        asset is not a document change, and the companion LAYER, created
-        silently by the first stroke that needs it, is the precedent
-        sitting in the very next method.
+        This does not touch the document: writing an asset is not a document
+        change. The DECLARATION is, and stays in the command stream with an
+        exact inverse, in the same transaction as the tiles it exists for.
 
         Two of the three refusals below are about a sheet the AUTHOR
         supplied; never overwrite one to make it fit.
@@ -748,11 +635,9 @@ class MapCanvas(QGraphicsView):
             wrote = write_mask_sheet(offer.absolute, offer.tile_width,
                                      offer.tile_height)
         except OSError as exc:
-            # The absolute path FIRST and always, because the cause varies
-            # -- `makedirs` raises with the directory in the message and a
-            # refused `QImage.save` carries no path at all -- and the one
-            # thing the author needs is where the editor was trying to
-            # write.
+            # The absolute path first and always: the cause varies, and a
+            # refused `QImage.save` carries no path at all, so this is the
+            # only place the author learns where the write was attempted.
             self.status.emit(
                 f"could not write the collision sheet at {offer.absolute} "
                 f"({exc}) — nothing was changed")
@@ -764,17 +649,15 @@ class MapCanvas(QGraphicsView):
         """Which layer holds `layer_name`'s masks.
 
         The layer's own `pyoneer_passability` declaration if it has one --
-        the author may point two art layers at one companion, and that is a
-        legitimate thing to author -- otherwise the name this canvas would
-        create. Returning the would-be name rather than None is what lets one
-        stroke both create the companion and paint into it.
+        two art layers may legitimately point at one companion -- otherwise
+        the name this canvas would create. Returning the would-be name rather
+        than None is what lets one stroke both create the companion and paint
+        into it.
 
-        Only the "which layer is this about" part is this canvas's: the
-        answer itself comes from the engine's `companion_name`, so the layer
-        this stroke paints into is by construction the layer the game reads
-        the masks out of. None means the question does not apply -- no active
-        layer, or a name this map does not have -- which is not something the
-        engine's version has to answer.
+        The answer comes from the engine's `companion_name`, so the layer
+        this stroke paints into is the layer the game reads the masks out of.
+        None means the question does not apply: no active layer, or a name
+        this map does not have.
         """
         name = layer_name if layer_name is not None else self.active_layer
         if name is None or name not in self.document.tile_layer_names():
@@ -793,25 +676,21 @@ class MapCanvas(QGraphicsView):
         """Why a collision stroke cannot be PLACED right now, or None.
 
         THE GUARD. A mask is only meaningful at the resolution its companion
-        declares, and the cell a click resolved to came from `paint_unit`.
-        If those two numbers disagree, every cell of the stroke is written at
-        the right index into the wrong grid -- which does not look like a
-        bug, it looks like collision that is slightly off, and the author
-        finds it by walking into a wall that is not there.
+        declares, and the cell a click resolved to came from `paint_unit`. If
+        those two numbers disagree, every cell of the stroke is written at
+        the right index into the wrong grid -- which reads as collision that
+        is slightly off, found by walking into a wall that is not there.
 
         So this reads the declaration a SECOND time, straight off the
-        document, and compares. Two independent reads is normally the shape
-        this file spends its docstrings arguing against; here it is the whole
-        point. `paint_unit` is the funnel, and a guard that consulted the
-        funnel would be asserting `x == x`. Close gap 2 correctly and this is
-        unreachable -- which is the right outcome, and is why it is a status
-        line rather than an exception: the next person to touch `paint_width`
-        gets a refusal naming both numbers instead of a misplaced wall.
+        document, and compares: a guard that consulted `paint_unit` would be
+        asserting `x == x`. When the two agree it is unreachable, which is
+        why it is a status line rather than an exception -- the next person
+        to touch `paint_width` gets a refusal naming both numbers instead of
+        a misplaced wall.
 
-        Law 7, stated in the negative: never write a mask you cannot place.
-        Law 13 decides the shape -- a STATUS LINE, never a dialog, because
-        this sits on the paint path and `editor/ui/ask.py` is the only seam
-        in this editor that is allowed to be modal.
+        Never write a mask you cannot place, and never ask about it in a
+        dialog: this sits on the paint path, where `editor/ui/ask.py` is the
+        only seam allowed to be modal.
         """
         unit = self.paint_unit()
         if unit.refusal is not None:
@@ -830,14 +709,11 @@ class MapCanvas(QGraphicsView):
         declared = companion_subcell(document, name)      # cannot raise: see above
         if declared == unit.subcell:
             return None
-        # The worst cell on THIS map, so the number is about the map in front
-        # of the author rather than about a hypothetical one. Cell i is
-        # written at i x the companion's cell size and was clicked at i x the
-        # paint unit, so the two diverge by i x the difference; the largest i
-        # that both addresses and lands is bounded by whichever grid runs out
-        # first. Both cells are square by construction -- `companion_subcell`
-        # refuses a subcell the tile size does not divide -- so one axis tells
-        # the whole story. Measured: 1,188px on a 100x100 map at 16px.
+        # The worst cell on THIS map. Cell i is written at i x the companion's
+        # cell size and was clicked at i x the paint unit, so the two diverge
+        # by i x the difference, bounded by whichever grid runs out first.
+        # Both cells are square -- `companion_subcell` refuses a subcell the
+        # tile size does not divide -- so one axis tells the whole story.
         cell_px = document.tile_width // declared
         last = min(document.width * unit.subcell,
                    document.width * declared) - 1
@@ -851,53 +727,23 @@ class MapCanvas(QGraphicsView):
     def collision_stack(self, subcell: int | None = None) -> list[CollisionLayer]:
         """The map's collision stack, TOPMOST FIRST -- THE ENGINE'S OWN.
 
-        `collision_layers`, called and not mirrored. This method used to
-        build its members here: one `CollisionLayer` per companion, ordered
-        by this canvas's own depth table, with `companion=` and nothing else.
-        Every word of that was true of the engine too until a tileset learned
-        to carry its own masks, and then it was three separate lies at once.
-        Measured at the commit that landed level one: an author painted a
-        mask, saw ONE level, and the player walked THREE -- so a wall the
-        author never painted stopped him, the overlay drew nothing there, and
-        the only way to find out was to walk into it.
-
-        The three that diverged, and none of them announces itself:
-
-          * LEVEL ONE was absent. The engine stacks `tileset_defaults` under
-            every companion; this drew the companion alone.
-          * MEMBERSHIP was different. With defaults in play the engine puts
-            every non-companion tile layer at world coordinates into the
-            stack, because the whole value of a mask on the TILE is that
-            stamping the tile is the only authoring step -- a layer nobody
-            thought to give a companion is exactly the layer that would
-            otherwise be missed. This canvas required a companion.
-          * ORDER was different. `layer_rank` ranks by the engine's own
-            `layer_depth`; this ranked by `__depth_of`, which asks the GENRE
-            PACK first. The engine never reads a genre pack. `Resolution.layer`
-            is an INDEX, so one layer ranked differently renumbers every
-            answer the readout gives about who decided.
-
-        So membership, order, resolution and the levels themselves are the
-        engine's answer now, and this method's whole remaining job is to say
-        WHERE the answer is read from -- see `__collision_stack`, which holds
-        the two things a canvas has that a bake does not: level one memoised,
-        and a raise turned into a sentence instead of a dead editor.
+        `collision_layers`, called and not mirrored, so membership, order,
+        resolution and the levels themselves are the same answer the player
+        will walk into. Anything this canvas decided for itself would show
+        the author one stack while the game ran another.
 
         `subcell` is the resolution the STACK is read at, defaulting to the
         finest any of its members declares -- `field_subcell`, the same
         function `field_from_map` calls, so a stack resolved here and a field
         baked there index the same cells. `collision_layers` scales every
         member into it, which is what keeps a 1x companion on a mixed map
-        drawn over its own map tile rather than four times too close to the
-        origin -- measured on the engine side at 84px.
+        drawn over its own map tile.
 
         Rebuilt whenever it is consulted rather than cached: a member costs
         one flat snapshot of its layer's gids (`document_gid_reader`), 0.78 ms
         for a whole stack over a 400x400 companion, against the 6.9 ms rebuild
-        every command already pays. A cache keyed on nothing reliable is how a
-        readout comes to disagree with the map, which is the worst failure an
-        instrument has. Level one is the one exception and it is keyed on
-        something real -- see `__tileset_defaults`.
+        every command already pays. Level one is the one memoised part, keyed
+        on a document change -- see `__tileset_defaults`.
         """
         return self.__collision_stack(subcell)[0]
 
@@ -906,23 +752,16 @@ class MapCanvas(QGraphicsView):
         """(the stack, why it is empty) -- the raising call, made safe.
 
         `collision_layers` RAISES on a map it cannot read, which is right for
-        the engine: law 7, and a map that raises at load is a map with no
-        collision rather than a map with some. A canvas cannot raise here.
-        This method sits under `rebuild`, under a mouse move and under a
-        stroke's own commit, and an exception on any of the three is the
-        editor going down over a map the author opened it to repair.
+        the engine. A canvas cannot: this sits under `rebuild`, under a mouse
+        move and under a stroke's own commit, and an exception on any of the
+        three takes the editor down over a map the author opened to repair.
 
-        SO THE REFUSAL IS CARRIED, NEVER SWALLOWED, and the resolved view
-        goes DARK rather than degrading. That is the change of mind this pass
-        makes and it is worth stating plainly: the previous shape read a bad
-        companion at 1x and drew a plausible readout beside a warning, on the
-        argument that an editor which cannot draw a broken map cannot fix
-        one. But the map is still drawn, the single-layer collision view
-        still works, and the brush still paints -- it is only the ALL-LAYERS
-        view that goes dark, and that view's entire claim is "this is what
-        the player will feel". On a map the engine refuses there is no player
-        and no field, so every cell it could draw would be an invention.
-        Nothing plus a sentence beats a plausible picture plus a sentence.
+        So the refusal is CARRIED, never swallowed, and the resolved view
+        goes DARK rather than degrading. The map is still drawn, the
+        single-layer collision view still works and the brush still paints;
+        it is only the all-layers view, whose whole claim is "this is what
+        the player will feel", that goes empty -- on a map the engine refuses
+        there is no field, so every cell it could draw would be invented.
         """
         if subcell is None:
             subcell = self.stack_subcell()
@@ -942,23 +781,19 @@ class MapCanvas(QGraphicsView):
         """(level one for this map, why it could not be read).
 
         MEMOISED, unlike everything else the stack is made of, because this
-        is the one level that lives in a FILE. `stack_refusal` is consulted on
-        every mouse move; opening and parsing a `.blitmask` per pixel of
-        travel is not a cost worth paying for an answer that can only change
-        when the document does.
-
-        The key is the same one the overlay's own staleness uses: cleared by
-        `rebuild` and by every transaction, which between them cover every
-        way a `<tileset>`'s `pyoneer_collision` can appear, change or go. A
+        is the one level that lives in a FILE: `stack_refusal` is consulted on
+        every mouse move, and parsing a `.blitmask` per pixel of travel buys
+        an answer that can only change when the document does. Cleared by
+        `rebuild` and by every transaction, which between them cover every way
+        a `<tileset>`'s `pyoneer_collision` can appear, change or go; a
         sidecar edited on disk behind the editor's back is stale until the
         next command, exactly as `TilesetAtlas`'s art is.
 
         MISSING IS NOT AN ERROR AND UNREADABLE IS. A tileset that declares no
-        masks contributes none and says nothing -- that is every map in this
-        repository, and it must stay free. A tileset that declares a
+        masks contributes none and says nothing. One that declares a
         `.blitmask` which is absent, mis-shaped or names another sheet makes
-        `tileset_defaults` raise, and the engine raises on the same map at
-        load; the refusal is what carries that fact to the author instead of
+        `tileset_defaults` raise -- and the engine raises on the same map at
+        load, so the refusal carries that fact to the author rather than
         letting the overlay imply the map is fine.
         """
         if self.__level_one is None:
@@ -974,35 +809,27 @@ class MapCanvas(QGraphicsView):
 
         `field_subcell`, the engine's own function, so the overlay's
         all-layers view is drawn at exactly the resolution `field_from_map`
-        bakes at. Named differently from the function it calls because the
-        canvas has two resolutions and they are not the same question: this
-        one is about the whole STACK, `paint_unit` is about the one companion
-        a stroke writes into.
+        bakes at. Named apart from it because the canvas has two resolutions:
+        this one is about the whole STACK, `paint_unit` about the one
+        companion a stroke writes into.
 
-        It raises on a stack whose declarations do not nest; that raise is
-        caught for `paint_unit`'s reason -- this is consulted from `rebuild`,
-        and a map the editor cannot draw is a map the author cannot fix. It
-        is CAUGHT, not swallowed: `stack_refusal` is the other half and the
-        readout says it out loud.
+        `field_subcell` raises on a stack whose declarations do not nest.
+        That raise is caught -- this is consulted from `rebuild` -- but not
+        swallowed: `stack_refusal` is the other half, and the readout says it
+        out loud.
         """
         return self.__field_subcell()[0]
 
     def stack_refusal(self) -> str | None:
         """Why the resolved view cannot be trusted on this map, or None.
 
-        THE HALF THAT WAS MISSING. `stack_subcell` degrades to 1 on a map
-        the ENGINE refuses to load, which is right -- an editor that cannot
-        draw a broken map is an editor that cannot fix one -- and for as
-        long as that was the whole story the all-layers view drew a
-        plausible 1x readout over a map that raises at load and said
-        nothing at all. The author found out from the STROKE path, if a
-        stroke happened to be refused, in a message about the stroke.
-
-        A readout that is wrong and quiet is the worst state an instrument
-        has, so the reason is carried out to where the author is looking:
-        the cell readout under the cursor, and the moment All layers is
-        switched on. Reported, never raised -- this sits on the same mouse
-        move `paint_unit` does.
+        `stack_subcell` degrades to 1 on a map the ENGINE refuses to load, so
+        that a broken map can still be drawn and fixed. This is the other
+        half: the reason is carried out to where the author is looking -- the
+        cell readout under the cursor, and the moment All layers is switched
+        on -- rather than leaving a plausible 1x picture unexplained.
+        Reported, never raised; this sits on the same mouse move
+        `paint_unit` does.
 
         THREE WAYS TO BE UNREADABLE, in the order they are cheap to know:
         a `pyoneer_subcell` the map cannot honour, a `.blitmask` a tileset
@@ -1032,18 +859,17 @@ class MapCanvas(QGraphicsView):
     def overlay_subcell(self) -> int:
         """The resolution the READOUT is drawn at.
 
-        Not always `paint_unit`'s, and deliberately: the all-layers view
-        resolves every collision layer into the one answer the player will
-        feel, and that answer only exists at the finest resolution in the
-        stack. An author painting a 1x layer on a map that also carries a 4x
-        one paints whole tiles and READS quarter-tiles, which is exactly what
-        the game will do with the same two layers.
+        Not always `paint_unit`'s: the all-layers view resolves every
+        collision layer into the one answer the player will feel, and that
+        answer only exists at the finest resolution in the stack. An author
+        painting a 1x layer on a map that also carries a 4x one paints whole
+        tiles and READS quarter-tiles, which is what the game does with the
+        same two layers.
 
-        Otherwise it is the active companion's own resolution -- read through
-        `__declared_subcell`, the same call `paint_unit` makes, because
-        `paint_unit` answers 1 in TILE mode and re-sizing a scene-sized pixmap
-        on a mode switch would be paying a bake for a change in what is being
-        painted rather than in what is being shown.
+        Otherwise it is the active companion's own resolution, read through
+        `__declared_subcell` rather than from `paint_unit` -- which answers 1
+        in TILE mode, and re-sizing a scene-sized pixmap on a mode switch
+        would bake for a change in what is painted, not in what is shown.
         """
         if self.all_layers:
             return self.stack_subcell()
@@ -1055,20 +881,15 @@ class MapCanvas(QGraphicsView):
         """How high a layer DRAWS in this scene.
 
         The genre pack first, because that is the editor's authored contract
-        with the author, then the ENGINE's table for anything it does not
-        declare. The fallback used to be a bare 500, which meant a layer the
-        renderer ranks (`ENTITY_1`, `FOREGROUND_2`, `UI_LAYER_1` -- all in
-        `scripts/core/depth.MAP_DEPTH`, none in any genre pack) sorted here at
-        500 and there at 20, 90 or 100.
+        with the author, then the ENGINE's table for anything the pack does
+        not declare -- so a layer only the renderer ranks (`ENTITY_1`,
+        `FOREGROUND_2`, `UI_LAYER_1`) sorts here where it sorts there.
 
-        DRAWING ONLY. It used to order the collision stack as well, and that
-        was a second table deciding which layer wins a cell: the engine ranks
-        collision through `layer_rank` -> `layer_depth` -> `MAP_DEPTH` and has
-        never read a genre pack. `collision_stack` delegates to
-        `collision_layers` now, so the two cannot differ by construction.
-        `tools/check_collision_runtime.py` still asserts the two tables agree
-        wherever both rank a name, which is what keeps the PIXELS and the
-        walls in the same order as well.
+        DRAWING ONLY. Collision order is the engine's, through
+        `collision_layers`, which never reads a genre pack.
+        `tools/check_collision_runtime.py` asserts the two tables agree
+        wherever both rank a name, so the pixels and the walls stay in the
+        same order.
         """
         declared = self.session.project.genre.layer(name)
         if declared is not None:
@@ -1168,14 +989,12 @@ class MapCanvas(QGraphicsView):
 
         Drawn in PAINT cells rather than in tiles, and only on boundaries
         that exist -- `grid_lines` returns a subset of the real ones, so a
-        coarser grid hides lines and can never invent them. That is the
-        difference between a grid setting and a lie: at any step, every
-        line the author sees is somewhere a click can actually land.
+        coarser grid hides lines and can never invent them: every line the
+        author sees is somewhere a click can land.
 
-        Which is why the unit is read ONCE, into a local, rather than per
-        line: `paint_unit` reaches the document, and a 100x100 map at 4x is
-        401 lines per axis. Same number for every line of one grid is also
-        the only way the promise above can hold.
+        The unit is read ONCE into a local, both because `paint_unit` reaches
+        the document (a 100x100 map at 4x is 401 lines per axis) and because
+        one number for the whole grid is what makes that promise hold.
         """
         if not self.show_grid:
             return
@@ -1249,19 +1068,15 @@ class MapCanvas(QGraphicsView):
         each. It is not enough when the two views are drawn at different
         RESOLUTIONS: a 1x active layer on a map that also carries a 4x one
         resolves at 4x, which is a different number of cells and a different
-        pixmap, so the item has to be rebuilt rather than repainted. Asked as
-        a geometry comparison rather than as "is this map mixed", because
-        that is the question `__mount_overlay` will ask anyway.
+        pixmap, so the item is rebuilt rather than repainted.
         """
         if bool(on) == self.all_layers:
             return
         self.all_layers = bool(on)
         self.__collision_stale = True
-        # The gesture that ASKS for the resolved view is the one place a
-        # single status line cannot be stomped by something else's -- nothing
-        # else emits on this path. `set_mode` does (its tip, right after the
-        # rebuild), which is why the readout below repeats it on every move
-        # rather than this being the only telling.
+        # Nothing else emits on this path, so a refusal said here survives to
+        # be read. The cell readout repeats it on every move anyway, because
+        # `set_mode` does emit its tip right after a rebuild.
         if self.all_layers:
             refusal = self.stack_refusal()
             if refusal is not None:
@@ -1279,42 +1094,30 @@ class MapCanvas(QGraphicsView):
 
     # -- a mask on the TILE, not on the cell -------------------------------
     #
-    # THE MODE ALREADY MEANT THIS, ONE SURFACE FURTHER OUT. `EditMode
-    # .COLLISION` has always meant "a click writes a mask instead of a tile"
-    # -- that is the sentence at the top of this module -- and until this
-    # section it was true of the CANVAS and false of the palette. In
-    # collision mode a tile pick set `stamp`, a brush that mode cannot paint
-    # with, so the Tiles palette was a live control that did nothing at all.
-    # It now does the only thing a tile can mean beside a mask: give that
-    # TILE this mask, once, for everywhere it is ever stamped.
-    #
-    # So the two-step is the one the author already learned for cells -- pick
-    # the mask in the palette, then pick what it applies to -- with the
-    # tileset palette standing in for the map. No second mask vocabulary, no
-    # second widget, and nothing new to learn except which of the two tabs
-    # the second click lands in.
+    # `EditMode.COLLISION` means "a click writes a mask instead of a tile",
+    # in the PALETTE as well as on the map: picking a tile there gives that
+    # TILE this mask, once, for everywhere it is ever stamped. The two-step
+    # is the one the author already knows from cells -- pick the mask, then
+    # pick what it applies to -- with the tileset standing in for the map.
     #
     # WHERE THE ANSWER SHOWS UP, AND WHERE IT DOES NOT.       #TAG:tile_mask_is_level_one
     # A tile's mask is LEVEL ONE. The single-layer readout draws one
     # companion's own gids -- level two -- so it cannot show a tile mask and
     # must not pretend to; the resolved All-layers view is where level one
     # lives, and `__on_transaction` marks the overlay stale for this
-    # transaction like any other, so the next rebuild re-bakes it. Measured
-    # on the fixture in `tools/check_collision_mount.py`: one palette pick,
-    # and every cell holding that tile changes in the readout, on layers
-    # that have no companion at all. The single-layer case is not silently
-    # wrong -- it says in one line where to look.
+    # transaction like any other, so the next rebuild re-bakes it. The
+    # single-layer case is not silently wrong -- it says in one line where to
+    # look.
 
     def set_stamp(self, stamp: Stamp) -> None:
         """A tile picked in the palette. What it MEANS is the mode's answer.
 
-        In TILES mode it is the brush, exactly as it has always been. In
-        COLLISION mode the brush is a MASK, so the tile is the TARGET and the
-        pick writes that mask onto the tile itself.
+        In TILES mode it is the brush. In COLLISION mode the brush is a MASK,
+        so the tile is the TARGET and the pick writes that mask onto the tile
+        itself.
 
-        The stamp is remembered EITHER WAY, and that is not incidental: a
-        mode switch must not lose the author's tile, and the palette's own
-        highlight does not move back.
+        The stamp is remembered EITHER WAY, so a mode switch does not lose
+        the author's tile or leave the palette's highlight behind.
         """
         self.stamp = stamp
         if self.mode is EditMode.COLLISION:
@@ -1329,21 +1132,18 @@ class MapCanvas(QGraphicsView):
         puts back both the cells and the `pyoneer_collision` declaration a
         first bake had to add.
 
-        REFUSALS ARE SAID, NEVER GUESSED AROUND (law 7). An empty pick, an
-        atlas that has not loaded, a gid belonging to no tileset this map
-        declares: each ends the gesture with one status line and no command
-        at all, so nothing is half-written. The verb's OWN refusals -- an
-        external tileset whose extent lives in a .tsx, a tileset with no name
-        to derive a sidecar from -- are left to the verb, which states them
-        far better than a second guess here could and reaches the author
+        REFUSALS ARE SAID, NEVER GUESSED AROUND. An empty pick, an atlas that
+        has not loaded, a gid belonging to no tileset this map declares: each
+        ends the gesture with one status line and no command at all, so
+        nothing is half-written. The verb's own refusals -- an external
+        tileset whose extent lives in a .tsx, a tileset with no name to
+        derive a sidecar from -- are left to the verb and reach the author
         through `run`'s rejection report. Nothing on this path opens a
-        dialog; a palette click is as routine as a paint stroke.
+        dialog.
 
-        A TILESET THAT CARRIES NO MASKS STAYS FREE. This writes the sidecar
-        the first time and declares it in the same transaction, exactly as
-        the first collision stroke provisions `Collision.png` -- and a map
-        nobody has ever baked a tile on declares nothing, opens nothing and
-        costs nothing, which is every map in this repository.
+        A TILESET THAT CARRIES NO MASKS STAYS FREE. The sidecar is written
+        and declared by the first bake, in one transaction, exactly as the
+        first collision stroke provisions `Collision.png`.
         """
         if self.atlas is None:
             self.status.emit("no tilesets are loaded yet, so there is no "
@@ -1388,9 +1188,9 @@ class MapCanvas(QGraphicsView):
         if not self.window().run(commands,
                                  label=f"{what} {describe_mask(mask)}"):
             return False
-        # AFTER run(), which writes its own line to the same status bar. The
-        # author is left looking at what the click did, not at the verb that
-        # did it -- `__commit_collision` makes the same argument.
+        # AFTER run(), which writes its own line to the same status bar, so
+        # the author is left looking at what the click did rather than at the
+        # verb that did it. `__commit_collision` orders it the same way.
         note = ""
         if self.mode is EditMode.COLLISION and not self.all_layers:
             note = (" — turn All layers on to see it: this view draws one "
@@ -1405,15 +1205,11 @@ class MapCanvas(QGraphicsView):
 
         Level one, read through the SAME memo the resolved overlay resolves
         against -- `__tileset_defaults` -- so the badge the palette draws and
-        the glyph the overlay draws cannot come to disagree. Two reads of one
-        `.blitmask` is how the palette would come to say a tile is baked over
-        a map on which it is not.
+        the glyph the overlay draws cannot disagree.
 
-        MISSING IS NOT AN ERROR. A tileset that declares no masks contributes
-        none, which is every map in this repository and must stay free; a
-        declaration that cannot be honoured answers an empty mapping here and
-        leaves the shouting to `stack_refusal`, which is already saying it in
-        the status bar and on every mouse move.
+        MISSING IS NOT AN ERROR: a tileset that declares no masks contributes
+        none. A declaration that cannot be honoured answers an empty mapping
+        here and leaves the reporting to `stack_refusal`.
         """
         found: dict[int, int] = {}
         defaults, _refusal = self.__tileset_defaults()
@@ -1433,21 +1229,17 @@ class MapCanvas(QGraphicsView):
         FROM THE COMPANION, NOT FROM THE MAP. The overlay draws what is in
         the file, so its cells have to BE the file's cells: a companion
         declaring `pyoneer_subcell="4"` holds sixteen masks per map tile, and
-        an overlay sized from the map drew one 16px glyph where the file has
-        sixteen 4px ones -- a readout that disagreed with the layer it was
-        reading, in the instrument whose only job is to agree with it.
+        one sized from the map would draw a single 16px glyph over them.
 
-        Taking the companion's OWN width and height, rather than
-        `map * subcell`, closes a second one for free: a companion smaller
-        than the map is legal (`file_gid_reader` answers 0 past its edge on
-        purpose), and `bake` fits a flat row-major list by index, so a
-        narrower layer baked into a map-wide overlay skewed by one row per
-        row. Now the two grids are the same grid.
+        Its OWN width and height, rather than `map * subcell`, because a
+        companion smaller than the map is legal (`file_gid_reader` answers 0
+        past its edge on purpose) and `bake` fits a flat row-major list by
+        index -- so a narrower layer baked into a map-wide overlay would skew
+        by one row per row.
 
-        The all-layers view is the exception and sizes from the MAP, because
-        a resolved field is not any one layer -- it is every layer, at the
-        finest resolution any of them declares, which is what the engine
-        bakes and therefore what the player will feel.
+        The all-layers view is the exception and sizes from the MAP: a
+        resolved field is every layer at the finest resolution any of them
+        declares, which is what the engine bakes.
         """
         document = self.document
         subcell = self.overlay_subcell()
@@ -1492,8 +1284,8 @@ class MapCanvas(QGraphicsView):
 
     def __on_transaction(self, _transaction, action: str) -> None:
         """Anything that changed the project other than our own stroke."""
-        # BEFORE the early return, and deliberately. Our own stroke can carry
-        # a `map.tileset.add` in the same transaction as its cells, so "this
+        # BEFORE the early return: our own stroke can carry a
+        # `map.tileset.add` in the same transaction as its cells, so "this
         # commit was ours" is a reason not to re-bake the whole overlay and
         # is not a reason to keep reading a tileset table from before it.
         self.__forget_level_one()
@@ -1520,13 +1312,11 @@ class MapCanvas(QGraphicsView):
         that, so a rebuild re-reads the sidecar and compares.
 
         MARKED STALE ONLY WHEN THE ANSWER REALLY CHANGED. Marking it on every
-        rebuild would pay a full bake per command and undo the entire reason
-        the overlay item is held across rebuilds -- 6 ms on top of the 26.9 ms
-        of layer rendering, on every click. And when a TRANSACTION cleared the
-        memo a moment ago there is nothing to compare against, which is
-        exactly right: `__on_transaction` has already decided whether that
-        change needs a bake, and it knows something this does not -- whether
-        the change was our own stroke, whose cells are written one at a time.
+        rebuild would pay a full bake per command -- 6 ms on top of the
+        26.9 ms of layer rendering, on every click. When a TRANSACTION
+        cleared the memo a moment ago there is nothing to compare against,
+        and nothing to decide: `__on_transaction` has already judged that
+        change, knowing whether it was our own stroke.
         """
         previous = self.__level_one
         self.__forget_level_one()
@@ -1537,18 +1327,14 @@ class MapCanvas(QGraphicsView):
         """The whole field, from the document. The expensive path.
 
         THE RESOLVED VIEW IS ASKED FIRST, AND IS NOT GATED ON A COLLISION
-        TILESET. It used to be: no `collision` tileset meant no firstgid,
-        which meant no gid could encode a mask, which meant an empty bake.
-        That reasoning is exactly right about level TWO and false about level
-        one -- a tileset default is stored in a `.blitmask` beside the .tmx
-        and needs no firstgid at all, so the one map shape where the author
-        painted nothing and the tiles carry everything drew a blank overlay
-        over a map the player cannot cross. `field_from_map` has never had
-        that gate; it looks up level one "in the same breath" for this reason.
+        TILESET. A tileset default is stored in a `.blitmask` beside the .tmx
+        and needs no firstgid, so a map where the author painted nothing and
+        the tiles carry everything still resolves -- as it does in
+        `field_from_map`, which has no such gate either.
 
-        The single-layer view keeps the gate, and keeps it correctly: it shows
-        one companion's own gids, and without a firstgid there is no companion
-        and nothing to decode.
+        The single-layer view keeps the gate: it shows one companion's own
+        gids, and without a firstgid there is no companion and nothing to
+        decode.
         """
         overlay = self.__overlay
         if overlay is None:
@@ -1604,12 +1390,8 @@ class MapCanvas(QGraphicsView):
                     for offset_x in range(scale):
                         cx, cy = x * scale + offset_x, y * scale + offset_y
                         # `resolve_cell`, which is what a full bake calls per
-                        # cell too. Spelling the four channels here a second
-                        # time is how a stroke comes to draw one thing and the
-                        # next bake another, in the same cells of the same
-                        # document -- and the level channel is exactly the
-                        # kind of addition that would have been made in one
-                        # of the two places.
+                        # cell too, so a stroke and the next bake cannot draw
+                        # two different answers for one cell.
                         mask, owner, conflicted, level = resolve_cell(
                             stack, cx, cy, undecided=NO_DATA)
                         overlay.set_cell(cx, cy, mask, owner=owner,
@@ -1710,10 +1492,9 @@ class MapCanvas(QGraphicsView):
     def wheelEvent(self, event) -> None:
         """Plain wheel zooms.
 
-        Tiled scrolls on a plain wheel and zooms on ctrl+wheel. In a tile
-        editor you zoom constantly and scroll almost never -- panning is
-        middle-drag -- so the modifier is on the wrong action. Shift+wheel
-        still scrolls for anyone who wants it.
+        Deliberately unlike Tiled, which needs ctrl+wheel: zooming is
+        constant here and scrolling is rare, since panning is middle-drag.
+        Shift+wheel still scrolls.
         """
         if event.modifiers() & Qt.ShiftModifier:
             super().wheelEvent(event)
@@ -1828,23 +1609,21 @@ class MapCanvas(QGraphicsView):
 
         if self.mode is EditMode.COLLISION and self.__overlay is not None:
             # A RESOLVED VIEW THE MAP CANNOT SUPPORT DESCRIBES NOTHING. When
-            # `field_subcell` refuses this map the overlay is drawn at 1x --
-            # deliberately, so a broken map stays editable -- and describing
-            # a cell of it would be the readout stating the answer the player
-            # will feel, from a map that raises before the player gets one.
-            # Said here, on every move, because this line is the only status
-            # nothing else overwrites.
+            # `field_subcell` refuses this map the overlay is drawn at 1x so
+            # the map stays editable, and describing a cell of it would state
+            # what the player will feel on a map that raises before there is
+            # a player. Said on every move, because this line is the only
+            # status nothing else overwrites.
             refusal = self.stack_refusal() if self.all_layers else None
             if refusal is not None:
                 self.status.emit(f"cell ({column}, {row})   All layers cannot "
                                  f"be trusted here: {refusal}")
                 super().mouseMoveEvent(event)
                 return
-            # What the overlay is already showing, said in words -- including
-            # which layer decided and whether one below it disagrees, neither
-            # of which survives being reduced to a colour. Read at the
-            # OVERLAY's cell, which is the brush's cell on every unmixed map
-            # and finer than it under the all-layers view.
+            # What the overlay shows, in words -- including which layer
+            # decided and whether one below disagrees, neither of which
+            # survives being reduced to a colour. Read at the OVERLAY's cell,
+            # which is finer than the brush's under the all-layers view.
             self.status.emit(
                 f"cell ({column}, {row})   "
                 f"{self.__overlay.describe(*self.overlay_cell_at(point.x(), point.y()))}")
@@ -1902,31 +1681,24 @@ class MapCanvas(QGraphicsView):
         writing the same kind of value -- `first_gid + mask` is a gid. What
         changes is only where it reads and what it stamps.
 
-        THE ORDER OF THE GATES IS THE POINT. The LOCAL refusals -- no
-        layer, wrong tool, nothing to pick -- run first, because nothing
-        should be provisioned for a gesture that was going to be refused
-        anyway. Before this they ran last, so clicking with no layer
-        selected raised the tileset dialog, and the "select a tile layer"
-        message five lines below it was unreachable until the tileset
-        existed.
+        THE ORDER OF THE GATES MATTERS. The LOCAL refusals -- no layer,
+        wrong tool, nothing to pick -- run first, so that nothing is
+        provisioned for a gesture that was going to be refused anyway.
 
-        Then the mask tileset. When the map has none the sheet is written
-        if it is absent and the DECLARATION is queued for the commit, so
-        the gesture that asked is the gesture that paints; when the map has
-        one, it is checked that it can actually hold every mask, which is
-        the half of that invariant that did not exist -- `sufficient`
-        guarded only the add path, so a map already declaring a five-tile
-        `collision` tileset painted gids past the end of its own sheet with
-        no warning from anywhere.
+        Then the mask tileset. When the map has none, the sheet is written if
+        absent and the DECLARATION is queued for the commit, so the gesture
+        that asked is the gesture that paints. When the map has one, it is
+        checked that it can hold every mask -- a map declaring a five-tile
+        `collision` tileset would otherwise paint gids past the end of its
+        own sheet.
         """
         if self.__active_tile_layer() is None:
             self.status.emit("select a tile layer to give collision to")
             return
         # THE GUARD, above the picker on purpose: a resolution the canvas and
-        # the file disagree about makes a PICK read the wrong cell just as
-        # surely as it makes a stroke write one, and neither is worth
-        # provisioning a tileset for. Cheap and local like the refusal above
-        # it -- it reads the document and writes nothing.
+        # the file disagree about makes a PICK read the wrong cell as surely
+        # as it makes a stroke write one. Cheap and local like the refusal
+        # above it -- it reads the document and writes nothing.
         misplaced = self.collision_stroke_refusal()
         if misplaced is not None:
             self.status.emit(misplaced)
@@ -1944,23 +1716,20 @@ class MapCanvas(QGraphicsView):
         first_gid = self.collision_first_gid
         if first_gid is None:
             if erase:
-                # Erasing writes gid 0, which needs no tileset, and there
-                # is nothing here to erase. Declaring a gid range to
-                # service a right-drag over an empty map would be the old
-                # modal's mistake with the question taken out.
+                # Erasing writes gid 0, which needs no tileset, and there is
+                # nothing here to erase -- so a right-drag over a map with no
+                # collision must not declare a gid range to service it.
                 self.status.emit("no collision on this map yet — "
                                  "nothing to erase")
                 return
             try:
-                # A pure query -- measured: the document is byte-identical
-                # afterwards -- and it is the SAME function `add_tileset`
-                # will use at release, so the gid this stroke stamps is by
-                # construction the gid the tileset ends up claiming. It
-                # raises when a tileset's extent lives in a .tsx this
-                # document cannot see, which makes a collision-free
-                # firstgid unknowable; refusing at press is the answer
-                # `map.tileset.add` would give at release, arrived at
-                # before the author drags forty cells.
+                # A pure query -- the document is byte-identical afterwards --
+                # and the SAME function `add_tileset` uses at release, so the
+                # gid this stroke stamps is the gid the tileset will claim.
+                # It raises when a tileset's extent lives in a .tsx this
+                # document cannot see, which makes a collision-free firstgid
+                # unknowable; refusing at press is the answer
+                # `map.tileset.add` would give at release, forty cells later.
                 first_gid = self.document.next_tileset_firstgid()
             except PyoneerError as exc:
                 self.status.emit(str(exc))
@@ -1988,15 +1757,11 @@ class MapCanvas(QGraphicsView):
         # says.
         #
         # THE BOUNDS ARE THE LAYER'S, NOT THE MAP'S. When the companion is
-        # there, they are literally its own width and height, which is how a
-        # companion finer than the map -- or smaller than it, which was
-        # always legal -- gets clipped to what actually exists. When it is
-        # not, the commit creates it at the map's size in PAINT cells, so
-        # that is what the stroke may write into; spelled through the paint
-        # unit rather than as `document.width` against the day
-        # `map.layer.add` would learn to create a finer one. That day is
-        # here -- the commit passes this same number as `subcell` -- so this
-        # line is now load-bearing rather than anticipatory.
+        # there they are its own width and height, so a companion finer than
+        # the map -- or smaller than it, which is legal -- clips to what
+        # exists. When it is not, the commit creates it at the map's size in
+        # PAINT cells and passes this same number as `subcell`, so that is
+        # what the stroke may write into.
         subcell = self.paint_subcell
         read = companion.get_tile if companion is not None else _EMPTY_READER
         bounds = (Bounds(companion.width, companion.height)
@@ -2021,27 +1786,21 @@ class MapCanvas(QGraphicsView):
         takes all five back out in reverse, each from its own recorded
         inverse.
 
-        `map.tileset.add`'s inverse is `map.tileset.remove(force=False)`,
-        and that guard is correct here rather than in spite of being here:
-        the tiles pointing into the new range are zeroed EARLIER in the same
-        unwind, which is the one situation `force` documents. So undo takes
-        the declaration back out and leaves the PNG, which is exactly what
-        the deleted dialog's own worry asked for.
+        `map.tileset.add`'s inverse is `map.tileset.remove(force=False)`, and
+        that guard holds here because the tiles pointing into the new range
+        are zeroed EARLIER in the same unwind. So undo takes the declaration
+        back out and leaves the PNG on disk.
 
         The undo entry reads as the stroke -- "Brush collision (3 cells)" --
-        not as the plumbing. The tileset and the layer are implementation of
-        that stroke, not separate acts the author performed, and
-        `Transaction.summary_lines()` already exposes all five commands to
-        anyone who wants them. A provisioning step that costs its own
-        history entry is the modal's problem in a quieter voice.
+        not as the plumbing: the tileset and the layer are implementation of
+        that stroke rather than separate acts the author performed, and
+        `Transaction.summary_lines()` exposes all five commands to anyone who
+        wants them.
         """
         stroke, self.__stroke = self.__stroke, None
-        # Consumed, not merely read. `__begin_collision` also clears these at
-        # the top of every press, so measured, either one alone is enough --
-        # removing BOTH makes the next stroke on the next layer carry a
-        # `map.tileset.add` it never asked for, which is what the check
-        # asserts. This half stays because leaving a spent offer on the
-        # instance is a loaded gun for whoever adds the next early return.
+        # Consumed, not merely read: a spent offer left on the instance is a
+        # `map.tileset.add` the NEXT stroke would carry without asking.
+        # `__begin_collision` clears them again at the top of every press.
         pending, self.__pending_tileset = self.__pending_tileset, None
         wrote, self.__wrote_sheet = self.__wrote_sheet, False
         self.__clear_ghost()
@@ -2087,9 +1846,8 @@ class MapCanvas(QGraphicsView):
         self.__sync_overlay([(x, y) for x, y, _gid in edits])
         if pending is not None:
             # ONE line, after run() has written its own to the same status
-            # bar, so this is what the author is left looking at. The whole
-            # disclosure the 191-word dialog was carrying, said as something
-            # that happened rather than as a threat about what will not.
+            # bar, so this is what the author is left looking at: what was
+            # provisioned, said as something that happened.
             written = (f" — wrote {pending.absolute}" if wrote else "")
             self.status.emit(
                 f"{stroke.tool.label} collision ({len(edits)} cells): added "
@@ -2100,25 +1858,15 @@ class MapCanvas(QGraphicsView):
         """The `map.layer.add` that creates a companion for this stroke.
 
         THE RESOLUTION COMES FROM THE FUNNEL, not from `collision_subcell`
-        directly. `paint_unit` is what decided which cell the click landed
-        in; passing anything else here would create a layer whose cells are
-        not the cells this stroke just addressed, which is the 1,200px bug
-        rebuilt from the other end. Reading the preference twice would be
-        two places for one number to be wrong.
+        directly: `paint_unit` decided which cell the click landed in, and a
+        layer created at any other resolution would not hold the cells this
+        stroke just addressed.
 
-        `subcell` is OMITTED at 1 rather than passed as 1. The verb accepts
-        1 and writes `pyoneer_subcell="1"` for it, which is the format's
-        documented default said out loud -- and no companion this editor has
-        ever created carries that property. A default that rewrites what
-        existing maps get is not a default, so the 1x file stays the file it
-        has always been and the author opts in to anything else.
-
-        Until this argument existed, every companion the editor made for
-        itself was 1x: `map.layer.add subcell=N` was reachable only through
-        the AI response path, there is no verb to re-scale a companion
-        afterwards, and `map.layer.set` deliberately refuses to write
-        `pyoneer_subcell` -- so "paint collision, then decide you want 4x"
-        was a dead end that raises at load.
+        `subcell` is OMITTED at 1 rather than passed as 1, so a 1x companion
+        is written exactly as it always has been and the author opts in to
+        anything else. It has to be right at creation: no verb re-scales a
+        companion afterwards, and `map.layer.set` refuses to write
+        `pyoneer_subcell`.
         """
         args: dict = {"name": name, "kind": "tile"}
         subcell = self.paint_subcell
@@ -2214,9 +1962,8 @@ class MapCanvas(QGraphicsView):
         layer = self.__active_tile_layer()
         if layer is None or not (0 <= column < layer.width
                                  and 0 <= row < layer.height):
-            # Its counterpart `__pick_mask` has said this since it was
-            # written; this half returned in silence, so an alt+click off
-            # the map or with no layer selected looked like a dead editor.
+            # Said out loud, as `__pick_mask` does: an alt+click off the map
+            # or with no layer selected must not look like a dead editor.
             self.status.emit("no tile here to pick")
             return
         gid = layer.get_tile(column, row)
@@ -2254,8 +2001,7 @@ class MapCanvas(QGraphicsView):
             }))
             # A genre default materialised onto the new object is otherwise
             # INVISIBLE: the property is on the object and the author is
-            # looking at a rectangle. Say the list out loud once, here, or
-            # filling in a pack is again a surface where nothing happens.
+            # looking at a rectangle. So the list is said out loud, once.
             placed = self.document.object_layer(self.active_layer).objects()
             tokens = (placed[-1].properties.as_dict().get(BEHAVIORS, "")
                       if placed else "")
@@ -2296,10 +2042,9 @@ class _TerrainStroke:
         self.layer = layer
         self.terrain = terrain
         self.erase = erase
-        #: A footprint in CELLS, the same number the brush uses. Terrain
-        #: has no stamp -- `Tool.uses_stamp` is False for it -- but it does
-        #: have a size, which is why `Tool.uses_size` had to be its own
-        #: property rather than the negation of that one.
+        #: A footprint in CELLS, the same number the brush uses. Terrain has
+        #: no stamp -- `Tool.uses_stamp` is False for it -- but it does have
+        #: a size, which is why `Tool.uses_size` is a separate property.
         self.size = size
         self.bounds = autotile.Bounds(layer.width, layer.height)
         self.pending: dict[tuple[int, int], int] = {}
@@ -2317,10 +2062,8 @@ class _TerrainStroke:
             return
         self.__last = (column, row)
         # A size-N terrain brush is the UNION of the per-cell corner sets
-        # over an NxN block, centred the same way a tile brush is. At size
-        # 1 that is one call to `corners_for_cell_brush` with the cell the
-        # cursor is on -- byte for byte the previous behaviour, which is
-        # why the default is safe.
+        # over an NxN block, centred the same way a tile brush is. At size 1
+        # that is one call for the cell the cursor is on.
         half = (self.size - 1) // 2
         corners: set[autotile.Corner] = set()
         for down in range(self.size):
@@ -2345,10 +2088,8 @@ class _TerrainStroke:
 class TilePalette(QWidget):
     """Pick a tile, or drag out a rectangle to pick a multi-tile stamp.
 
-    One tileset at a time, laid out with that tileset's OWN column count.
-    The first version flattened every gid into a fixed 32-wide grid, which
-    happened to match this map's tilesets and would have silently produced
-    nonsense stamps for any tileset with different geometry.
+    One tileset at a time, laid out with that tileset's OWN column count --
+    a fixed grid would produce nonsense stamps for any other geometry.
     """
 
     stamp_picked = Signal(object)      # a Stamp
@@ -2360,11 +2101,9 @@ class TilePalette(QWidget):
         self.cell = 16
         #: gid -> the mask its TILESET bakes in, from `MapCanvas.tile_masks`.
         #: Drawn over the sheet so an author can SEE which tiles are already
-        #: baked. Without it the feature is invisible until you walk into a
-        #: wall: level one is stored in a file beside the .tmx, nothing in
-        #: the map names it per tile, and the only other readout is the
-        #: All-layers overlay, which answers about map cells rather than
-        #: about the tile you are holding.
+        #: baked: level one lives in a file beside the .tmx, and the only
+        #: other readout is the All-layers overlay, which answers about map
+        #: cells rather than about the tile in hand.
         self.masks: dict[int, int] = {}
         self.__anchor: tuple[int, int] | None = None
         self.__current: tuple[int, int] | None = None
@@ -2405,24 +2144,11 @@ class TilePalette(QWidget):
     def set_masks(self, masks: dict[int, int]) -> None:
         """Which gids their own tileset already masks. See `masks`.
 
-        DOES NOT REBUILD, and that is the whole point of where it sits. Its
-        one caller is `EditorWindow.refresh_all`, which calls `set_atlas` on
-        the very NEXT line -- and `set_atlas` rebuilds the sheet
-        unconditionally, through `__on_choose`. So this method setting the
-        masks and leaving the repaint to its neighbour is what actually makes
-        the ordering comment there true: the sheet is drawn ONCE, with its
-        badges already on.
-
-        An earlier version rebuilt here behind a `masks == self.masks` memo,
-        justified as saving a repaint on every click of a drag. Measured, it
-        saved nothing: one unrelated tile edit rebuilt the sheet once, five
-        rebuilt it five times, because the unconditional rebuild on the next
-        line was paying regardless. Both halves of that memo were also
-        unasserted -- deleting the rebuild and deleting the comparison each
-        left the suite green. A guard that cannot be observed is not a guard.
-
-        If a second caller ever uses this alone, it must rebuild itself; that
-        is cheaper than a memo nobody can see working.
+        DOES NOT REBUILD. Its one caller is `EditorWindow.refresh_all`, which
+        calls `set_atlas` on the very next line, and `set_atlas` rebuilds the
+        sheet unconditionally through `__on_choose` -- so the sheet is drawn
+        once, with its badges already on. A second caller using this alone
+        has to rebuild itself.
         """
         self.masks = dict(masks)
 
@@ -2483,10 +2209,10 @@ class TilePalette(QWidget):
             return
         stamp = Stamp.from_rows(rows)
         self.stamp_picked.emit(stamp)
-        # CAPTIONED AFTER THE EMIT, deliberately. In collision mode that
-        # signal is what writes the mask, and `refresh_all` hands this widget
-        # the new mapping on its way back -- so captioning first would show
-        # the author the mask their own click had just replaced.
+        # CAPTIONED AFTER THE EMIT: in collision mode that signal is what
+        # writes the mask, and `refresh_all` hands this widget the new
+        # mapping on its way back. Captioning first would show the author the
+        # mask their own click had just replaced.
         self.caption.setText(self.describe(stamp))
 
     def describe(self, stamp: Stamp) -> str:
@@ -2541,10 +2267,9 @@ class _PaletteSurface(QWidget):
         pixmap.fill(QColor(20, 20, 24))
         painter = QPainter(pixmap)
         masks = self.palette.masks
-        # The overlay's OWN glyphs, at this palette's cell size. A second
-        # drawing of "blocks left and right" is a second thing to keep in
-        # step with the mask palette and the readout, and the author would
-        # meet the drift as two pictures of one mask.
+        # The overlay's OWN glyphs, at this palette's cell size -- a second
+        # drawing of "blocks left and right" would be two pictures of one
+        # mask, drifting apart.
         glyphs = glyph_pixmaps(cell, cell) if masks else {}
         for index in range(entry.tile_count):
             gid = entry.first_gid + index

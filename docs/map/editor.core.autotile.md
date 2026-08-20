@@ -5,46 +5,46 @@
 
 > Directional fill -- painting terrain that picks its own edge tiles.
 
-`editor.core.autotile` · 339 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.autotile` · 338 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
-- `editor/core/autotile.py:54` `TOP_LEFT` #TAG:TOP_LEFT
-- `editor/core/autotile.py:55` `TOP_RIGHT` #TAG:TOP_RIGHT
-- `editor/core/autotile.py:56` `BOTTOM_LEFT` #TAG:BOTTOM_LEFT
-- `editor/core/autotile.py:57` `BOTTOM_RIGHT` #TAG:BOTTOM_RIGHT
-- `editor/core/autotile.py:59` `FULL` #TAG:FULL
-- `editor/core/autotile.py:60` `EMPTY` #TAG:autotile.EMPTY
-- `editor/core/autotile.py:61` `DIAGONALS` #TAG:DIAGONALS
-- `editor/core/autotile.py:68` `QUADRANT` #TAG:QUADRANT
-- `editor/core/autotile.py:84` `BLOCK_QUADRANT_COLUMNS` #TAG:BLOCK_QUADRANT_COLUMNS
-- `editor/core/autotile.py:85` `BLOCK_QUADRANT_ROWS` #TAG:BLOCK_QUADRANT_ROWS
+- `editor/core/autotile.py:53` `TOP_LEFT` #TAG:TOP_LEFT
+- `editor/core/autotile.py:54` `TOP_RIGHT` #TAG:TOP_RIGHT
+- `editor/core/autotile.py:55` `BOTTOM_LEFT` #TAG:BOTTOM_LEFT
+- `editor/core/autotile.py:56` `BOTTOM_RIGHT` #TAG:BOTTOM_RIGHT
+- `editor/core/autotile.py:58` `FULL` #TAG:FULL
+- `editor/core/autotile.py:59` `EMPTY` #TAG:autotile.EMPTY
+- `editor/core/autotile.py:60` `DIAGONALS` #TAG:DIAGONALS
+- `editor/core/autotile.py:67` `QUADRANT` #TAG:QUADRANT
+- `editor/core/autotile.py:83` `BLOCK_QUADRANT_COLUMNS` #TAG:BLOCK_QUADRANT_COLUMNS
+- `editor/core/autotile.py:84` `BLOCK_QUADRANT_ROWS` #TAG:BLOCK_QUADRANT_ROWS
 
 ## Functions
 
-- `editor/core/autotile.py:175` `block_origins(first_gid: int, columns: int, tile_count: int) -> list[int]` #TAG:block_origins
+- `editor/core/autotile.py:174` `block_origins(first_gid: int, columns: int, tile_count: int) -> list[int]` #TAG:block_origins
   - Every autotile group origin in a sheet laid out as 4x6 blocks.
-- `editor/core/autotile.py:185` `origin_for_gid(gid: int, first_gid: int, columns: int) -> int` #TAG:origin_for_gid
+- `editor/core/autotile.py:184` `origin_for_gid(gid: int, first_gid: int, columns: int) -> int` #TAG:origin_for_gid
   - The autotile group a gid belongs to.
-- `editor/core/autotile.py:220` `corner_field(read: Reader, bounds: Bounds, terrain: TerrainSet) -> set[Corner]` #TAG:corner_field
+- `editor/core/autotile.py:219` `corner_field(read: Reader, bounds: Bounds, terrain: TerrainSet) -> set[Corner]` #TAG:corner_field
   - Recover which lattice corners hold this terrain, from the tiles.
-- `editor/core/autotile.py:245` `mask_at(field: set[Corner], x: int, y: int) -> int` #TAG:mask_at
+- `editor/core/autotile.py:244` `mask_at(field: set[Corner], x: int, y: int) -> int` #TAG:mask_at
   - The corner mask for cell (x, y).
-- `editor/core/autotile.py:259` `corners_of_cell(x: int, y: int) -> tuple[Corner, Corner, Corner, Corner]` #TAG:corners_of_cell
-- `editor/core/autotile.py:263` `cells_touching(corners: Iterable[Corner], bounds: Bounds) -> set[tuple[int, int]]` #TAG:cells_touching
+- `editor/core/autotile.py:258` `corners_of_cell(x: int, y: int) -> tuple[Corner, Corner, Corner, Corner]` #TAG:corners_of_cell
+- `editor/core/autotile.py:262` `cells_touching(corners: Iterable[Corner], bounds: Bounds) -> set[tuple[int, int]]` #TAG:cells_touching
   - Every cell whose appearance depends on any of these corners.
-- `editor/core/autotile.py:282` `resolve(read: Reader, bounds: Bounds, field: set[Corner], cells: Iterable[tuple[int, int]], terrain: TerrainSet, *, clear_gid: int | None=None) -> list[Edit]` #TAG:autotile.resolve
+- `editor/core/autotile.py:281` `resolve(read: Reader, bounds: Bounds, field: set[Corner], cells: Iterable[tuple[int, int]], terrain: TerrainSet, *, clear_gid: int | None=None) -> list[Edit]` #TAG:autotile.resolve
   - Re-tile `cells` from the corner field. Returns only real changes.
-- `editor/core/autotile.py:305` `paint(read: Reader, bounds: Bounds, terrain: TerrainSet, corners: Iterable[Corner], *, erase: bool=False, field: set[Corner] | None=None, clear_gid: int | None=None) -> tuple[list[Edit], set[Corner]]` #TAG:paint
+- `editor/core/autotile.py:304` `paint(read: Reader, bounds: Bounds, terrain: TerrainSet, corners: Iterable[Corner], *, erase: bool=False, field: set[Corner] | None=None, clear_gid: int | None=None) -> tuple[list[Edit], set[Corner]]` #TAG:paint
   - Add (or remove) terrain at `corners` and re-tile everything affected.
-- `editor/core/autotile.py:331` `corners_for_cell_brush(x: int, y: int) -> tuple[Corner, ...]` #TAG:corners_for_cell_brush
+- `editor/core/autotile.py:330` `corners_for_cell_brush(x: int, y: int) -> tuple[Corner, ...]` #TAG:corners_for_cell_brush
   - The four corners a "fill this cell with terrain" gesture sets.
 
 ## Classes
 
 ### `class Diagonal(Enum)` #TAG:Diagonal
 
-`editor/core/autotile.py:88`–`98`
+`editor/core/autotile.py:87`–`97`
 
 > What to draw where two terrain regions touch at a single corner.
 
@@ -52,7 +52,7 @@
 
 ### `class PyoneerAutotileError(Exception)` #TAG:PyoneerAutotileError
 
-`editor/core/autotile.py:101`–`102`
+`editor/core/autotile.py:100`–`101`
 
 > A configuration this terrain cannot draw.
 
@@ -60,22 +60,22 @@
 
 ### `@dataclass(frozen=True) class TerrainSet` #TAG:TerrainSet
 
-`editor/core/autotile.py:106`–`168`
+`editor/core/autotile.py:105`–`167`
 
 > One autotile group, identified by its top-left gid.
 
-- `editor/core/autotile.py:114` `__post_init__(self) -> None` #TAG:TerrainSet.__post_init__
-- `editor/core/autotile.py:122` `gid_for(self, mask: int) -> int | None` #TAG:TerrainSet.gid_for
+- `editor/core/autotile.py:113` `__post_init__(self) -> None` #TAG:TerrainSet.__post_init__
+- `editor/core/autotile.py:121` `gid_for(self, mask: int) -> int | None` #TAG:TerrainSet.gid_for
   - The tile for a corner mask, or None when nothing should be drawn.
-- `editor/core/autotile.py:140` `table(self) -> dict[int, int]` #TAG:TerrainSet.table
+- `editor/core/autotile.py:139` `table(self) -> dict[int, int]` #TAG:TerrainSet.table
   - mask -> gid, for the 13 masks that have art.
-- `editor/core/autotile.py:145` `reverse(self) -> dict[int, int]` #TAG:TerrainSet.reverse
+- `editor/core/autotile.py:144` `reverse(self) -> dict[int, int]` #TAG:TerrainSet.reverse
   - gid -> mask, for recovering terrain from an existing layer.
-- `editor/core/autotile.py:167` `contains(self, gid: int) -> bool` #TAG:TerrainSet.contains
+- `editor/core/autotile.py:166` `contains(self, gid: int) -> bool` #TAG:TerrainSet.contains
 
 ### `@dataclass class Bounds` #TAG:autotile.Bounds
 
-`editor/core/autotile.py:208`–`217`
+`editor/core/autotile.py:207`–`216`
 
-- `editor/core/autotile.py:212` `contains_cell(self, x: int, y: int) -> bool` #TAG:autotile.Bounds.contains_cell
-- `editor/core/autotile.py:215` `contains_corner(self, x: int, y: int) -> bool` #TAG:autotile.Bounds.contains_corner
+- `editor/core/autotile.py:211` `contains_cell(self, x: int, y: int) -> bool` #TAG:autotile.Bounds.contains_cell
+- `editor/core/autotile.py:214` `contains_corner(self, x: int, y: int) -> bool` #TAG:autotile.Bounds.contains_corner

@@ -50,10 +50,9 @@ class Probe(GameComponent):
         self.tag = tag
         self.log = log
 
-    # Delegate rather than stub these out. An earlier version of this probe
-    # overrode core_lifecycle_build with `pass`, which meant BUILD never
-    # dispatched for it -- and made a real bind_component test fail against
-    # working code.
+    # Delegate rather than stub these out: a probe that overrides
+    # core_lifecycle_build with `pass` never dispatches BUILD, and the
+    # bind_component assertions below would fail against working code.
     def core_lifecycle_build(self, event=None):
         return super().core_lifecycle_build(event)
 
@@ -249,11 +248,11 @@ except AttributeError as exc:
 
 print()
 print("a TRANSFORM carrying scale reaches a drawable without exploding")
-# DrawComponent.scale(width, height, destination) used to OVERRIDE
-# GameComponent.scale(scale, sender). component.py calls self.scale(scale,
-# self) when a TRANSFORM carries scale data, so on any drawable that arrived
-# as width=Vector2, height=self. Latent only because nothing wrote "scale"
-# into TRANSFORM data -- this asserts it stays safe now that something can.
+# `DrawComponent.scale(width, height, destination)` must not OVERRIDE
+# `GameComponent.scale(scale, sender)`: component.py calls self.scale(scale,
+# self) when a TRANSFORM carries scale data, so on a drawable that arrives as
+# width=Vector2, height=self. Latent for as long as nothing writes "scale"
+# into TRANSFORM data, which is no longer true.
 from pygame import Vector2
 
 from scripts.core.ui.widget.draw import DrawComponent
@@ -474,14 +473,13 @@ expect("core_lifecycle_build fans out to bound objects", _BuildProbe.built, True
 print()
 print("offset is a LOCAL->WORLD shift, and move() does not fold it into local")
 # --------------------------------------------------------------------------
-# Reported by the author as "strange uses of offset with the transform".
-# move() used to write `local = Rect(x + offset.x, ...)`, but every other
-# site treats offset as the shift that crosses local -> world:
+# Every site treats offset as the shift that crosses local -> world:
 # __update_world_bounds computes local + parent.world + offset, and
-# adjust_point shifts a point by it. So local absorbed the shift AND the
-# world derivation added it again -- a component with a non-zero offset
-# drifted by that offset on every move-then-resolve. Panels set offsets on
-# their children, so it was reachable.
+# adjust_point shifts a point by it. A move() writing
+# `local = Rect(x + offset.x, ...)` makes local absorb the shift AND the world
+# derivation add it again, so a component with a non-zero offset drifts by that
+# offset on every move-then-resolve. Panels set offsets on their children, so
+# it is reachable.
 from pygame import Vector2                                          # noqa: E402
 
 drifter = ShapeComponent(bounds=Rect(10, 10, 20, 20))

@@ -5,7 +5,7 @@
 
 > How a body answers an intent: the two movement behaviors and the animator.
 
-`scripts.game.behavior.movement` · 512 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.behavior.movement` · 426 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,42 +13,42 @@
 
 ## Module constants
 
-- `scripts/game/behavior/movement.py:98` `MS_PER_DELTA` #TAG:MS_PER_DELTA
-- `scripts/game/behavior/movement.py:108` `SECONDS_PER_DELTA` #TAG:SECONDS_PER_DELTA
-- `scripts/game/behavior/movement.py:111` `TOPDOWN_VERBS` #TAG:TOPDOWN_VERBS
-- `scripts/game/behavior/movement.py:417` `TOPDOWN_MOVE` #TAG:TOPDOWN_MOVE
-- `scripts/game/behavior/movement.py:437` `PLATFORMER_MOVE` #TAG:PLATFORMER_MOVE
-- `scripts/game/behavior/movement.py:476` `ANIMATION_DRIVE` #TAG:ANIMATION_DRIVE
+- `scripts/game/behavior/movement.py:62` `MS_PER_DELTA` #TAG:MS_PER_DELTA
+- `scripts/game/behavior/movement.py:71` `SECONDS_PER_DELTA` #TAG:SECONDS_PER_DELTA
+- `scripts/game/behavior/movement.py:74` `TOPDOWN_VERBS` #TAG:TOPDOWN_VERBS
+- `scripts/game/behavior/movement.py:331` `TOPDOWN_MOVE` #TAG:TOPDOWN_MOVE
+- `scripts/game/behavior/movement.py:351` `PLATFORMER_MOVE` #TAG:PLATFORMER_MOVE
+- `scripts/game/behavior/movement.py:390` `ANIMATION_DRIVE` #TAG:ANIMATION_DRIVE
 
 ## Classes
 
 ### `class GameTopDownMoveBehavior(EntityBehavior)` #TAG:GameTopDownMoveBehavior
 
-`scripts/game/behavior/movement.py:131`–`183`
+`scripts/game/behavior/movement.py:92`–`137`
 
-> Eight-direction axis-aligned movement -- the demo's controller, moved.
+> Eight-direction axis-aligned movement -- the demo's controller.
 
-- `scripts/game/behavior/movement.py:146` `attach(self, entity: Any) -> None` #TAG:GameTopDownMoveBehavior.attach
+- `scripts/game/behavior/movement.py:104` `attach(self, entity: Any) -> None` #TAG:GameTopDownMoveBehavior.attach
   - Allocate the state record this behavior publishes into.
-- `scripts/game/behavior/movement.py:156` `update(self, entity: Any, event: Any) -> None` #TAG:GameTopDownMoveBehavior.update
+- `scripts/game/behavior/movement.py:112` `update(self, entity: Any, event: Any) -> None` #TAG:GameTopDownMoveBehavior.update
 
 ### `class GamePlatformerMoveBehavior(EntityBehavior)` #TAG:GamePlatformerMoveBehavior
 
-`scripts/game/behavior/movement.py:186`–`329`
+`scripts/game/behavior/movement.py:140`–`260`
 
 > A side-on body: gravity, a jump with coyote time, and air control.
 
-- `scripts/game/behavior/movement.py:226` `__init__(self, move_speed: float=120.0, jump_velocity: float=320.0, gravity: float=900.0, max_fall_speed: float=600.0, air_control: float=0.6, coyote_ms: int=90)` #TAG:GamePlatformerMoveBehavior.__init__
-- `scripts/game/behavior/movement.py:240` `attach(self, entity: Any) -> None` #TAG:GamePlatformerMoveBehavior.attach
-- `scripts/game/behavior/movement.py:253` `update(self, entity: Any, event: Any) -> None` #TAG:GamePlatformerMoveBehavior.update
+- `scripts/game/behavior/movement.py:165` `__init__(self, move_speed: float=120.0, jump_velocity: float=320.0, gravity: float=900.0, max_fall_speed: float=600.0, air_control: float=0.6, coyote_ms: int=90)` #TAG:GamePlatformerMoveBehavior.__init__
+- `scripts/game/behavior/movement.py:179` `attach(self, entity: Any) -> None` #TAG:GamePlatformerMoveBehavior.attach
+- `scripts/game/behavior/movement.py:189` `update(self, entity: Any, event: Any) -> None` #TAG:GamePlatformerMoveBehavior.update
 
 ### `class GameAnimationDriveBehavior(EntityBehavior)` #TAG:GameAnimationDriveBehavior
 
-`scripts/game/behavior/movement.py:332`–`403`
+`scripts/game/behavior/movement.py:263`–`318`
 
 > Name the animation from the movement state, on the frame it changes.
 
-- `scripts/game/behavior/movement.py:368` `__init__(self, walk_format: str=WALK_FORMAT, idle_format: str=IDLE_FORMAT, initial_sequence: str=IDLE_FORMAT.format(FACING_DEFAULT))` #TAG:GameAnimationDriveBehavior.__init__
-- `scripts/game/behavior/movement.py:378` `attach(self, entity: Any) -> None` #TAG:GameAnimationDriveBehavior.attach
-  - Start the opening sequence, which used to be hardcoded in GamePlayer.
-- `scripts/game/behavior/movement.py:390` `update(self, entity: Any, event: Any) -> None` #TAG:GameAnimationDriveBehavior.update
+- `scripts/game/behavior/movement.py:284` `__init__(self, walk_format: str=WALK_FORMAT, idle_format: str=IDLE_FORMAT, initial_sequence: str=IDLE_FORMAT.format(FACING_DEFAULT))` #TAG:GameAnimationDriveBehavior.__init__
+- `scripts/game/behavior/movement.py:294` `attach(self, entity: Any) -> None` #TAG:GameAnimationDriveBehavior.attach
+  - Start the opening sequence.
+- `scripts/game/behavior/movement.py:305` `update(self, entity: Any, event: Any) -> None` #TAG:GameAnimationDriveBehavior.update

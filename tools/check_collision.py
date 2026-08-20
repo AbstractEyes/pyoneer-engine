@@ -16,9 +16,9 @@ visible at a glance -- they are all a value that LOOKS reasonable:
     walk into
   * a .blitmask row one cell short, shifting every later cell by one
 
-Every fixture is built here. Nothing reads data/maps/test.tmx -- the author
+Every fixture is built here. Nothing reads data/maps/test.tmx: the author
 paints in that file, and a check that pins what the map CONTAINS rather than
-what the code DOES has produced three red suites already.
+what the code DOES goes red for a repaint (law 4).
 """
 from __future__ import annotations
 

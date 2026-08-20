@@ -8,11 +8,8 @@ only ever carry a decision that is genuinely the author's to make.
     status bar or the Problems dock, where it can be read after the fact
     and cannot interrupt a stroke.
 
-That sentence is the whole policy. The failure it names was reported by the
-author on a paint click: a 191-word modal explaining gid arithmetic, with
-Yes/No buttons, for a file the editor could have written itself. Every
-"Rejected", "Nothing staged", "No IDE found" and "Response arrived" box in
-this tree was the same shape at lower volume -- an OK button asking to be
+That sentence is the whole policy. "Rejected", "Nothing staged", "No IDE
+found" and "Response arrived" are all reports: an OK button asking to be
 told that nothing happened.
 
 So there are exactly two primitives here:
@@ -29,16 +26,14 @@ So there are exactly two primitives here:
 
 WHY THESE ARE FUNCTIONS AND NOT `QMessageBox` CALLS AT THE CALL SITE
 --------------------------------------------------------------------
-Law 13: a check must never block on a modal. `check_collision_mount` once
-sat on `QMessageBox.question` for 40+ minutes with no output, which is
-indistinguishable from a slow machine, and `check_all.py` grew a 600s
-timeout and a HANG verdict because of it. Every panel holds these two as
-INSTANCE ATTRIBUTES (`self.ask`, `self.confirm`), so a check replaces the
-seam on the one widget it is driving and asserts, per panel, both that the
-legitimate question is still asked and that the routine path asks nothing at
-all. A hard, inline `QMessageBox` call is unreachable from a check except
-by patching the class globally, which proves nothing about which path
-opened it.
+A check must never block on a modal -- a headless run sits on
+`QMessageBox.question` forever, indistinguishable from a slow machine. Every
+panel holds these two as INSTANCE ATTRIBUTES (`self.ask`, `self.confirm`),
+so a check replaces the seam on the one widget it is driving and asserts,
+per panel, both that the legitimate question is still asked and that the
+routine path asks nothing at all. An inline `QMessageBox` call is
+unreachable from a check except by patching the class globally, which proves
+nothing about which path opened it.
 """
 from __future__ import annotations
 
@@ -75,9 +70,8 @@ class QuickForm(QDialog):
                                      a plain line edit
 
     OK is disabled while any text row is blank rather than accepting the
-    click and returning nothing. A button that cannot act must look like it
-    cannot act -- the same rule the Database's three row buttons were fixed
-    under.
+    click and returning nothing: a button that cannot act must look like it
+    cannot act.
     """
 
     def __init__(self, title: str, rows: Iterable[Field],

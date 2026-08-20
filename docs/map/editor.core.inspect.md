@@ -5,7 +5,7 @@
 
 > What to show when something is selected, as data.
 
-`editor.core.inspect` · 446 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.inspect` · 444 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,41 +13,41 @@
 
 ## Functions
 
-- `editor/core/inspect.py:85` `describe(session, scope: Scope) -> Inspection` #TAG:describe
+- `editor/core/inspect.py:83` `describe(session, scope: Scope) -> Inspection` #TAG:describe
   - Describe whatever `scope` points at. Never raises.
-- `editor/core/inspect.py:114` `_raw(obj, key: str, fallback: str='') -> str` #TAG:_raw
-- `editor/core/inspect.py:118` `_describe_object(session, scope: Scope) -> Inspection` #TAG:inspect._describe_object
-- `editor/core/inspect.py:213` `_property_field(scope: Scope, key: str, value: Any) -> Field` #TAG:_property_field
-- `editor/core/inspect.py:228` `_shape_of(obj) -> str` #TAG:_shape_of
+- `editor/core/inspect.py:112` `_raw(obj, key: str, fallback: str='') -> str` #TAG:_raw
+- `editor/core/inspect.py:116` `_describe_object(session, scope: Scope) -> Inspection` #TAG:inspect._describe_object
+- `editor/core/inspect.py:211` `_property_field(scope: Scope, key: str, value: Any) -> Field` #TAG:_property_field
+- `editor/core/inspect.py:226` `_shape_of(obj) -> str` #TAG:_shape_of
   - A tmx object's shape is decided by which child element it carries.
-- `editor/core/inspect.py:236` `_number(value: Any) -> str` #TAG:inspect._number
+- `editor/core/inspect.py:234` `_number(value: Any) -> str` #TAG:inspect._number
   - tmx attributes are text, and Tiled writes whole numbers without .0.
-- `editor/core/inspect.py:246` `_describe_layer(session, scope: Scope) -> Inspection` #TAG:inspect._describe_layer
-- `editor/core/inspect.py:335` `_describe_row(session, scope: Scope) -> Inspection` #TAG:inspect._describe_row
-- `editor/core/inspect.py:351` `_describe_table(session, scope: Scope) -> Inspection` #TAG:inspect._describe_table
-- `editor/core/inspect.py:376` `_describe_map(session, scope: Scope) -> Inspection` #TAG:inspect._describe_map
-- `editor/core/inspect.py:399` `_describe_project(session, scope: Scope) -> Inspection` #TAG:inspect._describe_project
-- `editor/core/inspect.py:415` `_describe_genre(session, scope: Scope) -> Inspection` #TAG:_describe_genre
-- `editor/core/inspect.py:432` `_genres() -> list[str]` #TAG:_genres
+- `editor/core/inspect.py:244` `_describe_layer(session, scope: Scope) -> Inspection` #TAG:inspect._describe_layer
+- `editor/core/inspect.py:333` `_describe_row(session, scope: Scope) -> Inspection` #TAG:inspect._describe_row
+- `editor/core/inspect.py:349` `_describe_table(session, scope: Scope) -> Inspection` #TAG:inspect._describe_table
+- `editor/core/inspect.py:374` `_describe_map(session, scope: Scope) -> Inspection` #TAG:inspect._describe_map
+- `editor/core/inspect.py:397` `_describe_project(session, scope: Scope) -> Inspection` #TAG:inspect._describe_project
+- `editor/core/inspect.py:413` `_describe_genre(session, scope: Scope) -> Inspection` #TAG:_describe_genre
+- `editor/core/inspect.py:430` `_genres() -> list[str]` #TAG:_genres
 
 ## Classes
 
 ### `@dataclass class Field` #TAG:Field
 
-`editor/core/inspect.py:40`–`54`
+`editor/core/inspect.py:38`–`52`
 
-- `editor/core/inspect.py:53` `@property editable(self) -> bool` #TAG:Field.editable
+- `editor/core/inspect.py:51` `@property editable(self) -> bool` #TAG:Field.editable
 
 ### `@dataclass class Section` #TAG:Section
 
-`editor/core/inspect.py:58`–`62`
+`editor/core/inspect.py:56`–`60`
 
 - (no methods)
 
 ### `@dataclass class Inspection` #TAG:Inspection
 
-`editor/core/inspect.py:66`–`78`
+`editor/core/inspect.py:64`–`76`
 
 > Everything the inspector shows for one scope.
 
-- `editor/core/inspect.py:77` `@property empty(self) -> bool` #TAG:Inspection.empty
+- `editor/core/inspect.py:75` `@property empty(self) -> bool` #TAG:Inspection.empty

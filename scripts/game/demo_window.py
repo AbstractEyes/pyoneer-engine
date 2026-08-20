@@ -1,10 +1,8 @@
 """The test window: one live example of every control, added as it is built.
 
-Separate from GameWindow on purpose. GameWindow is reusable chrome -- frame,
-title bar, close button, drag, resize -- and it used to construct this entire
-demo tree inline, which meant 113 components for an "empty" window and made it
-unusable by anyone who wanted a different one. Bare GameWindow is now 10
-components; everything below is demo content.
+Separate from GameWindow, which is reusable chrome -- frame, title bar, close
+button, drag, resize -- and costs about 10 components bare. Everything below
+is demo content.
 
 ADDING A CONTROL
 Build it in a `__build_*` method, register it in build_content(), and give it

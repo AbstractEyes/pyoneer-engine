@@ -3,7 +3,7 @@
 
 # `scripts/core/ui/widget/containers/window.py` — tier 2 #TAG:scripts/core/ui/widget/containers/window.py
 
-`scripts.core.ui.widget.containers.window` · 346 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.widget.containers.window` · 327 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,29 +13,29 @@
 
 ### `class GameWindow(GameComponent)` #TAG:GameWindow
 
-`scripts/core/ui/widget/containers/window.py:24`–`342`
+`scripts/core/ui/widget/containers/window.py:24`–`323`
 
 - `scripts/core/ui/widget/containers/window.py:25` `__init__(self, header_text: str='Hello World', header_visible: bool=True, clickable: bool=True, movable: bool=True, resizable: bool=True, *args, **kwargs)` #TAG:GameWindow.__init__
-- `scripts/core/ui/widget/containers/window.py:81` `core_lifecycle_prepare(self, event: PyoneerEvent | None=None)` #TAG:GameWindow.core_lifecycle_prepare
-- `scripts/core/ui/widget/containers/window.py:152` `__build_resize_grip(self, config)` #TAG:GameWindow.__build_resize_grip
+- `scripts/core/ui/widget/containers/window.py:79` `core_lifecycle_prepare(self, event: PyoneerEvent | None=None)` #TAG:GameWindow.core_lifecycle_prepare
+- `scripts/core/ui/widget/containers/window.py:148` `__build_resize_grip(self, config)` #TAG:GameWindow.__build_resize_grip
   - A drag handle in the bottom-right corner.
-- `scripts/core/ui/widget/containers/window.py:182` `__event_resize_begin(self, event: PyoneerEvent)` #TAG:GameWindow.__event_resize_begin
-- `scripts/core/ui/widget/containers/window.py:193` `__event_resize_drag(self, event: PyoneerEvent)` #TAG:GameWindow.__event_resize_drag
-- `scripts/core/ui/widget/containers/window.py:204` `__event_resize_end(self, event: PyoneerEvent)` #TAG:GameWindow.__event_resize_end
-- `scripts/core/ui/widget/containers/window.py:207` `build_content(self)` #TAG:GameWindow.build_content
+- `scripts/core/ui/widget/containers/window.py:176` `__event_resize_begin(self, event: PyoneerEvent)` #TAG:GameWindow.__event_resize_begin
+- `scripts/core/ui/widget/containers/window.py:187` `__event_resize_drag(self, event: PyoneerEvent)` #TAG:GameWindow.__event_resize_drag
+- `scripts/core/ui/widget/containers/window.py:198` `__event_resize_end(self, event: PyoneerEvent)` #TAG:GameWindow.__event_resize_end
+- `scripts/core/ui/widget/containers/window.py:201` `build_content(self)` #TAG:GameWindow.build_content
   - Override to put widgets in the window. Chrome is already built.
-- `scripts/core/ui/widget/containers/window.py:217` `__event_mouse_down_within_header(self, event: PyoneerEvent)` #TAG:GameWindow.__event_mouse_down_within_header
+- `scripts/core/ui/widget/containers/window.py:208` `__event_mouse_down_within_header(self, event: PyoneerEvent)` #TAG:GameWindow.__event_mouse_down_within_header
   - Begin a drag if the press landed on the header, but not on a button.
-- `scripts/core/ui/widget/containers/window.py:234` `top_widget_at_position(self, pos: Vector2, exceptions: list[GameComponent]=[]) -> Optional[PyoneerGameObject]` #TAG:GameWindow.top_widget_at_position
-- `scripts/core/ui/widget/containers/window.py:247` `__end_drag(self)` #TAG:GameWindow.__end_drag
-  - Clear drag state. The offset resets to zero, not None.
-- `scripts/core/ui/widget/containers/window.py:258` `__event_mouse_up_dropping_window(self, event: PyoneerEvent)` #TAG:GameWindow.__event_mouse_up_dropping_window
-- `scripts/core/ui/widget/containers/window.py:262` `__event_mouse_dragging_window(self, event: PyoneerEvent)` #TAG:GameWindow.__event_mouse_dragging_window
-- `scripts/core/ui/widget/containers/window.py:268` `__event__mouse_clicked_inside(self, event_: PyoneerEvent)` #TAG:GameWindow.__event__mouse_clicked_inside
+- `scripts/core/ui/widget/containers/window.py:225` `top_widget_at_position(self, pos: Vector2, exceptions: list[GameComponent]=[]) -> Optional[PyoneerGameObject]` #TAG:GameWindow.top_widget_at_position
+- `scripts/core/ui/widget/containers/window.py:238` `__end_drag(self)` #TAG:GameWindow.__end_drag
+  - Clear drag state. The offset resets to zero, NOT None.
+- `scripts/core/ui/widget/containers/window.py:248` `__event_mouse_up_dropping_window(self, event: PyoneerEvent)` #TAG:GameWindow.__event_mouse_up_dropping_window
+- `scripts/core/ui/widget/containers/window.py:252` `__event_mouse_dragging_window(self, event: PyoneerEvent)` #TAG:GameWindow.__event_mouse_dragging_window
+- `scripts/core/ui/widget/containers/window.py:258` `__event__mouse_clicked_inside(self, event_: PyoneerEvent)` #TAG:GameWindow.__event__mouse_clicked_inside
   - Resolve which descendant was clicked and move focus to it.
-- `scripts/core/ui/widget/containers/window.py:302` `set_focus(self, widget: GameComponent | None)` #TAG:GameWindow.set_focus
+- `scripts/core/ui/widget/containers/window.py:289` `set_focus(self, widget: GameComponent | None)` #TAG:GameWindow.set_focus
   - Give focus to `widget`, clearing it from whatever held it before.
-- `scripts/core/ui/widget/containers/window.py:314` `close(self)` #TAG:GameWindow.close
+- `scripts/core/ui/widget/containers/window.py:301` `close(self)` #TAG:GameWindow.close
   - Hide the window, disable it, and drop focus.
-- `scripts/core/ui/widget/containers/window.py:339` `open(self)` #TAG:GameWindow.open
+- `scripts/core/ui/widget/containers/window.py:320` `open(self)` #TAG:GameWindow.open
   - Show the window and re-enable it. Inverse of close().

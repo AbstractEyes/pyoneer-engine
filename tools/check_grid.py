@@ -1,9 +1,8 @@
 """Verify GridComponent lays out, binds, sizes, and scrolls inside a Panel.
 
-Before this, GridComponent had never executed: add_item recorded a cell
-coordinate and never bound the component or gave it a pixel rect, so items
-never entered the tree and nothing was drawn. row_height and max_rows were
-stored and never read.
+`add_item` has to bind the component and give it a pixel rect, not merely
+record a cell coordinate: an unbound item never enters the tree and nothing is
+drawn, while `row_height` and `max_rows` sit stored and unread.
 """
 from __future__ import annotations
 
@@ -160,11 +159,11 @@ for _ in range(12):
     grid.add_item(square(60, 20))
 panel.attach_component("grid", grid)
 
-# attach_component used to leave the parent unset (the bind_parent line was
-# commented out). Every child the panel builds itself passes parent=self to its
-# constructor, so the omission was invisible -- and a parentless component keeps
-# world_bounds == local_bounds, draws in the wrong place and does not scroll,
-# silently, because __update_world_bounds returns early when parent is None.
+# attach_component has to bind the parent. Every child the panel builds itself
+# passes parent=self to its constructor, so the omission is invisible there --
+# and a parentless component keeps world_bounds == local_bounds, draws in the
+# wrong place and does not scroll, silently, because __update_world_bounds
+# returns early when parent is None.
 expect("attach_component sets the parent", grid.parent is panel, True)
 expect("attached child is in the scroll content list", grid in panel.children, True)
 expect("attached child is also bound", grid in panel.components.values(), True)
@@ -254,11 +253,11 @@ piece = square(32, 32)
 node = board.snap(piece, (40, 5))
 expect("snapped into the cell under the point", (node.column, node.row), (1, 0))
 expect("snapped item is bound", piece in board.components.values(), True)
-# THE assertion that matters, and the one missing the first time round: the
-# item must end up UNDER THE POINT. Comparing against cell_rect() only proved
-# the layout agreed with itself -- and both sides were wrong, because measure()
-# collapsed empty columns to 0 width while cell_at() computed from a fixed
-# step. A drop at x=60 resolved to column 2 and landed at x=7.
+# THE assertion that matters: the item must end up UNDER THE POINT. Comparing
+# against cell_rect() only proves the layout agrees with itself, and both sides
+# can be wrong together -- a measure() that collapses empty columns to 0 width
+# against a cell_at() computed from a fixed step puts a drop at x=60 in column
+# 2, at x=7.
 expect("the item lands under the point that was dropped",
        piece.local_bounds.collidepoint((40, 5)), True)
 
@@ -302,9 +301,9 @@ print("world_cell_at survives a scrolled panel")
 host = prepared(Panel(bounds=Rect(200, 100, 200, 120), working_area=Rect(0, 0, 200, 120)))
 tiles = GridComponent(bounds=Rect(0, 0, 0, 0), max_columns=4, cell_size=32, spacing=(0, 0))
 # 40 tiles = 10 rows = 320px of content in a 120px panel, so there is genuinely
-# room to scroll. An earlier version used 16 tiles (128px), only 8px taller than
-# the panel -- Panel.__clamp_scroll capped the scroll at 8 and the assertion
-# below failed for that reason rather than for a real one.
+# room to scroll. Content only a little taller than the panel would be capped
+# by Panel.__clamp_scroll, and the assertion below would fail for that reason
+# rather than for a real one.
 for _ in range(40):
     tiles.add_item(square(32, 32))
 host.attach_component("tiles", tiles)

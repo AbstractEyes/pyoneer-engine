@@ -1,15 +1,13 @@
 """Verify TextBox placeholder semantics and text auto-fitting.
 
-Three defects, all reported from a real run:
-  1. The font did not fit a resized box -- size was hardcoded to 24 and never
-     re-fitted.
-  2. The text offset was "janky": the display component was built at
-     Rect(20, 20, w - 10, h - 10), so a 20px inset on a 32px-tall box pushed
-     the text almost out of frame, and TextComponent centred horizontally by
-     blitting at the TEXT's own centerx -- a number unrelated to the
-     destination -- and never centred vertically at all.
-  3. `default_text` was assigned straight into the value, so the prompt was
-     indistinguishable from typed content.
+Three things that have to hold, each of which fails invisibly:
+  1. The font REFITS a resized box, rather than staying at a hardcoded size.
+  2. The display component is inset proportionally and centred against its
+     DESTINATION. A fixed Rect(20, 20, w - 10, h - 10) pushes the text almost
+     out of a 32px-tall box, and centring on the TEXT's own centerx is a
+     number unrelated to where it is drawn.
+  3. `default_text` is a PROMPT, not a value, or it is indistinguishable from
+     typed content.
 """
 from __future__ import annotations
 

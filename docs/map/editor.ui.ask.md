@@ -5,7 +5,7 @@
 
 > The two dialogs the panels are allowed to open, and the rule for both.
 
-`editor.ui.ask` · 180 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.ask` · 174 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,23 +13,23 @@
 
 ## Functions
 
-- `editor/ui/ask.py:156` `ask_form(parent: QWidget | None, title: str, rows: Iterable[Field], *, ok_label: str='OK', note: str='') -> dict[str, Any] | None` #TAG:ask_form
+- `editor/ui/ask.py:150` `ask_form(parent: QWidget | None, title: str, rows: Iterable[Field], *, ok_label: str='OK', note: str='') -> dict[str, Any] | None` #TAG:ask_form
   - Show one form and return its values, or None if it was cancelled.
-- `editor/ui/ask.py:176` `confirm(parent: QWidget | None, title: str, question: str) -> bool` #TAG:confirm
+- `editor/ui/ask.py:170` `confirm(parent: QWidget | None, title: str, question: str) -> bool` #TAG:confirm
   - A yes/no for something undo cannot take back. See the module docstring
 
 ## Classes
 
 ### `class QuickForm(QDialog)` #TAG:QuickForm
 
-`editor/ui/ask.py:62`–`153`
+`editor/ui/ask.py:57`–`147`
 
 > One decision, every field of it on screen at once.
 
-- `editor/ui/ask.py:83` `__init__(self, title: str, rows: Iterable[Field], parent: QWidget | None=None, *, ok_label: str='OK', note: str='')` #TAG:QuickForm.__init__
-- `editor/ui/ask.py:117` `__editor_for(self, entry: Field) -> QWidget` #TAG:QuickForm.__editor_for
-- `editor/ui/ask.py:134` `__sync(self) -> None` #TAG:QuickForm.__sync
+- `editor/ui/ask.py:77` `__init__(self, title: str, rows: Iterable[Field], parent: QWidget | None=None, *, ok_label: str='OK', note: str='')` #TAG:QuickForm.__init__
+- `editor/ui/ask.py:111` `__editor_for(self, entry: Field) -> QWidget` #TAG:QuickForm.__editor_for
+- `editor/ui/ask.py:128` `__sync(self) -> None` #TAG:QuickForm.__sync
   - OK is live only when every free-text row has something in it.
-- `editor/ui/ask.py:140` `__is_text(self, key: str) -> bool` #TAG:QuickForm.__is_text
-- `editor/ui/ask.py:145` `value(self) -> dict[str, Any]` #TAG:QuickForm.value
+- `editor/ui/ask.py:134` `__is_text(self, key: str) -> bool` #TAG:QuickForm.__is_text
+- `editor/ui/ask.py:139` `value(self) -> dict[str, Any]` #TAG:QuickForm.value
   - What is typed in right now, keyed by field key.

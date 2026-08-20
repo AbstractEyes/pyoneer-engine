@@ -3,7 +3,7 @@
 
 # `scripts/core/ui/widget/shape.py` — tier 2 #TAG:scripts/core/ui/widget/shape.py
 
-`scripts.core.ui.widget.shape` · 80 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.ui.widget.shape` · 75 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -19,7 +19,7 @@
 
 ### `class ShapeComponent(DrawComponent)` #TAG:ShapeComponent
 
-`scripts/core/ui/widget/shape.py:20`–`75`
+`scripts/core/ui/widget/shape.py:20`–`73`
 
 - `scripts/core/ui/widget/shape.py:24` `__init__(self, background_color: WidgetColor | None=None, visible: bool | None=None, border_color: WidgetColor | None=None, background_visible: bool | None=None, border_visible: bool | None=None, border_thickness: Rect | None=None, shape: ShapeType | int=ShapeType.Rectangle, *args, **kwargs)` #TAG:ShapeComponent.__init__
-- `scripts/core/ui/widget/shape.py:46` `prepare_background(self, sender: Optional[PyoneerGameObject])` #TAG:ShapeComponent.prepare_background
+- `scripts/core/ui/widget/shape.py:45` `prepare_background(self, sender: Optional[PyoneerGameObject])` #TAG:ShapeComponent.prepare_background

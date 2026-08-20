@@ -5,30 +5,30 @@
 
 > Pyoneer's exception hierarchy.
 
-`scripts.core.errors` · 298 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.errors` · 283 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Functions
 
-- `scripts/core/errors.py:291` `warn_content(message: str, stacklevel: int=3)` #TAG:warn_content
+- `scripts/core/errors.py:276` `warn_content(message: str, stacklevel: int=3)` #TAG:warn_content
   - Report unusable authored content without stopping the engine.
-- `scripts/core/errors.py:296` `warn_performance(message: str, stacklevel: int=3)` #TAG:warn_performance
+- `scripts/core/errors.py:281` `warn_performance(message: str, stacklevel: int=3)` #TAG:warn_performance
 
 ## Classes
 
 ### `class PyoneerError(Exception)` #TAG:PyoneerError
 
-`scripts/core/errors.py:68`–`95`
+`scripts/core/errors.py:55`–`82`
 
 > Base for every engine error.
 
-- `scripts/core/errors.py:76` `__init__(self, message: str, **context: Any)` #TAG:PyoneerError.__init__
-- `scripts/core/errors.py:83` `push_frame(self, **context: Any) -> 'PyoneerError'` #TAG:PyoneerError.push_frame
+- `scripts/core/errors.py:63` `__init__(self, message: str, **context: Any)` #TAG:PyoneerError.__init__
+- `scripts/core/errors.py:70` `push_frame(self, **context: Any) -> 'PyoneerError'` #TAG:PyoneerError.push_frame
   - Record where this error passed through on its way up.
-- `scripts/core/errors.py:88` `__str__(self) -> str` #TAG:PyoneerError.__str__
+- `scripts/core/errors.py:75` `__str__(self) -> str` #TAG:PyoneerError.__str__
 
 ### `class PyoneerConfigError(PyoneerError)` #TAG:PyoneerConfigError
 
-`scripts/core/errors.py:102`–`103`
+`scripts/core/errors.py:89`–`90`
 
 > Configuration or asset data is missing, malformed, or contradictory.
 
@@ -36,23 +36,23 @@
 
 ### `class PyoneerAssetMissingError(PyoneerConfigError, KeyError)` #TAG:PyoneerAssetMissingError
 
-`scripts/core/errors.py:106`–`122`
+`scripts/core/errors.py:93`–`109`
 
 > A named asset was requested and does not exist.
 
-- `scripts/core/errors.py:115` `__init__(self, kind: str, name: str, available=(), **context)` #TAG:PyoneerAssetMissingError.__init__
+- `scripts/core/errors.py:102` `__init__(self, kind: str, name: str, available=(), **context)` #TAG:PyoneerAssetMissingError.__init__
 
 ### `class PyoneerConfigKeyError(PyoneerConfigError, KeyError)` #TAG:PyoneerConfigKeyError
 
-`scripts/core/errors.py:125`–`134`
+`scripts/core/errors.py:112`–`121`
 
 > A required configuration key is absent.
 
-- `scripts/core/errors.py:128` `__init__(self, key: str, source: str, available=(), **context)` #TAG:PyoneerConfigKeyError.__init__
+- `scripts/core/errors.py:115` `__init__(self, key: str, source: str, available=(), **context)` #TAG:PyoneerConfigKeyError.__init__
 
 ### `class PyoneerBindingInvalidError(PyoneerConfigError, KeyError)` #TAG:PyoneerBindingInvalidError
 
-`scripts/core/errors.py:137`–`138`
+`scripts/core/errors.py:124`–`125`
 
 > An input binding names a key or button the engine does not know.
 
@@ -60,7 +60,7 @@
 
 ### `class PyoneerLifecycleError(PyoneerError)` #TAG:PyoneerLifecycleError
 
-`scripts/core/errors.py:145`–`146`
+`scripts/core/errors.py:132`–`133`
 
 > An object was used out of lifecycle order.
 
@@ -68,23 +68,23 @@
 
 ### `class PyoneerNotPreparedError(PyoneerLifecycleError)` #TAG:PyoneerNotPreparedError
 
-`scripts/core/errors.py:149`–`157`
+`scripts/core/errors.py:136`–`144`
 
 > Used before core_lifecycle_prepare ran.
 
-- `scripts/core/errors.py:152` `__init__(self, obj: Any, action: str, **context)` #TAG:PyoneerNotPreparedError.__init__
+- `scripts/core/errors.py:139` `__init__(self, obj: Any, action: str, **context)` #TAG:PyoneerNotPreparedError.__init__
 
 ### `class PyoneerDisposedError(PyoneerLifecycleError)` #TAG:PyoneerDisposedError
 
-`scripts/core/errors.py:160`–`167`
+`scripts/core/errors.py:147`–`154`
 
 > Used after disposal.
 
-- `scripts/core/errors.py:163` `__init__(self, obj: Any, action: str, **context)` #TAG:PyoneerDisposedError.__init__
+- `scripts/core/errors.py:150` `__init__(self, obj: Any, action: str, **context)` #TAG:PyoneerDisposedError.__init__
 
 ### `class PyoneerLayoutError(PyoneerError)` #TAG:PyoneerLayoutError
 
-`scripts/core/errors.py:170`–`175`
+`scripts/core/errors.py:157`–`162`
 
 > A layout container was asked for something geometrically impossible.
 
@@ -92,7 +92,7 @@
 
 ### `class PyoneerAlreadyBoundError(PyoneerLifecycleError)` #TAG:PyoneerAlreadyBoundError
 
-`scripts/core/errors.py:178`–`184`
+`scripts/core/errors.py:165`–`170`
 
 > An object was bound twice, making the component tree a DAG.
 
@@ -100,7 +100,7 @@
 
 ### `class PyoneerEventError(PyoneerError)` #TAG:PyoneerEventError
 
-`scripts/core/errors.py:191`–`192`
+`scripts/core/errors.py:177`–`178`
 
 > Something went wrong routing or handling an event.
 
@@ -108,15 +108,15 @@
 
 ### `class PyoneerEventDispatchError(PyoneerEventError)` #TAG:PyoneerEventDispatchError
 
-`scripts/core/errors.py:195`–`208`
+`scripts/core/errors.py:181`–`194`
 
 > A listener raised. Wraps the original with the dispatch path.
 
-- `scripts/core/errors.py:198` `__init__(self, component: Any, event_type: Any, listener: Any, cause: BaseException, **context)` #TAG:PyoneerEventDispatchError.__init__
+- `scripts/core/errors.py:184` `__init__(self, component: Any, event_type: Any, listener: Any, cause: BaseException, **context)` #TAG:PyoneerEventDispatchError.__init__
 
 ### `class PyoneerListenerContractError(PyoneerEventError)` #TAG:PyoneerListenerContractError
 
-`scripts/core/errors.py:211`–`217`
+`scripts/core/errors.py:197`–`202`
 
 > A listener does not accept the event argument the dispatcher passes.
 
@@ -124,7 +124,7 @@
 
 ### `class PyoneerEventTypeError(PyoneerEventError)` #TAG:PyoneerEventTypeError
 
-`scripts/core/errors.py:220`–`221`
+`scripts/core/errors.py:205`–`206`
 
 > An unknown or unroutable event type.
 
@@ -132,7 +132,7 @@
 
 ### `class PyoneerRenderError(PyoneerError)` #TAG:PyoneerRenderError
 
-`scripts/core/errors.py:228`–`229`
+`scripts/core/errors.py:213`–`214`
 
 > A failure on the render path.
 
@@ -140,15 +140,15 @@
 
 ### `class PyoneerImageMissingError(PyoneerRenderError)` #TAG:PyoneerImageMissingError
 
-`scripts/core/errors.py:232`–`240`
+`scripts/core/errors.py:217`–`225`
 
 > Something needed a surface and did not have one.
 
-- `scripts/core/errors.py:235` `__init__(self, obj: Any, **context)` #TAG:PyoneerImageMissingError.__init__
+- `scripts/core/errors.py:220` `__init__(self, obj: Any, **context)` #TAG:PyoneerImageMissingError.__init__
 
 ### `class PyoneerLayerError(PyoneerRenderError)` #TAG:PyoneerLayerError
 
-`scripts/core/errors.py:243`–`244`
+`scripts/core/errors.py:228`–`229`
 
 > A layer could not be resolved, or its depth is incoherent.
 
@@ -156,7 +156,7 @@
 
 ### `class PyoneerCameraMissingError(PyoneerRenderError)` #TAG:PyoneerCameraMissingError
 
-`scripts/core/errors.py:247`–`248`
+`scripts/core/errors.py:232`–`233`
 
 > The renderer was driven with no camera bound.
 
@@ -164,7 +164,7 @@
 
 ### `class PyoneerSceneError(PyoneerError)` #TAG:PyoneerSceneError
 
-`scripts/core/errors.py:255`–`256`
+`scripts/core/errors.py:240`–`241`
 
 > A failure in the scene graph or its binding API.
 
@@ -172,7 +172,7 @@
 
 ### `class PyoneerSceneMissingError(PyoneerSceneError)` #TAG:PyoneerSceneMissingError
 
-`scripts/core/errors.py:259`–`260`
+`scripts/core/errors.py:244`–`245`
 
 > A scene was requested by a name that is not registered.
 
@@ -180,15 +180,15 @@
 
 ### `class PyoneerBindTargetError(PyoneerSceneError)` #TAG:PyoneerBindTargetError
 
-`scripts/core/errors.py:263`–`272`
+`scripts/core/errors.py:248`–`257`
 
 > An object was bound that no binder knows how to place.
 
-- `scripts/core/errors.py:266` `__init__(self, game_object: Any, supported=(), **context)` #TAG:PyoneerBindTargetError.__init__
+- `scripts/core/errors.py:251` `__init__(self, game_object: Any, supported=(), **context)` #TAG:PyoneerBindTargetError.__init__
 
 ### `class PyoneerWarning(UserWarning)` #TAG:PyoneerWarning
 
-`scripts/core/errors.py:279`–`280`
+`scripts/core/errors.py:264`–`265`
 
 > The engine carried on truthfully, but something is probably wrong.
 
@@ -196,7 +196,7 @@
 
 ### `class PyoneerContentWarning(PyoneerWarning)` #TAG:PyoneerContentWarning
 
-`scripts/core/errors.py:283`–`284`
+`scripts/core/errors.py:268`–`269`
 
 > Authored content could not be used (an unmapped map layer, say).
 
@@ -204,7 +204,7 @@
 
 ### `class PyoneerPerformanceWarning(PyoneerWarning)` #TAG:PyoneerPerformanceWarning
 
-`scripts/core/errors.py:287`–`288`
+`scripts/core/errors.py:272`–`273`
 
 > A configuration that works but will not scale.
 
