@@ -60,6 +60,7 @@ import os
 import shutil
 import sys
 import tempfile
+import warnings
 
 if importlib.util.find_spec("PySide6") is None:
     print("SKIP  PySide6 is not installed "
@@ -776,7 +777,10 @@ try:
     bakes.clear()
     touched.clear()
     before = len(session.history())
-    drag(application, canvas, [(1, 3), (3, 3)])
+    with warnings.catch_warnings(record=True) as painting:
+        warnings.simplefilter("always")
+        drag(application, canvas, [(1, 3), (3, 3)])
+        stroke_warnings = [str(entry.message) for entry in painting]
     transaction = session.history()[-1]
     collision_command = transaction.commands[-1]
     expect("the same drag now writes the companion layer",
@@ -798,6 +802,14 @@ try:
            [c.verb for c in transaction.commands],
            ["map.layer.add", "map.layer.set", "map.layer.set",
             "map.tile.set_many"])
+    # The companion is DECLARED AS IT IS CREATED, not only by the set that
+    # follows. Painting one cell of collision otherwise advises the author to
+    # give the new layer a depth in scripts/core/depth.py -- and taking that
+    # advice paints the mask vocabulary over his map.
+    expect("the companion is created saying it does not draw",
+           transaction.commands[0].args.get("renders"), False)
+    expect("so painting collision says nothing about depths",
+           [m for m in stroke_warnings if "depth" in m], [])
     floor = session.project.map("fixture").tile_layer("Floor")
     expect("the art layer now points at its companion",
            read_profile(floor).passability, "FloorCollision")

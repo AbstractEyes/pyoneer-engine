@@ -1,12 +1,14 @@
 """Verify the map-layer bake: empty layers are dropped, composites are exact.
 
-Three claims, each of which the renderer would otherwise be free to break
+Four claims, each of which the renderer would otherwise be free to break
 without any visible symptom until someone looked at a profiler or a diff of
 two screenshots:
 
     an empty tile layer produces no MapLayer   (and says so out loud)
     the composite preserves entity interleaving
     a rebake reproduces the same frame, byte for byte
+    a layer that says it does not draw is skipped in SILENCE, and one that
+        does draw and has no depth still warns
 
     .venv/Scripts/python.exe tools/check_maplayers.py
 """
@@ -15,7 +17,9 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
 import hashlib
+import os
 import sys
+import tempfile
 import warnings
 
 import pygame
@@ -26,10 +30,13 @@ pygame.display.set_mode((1024, 768))
 import pytmx
 
 import main as main_module
-from scripts.core import blitpool
-from scripts.core.renderer import (MapComposite, MapLayer, composite_is_exact,
-                                   drawable_tile_count, opaque_mask,
-                                   partial_alpha_mask)
+from scripts.core import blitpool, layer_profile
+from scripts.core.depth import MAP_DEPTH
+from scripts.core.renderer import (LayerRenderer, MapComposite, MapLayer,
+                                   composite_is_exact, drawable_tile_count,
+                                   opaque_mask, partial_alpha_mask)
+from scripts.game.game_camera import GameCamera
+from scripts.game.game_map import GameMap
 
 failures: list[str] = []
 
@@ -110,14 +117,18 @@ declared = {layer.name: layer for layer in tmx.layers
             if isinstance(layer, pytmx.TiledTileLayer)}
 empty = [name for name, layer in declared.items()
          if drawable_tile_count(layer, tmx) == 0]
-# Which layers are empty is CONTENT, and the author paints in this map, so
-# it is discovered rather than named. What is under test is that
-# drawable_tile_count separates empty from non-empty at all -- naming
-# "Above1" here failed the moment tiles were painted into it, while the code
-# it guards was working perfectly.
+# Two reasons a declared layer is absent from the render list, and both are
+# discovered from the file rather than named. Which layers are empty is
+# CONTENT, and the author paints in this map -- naming "Above1" here failed
+# the moment tiles were painted into it, while the code it guards was working
+# perfectly. Which layers declare pyoneer_renders=false is content too: he
+# gets a companion the moment he paints collision anywhere.
+undrawn = [name for name, layer in declared.items()
+           if not layer_profile.read(layer).renders]
 occupancy = {name: drawable_tile_count(layer, tmx)
              for name, layer in declared.items()}
 print(f"  ..   {'tiles per declared layer':<54} {occupancy}")
+print(f"  ..   {'layers declaring they do not draw':<54} {sorted(undrawn)}")
 expect("at least one layer has tiles",
        any(count > 0 for count in occupancy.values()), True)
 expect("empty is exactly the set with a zero count",
@@ -136,9 +147,19 @@ for name in empty:
            any(name in message and "no drawable tiles" in message
                for message in boot_warnings), True)
 
-expect("every non-empty declared layer survived",
+for name in undrawn:
+    expect(f"{name} says it does not draw, and does not", name in source_names(), False)
+    # Narrowly the renderer's own advice, not every mention of the name:
+    # `collision_layers` legitimately names a companion when the layer that
+    # declares it cannot carry masks. Absolute silence is asserted over the
+    # fixture below, where every layer in the map is this check's own.
+    expect(f"{name} was not advised to get a depth",
+           [m for m in boot_warnings
+            if name in m and "has no depth mapping" in m], [])
+
+expect("every drawable declared layer survived",
        sorted(source_names()),
-       sorted(n for n in declared if n not in empty))
+       sorted(n for n in declared if n not in empty and n not in undrawn))
 
 # ------------------------------------------------------------- interleaving
 print()
@@ -362,6 +383,106 @@ rebakes["n"] = 0
 renderer.invalidate(sources_dirty=False)
 renderer.rebake_map()
 expect("sources_dirty=False regroups WITHOUT rebaking", rebakes["n"], 0)
+
+# ------------------------------------------------------- renders=false is data
+print()
+print("a layer that declares it does not draw is skipped in silence -- and one "
+      "that does draw is still warned about")
+# The bug this pins: a passability companion declares pyoneer_renders=false,
+# the renderer ignored the declaration entirely, and the layer stayed off
+# screen only because its name happened to be absent from MAP_DEPTH -- so the
+# author was ADVISED to add it, and following that advice would have painted
+# the mask vocabulary over his map.
+#
+# Both halves, because silencing both is a regression wearing a fix: the
+# no-depth warning is the guard that caught 39 authored tiles going missing
+# to a misspelling, and it must still fire for a layer that really is art.
+#
+# A fixture, never data/maps/test.tmx: the author paints in that file, and
+# what it declares is his business (law 4).
+FIXTURE_ROW = "1,1,1,1"
+FIXTURE_CSV = ",\n".join([FIXTURE_ROW] * 4)
+FIXTURE_HEAD = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" \
+renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="9" nextobjectid="1">
+ <tileset firstgid="1" name="probe" tilewidth="16" tileheight="16" \
+tilecount="4" columns="2">
+  <image source="probe.png" width="32" height="32"/>
+ </tileset>
+"""
+NO_DRAW = '   <property name="pyoneer_renders" type="bool" value="false"/>\n'
+
+# Two names the code ranks and two it does not. Read off MAP_DEPTH rather
+# than assumed, so adding "ProbeMask" to the table makes this say so instead
+# of passing on a premise that stopped being true.
+RANKED_ART, RANKED_MASK = "Floor", "Above1"
+UNRANKED_ART, UNRANKED_MASK = "ProbeArt", "ProbeMask"
+expect("the two ranked probe names really are ranked",
+       [name in MAP_DEPTH for name in (RANKED_ART, RANKED_MASK)], [True, True])
+expect("and the two unranked ones really are not",
+       [name in MAP_DEPTH for name in (UNRANKED_ART, UNRANKED_MASK)],
+       [False, False])
+
+
+def fixture_layer(layer_id: int, name: str, declares: str = "") -> str:
+    return (f' <layer id="{layer_id}" name="{name}" width="4" height="4">\n'
+            + (f"  <properties>\n{declares}  </properties>\n" if declares else "")
+            + f'  <data encoding="csv">\n{FIXTURE_CSV}\n</data>\n </layer>\n')
+
+
+probe_workspace = tempfile.mkdtemp(prefix="pyoneer_maplayers_")
+probe_sheet = pygame.Surface((32, 32))
+for index, color in enumerate(((180, 40, 40), (40, 180, 40),
+                               (40, 40, 180), (180, 180, 40))):
+    probe_sheet.fill(color, pygame.Rect((index % 2) * 16, (index // 2) * 16, 16, 16))
+pygame.image.save(probe_sheet, os.path.join(probe_workspace, "probe.png"))
+probe_path = os.path.join(probe_workspace, "probe.tmx")
+with open(probe_path, "w", encoding="utf-8", newline="\n") as handle:
+    handle.write(FIXTURE_HEAD
+                 + fixture_layer(1, RANKED_ART)
+                 + fixture_layer(2, UNRANKED_ART)
+                 + fixture_layer(3, UNRANKED_MASK, NO_DRAW)
+                 + fixture_layer(4, RANKED_MASK, NO_DRAW)
+                 + ' <objectgroup id="5" name="entity"/>\n</map>\n')
+
+probe_renderer = LayerRenderer(pygame.display.get_surface())
+probe_renderer.bind_camera(GameCamera(pygame.Vector2(64, 64),
+                                      pygame.Rect(0, 0, 64, 64), scale=1))
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    probe_renderer.bind("MAP", GameMap(pytmx.load_pygame(probe_path)))
+    probe_warnings = [str(w.message) for w in caught]
+
+probe_drawn = []
+for depth in sorted(probe_renderer.layers):
+    for layer in probe_renderer.layers[depth]:
+        if isinstance(layer, MapComposite):
+            probe_drawn.extend(str(source.layer_name) for source in layer.sources)
+        elif isinstance(layer, MapLayer):
+            probe_drawn.append(str(layer.layer_name))
+
+print(f"  ..   {'drawn':<54} {sorted(probe_drawn)}")
+expect("a ranked layer with tiles is drawn, so the skip is not blanket",
+       RANKED_ART in probe_drawn, True)
+expect("a layer declaring renders=false is NOT drawn -- even though its name "
+       "has a depth", RANKED_MASK in probe_drawn, False)
+expect("nor is one whose name has no depth", UNRANKED_MASK in probe_drawn, False)
+expect("and neither of them was mentioned at all",
+       [message for message in probe_warnings
+        if RANKED_MASK in message or UNRANKED_MASK in message], [])
+expect("the layer that DOES draw and has no depth is still reported",
+       len([m for m in probe_warnings if UNRANKED_ART in m]), 1)
+expect("it says what happens, not merely that something is odd",
+       all(part in probe_warnings[0]
+           for part in ("has no depth mapping", "will NOT be drawn",
+                        "MAP_DEPTH")), True)
+expect("and it offers the declaration instead of only the depth table",
+       "pyoneer_renders=false" in probe_warnings[0], True)
+expect("that warning is the ONLY thing the bind said",
+       len(probe_warnings), 1)
+expect("the unranked art layer is not drawn either",
+       UNRANKED_ART in probe_drawn, False)
 
 print()
 if failures:

@@ -25,7 +25,7 @@ dependency reports `SKIP` and never `PASS`.
 | `errors` | exception hierarchy, naming schema, single image slot | Verify the exception hierarchy, the naming schema, and the image contract. |
 | `log` | trace channels off by default, opt-in, lazy formatting | Verify the debug trace channels. |
 | `viewclip` | exact-pixel clipping, containment, off-screen culling | Verify exact-pixel clipping and culling. |
-| `maplayers` | empty layers dropped, composites exact, rebake reproducible | Verify the map-layer bake: empty layers are dropped, composites are exact. |
+| `maplayers` | empty layers dropped, composites exact, rebake reproducible, and a layer declaring it does not draw is skipped in silence while one that does still warns | Verify the map-layer bake: empty layers are dropped, composites are exact. |
 | `grid` | grid layout, binding, sizing, scrolling inside a Panel | Verify GridComponent lays out, binds, sizes, and scrolls inside a Panel. |
 | `anchor` | children reflow when their parent resizes | Verify anchor-based reflow: children adapt when their parent resizes. |
 | `scroll` | no-overflow scrollbars are hidden, inactive, and safe to drag | Verify scrollbars behave when there is nothing to scroll. |
@@ -59,7 +59,7 @@ dependency reports `SKIP` and never `PASS`.
 | `collision_view` | collision overlay builds, glyphs distinguish direction bits, a read past a companion's edge abstains, and the level channel credits the tile or the paint | Verify the collision overlay, its glyphs and the mode switch. |
 | `map_events` | trigger vocabulary, collision filters, tmx round trip | Verify the map-event vocabulary: round trip, validation, filter semantics. |
 | `collision_mount` | the overlay, the mode, one stroke one transaction, a 4x map whose mask lands under the cursor, the resolution a created companion is given, and the overlay agreeing with field_from_map cell for cell over a map whose tiles carry their own masks, and a tile picked in the palette baking its own mask into the tileset | Assert the collision stack is actually WIRED to the canvas. |
-| `collision_runtime` | the engine reads a mask, stacks a tileset's own defaults under it, and gates movement | Verify that the engine reads authored masks and refuses a blocked step. |
+| `collision_runtime` | the engine reads a mask, stacks a tileset's own defaults under it, gates movement, and keeps a layer that moves under the camera out of the stack whether or not masks were painted on it | Verify that the engine reads authored masks and refuses a blocked step. |
 | `collision_field` | map load bakes passability and every body is handed it | Prove the map's passability actually reaches the bodies that move on it. |
 | `actions_panel` | trigger authoring, action verbs, exact inverses | Assert the authoring surfaces for map events and the collision tileset. |
 | `behavior_ui` | behavior checklist from the registry, refusals at authoring time, exact undo | The editor's behavior surface: the checklist, the refusals, the undo. |

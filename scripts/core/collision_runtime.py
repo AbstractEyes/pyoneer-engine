@@ -132,6 +132,9 @@ from scripts.core.depth import resolve_layer_depth
 from scripts.core.errors import PyoneerConfigError, warn_content
 from scripts.core.layer_profile import (
     DEPTH,
+    MOTION,
+    PARALLAX_X,
+    PARALLAX_Y,
     PASSABILITY,
     PREFIX,
     STATIC,
@@ -1542,25 +1545,41 @@ def document_gid_reader(tile_layer) -> Reader:
     return read
 
 
-def at_world_coordinates(document, layer_name: str) -> bool:
-    """Are this layer's tile cells the same cells the collision field uses?
+def world_coordinate_fault(document, layer_name: str) -> str | None:
+    """Why this layer's cells are NOT the map's cells, or None when they are.
 
-    No for a parallaxed layer and no for a `dynamic` one: both are drawn at
-    an offset that changes with the camera, so cell (3, 4) of that layer is
-    not over cell (3, 4) of the map, and gating on it would put a wall where
-    nothing is drawn.
+    A parallaxed layer and a `dynamic` one are both drawn at an offset that
+    changes with the camera, so cell (3, 4) of that layer is not over cell
+    (3, 4) of the map, and a mask there would block where nothing is drawn.
+    Both faults can hold at once and both are named, in the layer's own
+    property spellings, because editing one of those properties is the only
+    thing an author can do about it.
 
     Read through `layer_profile.read_properties`, so "what counts as
     parallaxed" has one answer and the renderer owns it.
-
-    Only `collision_layers` asks, and only about a layer with NO companion: a
-    layer that DECLARES `pyoneer_passability` is never filtered. What this
-    gates is the automatic half -- which layers a TILESET default reaches
-    without being asked.
     """
     profile = read_layer_properties(
         document.tile_layer(layer_name).properties.as_dict())
-    return profile.motion == STATIC and not profile.parallaxed
+    faults: list[str] = []
+    if profile.parallaxed:
+        faults.append("parallaxed (%s=%g, %s=%g)"
+                      % (PARALLAX_X, profile.parallax[0],
+                         PARALLAX_Y, profile.parallax[1]))
+    if profile.motion != STATIC:
+        faults.append("%s=%s" % (MOTION, profile.motion))
+    return " and ".join(faults) or None
+
+
+def at_world_coordinates(document, layer_name: str) -> bool:
+    """Are this layer's tile cells the same cells the collision field uses?
+
+    The yes/no of `world_coordinate_fault`, which carries the reason.
+
+    `collision_layers` asks about EVERY layer, whether or not it declares a
+    companion: a declaration says which layer holds the masks, and it does
+    not move the layer they gate for back over the map.
+    """
+    return world_coordinate_fault(document, layer_name) is None
 
 
 def tileset_defaults(document) -> list[TilesetDefaults]:
@@ -1676,8 +1695,14 @@ def collision_layers(document, tmx_data=None, *, subcell: int | None = None,
       * with defaults, every tile layer that is not itself a companion joins,
         because stamping the tile is meant to be the only authoring step and
         a layer nobody gave a companion is exactly the one that would be
-        missed. `at_world_coordinates` filters that automatic half; a layer
-        that declares a companion is never filtered.
+        missed.
+
+`world_coordinate_fault` filters BOTH halves. A parallaxed or `dynamic`
+    layer is drawn somewhere else every frame, so its cells are not the
+    field's cells whatever put it in the stack, and one such layer left in
+    gates EVERY body on the map at EVERY depth. A layer excluded while
+    carrying a companion WARNS: those masks are authored content, and an
+    author who painted them saw an effect that is about to stop happening.
 
     Both branches rank through `layer_rank`, so a layer's position in the
     stack does not depend on how it got there.
@@ -1698,8 +1723,25 @@ def collision_layers(document, tmx_data=None, *, subcell: int | None = None,
     entries: list[tuple[tuple[int, int], str, str]] = []
     for index, name in enumerate(document.tile_layer_names()):
         companion = companion_of.get(name, "")
-        if not companion and (name in companions
-                              or not at_world_coordinates(document, name)):
+        if not companion and name in companions:
+            continue
+        fault = world_coordinate_fault(document, name)
+        if fault is not None:
+            if companion:
+                # WARN, not raise and not silence: the editor lets an
+                # author paint a mask here, so raising would make his own map
+                # unloadable over content it offered him, and dropping it
+                # without a word is how authored content goes missing for
+                # months.
+                warn_content(
+                    "map layer %r is %s, so its cells are not the map's "
+                    "cells: the collision masks it declares in %r would "
+                    "block where nothing is drawn, and NOTHING ON THIS "
+                    "LAYER GATES MOVEMENT. Paint them on a static, "
+                    "unparallaxed layer, or drop those properties from %r "
+                    "(map %s)"
+                    % (name, fault, companion, name,
+                       getattr(document, "path", None)))
             continue
         entries.append((layer_rank(document, name, index), name, companion))
     entries.sort(key=lambda entry: entry[0])

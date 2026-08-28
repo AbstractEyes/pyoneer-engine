@@ -501,6 +501,11 @@ class LayerRenderer:
         had while silently dropping layers the map has and the code does not
         name. Driving from the map means authored content is never lost
         without a warning naming the exact layer.
+
+        Two reasons a tile layer is skipped, and only one of them is a
+        mistake. A layer with no depth is content the author expected to see
+        and will not, so it WARNS. A layer declaring `pyoneer_renders=false`
+        is doing exactly what it says, so it is silent.
         """
         for layer_data in tmx_data.layers:
             layer_name = getattr(layer_data, 'name', None)
@@ -509,12 +514,29 @@ class LayerRenderer:
                 # wrappers carry no tiles of their own.
                 continue
 
+            if not layer_profile.read(layer_data).renders:
+                # DATA, NOT ART, and the declaration is what makes it   #TAG:renders_false_is_data
+                # so. A passability companion's cells are mask numbers
+                # read as gids, so drawing one paints the mask vocabulary
+                # over the map -- which is why the depth is not even
+                # looked up here: a name that happens to resolve is not
+                # permission to draw over an explicit refusal, and a name
+                # that does not resolve is not a mistake to advise about.
+                continue
+
             layer_depth = resolve_layer_depth(layer_name)
             if layer_depth is None:
                 warn_content(
                     f"map layer {layer_name!r} has no depth mapping in "
-                    f"scripts/core/depth.py and will NOT be drawn. Add it to "
-                    f"MAP_DEPTH or rename the layer in Tiled."
+                    f"scripts/core/depth.py and will NOT be drawn. If it is "
+                    f"ART, give that NAME a depth in MAP_DEPTH: renaming the "
+                    f"layer to one that already has a depth is not the same "
+                    f"move, because pyoneer_passability names a layer as a "
+                    f"string and does not follow a rename, so a companion "
+                    f"pointing here goes unread and collision on the layer "
+                    f"that owns it turns off. If it is DATA -- a passability "
+                    f"companion, a mask layer -- declare pyoneer_renders=false "
+                    f"on it and it is skipped without this warning."
                 )
                 continue
 

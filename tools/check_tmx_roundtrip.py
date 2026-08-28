@@ -17,6 +17,7 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401
 
 import os
+from xml.etree import ElementTree
 import shutil
 import sys
 import tempfile
@@ -164,14 +165,40 @@ try:
     print()
     print("the document reads what Tiled wrote")
     # --------------------------------------------------------------------
-    expect("map size", (document.width, document.height), (100, 100))
-    expect("tile size", (document.tile_width, document.tile_height), (16, 16))
-    expect("layer_names() in document order", document.layer_names(),
-           ["Graphic", "Paralax", "Floor", "GroundClutter", "PlayerDepth",
-            "Above1", "Foreground", "Entity", "entity"])
+    # Every expectation below is DERIVED from the same file, never named.
+    # `data/maps/test.tmx` is the author's canvas: he repaints it, adds a
+    # collision companion, renames a layer. A check that spells its layers out
+    # goes red for that and says nothing about MapDocument, which is the only
+    # thing it is here to test. What IS a code claim: the reader returns every
+    # layer in document order, descending into groups and counting a group as
+    # a layer, and splits tile from object by element tag.
+    root = ElementTree.parse(MAP_PATH).getroot()
+
+    def declared(element):
+        for child in element:
+            if (child.tag in ("layer", "objectgroup", "imagelayer", "group")
+                    and child.get("name")):
+                yield child.tag, child.get("name")
+            if child.tag == "group":
+                yield from declared(child)
+
+    in_file = list(declared(root))
+    expect("map size matches the <map> element",
+           (document.width, document.height),
+           (int(root.get("width")), int(root.get("height"))))
+    expect("tile size matches the <map> element",
+           (document.tile_width, document.tile_height),
+           (int(root.get("tilewidth")), int(root.get("tileheight"))))
+    expect("layer_names() is every declared layer, in document order",
+           document.layer_names(), [name for _tag, name in in_file])
     expect("tile layers only", document.tile_layer_names(),
-           ["Paralax", "Floor", "GroundClutter", "PlayerDepth", "Above1", "Foreground"])
-    expect("object layers only", document.object_layer_names(), ["entity"])
+           [name for tag, name in in_file if tag == "layer"])
+    expect("object layers only", document.object_layer_names(),
+           [name for tag, name in in_file if tag == "objectgroup"])
+    # The derivation must be able to disagree, or the four above are one
+    # tautology: a map with no <layer> element at all yields no tile layers.
+    expect("...and the same walk finds nothing in a map with no layers",
+           list(declared(ElementTree.fromstring("<map></map>"))), [])
 
     floor = document.tile_layer("Floor")
     expect("a tile layer holds width*height gids", len(floor), 100 * 100)

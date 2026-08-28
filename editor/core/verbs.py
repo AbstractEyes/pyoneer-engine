@@ -26,6 +26,7 @@ Everything else is a soft rule and surfaces in Problems.
 from __future__ import annotations
 
 import os
+import warnings
 from typing import Any
 
 from editor.core.commands import Command, Param, command
@@ -50,6 +51,10 @@ from editor.core.collision import (
 )
 from scripts.loaders.tileset_file import BLITMASK_SUFFIX
 from scripts.game.behavior.base import BEHAVIORS
+# The engine's own name->depth lookup, so `map.layer.add` asks exactly the
+# question `MapDocument.add_layer` asks before it advises about a depth.
+from scripts.core.depth import resolve_layer_depth
+from scripts.core.errors import PyoneerContentWarning
 
 
 def _layer_keys() -> list[str]:
@@ -207,7 +212,7 @@ def _tile_fill(project: Project, cmd: Command) -> Command | None:
     summary="Add a tile or object layer. A tile layer is created at the "
             "map's size unless width/height or subcell say otherwise. Note "
             "that a layer only RENDERS if its name has a depth in "
-            "scripts/core/depth.py.",
+            "scripts/core/depth.py and it has not said renders=false.",
     scopes=["map:*"],
     params=[
         Param("name", str, "layer name; it is also the key the engine "
@@ -234,6 +239,15 @@ def _tile_fill(project: Project, cmd: Command) -> Command | None:
                               "command, because a layer that is one without "
                               "the other is a map that does not load",
               required=False, default=None),
+        Param("renders", bool, "does this layer DRAW? False declares "
+                               "pyoneer_renders=false on it in the same "
+                               "command, which is what a passability "
+                               "companion is: mask numbers, read as gids, "
+                               "that paint the mask vocabulary over the map "
+                               "if anything ever draws them. A layer created "
+                               "this way is also not advised to get a depth, "
+                               "because it has just said it does not draw",
+              required=False, default=True),
     ],
     example='{"verb": "map.layer.add", "scope": "map:test",'
             ' "args": {"name": "Hazard", "kind": "tile"}}',
@@ -247,19 +261,41 @@ def _layer_add(project: Project, cmd: Command) -> Command:
     The inverse needs no new argument. `map.layer.remove` serializes the
     element it takes out -- its `width=`, its `height=`, its `<properties>`
     and its csv -- and restores that XML verbatim, so undo is byte-exact for
-    a 4x companion as it is for a map-sized one.
+    a 4x companion as it is for a map-sized one, and for one carrying
+    `pyoneer_renders`.
+
+    `renders=False` declares AND silences, for the same reason `subcell`
+    sizes and declares: a companion added without the declaration is a layer
+    the engine is free to draw the day its name gains a depth, and the
+    document's "give this name a depth" advice is wrong for a layer that is
+    about to say it does not draw at all.
     """
     document = project.map(cmd.scope.require("map"))
+    name = cmd.args["name"]
     before = document.root.get("nextlayerid", "1")
-    document.add_layer(cmd.args["name"], cmd.args["kind"],
-                       group=cmd.args["group"] or None,
-                       index=cmd.args["index"],
-                       fill=cmd.args["fill"],
-                       width=cmd.args["width"],
-                       height=cmd.args["height"],
-                       subcell=cmd.args["subcell"])
+    # `add_layer` warns when the name resolves to no depth, which is right
+    # for art and wrong here -- and it cannot tell the two apart, because
+    # the declaration below does not exist yet when it runs. Narrowed to
+    # the case where that one advisory is the only content warning the call
+    # can raise: a layer that will not draw, whose name has no depth.
+    silence = not cmd.args["renders"] and resolve_layer_depth(name) is None
+    with warnings.catch_warnings():
+        if silence:
+            warnings.simplefilter("ignore", PyoneerContentWarning)
+        layer = document.add_layer(name, cmd.args["kind"],
+                                   group=cmd.args["group"] or None,
+                                   index=cmd.args["index"],
+                                   fill=cmd.args["fill"],
+                                   width=cmd.args["width"],
+                                   height=cmd.args["height"],
+                                   subcell=cmd.args["subcell"])
+    if not cmd.args["renders"]:
+        # Through the same capability table `map.layer.set` writes, so the
+        # property name and its type come from one declaration.
+        capability = layer_module.BY_KEY["renders"]
+        layer.properties[capability.property_name] = capability.coerce(False)
     return Command("map.layer.remove",
-                   cmd.scope.child("layer", cmd.args["name"]),
+                   cmd.scope.child("layer", name),
                    {"next_layer_id": before})
 
 

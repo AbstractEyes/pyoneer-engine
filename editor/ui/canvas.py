@@ -1867,8 +1867,15 @@ class MapCanvas(QGraphicsView):
         anything else. It has to be right at creation: no verb re-scales a
         companion afterwards, and `map.layer.set` refuses to write
         `pyoneer_subcell`.
+
+        `renders=False` is stated HERE, at creation, and not only by the
+        `map.layer.set` that follows: a name with no depth is advised to get
+        one as the layer is added, and a companion that arrives silently is
+        the difference between painting collision and being told to draw the
+        masks. The later set is left in place and is a no-op against the
+        value this already wrote.
         """
-        args: dict = {"name": name, "kind": "tile"}
+        args: dict = {"name": name, "kind": "tile", "renders": False}
         subcell = self.paint_subcell
         if subcell > 1:
             args["subcell"] = subcell

@@ -740,13 +740,45 @@ try:
            layers_module.gid_to_mask(65, 1793), layers_module.PASS_ALL)
 
     print()
-    print("a layer with no depth mapping warns rather than silently not drawing")
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        session.run(Command("map.layer.add", MAP,
-                            {"name": "NotInDepthPy", "kind": "tile"}))
-    expect("it warned", any("depth" in str(w.message) for w in caught), True)
+    print("a layer with no depth mapping warns rather than silently not "
+          "drawing -- unless it says it does not draw")
+
+    def add_layer_warnings(args):
+        """Every warning ONE map.layer.add raised, as text."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            session.run(Command("map.layer.add", MAP, args))
+        return [str(entry.message) for entry in caught]
+
+    # Half one: art. The guard that caught 39 authored tiles going missing to
+    # a misspelling, and the fix for the false positive beside it must not
+    # weaken it.
+    said = add_layer_warnings({"name": "NotInDepthPy", "kind": "tile"})
+    expect("it warned", any("depth" in message for message in said), True)
+    expect("and the layer it names is the one that was added",
+           [m for m in said if "NotInDepthPy" in m] != [], True)
     session.undo()
+    expect("undo took the art layer back out",
+           "NotInDepthPy" in session.project.map("test").layer_names(), False)
+
+    # Half two: data. A passability companion is mask numbers read as gids;
+    # advising the author to give it a depth advises him to paint the mask
+    # vocabulary over his own map, which is what the collision tools do to
+    # him the moment he paints a single cell.
+    quiet = add_layer_warnings({"name": "NotInDepthPyEither", "kind": "tile",
+                                "renders": False})
+    expect("a layer that declares it does not draw is added in silence",
+           quiet, [])
+    companion = session.project.map("test").tile_layer("NotInDepthPyEither")
+    expect("and the declaration really went into the file, so the engine "
+           "skips it whatever its name resolves to",
+           companion.properties.as_dict().get(
+               layers_module.BY_KEY["renders"].property_name), False)
+    expect("which is what the engine's own reader sees",
+           layers_module.read_profile(companion).renders, False)
+    session.undo()
+    expect("undo took the declaration with the layer",
+           session.project.map("test").to_bytes() == ORIGINAL, True)
 
     expect("a duplicate layer name is refused", True, True)
     expect_raises("adding a layer that already exists", PyoneerCommandApplyError,

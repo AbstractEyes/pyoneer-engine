@@ -318,8 +318,12 @@ try:
     expect("it opened the map", window.map_name, "test")
     expect("the canvas composited something",
            len(window.canvas.scene().items()) > 0, True)
-    expect("the tile palette found both tilesets",
-           len(window.canvas.atlas.entries), 2)
+    # Derived from the map, not counted by hand: the author adds a tileset the
+    # moment he paints collision, and a literal here goes red for that while
+    # saying nothing about the palette.
+    expect("the tile palette found every tileset the map declares",
+           len(window.canvas.atlas.entries),
+           len(window.session.project.map(window.map_name).tileset_names()))
     expect("it picked a paintable layer to start on",
            window.canvas.active_layer, "Paralax")
 
@@ -369,8 +373,12 @@ try:
     expect("but neither is addressable",
            any("layer:Graphic" in a or "layer:Entity" in a
                for a in addressable), False)
-    expect("all seven real layers are",
-           sum(1 for a in addressable if "/layer:" in a), 7)
+    # Tile layers AND object layers are addressable; the two Tiled groups
+    # above them are structure and are not.
+    _doc = window.session.project.map(window.map_name)
+    expect("every real layer is addressable, and only those",
+           sum(1 for a in addressable if "/layer:" in a),
+           len(_doc.tile_layer_names()) + len(_doc.object_layer_names()))
 
     # ----------------------------------------------------------------
     print()

@@ -3,7 +3,7 @@
 
 # `scripts/core/renderer.py` — tier 2 #TAG:scripts/core/renderer.py
 
-`scripts.core.renderer` · 943 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.renderer` · 965 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -90,7 +90,7 @@
 
 ### `class LayerRenderer` #TAG:LayerRenderer
 
-`scripts/core/renderer.py:376`–`942`
+`scripts/core/renderer.py:376`–`964`
 
 - `scripts/core/renderer.py:378` `__init__(self, surface: Surface)` #TAG:LayerRenderer.__init__
   - Load the Tiled map data and the surface to render to.
@@ -103,39 +103,39 @@
   - Make a tile layer, and bind it to the layer list for rendering.
 - `scripts/core/renderer.py:496` `__prepare_map_layers(self, tmx_data: pytmx.TiledMap)` #TAG:LayerRenderer.__prepare_map_layers
   - Rasterize every tile layer the MAP declares.
-- `scripts/core/renderer.py:547` `invalidate(self, depth_band: int | tuple[int, int] | None=None, *, sources_dirty: bool=True) -> None` #TAG:LayerRenderer.invalidate
+- `scripts/core/renderer.py:569` `invalidate(self, depth_band: int | tuple[int, int] | None=None, *, sources_dirty: bool=True) -> None` #TAG:LayerRenderer.invalidate
   - Mark baked map composites stale; the next render() rebakes them.
-- `scripts/core/renderer.py:579` `rebake_map(self) -> None` #TAG:LayerRenderer.rebake_map
+- `scripts/core/renderer.py:601` `rebake_map(self) -> None` #TAG:LayerRenderer.rebake_map
   - Do the work invalidate() asked for. Idempotent.
-- `scripts/core/renderer.py:607` `__regroup_map_layers(self) -> None` #TAG:LayerRenderer.__regroup_map_layers
+- `scripts/core/renderer.py:629` `__regroup_map_layers(self) -> None` #TAG:LayerRenderer.__regroup_map_layers
   - Replace runs of tile-only depths with one MapComposite each.
-- `scripts/core/renderer.py:665` `@staticmethod __split_exact_groups(sources: list[MapLayer]) -> list[list[MapLayer]]` #TAG:LayerRenderer.__split_exact_groups
+- `scripts/core/renderer.py:687` `@staticmethod __split_exact_groups(sources: list[MapLayer]) -> list[list[MapLayer]]` #TAG:LayerRenderer.__split_exact_groups
   - Greedily cut a run into the longest provably-exact merge groups.
-- `scripts/core/renderer.py:689` `image(self, image_in: Surface | None=None) -> Surface` #TAG:LayerRenderer.image
-- `scripts/core/renderer.py:694` `__prepare_entity_layers(self, tmx_data: pytmx.TiledMap)` #TAG:LayerRenderer.__prepare_entity_layers
+- `scripts/core/renderer.py:711` `image(self, image_in: Surface | None=None) -> Surface` #TAG:LayerRenderer.image
+- `scripts/core/renderer.py:716` `__prepare_entity_layers(self, tmx_data: pytmx.TiledMap)` #TAG:LayerRenderer.__prepare_entity_layers
   - Spawn every typed object on the map's object layers and bind it.
-- `scripts/core/renderer.py:746` `bind_camera(self, camera: GameCamera)` #TAG:LayerRenderer.bind_camera
+- `scripts/core/renderer.py:768` `bind_camera(self, camera: GameCamera)` #TAG:LayerRenderer.bind_camera
   - Bind a camera to the renderer.
-- `scripts/core/renderer.py:750` `remove_camera(self)` #TAG:LayerRenderer.remove_camera
+- `scripts/core/renderer.py:772` `remove_camera(self)` #TAG:LayerRenderer.remove_camera
   - Remove the camera from the renderer.
-- `scripts/core/renderer.py:754` `__deploy_blits(self)` #TAG:LayerRenderer.__deploy_blits
+- `scripts/core/renderer.py:776` `__deploy_blits(self)` #TAG:LayerRenderer.__deploy_blits
   - Get the render layers.
-- `scripts/core/renderer.py:774` `bind(self, layer: str | int, game_object: PyoneerGameObject)` #TAG:LayerRenderer.bind
+- `scripts/core/renderer.py:796` `bind(self, layer: str | int, game_object: PyoneerGameObject)` #TAG:LayerRenderer.bind
   - Bind a game object to a specific layer.
-- `scripts/core/renderer.py:788` `unbind(self, game_object: PyoneerGameObject) -> bool` #TAG:LayerRenderer.unbind
+- `scripts/core/renderer.py:810` `unbind(self, game_object: PyoneerGameObject) -> bool` #TAG:LayerRenderer.unbind
   - Stop drawing `game_object`. The inverse of `bind`.
-- `scripts/core/renderer.py:825` `__entity_layer(self, depth: int, layer_name: int | str) -> tuple[EntityLayer, bool]` #TAG:LayerRenderer.__entity_layer
+- `scripts/core/renderer.py:847` `__entity_layer(self, depth: int, layer_name: int | str) -> tuple[EntityLayer, bool]` #TAG:LayerRenderer.__entity_layer
   - The EntityLayer at `depth`, creating one if that depth has none.
-- `scripts/core/renderer.py:840` `__bind_entity(self, entity: GameEntity, layer_name: int | str='ENTITY_2')` #TAG:LayerRenderer.__bind_entity
+- `scripts/core/renderer.py:862` `__bind_entity(self, entity: GameEntity, layer_name: int | str='ENTITY_2')` #TAG:LayerRenderer.__bind_entity
   - Bind an entity to a specific layer.
-- `scripts/core/renderer.py:855` `__inside_map_span(self, depth: int) -> bool` #TAG:LayerRenderer.__inside_map_span
+- `scripts/core/renderer.py:877` `__inside_map_span(self, depth: int) -> bool` #TAG:LayerRenderer.__inside_map_span
   - Could a new layer at `depth` land inside a run of tile layers?
-- `scripts/core/renderer.py:866` `__invalidate_if_inside_map_span(self, depth: int) -> None` #TAG:LayerRenderer.__invalidate_if_inside_map_span
+- `scripts/core/renderer.py:888` `__invalidate_if_inside_map_span(self, depth: int) -> None` #TAG:LayerRenderer.__invalidate_if_inside_map_span
   - Regroup ONLY if a new layer at `depth` could split a tile run.
-- `scripts/core/renderer.py:877` `__prepare_depth(self, depth: int | str)` #TAG:LayerRenderer.__prepare_depth
-- `scripts/core/renderer.py:888` `__bind_ui_component(self, widget: GameComponent, layer_name: str | int='UI')` #TAG:LayerRenderer.__bind_ui_component
-- `scripts/core/renderer.py:897` `update(self, delta: float)` #TAG:LayerRenderer.update
+- `scripts/core/renderer.py:899` `__prepare_depth(self, depth: int | str)` #TAG:LayerRenderer.__prepare_depth
+- `scripts/core/renderer.py:910` `__bind_ui_component(self, widget: GameComponent, layer_name: str | int='UI')` #TAG:LayerRenderer.__bind_ui_component
+- `scripts/core/renderer.py:919` `update(self, delta: float)` #TAG:LayerRenderer.update
   - update all available layers.
-- `scripts/core/renderer.py:909` `render(self)` #TAG:LayerRenderer.render
+- `scripts/core/renderer.py:931` `render(self)` #TAG:LayerRenderer.render
   - draw all available layers.
-- `scripts/core/renderer.py:925` `rotate_image(self, image, position, origin, angle) -> tuple[Surface, Rect]` #TAG:LayerRenderer.rotate_image
+- `scripts/core/renderer.py:947` `rotate_image(self, image, position, origin, angle) -> tuple[Surface, Rect]` #TAG:LayerRenderer.rotate_image

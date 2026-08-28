@@ -20,7 +20,7 @@ Rules that are enforced, not suggested:
 
 ### `map.layer.add`
 
-Add a tile or object layer. A tile layer is created at the map's size unless width/height or subcell say otherwise. Note that a layer only RENDERS if its name has a depth in scripts/core/depth.py.
+Add a tile or object layer. A tile layer is created at the map's size unless width/height or subcell say otherwise. Note that a layer only RENDERS if its name has a depth in scripts/core/depth.py and it has not said renders=false.
 
 *Scopes:* `map:*`
 
@@ -34,6 +34,7 @@ Add a tile or object layer. A tile layer is created at the map's size unless wid
 | `width` | int | no (default `None`) | columns in a new tile layer; omit for the map's own width. A passability companion is wider than the map when it is finer than it |
 | `height` | int | no (default `None`) | rows in a new tile layer; omit for the map's own height |
 | `subcell` | int | no (default `None`) | sub-cells per map tile along each axis. Sizes the layer at subcell x the map AND declares pyoneer_subcell on it, in one command, because a layer that is one without the other is a map that does not load |
+| `renders` | bool | no (default `True`) | does this layer DRAW? False declares pyoneer_renders=false on it in the same command, which is what a passability companion is: mask numbers, read as gids, that paint the mask vocabulary over the map if anything ever draws them. A layer created this way is also not advised to get a depth, because it has just said it does not draw |
 
 ```json
 {"verb": "map.layer.add", "scope": "map:test", "args": {"name": "Hazard", "kind": "tile"}}

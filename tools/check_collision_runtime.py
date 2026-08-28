@@ -1,6 +1,6 @@
 """Verify that the engine reads authored masks and refuses a blocked step.
 
-Ten claims. Every one of them is something the code is otherwise free to
+Eleven claims. Every one is something the code is otherwise free to
 break with no visible symptom until a player walks through a wall in a room
 nobody tests twice:
 
@@ -14,6 +14,7 @@ nobody tests twice:
     editor/core/collision.py is still this module, and not a copy of it
     a companion may be four times the map, and an old one gates as it did
     a mask baked into a TILE gates wherever it is stamped, and loses to paint
+    a layer that moves under the camera gates nothing, painted or not
 
 WHAT SECTION 10 IS FOR
 ----------------------
@@ -115,6 +116,7 @@ from scripts.core.collision_runtime import (
     PASS_ALL,
     STAR,
     allowed_distance,
+    at_world_coordinates,
     collision_first_gid,
     collision_layers,
     companion_pairs,
@@ -136,6 +138,7 @@ from scripts.core.collision_runtime import (
     split_gid,
     tileset_defaults,
     transform_mask,
+    world_coordinate_fault,
 )
 from scripts.core.depth import MAP_DEPTH, resolve_layer_depth
 from scripts.core.errors import PyoneerConfigError
@@ -687,6 +690,10 @@ expect("the flip bits survive as a mirrored mask",
 expect("a cell outside the layer reads as empty", from_pytmx(9, 9), 0)
 
 field = field_from_map(parsed)
+# Everything below reads through `field`, and `field_from_map` answers None
+# for a map whose stack came out empty. Stated first, so a change that empties
+# this stack is a named failure rather than an AttributeError twelve lines on.
+expect("the fixture bakes a field at all", field is not None, True)
 expect("the field is the map's size and tile size",
        (field.width, field.height, field.tile_width, field.tile_height),
        (4, 3, 16, 16))
@@ -1269,7 +1276,9 @@ expect_raises("a scale below one is refused", ValueError,
 #   a map with no mask file is unchanged        AND  the same map with one is
 #                                                    measurably different
 #   an unpaired layer joins the stack           AND  only when defaults exist
-#   a parallaxed layer is left out              AND  a paired one never is
+#   a moving layer is left out                  AND  its static twin joins
+#   painting a mask on a moving layer does      AND  the same mask on the
+#     not buy it a place in the stack                static twin still gates
 print()
 print("level one: a mask baked into the tile")
 
@@ -1370,18 +1379,53 @@ assert NO_DEFAULTS != DEFAULTS and "pyoneer_collision" not in NO_DEFAULTS
 # Paralax at 1.0 is no longer parallaxed, so it is an ordinary world-
 # coordinate layer and joins the stack with nothing declared on it at all.
 WORLD_PARALLAX = DEFAULTS.replace('value="1.4"', 'value="1.0"')
-# ...and this one stays parallaxed but DECLARES a companion, which is the
-# author saying "collide against this layer" out loud. A declaration is never
-# filtered, whatever the layer's motion.
-DECLARED_PARALLAX = DEFAULTS.replace(
-    '   <property name="pyoneer_parallax_x" type="float" value="1.4"/>\n',
-    '   <property name="pyoneer_parallax_x" type="float" value="1.4"/>\n'
-    '   <property name="pyoneer_passability" value="ParalaxMasks"/>\n'
-).replace(' </map>', ' </map>').replace(
-    '</map>',
-    ' <layer id="6" name="ParalaxMasks" width="4" height="3">\n'
-    '  <data encoding="csv">\n0,0,0,0,\n0,0,0,0,\n0,0,0,0\n</data>\n'
-    ' </layer>\n</map>')
+
+# ---- the same layer, PAIRED, under each of the four declarations --------
+# A companion for Paralax that actually says something: BLOCK_ALL at (0, 0),
+# the one cell of this map every other layer abstains at, so "is Paralax in
+# the stack" is readable in a single byte of the baked field. Paralax also
+# holds a BLOCK_ALL tile at (3, 2), which asks the same question of LEVEL
+# ONE -- a paired layer carries both levels, and excluding it has to take
+# both.
+PARALAX_MASKS = (
+    ' <layer id="7" name="ParalaxMasks" width="4" height="3">\n'
+    '  <data encoding="csv">\n20,0,0,0,\n0,0,0,0,\n0,0,0,0\n</data>\n'
+    ' </layer>\n')
+PARALAX_PROPS = ('  <properties>\n'
+                 '   <property name="pyoneer_parallax_x" type="float" '
+                 'value="1.4"/>\n'
+                 '  </properties>\n')
+assert PARALAX_PROPS in DEFAULTS
+PARALLAX_X_PROP = ('   <property name="pyoneer_parallax_x" type="float" '
+                   'value="1.4"/>\n')
+DYNAMIC_PROP = '   <property name="pyoneer_motion" value="dynamic"/>\n'
+PASSABILITY_PROP = ('   <property name="pyoneer_passability" '
+                    'value="ParalaxMasks"/>\n')
+
+
+def paired_parallax(*properties: str) -> str:
+    """DEFAULTS with Paralax declaring exactly `properties`, plus a companion.
+
+    One function rather than four hand-written maps: every byte outside that
+    <properties> block is identical across the variants, so a difference
+    between two of their fields is the declaration and nothing else.
+    """
+    text = DEFAULTS.replace(
+        PARALAX_PROPS,
+        '  <properties>\n%s  </properties>\n' % "".join(properties),
+    ).replace('</map>', PARALAX_MASKS + '</map>')
+    assert text != DEFAULTS and 'name="ParalaxMasks"' in text
+    return text
+
+
+# The control is PAIRED_STATIC: a paired layer declaring nothing else is an
+# ordinary world-coordinate layer and its masks gate. The other three are the
+# ways a layer stops being over the map -- parallax, motion, and both at
+# once, which is the shape the map being painted carried when this was found.
+PAIRED_STATIC = paired_parallax(PASSABILITY_PROP)
+PAIRED_PARALLAX = paired_parallax(PARALLAX_X_PROP, PASSABILITY_PROP)
+PAIRED_DYNAMIC = paired_parallax(DYNAMIC_PROP, PASSABILITY_PROP)
+PAIRED_BOTH = paired_parallax(PARALLAX_X_PROP, DYNAMIC_PROP, PASSABILITY_PROP)
 
 level_one_scratch = tempfile.mkdtemp(prefix="pyoneer-defaults-")
 
@@ -1514,6 +1558,21 @@ expect("a layer that declares nothing gates through its tiles alone",
 expect("...and it is really unpaired, so nothing but the tileset put it there",
        [name for name, _c in companion_pairs(MapDocument.load(DEFAULTS_PATH))],
        ["Foreground", "Floor"])
+# ---- WHICH LAYERS ARE AT WORLD COORDINATES ------------------------------
+# Four quadrants, and the bug that wrote this block lived in exactly one of
+# them. A layer drawn at a camera-dependent offset is filtered out of the
+# stack -- but the filter used to run only for a layer with NO companion, so
+# PAINTING a mask on a parallax layer routed around it, and one background
+# layer then gated every body on the map at every depth.
+#
+#               no companion                companion declared
+#   static      joins (level one)           joins, and its masks gate
+#   moving      left out, in silence        left out, and WARNS
+#
+# All four are asserted. A "fix" that drops every paired layer, or every
+# layer, or that warns about a layer it still gates on, passes any one of
+# them alone.
+
 # Paralax draws at 1.4x the camera, so its cell (3, 2) is not over the map's
 # cell (3, 2). It holds a BLOCK_ALL tile there and must not gate.
 expect("a parallaxed layer's tiles do not gate the world",
@@ -1521,9 +1580,167 @@ expect("a parallaxed layer's tiles do not gate the world",
 world_field = field_from_map(write_level_one("world", WORLD_PARALLAX))
 expect("the same layer at parallax 1.0 joins with nothing declared on it",
        world_field.mask_at(3, 2), BLOCK_ALL)
-declared_field = field_from_map(write_level_one("declared", DECLARED_PARALLAX))
-expect("and a parallaxed layer that DECLARES a companion is never filtered",
-       declared_field.mask_at(3, 2), BLOCK_ALL)
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    field_from_map(DEFAULTS_PATH)
+expect("an UNPAIRED moving layer is dropped in silence: nothing was authored",
+       [str(item.message) for item in caught], [])
+
+
+def paired_field(name, text):
+    """The baked field of one `paired_parallax` variant, and what it warned."""
+    with warnings.catch_warnings(record=True) as caught_:
+        warnings.simplefilter("always")
+        baked = field_from_map(write_level_one(name, text))
+    return baked, " ".join(str(item.message) for item in caught_)
+
+
+def cell(baked, x, y):
+    """`mask_at`, but readable when the map baked NO field at all.
+
+    None is a real answer in this section -- emptying the stack is exactly
+    what excluding the wrong layer does -- and an assertion that dies on it
+    with an AttributeError names nothing.
+    """
+    return None if baked is None else baked.mask_at(x, y)
+
+
+static_field, static_said = paired_field("paired_static", PAIRED_STATIC)
+parallax_field, parallax_said = paired_field("paired_parallax", PAIRED_PARALLAX)
+dynamic_field, dynamic_said = paired_field("paired_dynamic", PAIRED_DYNAMIC)
+both_field, both_said = paired_field("paired_both", PAIRED_BOTH)
+
+# The control half, and it has to be read at BOTH levels: a paired layer
+# carries a companion AND its own tiles' defaults, and a filter that took
+# only one of them would look right at whichever cell was asserted. (0, 0) is
+# the companion's painted BLOCK_ALL -- the one cell of this map no other
+# layer has an opinion about -- and (3, 2) is Paralax's own tile default.
+expect("a static layer's companion gates, and so does its tile default",
+       (cell(static_field, 0, 0), cell(static_field, 3, 2)),
+       (BLOCK_ALL, BLOCK_ALL))
+expect("...and that layer really is in the stack",
+       [layer.name for layer in
+        collision_layers(MapDocument.load(
+            write_level_one("paired_static", PAIRED_STATIC)))],
+       ["Foreground", "GroundClutter", "Floor", "Paralax"])
+
+# The half that was broken. Declaring a companion must not buy a moving layer
+# a place in the stack, by either level, under any of the three declarations.
+MOVING = (("parallaxed", PAIRED_PARALLAX), ("dynamic", PAIRED_DYNAMIC),
+          ("parallaxed+dynamic", PAIRED_BOTH))
+for (_label, _text), _got in zip(MOVING, (parallax_field, dynamic_field,
+                                          both_field)):
+    expect(f"a {_label} layer is excluded THOUGH it declares a companion",
+           (cell(_got, 0, 0), cell(_got, 3, 2)), (PASS_ALL, PASS_ALL))
+    expect(f"...and the whole {_label} field is the one with no Paralax in it",
+           _got and list(_got.masks()), list(level_one_field.masks()))
+    expect(f"...and the {_label} layer is in no stack under any name",
+           "Paralax" in [layer.name for layer in collision_layers(
+               MapDocument.load(write_level_one("stack-" + _label, _text)))],
+           False)
+
+# ...and the two fields really do differ, so the lines above are not all
+# passing because every variant bakes the same nothing. Exactly two cells:
+# (0, 0) is index 0 and (3, 2) is index 11 of a 4-wide field.
+expect("the static twin blocks exactly the two cells the moving one drops",
+       [i for i, (a, b) in enumerate(zip(static_field.masks(),
+                                         parallax_field.masks())) if a != b],
+       [0, 11])
+
+# THE WARNING IS THE DESIGN CHOICE. Raising would make an author's map
+# unloadable over content the editor let him paint; silence is the Paralax
+# misspelling that lost 39 tiles for months. So the message names the layer,
+# the companion whose masks are being dropped, and the reason -- and the
+# reason is read from the layer, so each variant names its own.
+expect("the warning names the layer, its companion, and the fault it has",
+       [(("Paralax" in said), ("ParalaxMasks" in said),
+         ("pyoneer_parallax_x" in said), ("pyoneer_motion" in said))
+        for said in (parallax_said, dynamic_said, both_said)],
+       [(True, True, True, False),
+        (True, True, False, True),
+        (True, True, True, True)])
+expect("...and the static twin, which still gates, says nothing at all",
+       static_said, "")
+
+paired_document = MapDocument.load(write_level_one("paired_both", PAIRED_BOTH))
+expect("world_coordinate_fault spells both faults the way the map does",
+       world_coordinate_fault(paired_document, "Paralax"),
+       "parallaxed (pyoneer_parallax_x=1.4, pyoneer_parallax_y=1) and "
+       "pyoneer_motion=dynamic")
+expect("...and answers None for a layer whose cells ARE the map's cells",
+       (world_coordinate_fault(paired_document, "Floor"),
+        at_world_coordinates(paired_document, "Floor"),
+        at_world_coordinates(paired_document, "Paralax")),
+       (None, True, False))
+
+# ---- the second-order effect: the stack can come out EMPTY ---------------
+# The map this was reported on had its ONLY masks painted on the parallax
+# layer, so excluding it leaves the stack empty -- and an empty stack bakes
+# no field at all, which means every body is UNGATED. That is the correct
+# answer for a map whose only collision was painted where collision cannot
+# be, and it is the one answer that must not arrive quietly.
+ONLY_PARALLAX = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" \
+renderorder="right-down" width="4" height="3" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="9" nextobjectid="1">
+ <tileset firstgid="1" name="collision" tilewidth="16" tileheight="16" tilecount="17" columns="17">
+  <image source="no-such-masks.png" width="272" height="16"/>
+ </tileset>
+ <layer id="1" name="Floor" width="4" height="3">
+  <data encoding="csv">
+0,0,0,0,
+0,0,0,0,
+0,0,0,0
+</data>
+ </layer>
+ <layer id="2" name="Paralax" width="4" height="3">
+  <properties>
+   <property name="pyoneer_motion" value="dynamic"/>
+   <property name="pyoneer_parallax_x" type="float" value="1.4"/>
+   <property name="pyoneer_passability" value="ParalaxCollision"/>
+  </properties>
+  <data encoding="csv">
+0,0,0,0,
+0,0,0,0,
+0,0,0,0
+</data>
+ </layer>
+ <layer id="3" name="ParalaxCollision" width="4" height="3">
+  <properties>
+   <property name="pyoneer_renders" type="bool" value="false"/>
+  </properties>
+  <data encoding="csv">
+16,0,0,0,
+0,0,0,0,
+0,0,0,0
+</data>
+ </layer>
+</map>
+"""
+# The same map with the two motion properties gone. Identical everywhere
+# else, the painted mask included, so the difference between the two fields
+# is the declaration and nothing else.
+SETTLED_PARALLAX = ONLY_PARALLAX.replace(
+    '   <property name="pyoneer_motion" value="dynamic"/>\n'
+    '   <property name="pyoneer_parallax_x" type="float" value="1.4"/>\n', "")
+assert SETTLED_PARALLAX != ONLY_PARALLAX
+
+only_field, only_said = paired_field("only-parallax", ONLY_PARALLAX)
+expect("a map whose only masks are on a moving layer bakes NO field at all",
+       only_field, None)
+expect("...and says which layer, which masks, and what to do instead",
+       ("Paralax" in only_said, "ParalaxCollision" in only_said,
+        "NOTHING ON THIS LAYER GATES MOVEMENT" in only_said,
+        "static, unparallaxed" in only_said),
+       (True, True, True, True))
+settled_field, settled_said = paired_field("settled-parallax",
+                                           SETTLED_PARALLAX)
+expect("the same map with those two properties gone bakes a field that blocks",
+       (settled_field and settled_field.width, cell(settled_field, 0, 0)),
+       (4, BLOCK_ALL))
+expect("...and warns about nothing, so the None above is the motion and not "
+       "a broken fixture", settled_said, "")
+
 # The guard that keeps every existing map on its old bytes: an unpaired layer
 # joins the stack only when there are defaults for it to carry.
 expect("an unpaired layer joins the stack only when defaults exist",

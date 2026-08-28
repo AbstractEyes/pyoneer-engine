@@ -21,7 +21,9 @@ CHECKS = [
     ("errors", "exception hierarchy, naming schema, single image slot"),
     ("log", "trace channels off by default, opt-in, lazy formatting"),
     ("viewclip", "exact-pixel clipping, containment, off-screen culling"),
-    ("maplayers", "empty layers dropped, composites exact, rebake reproducible"),
+    ("maplayers", "empty layers dropped, composites exact, rebake "
+                  "reproducible, and a layer declaring it does not draw is "
+                  "skipped in silence while one that does still warns"),
     ("grid", "grid layout, binding, sizing, scrolling inside a Panel"),
     ("anchor", "children reflow when their parent resizes"),
     ("scroll", "no-overflow scrollbars are hidden, inactive, and safe to drag"),
@@ -69,7 +71,10 @@ CHECKS = [
                         "over a map whose tiles carry their own masks, and a "
                         "tile picked in the palette baking its own mask into "
                         "the tileset"),
-    ("collision_runtime", "the engine reads a mask, stacks a tileset's own defaults under it, and gates movement"),
+    ("collision_runtime", "the engine reads a mask, stacks a tileset's own "
+                          "defaults under it, gates movement, and keeps a "
+                          "layer that moves under the camera out of the "
+                          "stack whether or not masks were painted on it"),
     ("collision_field", "map load bakes passability and every body is handed it"),
     ("actions_panel", "trigger authoring, action verbs, exact inverses"),
     ("behavior_ui", "behavior checklist from the registry, refusals at "

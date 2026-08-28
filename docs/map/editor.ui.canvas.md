@@ -5,7 +5,7 @@
 
 > The map canvas and the tile palette.
 
-`editor.ui.canvas` · 2327 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.canvas` · 2334 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -47,7 +47,7 @@
 
 ### `class MapCanvas(QGraphicsView)` #TAG:MapCanvas
 
-`editor/ui/canvas.py:302`–`2021`
+`editor/ui/canvas.py:302`–`2028`
 
 > A depth-ordered, paintable view of one map.
 
@@ -160,63 +160,63 @@
   - One stroke, one transaction -- tileset and companion layer included.
 - `editor/ui/canvas.py:1857` `__companion_add_args(self, name: str) -> dict` #TAG:MapCanvas.__companion_add_args
   - The `map.layer.add` that creates a companion for this stroke.
-- `editor/ui/canvas.py:1877` `__pick_mask(self, column: int, row: int) -> None` #TAG:MapCanvas.__pick_mask
+- `editor/ui/canvas.py:1884` `__pick_mask(self, column: int, row: int) -> None` #TAG:MapCanvas.__pick_mask
   - Alt+click, or the picker tool, in collision mode.
-- `editor/ui/canvas.py:1895` `__terrain_for_brush(self)` #TAG:MapCanvas.__terrain_for_brush
+- `editor/ui/canvas.py:1902` `__terrain_for_brush(self)` #TAG:MapCanvas.__terrain_for_brush
   - The autotile group the currently-picked tile belongs to.
-- `editor/ui/canvas.py:1914` `__begin_terrain(self, layer, column: int, row: int, *, erase: bool) -> None` #TAG:MapCanvas.__begin_terrain
-- `editor/ui/canvas.py:1926` `__draw_terrain_ghost(self) -> None` #TAG:MapCanvas.__draw_terrain_ghost
-- `editor/ui/canvas.py:1944` `__commit_terrain(self) -> None` #TAG:MapCanvas.__commit_terrain
-- `editor/ui/canvas.py:1961` `__pick(self, column: int, row: int) -> None` #TAG:MapCanvas.__pick
-- `editor/ui/canvas.py:1974` `__object_under(self, point)` #TAG:MapCanvas.__object_under
-- `editor/ui/canvas.py:1987` `__click_object(self, point, column: int, row: int) -> None` #TAG:MapCanvas.__click_object
-- `editor/ui/canvas.py:2013` `__delete_object_under(self, point) -> None` #TAG:MapCanvas.__delete_object_under
+- `editor/ui/canvas.py:1921` `__begin_terrain(self, layer, column: int, row: int, *, erase: bool) -> None` #TAG:MapCanvas.__begin_terrain
+- `editor/ui/canvas.py:1933` `__draw_terrain_ghost(self) -> None` #TAG:MapCanvas.__draw_terrain_ghost
+- `editor/ui/canvas.py:1951` `__commit_terrain(self) -> None` #TAG:MapCanvas.__commit_terrain
+- `editor/ui/canvas.py:1968` `__pick(self, column: int, row: int) -> None` #TAG:MapCanvas.__pick
+- `editor/ui/canvas.py:1981` `__object_under(self, point)` #TAG:MapCanvas.__object_under
+- `editor/ui/canvas.py:1994` `__click_object(self, point, column: int, row: int) -> None` #TAG:MapCanvas.__click_object
+- `editor/ui/canvas.py:2020` `__delete_object_under(self, point) -> None` #TAG:MapCanvas.__delete_object_under
 
 ### `class _TerrainStroke` #TAG:_TerrainStroke
 
-`editor/ui/canvas.py:2024`–`2081`
+`editor/ui/canvas.py:2031`–`2088`
 
 > One press-drag-release of the terrain tool.
 
-- `editor/ui/canvas.py:2037` `__init__(self, layer, terrain: autotile.TerrainSet, *, erase: bool=False, size: int=1)` #TAG:_TerrainStroke.__init__
-- `editor/ui/canvas.py:2054` `read(self, x: int, y: int) -> int` #TAG:_TerrainStroke.read
+- `editor/ui/canvas.py:2044` `__init__(self, layer, terrain: autotile.TerrainSet, *, erase: bool=False, size: int=1)` #TAG:_TerrainStroke.__init__
+- `editor/ui/canvas.py:2061` `read(self, x: int, y: int) -> int` #TAG:_TerrainStroke.read
   - Uncommitted edits win, so a drag builds on its own work.
-- `editor/ui/canvas.py:2060` `extend(self, column: int, row: int) -> None` #TAG:_TerrainStroke.extend
-- `editor/ui/canvas.py:2079` `edits(self) -> list[tuple[int, int, int]]` #TAG:_TerrainStroke.edits
+- `editor/ui/canvas.py:2067` `extend(self, column: int, row: int) -> None` #TAG:_TerrainStroke.extend
+- `editor/ui/canvas.py:2086` `edits(self) -> list[tuple[int, int, int]]` #TAG:_TerrainStroke.edits
 
 ### `class TilePalette(QWidget)` #TAG:TilePalette
 
-`editor/ui/canvas.py:2088`–`2246`
+`editor/ui/canvas.py:2095`–`2253`
 
 > Pick a tile, or drag out a rectangle to pick a multi-tile stamp.
 
-- `editor/ui/canvas.py:2097` `__init__(self, parent: QWidget | None=None)` #TAG:TilePalette.__init__
-- `editor/ui/canvas.py:2131` `set_atlas(self, atlas: TilesetAtlas) -> None` #TAG:TilePalette.set_atlas
-- `editor/ui/canvas.py:2144` `set_masks(self, masks: dict[int, int]) -> None` #TAG:TilePalette.set_masks
+- `editor/ui/canvas.py:2104` `__init__(self, parent: QWidget | None=None)` #TAG:TilePalette.__init__
+- `editor/ui/canvas.py:2138` `set_atlas(self, atlas: TilesetAtlas) -> None` #TAG:TilePalette.set_atlas
+- `editor/ui/canvas.py:2151` `set_masks(self, masks: dict[int, int]) -> None` #TAG:TilePalette.set_masks
   - Which gids their own tileset already masks. See `masks`.
-- `editor/ui/canvas.py:2155` `__on_choose(self, index: int) -> None` #TAG:TilePalette.__on_choose
-- `editor/ui/canvas.py:2164` `@property columns(self) -> int` #TAG:TilePalette.columns
-- `editor/ui/canvas.py:2168` `@property rows(self) -> int` #TAG:TilePalette.rows
-- `editor/ui/canvas.py:2173` `gid_at(self, column: int, row: int) -> int | None` #TAG:TilePalette.gid_at
-- `editor/ui/canvas.py:2183` `begin(self, column: int, row: int) -> None` #TAG:TilePalette.begin
-- `editor/ui/canvas.py:2187` `extend(self, column: int, row: int) -> None` #TAG:TilePalette.extend
-- `editor/ui/canvas.py:2193` `commit(self) -> None` #TAG:TilePalette.commit
-- `editor/ui/canvas.py:2218` `describe(self, stamp: Stamp) -> str` #TAG:TilePalette.describe
+- `editor/ui/canvas.py:2162` `__on_choose(self, index: int) -> None` #TAG:TilePalette.__on_choose
+- `editor/ui/canvas.py:2171` `@property columns(self) -> int` #TAG:TilePalette.columns
+- `editor/ui/canvas.py:2175` `@property rows(self) -> int` #TAG:TilePalette.rows
+- `editor/ui/canvas.py:2180` `gid_at(self, column: int, row: int) -> int | None` #TAG:TilePalette.gid_at
+- `editor/ui/canvas.py:2190` `begin(self, column: int, row: int) -> None` #TAG:TilePalette.begin
+- `editor/ui/canvas.py:2194` `extend(self, column: int, row: int) -> None` #TAG:TilePalette.extend
+- `editor/ui/canvas.py:2200` `commit(self) -> None` #TAG:TilePalette.commit
+- `editor/ui/canvas.py:2225` `describe(self, stamp: Stamp) -> str` #TAG:TilePalette.describe
   - The caption for a pick: what it is, and what it already carries.
-- `editor/ui/canvas.py:2226` `selection_rect(self) -> tuple[int, int, int, int] | None` #TAG:TilePalette.selection_rect
-- `editor/ui/canvas.py:2233` `select_gid(self, gid: int) -> None` #TAG:TilePalette.select_gid
+- `editor/ui/canvas.py:2233` `selection_rect(self) -> tuple[int, int, int, int] | None` #TAG:TilePalette.selection_rect
+- `editor/ui/canvas.py:2240` `select_gid(self, gid: int) -> None` #TAG:TilePalette.select_gid
   - Move the highlight to a gid chosen elsewhere (the canvas picker).
 
 ### `class _PaletteSurface(QWidget)` #TAG:_PaletteSurface
 
-`editor/ui/canvas.py:2249`–`2326`
+`editor/ui/canvas.py:2256`–`2333`
 
 > The drawn grid. Split out so the palette can own scrolling.
 
-- `editor/ui/canvas.py:2252` `__init__(self, palette: TilePalette)` #TAG:_PaletteSurface.__init__
-- `editor/ui/canvas.py:2258` `rebuild(self) -> None` #TAG:_PaletteSurface.rebuild
-- `editor/ui/canvas.py:2298` `paintEvent(self, _event) -> None` #TAG:_PaletteSurface.paintEvent
-- `editor/ui/canvas.py:2311` `__cell(self, position) -> tuple[int, int]` #TAG:_PaletteSurface.__cell
-- `editor/ui/canvas.py:2315` `mousePressEvent(self, event) -> None` #TAG:_PaletteSurface.mousePressEvent
-- `editor/ui/canvas.py:2320` `mouseMoveEvent(self, event) -> None` #TAG:_PaletteSurface.mouseMoveEvent
-- `editor/ui/canvas.py:2324` `mouseReleaseEvent(self, event) -> None` #TAG:_PaletteSurface.mouseReleaseEvent
+- `editor/ui/canvas.py:2259` `__init__(self, palette: TilePalette)` #TAG:_PaletteSurface.__init__
+- `editor/ui/canvas.py:2265` `rebuild(self) -> None` #TAG:_PaletteSurface.rebuild
+- `editor/ui/canvas.py:2305` `paintEvent(self, _event) -> None` #TAG:_PaletteSurface.paintEvent
+- `editor/ui/canvas.py:2318` `__cell(self, position) -> tuple[int, int]` #TAG:_PaletteSurface.__cell
+- `editor/ui/canvas.py:2322` `mousePressEvent(self, event) -> None` #TAG:_PaletteSurface.mousePressEvent
+- `editor/ui/canvas.py:2327` `mouseMoveEvent(self, event) -> None` #TAG:_PaletteSurface.mouseMoveEvent
+- `editor/ui/canvas.py:2331` `mouseReleaseEvent(self, event) -> None` #TAG:_PaletteSurface.mouseReleaseEvent
