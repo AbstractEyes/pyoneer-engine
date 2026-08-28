@@ -5,75 +5,77 @@
 
 > Maps named in config/maps.json, parsed and handed to the renderer.
 
-`config.managers.map_data` · 655 lines · tier 1: [`../MAP.md`](../MAP.md)
+`config.managers.map_data` · 677 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    config.managers.core_data scripts.core.errors scripts.core.log scripts.loaders.blitmap scripts.loaders.map_document
+    config.managers.core_data scripts.core.art scripts.core.errors scripts.core.log scripts.loaders.blitmap scripts.loaders.map_document
 
 ## Module constants
 
-- `config/managers/map_data.py:56` `REPO_ROOT` #TAG:map_data.REPO_ROOT
-- `config/managers/map_data.py:60` `TMX_SUFFIX` #TAG:TMX_SUFFIX
-- `config/managers/map_data.py:65` `KNOWN_SUFFIXES` #TAG:KNOWN_SUFFIXES
-- `config/managers/map_data.py:443` `TILE_LAYER_TYPES` #TAG:TILE_LAYER_TYPES
+- `config/managers/map_data.py:58` `REPO_ROOT` #TAG:map_data.REPO_ROOT
+- `config/managers/map_data.py:62` `TMX_SUFFIX` #TAG:TMX_SUFFIX
+- `config/managers/map_data.py:86` `KNOWN_SUFFIXES` #TAG:KNOWN_SUFFIXES
+- `config/managers/map_data.py:464` `TILE_LAYER_TYPES` #TAG:TILE_LAYER_TYPES
 
 ## Functions
 
-- `config/managers/map_data.py:68` `resolve_map_path(relative: str) -> str` #TAG:resolve_map_path
+- `config/managers/map_data.py:65` `tileset_image_loader(filename: str, colorkey=None, **kwargs)` #TAG:tileset_image_loader
+  - pytmx's image hook, with the shipped pack behind the declared path.
+- `config/managers/map_data.py:89` `resolve_map_path(relative: str) -> str` #TAG:resolve_map_path
   - Turn a config/maps.json 'file' value into an absolute path.
-- `config/managers/map_data.py:75` `map_format(path: str) -> str` #TAG:map_format
+- `config/managers/map_data.py:96` `map_format(path: str) -> str` #TAG:map_format
   - Which reader a map file wants, from its extension alone.
-- `config/managers/map_data.py:113` `_attribute_int(attributes: dict[str, str], key: str, fallback: int) -> int` #TAG:_attribute_int
+- `config/managers/map_data.py:134` `_attribute_int(attributes: dict[str, str], key: str, fallback: int) -> int` #TAG:_attribute_int
   - A tmx attribute that rode across as an `attr` line, as pytmx types it.
-- `config/managers/map_data.py:133` `_attribute_float(attributes: dict[str, str], key: str, fallback: float) -> float` #TAG:_attribute_float
-- `config/managers/map_data.py:145` `_attribute_flag(attributes: dict[str, str], key: str, fallback: bool) -> bool` #TAG:_attribute_flag
-- `config/managers/map_data.py:461` `_convert_tile(tile: pygame.Surface, address: TileAddress) -> pygame.Surface` #TAG:_convert_tile
+- `config/managers/map_data.py:154` `_attribute_float(attributes: dict[str, str], key: str, fallback: float) -> float` #TAG:_attribute_float
+- `config/managers/map_data.py:166` `_attribute_flag(attributes: dict[str, str], key: str, fallback: bool) -> bool` #TAG:_attribute_flag
+- `config/managers/map_data.py:482` `_convert_tile(tile: pygame.Surface, address: TileAddress) -> pygame.Surface` #TAG:_convert_tile
   - Apply the gid's flips and pick the cheaper surface format.
 
 ## Classes
 
 ### `class BlitmapLayerView` #TAG:BlitmapLayerView
 
-`config/managers/map_data.py:152`–`179`
+`config/managers/map_data.py:173`–`200`
 
 > What every .blitmap layer presents, whatever kind it is.
 
-- `config/managers/map_data.py:162` `__init__(self, source)` #TAG:BlitmapLayerView.__init__
-- `config/managers/map_data.py:178` `__repr__(self) -> str` #TAG:BlitmapLayerView.__repr__
+- `config/managers/map_data.py:183` `__init__(self, source)` #TAG:BlitmapLayerView.__init__
+- `config/managers/map_data.py:199` `__repr__(self) -> str` #TAG:BlitmapLayerView.__repr__
 
 ### `class BlitmapTileLayer(BlitmapLayerView)` #TAG:BlitmapTileLayer
 
-`config/managers/map_data.py:182`–`205`
+`config/managers/map_data.py:203`–`226`
 
 > A grid of gids, presented the way pytmx presents one.
 
-- `config/managers/map_data.py:192` `__init__(self, source)` #TAG:BlitmapTileLayer.__init__
-- `config/managers/map_data.py:198` `__iter__(self)` #TAG:BlitmapTileLayer.__iter__
+- `config/managers/map_data.py:213` `__init__(self, source)` #TAG:BlitmapTileLayer.__init__
+- `config/managers/map_data.py:219` `__iter__(self)` #TAG:BlitmapTileLayer.__iter__
   - (x, y, gid) per cell, row major. `TiledTileLayer.iter_data`'s shape.
-- `config/managers/map_data.py:204` `__len__(self) -> int` #TAG:BlitmapTileLayer.__len__
+- `config/managers/map_data.py:225` `__len__(self) -> int` #TAG:BlitmapTileLayer.__len__
 
 ### `class BlitmapObjectGroup(BlitmapLayerView)` #TAG:BlitmapObjectGroup
 
-`config/managers/map_data.py:208`–`224`
+`config/managers/map_data.py:229`–`245`
 
 > An object layer: placements, already flattened for the spawn path.
 
-- `config/managers/map_data.py:216` `__init__(self, source)` #TAG:BlitmapObjectGroup.__init__
-- `config/managers/map_data.py:220` `__iter__(self)` #TAG:BlitmapObjectGroup.__iter__
-- `config/managers/map_data.py:223` `__len__(self) -> int` #TAG:BlitmapObjectGroup.__len__
+- `config/managers/map_data.py:237` `__init__(self, source)` #TAG:BlitmapObjectGroup.__init__
+- `config/managers/map_data.py:241` `__iter__(self)` #TAG:BlitmapObjectGroup.__iter__
+- `config/managers/map_data.py:244` `__len__(self) -> int` #TAG:BlitmapObjectGroup.__len__
 
 ### `class BlitmapImageLayer(BlitmapLayerView)` #TAG:BlitmapImageLayer
 
-`config/managers/map_data.py:227`–`238`
+`config/managers/map_data.py:248`–`259`
 
 > A single placed image. Carried, and drawn by nothing yet.
 
-- `config/managers/map_data.py:236` `__init__(self, source)` #TAG:BlitmapImageLayer.__init__
+- `config/managers/map_data.py:257` `__init__(self, source)` #TAG:BlitmapImageLayer.__init__
 
 ### `class BlitmapGroupLayer(BlitmapLayerView)` #TAG:BlitmapGroupLayer
 
-`config/managers/map_data.py:241`–`242`
+`config/managers/map_data.py:262`–`263`
 
 > A `<group>`. Carries no cells; kept so `.layers` lists what the map has.
 
@@ -81,57 +83,57 @@
 
 ### `class BlitmapRuntime` #TAG:BlitmapRuntime
 
-`config/managers/map_data.py:249`–`440`
+`config/managers/map_data.py:270`–`461`
 
 > A loaded .blitmap, presented the way the renderer reads a tmx map.
 
-- `config/managers/map_data.py:270` `__init__(self, loaded: LoadedMap)` #TAG:BlitmapRuntime.__init__
-- `config/managers/map_data.py:299` `@staticmethod _view(source) -> BlitmapLayerView` #TAG:BlitmapRuntime._view
-- `config/managers/map_data.py:308` `_build_layers(self, sources, into: list) -> None` #TAG:BlitmapRuntime._build_layers
+- `config/managers/map_data.py:291` `__init__(self, loaded: LoadedMap)` #TAG:BlitmapRuntime.__init__
+- `config/managers/map_data.py:320` `@staticmethod _view(source) -> BlitmapLayerView` #TAG:BlitmapRuntime._view
+- `config/managers/map_data.py:329` `_build_layers(self, sources, into: list) -> None` #TAG:BlitmapRuntime._build_layers
   - Flatten the group tree into document order.
-- `config/managers/map_data.py:324` `@property visible_layers(self)` #TAG:BlitmapRuntime.visible_layers
+- `config/managers/map_data.py:345` `@property visible_layers(self)` #TAG:BlitmapRuntime.visible_layers
   - pytmx's accessor, same name and same meaning. `GameMap` reads it.
-- `config/managers/map_data.py:329` `@property objectgroups(self)` #TAG:BlitmapRuntime.objectgroups
-- `config/managers/map_data.py:334` `@property objects(self) -> list[MapObjectRecord]` #TAG:BlitmapRuntime.objects
-- `config/managers/map_data.py:337` `object_records(self, layers=None) -> list[MapObjectRecord]` #TAG:BlitmapRuntime.object_records
+- `config/managers/map_data.py:350` `@property objectgroups(self)` #TAG:BlitmapRuntime.objectgroups
+- `config/managers/map_data.py:355` `@property objects(self) -> list[MapObjectRecord]` #TAG:BlitmapRuntime.objects
+- `config/managers/map_data.py:358` `object_records(self, layers=None) -> list[MapObjectRecord]` #TAG:BlitmapRuntime.object_records
   - Every placed object, in the shape the spawn path already reads.
-- `config/managers/map_data.py:359` `layer_names(self) -> list[str]` #TAG:BlitmapRuntime.layer_names
-- `config/managers/map_data.py:363` `_load_sheets(self) -> None` #TAG:BlitmapRuntime._load_sheets
-- `config/managers/map_data.py:385` `get_tile_image_by_gid(self, gid: int)` #TAG:BlitmapRuntime.get_tile_image_by_gid
+- `config/managers/map_data.py:380` `layer_names(self) -> list[str]` #TAG:BlitmapRuntime.layer_names
+- `config/managers/map_data.py:384` `_load_sheets(self) -> None` #TAG:BlitmapRuntime._load_sheets
+- `config/managers/map_data.py:406` `get_tile_image_by_gid(self, gid: int)` #TAG:BlitmapRuntime.get_tile_image_by_gid
   - The surface for one gid, or None when nothing can draw it.
-- `config/managers/map_data.py:402` `_slice(self, gid: int)` #TAG:BlitmapRuntime._slice
-- `config/managers/map_data.py:425` `_complain(self, gid: int, why: str) -> None` #TAG:BlitmapRuntime._complain
+- `config/managers/map_data.py:423` `_slice(self, gid: int)` #TAG:BlitmapRuntime._slice
+- `config/managers/map_data.py:446` `_complain(self, gid: int, why: str) -> None` #TAG:BlitmapRuntime._complain
   - Warn once per distinct gid, not once per cell.
-- `config/managers/map_data.py:437` `__repr__(self) -> str` #TAG:BlitmapRuntime.__repr__
+- `config/managers/map_data.py:458` `__repr__(self) -> str` #TAG:BlitmapRuntime.__repr__
 
 ### `class MapData` #TAG:MapData
 
-`config/managers/map_data.py:491`–`510`
+`config/managers/map_data.py:512`–`531`
 
-- `config/managers/map_data.py:493` `__init__(self, config: dict[str, str])` #TAG:MapData.__init__
-- `config/managers/map_data.py:508` `@property native(self) -> bool` #TAG:MapData.native
+- `config/managers/map_data.py:514` `__init__(self, config: dict[str, str])` #TAG:MapData.__init__
+- `config/managers/map_data.py:529` `@property native(self) -> bool` #TAG:MapData.native
   - True when this map is stored in the engine's own format.
 
 ### `class AssetMapManager(CoreAsset)` #TAG:AssetMapManager
 
-`config/managers/map_data.py:513`–`654`
+`config/managers/map_data.py:534`–`676`
 
-- `config/managers/map_data.py:514` `__init__(self)` #TAG:AssetMapManager.__init__
-- `config/managers/map_data.py:517` `__find_map(self, name: str) -> MapData | None` #TAG:AssetMapManager.__find_map
-- `config/managers/map_data.py:523` `__require_map(self, name: str) -> MapData` #TAG:AssetMapManager.__require_map
-- `config/managers/map_data.py:530` `load_assets(self, name: str, reload: bool=False) -> pytmx.TiledMap | BlitmapRuntime | None` #TAG:AssetMapManager.load_assets
+- `config/managers/map_data.py:535` `__init__(self)` #TAG:AssetMapManager.__init__
+- `config/managers/map_data.py:538` `__find_map(self, name: str) -> MapData | None` #TAG:AssetMapManager.__find_map
+- `config/managers/map_data.py:544` `__require_map(self, name: str) -> MapData` #TAG:AssetMapManager.__require_map
+- `config/managers/map_data.py:551` `load_assets(self, name: str, reload: bool=False) -> pytmx.TiledMap | BlitmapRuntime | None` #TAG:AssetMapManager.load_assets
   - Return the parsed map, parsing it at most once.
-- `config/managers/map_data.py:551` `@staticmethod __parse(map_data: MapData) -> pytmx.TiledMap | BlitmapRuntime` #TAG:AssetMapManager.__parse
+- `config/managers/map_data.py:572` `@staticmethod __parse(map_data: MapData) -> pytmx.TiledMap | BlitmapRuntime` #TAG:AssetMapManager.__parse
   - Read one map file with whichever loader its extension names.
-- `config/managers/map_data.py:574` `@staticmethod __missing_tileset_name(exc: BaseException) -> str` #TAG:AssetMapManager.__missing_tileset_name
+- `config/managers/map_data.py:596` `@staticmethod __missing_tileset_name(exc: BaseException) -> str` #TAG:AssetMapManager.__missing_tileset_name
   - Pull just the path out of pytmx's mangled FileNotFoundError.
-- `config/managers/map_data.py:589` `@staticmethod __require_file(map_data: MapData) -> None` #TAG:AssetMapManager.__require_file
+- `config/managers/map_data.py:611` `@staticmethod __require_file(map_data: MapData) -> None` #TAG:AssetMapManager.__require_file
   - Fail with both paths, not just the one pytmx happens to hold.
-- `config/managers/map_data.py:602` `document(self, name: str) -> MapDocument` #TAG:AssetMapManager.document
+- `config/managers/map_data.py:624` `document(self, name: str) -> MapDocument` #TAG:AssetMapManager.document
   - Open a map for EDITING, as a byte-faithful XML document.
-- `config/managers/map_data.py:628` `is_loaded(self, name: str) -> bool` #TAG:AssetMapManager.is_loaded
-- `config/managers/map_data.py:632` `unload_assets(self, name: str) -> bool` #TAG:AssetMapManager.unload_assets
-- `config/managers/map_data.py:639` `__load_maps(self, config: dict[str, any]) -> AssetMapManager` #TAG:AssetMapManager.__load_maps
-- `config/managers/map_data.py:645` `reload(self, config: dict[str, any] | tuple[str, any] | None=None) -> AssetMapManager` #TAG:AssetMapManager.reload
+- `config/managers/map_data.py:650` `is_loaded(self, name: str) -> bool` #TAG:AssetMapManager.is_loaded
+- `config/managers/map_data.py:654` `unload_assets(self, name: str) -> bool` #TAG:AssetMapManager.unload_assets
+- `config/managers/map_data.py:661` `__load_maps(self, config: dict[str, any]) -> AssetMapManager` #TAG:AssetMapManager.__load_maps
+- `config/managers/map_data.py:667` `reload(self, config: dict[str, any] | tuple[str, any] | None=None) -> AssetMapManager` #TAG:AssetMapManager.reload
   - Re-parse every map that is currently loaded, in place.
-- `config/managers/map_data.py:653` `prepare(self, config: dict[str, any]) -> AssetMapManager` #TAG:AssetMapManager.prepare
+- `config/managers/map_data.py:675` `prepare(self, config: dict[str, any]) -> AssetMapManager` #TAG:AssetMapManager.prepare

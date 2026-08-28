@@ -54,8 +54,11 @@ the alternative is `KeyError` from an unguarded dict index *inside*
 `core_frame_update`, which kills the frame for every sibling in that scene
 bucket. Add the binding in the same change as the behavior (CLAUDE.md law 10).
 
-**`PyoneerAssetMissingError: tileset image … not found`** — you have no art.
-See [`ASSETS.md`](ASSETS.md); `tools/make_placeholder_art.py` fixes it.
+**`PyoneerAssetMissingError: tileset image … not found`** — the map names a
+sheet that is in NEITHER root. Art ships: `data/art/` is tracked and wins
+nothing, `data/graphics/` wins everything, and a path missing from both raises
+naming what was declared. If `data/art/` is empty, run
+`.venv/Scripts/python.exe -m tools.art`. See [`ASSETS.md`](ASSETS.md).
 
 ---
 

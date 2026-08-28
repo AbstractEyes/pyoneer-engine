@@ -125,6 +125,14 @@ Icon?
 # IconSet 384x3072). That licence covers use inside RPG Maker projects and
 # does not permit redistributing the assets, which a public repo would do.
 #
-# The engine reads these paths at runtime -- see docs/ASSETS.md for what a
-# fresh clone needs and where the paths are configured.
+# One unqualified line, and it stays that way. A negation here would have to
+# spell the exact path a licensed sheet occupies on the author's machine
+# (!data/graphics/tilesets/System/TileA2.png), so `git add` would stage HIS
+# file. What ships instead is data/art/ -- the generated pack, TRACKED, one
+# prefix swap away -- and scripts/core/art.py's resolve_art puts them in
+# order: data/graphics/ wins whenever it has the file, data/art/ answers when
+# it does not. See docs/ASSETS.md and #TAG:art_two_roots.
+#
+# data/art/ is deliberately NOT listed below. If a future rule would sweep it
+# up, that rule is the thing to narrow.
 data/graphics/

@@ -57,6 +57,7 @@ from config.managers.map_data import (TILE_LAYER_TYPES, AssetMapManager,
                                       BlitmapTileLayer, MapData, map_format,
                                       resolve_map_path)
 from scripts.core import layer_profile
+from scripts.core.art import resolve_art
 from scripts.core import renderer as renderer_module
 from scripts.core.errors import (PyoneerAssetMissingError, PyoneerConfigError,
                                  PyoneerContentWarning)
@@ -346,8 +347,12 @@ def stage_real_copy(root: str) -> str:
         source = "" if image is None else image.get("source", "")
         if not source:
             continue
-        origin = os.path.normpath(
-            os.path.join(os.path.dirname(REAL_MAP), source))
+        # Through `resolve_art`, because the map's `<image source>` names a
+        # path under data/graphics/ and a clone has none: the bytes it
+        # copies then come from the shipped pack. The DESTINATION keeps the
+        # declared spelling either way, which is what the fixture is for.
+        origin = resolve_art(os.path.normpath(
+            os.path.join(os.path.dirname(REAL_MAP), source)))
         destination = os.path.normpath(os.path.join(maps, source))
         os.makedirs(os.path.dirname(destination), exist_ok=True)
         if os.path.isfile(origin):

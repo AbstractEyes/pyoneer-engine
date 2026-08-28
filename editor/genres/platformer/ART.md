@@ -1,7 +1,8 @@
 # Art brief -- platformer
 
-This repository ships without art (see `docs/ASSETS.md`). Placeholders come
-from `tools/make_placeholder_art.py`.
+The art that ships is generated (see `docs/ASSETS.md`): `data/art/` is
+tracked, and `.venv/Scripts/python.exe -m tools.art` redraws it. Your own
+sheets go in `data/graphics/`, which wins over the pack.
 
 Paste this to an image model when you need a real palette.
 

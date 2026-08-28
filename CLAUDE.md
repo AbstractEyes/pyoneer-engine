@@ -342,9 +342,15 @@ Each address below is a tag, so it stays true when the code moves.
   currently shows the token `tile_collision`, which is not registered and makes
   a map raise at load. Same string in `#TAG:scripts/game/behavior/base.py` and
   `#TAG:scripts/game/behavior/registry.py`.
-- **No `needs_art` flag on the check roster.** `docs/ASSETS.md` names seven
-  art-dependent checks measured against an older, smaller roster; nothing
-  re-measures it.
+- **~~No `needs_art` flag on the check roster~~ — paid off, by removing the
+  thing it would have described.** Art SHIPS now: six generated sheets under
+  `data/art/`, tracked, drawn by `tools/art/` and materialised by
+  `.venv/Scripts/python.exe -m tools.art`. `#TAG:resolve_art` reads the two
+  roots in order — `data/graphics/` wins whenever it holds the file, so a
+  machine with real art renders byte-identically, and `data/art/` answers
+  when it does not. Measured both ways by moving `data/graphics` aside:
+  `tools/check_all.py` reports `FAILED: []` with no art directory at all, so
+  the art-dependent subset is empty and there is no list to generate.
 - **A native `.blitmap` gets no collision at all.** `field_from_map` returns
   None for any source answering its own `object_records`, so every body on a
   native map is ungated -- stated in its own docstring as the true answer, and

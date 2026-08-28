@@ -5,7 +5,7 @@
 
 > Requests -- how a note typed under a panel becomes work an AI can do.
 
-`editor.core.request` · 538 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.request` · 539 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -29,15 +29,15 @@
 - `editor/core/request.py:332` `_context(project: Any, manifest: Manifest) -> str` #TAG:_context
 - `editor/core/request.py:352` `describe_scope(project: Any, scope: Scope) -> list[str]` #TAG:describe_scope
   - A compact, factual rendering of one scope. Shared with the UI.
-- `editor/core/request.py:379` `_describe_project(project: Any) -> list[str]` #TAG:request._describe_project
-- `editor/core/request.py:388` `_describe_map(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_map
-- `editor/core/request.py:399` `_describe_layer(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_layer
-- `editor/core/request.py:436` `_describe_object(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_object
-- `editor/core/request.py:454` `_describe_table(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_table
-- `editor/core/request.py:482` `_describe_row(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_row
-- `editor/core/request.py:495` `parse_response(text: str, *, source: str='response.jsonl') -> list[Command]` #TAG:parse_response
+- `editor/core/request.py:380` `_describe_project(project: Any) -> list[str]` #TAG:request._describe_project
+- `editor/core/request.py:389` `_describe_map(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_map
+- `editor/core/request.py:400` `_describe_layer(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_layer
+- `editor/core/request.py:437` `_describe_object(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_object
+- `editor/core/request.py:455` `_describe_table(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_table
+- `editor/core/request.py:483` `_describe_row(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_row
+- `editor/core/request.py:496` `parse_response(text: str, *, source: str='response.jsonl') -> list[Command]` #TAG:parse_response
   - Turn a JSON Lines response into commands, loudly.
-- `editor/core/request.py:531` `read_response(path: str) -> list[Command]` #TAG:read_response
+- `editor/core/request.py:532` `read_response(path: str) -> list[Command]` #TAG:read_response
 
 ## Classes
 

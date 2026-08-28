@@ -79,6 +79,18 @@ CHECKS = [
     ("demos", "three prototype games boot headless and answer injected input"),
     ("prototype", "the design form resolves against the registries, and its "
                   "worked example boots"),
+    ("art_tilesets", "the generated terrain and clutter sheets: every corner "
+                     "mask's occupancy, every tile inside its own cell, and "
+                     "no pixel read from a file"),
+    ("art", "the shipped pack: every sheet on disk at its builder's size, "
+            "the tracked bytes reproducible twice over, the engine loading "
+            "each one, resolve_art ordering the two roots both ways, and git "
+            "ignoring the licensed root but not the pack"),
+    ("art_sprites", "the generated character sheets, mask palette and "
+                    "parallax band: the declared frame grid, four distinct "
+                    "walk poses, no frame overhanging its cell, every mask "
+                    "edge marked only where it blocks, a seamless join, and "
+                    "no pixel read from a file"),
     ("docs", "the doc spine: navigation, #TAG anchors, the generated code map, "
              "fact drift"),
 ]

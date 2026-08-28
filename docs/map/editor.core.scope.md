@@ -5,7 +5,7 @@
 
 > Scopes -- the addressing scheme that ties a panel, a note, and a command
 
-`editor.core.scope` · 306 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.scope` · 307 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -21,7 +21,7 @@
 
 ## Functions
 
-- `editor/core/scope.py:289` `code_locations(scope: Scope) -> tuple[str, ...]` #TAG:code_locations
+- `editor/core/scope.py:290` `code_locations(scope: Scope) -> tuple[str, ...]` #TAG:code_locations
   - Repo-relative paths a request against `scope` will probably touch.
 
 ## Classes

@@ -369,8 +369,9 @@ def describe_scope(project: Any, scope: Scope) -> list[str]:
         if kind == "row":
             return _describe_row(project, scope)
         if kind == "assets":
-            return ["See `docs/ASSETS.md`. This repository ships without art; "
-                    "`tools/make_placeholder_art.py` writes stand-ins."]
+            return ["See `docs/ASSETS.md`. The art that ships is generated: "
+                    "`data/art/` is tracked and `tools/art/` draws it. Your "
+                    "own sheets go in `data/graphics/`, which wins over it."]
     except Exception as exc:                                    # noqa: BLE001
         return [f"*(could not be read: {type(exc).__name__}: {exc})*"]
     return ["*(no description available for this scope kind)*"]

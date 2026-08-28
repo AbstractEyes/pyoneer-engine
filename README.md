@@ -49,27 +49,20 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt   # pygame, pytmx
 ```
 
-At this point `python main.py` **will fail**, because the art is missing. It
-fails with a message that says so:
-
-```
-PyoneerAssetMissingError: tileset image
-  'data/graphics/tilesets/System/TileA2.png' not found
-    via map='test', tmx='data/maps/test.tmx',
-        hint='the repository ships without art; see docs/ASSETS.md'
-```
-
-To get running immediately, generate placeholders:
+That is the whole setup. `python main.py` runs:
 
 ```bash
-.venv/Scripts/python.exe tools/make_placeholder_art.py
 .venv/Scripts/python.exe main.py
 ```
 
-Three checkerboard PNGs, sized to what the config and the map declare. The
-engine boots and every check passes. Replace them with your own art at the
-same paths whenever you like — nothing requires the original layout, because
+Art ships, and it is generated — six sheets under `data/art/`, tracked, every
+pixel of them computed by a function in `tools/art/`. Replace any of them with
+your own by dropping a file at the path the config or the map declares, under
+`data/graphics/`: that root wins whenever it holds the file, and the pack
+answers when it does not. Nothing requires the pack's layout, because
 animation frame rectangles are declared in `config/animations.json`.
+[`docs/ASSETS.md`](docs/ASSETS.md) is the whole story, including why the
+author's own art is not in here.
 
 Controls in the demo scene: **WASD** move, **Ctrl** sprint, **F1** toggles the
 test window, **←/→** rotate the player, **Esc** quits. Bindings live in
@@ -332,11 +325,9 @@ Deliberate visual changes are re-baselined explicitly:
 .venv/Scripts/python.exe tools/smoke.py --frames 60 --write-baseline
 ```
 
-Without art, **20 of the 29 checks pass**; the other nine read the image
-files — eight boot the engine through `GameAnimationHandler`, and
-`check_blitmap` reads a real PNG to prove asset interning copies bytes.
-`tools/make_placeholder_art.py` is enough for all 29. That split is measured
-by moving the art aside and re-running, not estimated.
+There is no art-dependent subset of the roster: the generated pack is
+tracked, so a clone has art before it runs anything. Measured by moving
+`data/graphics` aside and re-running the whole suite, not estimated.
 
 `check_editor_ui` reports SKIP rather than PASS when PySide6 is absent — a
 check that did not run has proved nothing.

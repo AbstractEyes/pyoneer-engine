@@ -3,42 +3,42 @@
 
 # `config/managers/animation_data.py` — tier 2 #TAG:config/managers/animation_data.py
 
-`config.managers.animation_data` · 95 lines · tier 1: [`../MAP.md`](../MAP.md)
+`config.managers.animation_data` · 101 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    config.managers.core_data
+    config.managers.core_data scripts.core.art
 
 ## Classes
 
 ### `class DataAnimationFrame` #TAG:DataAnimationFrame
 
-`config/managers/animation_data.py:9`–`16`
+`config/managers/animation_data.py:10`–`17`
 
-- `config/managers/animation_data.py:10` `__init__(self, width, height, x, y, duration, index)` #TAG:DataAnimationFrame.__init__
+- `config/managers/animation_data.py:11` `__init__(self, width, height, x, y, duration, index)` #TAG:DataAnimationFrame.__init__
 
 ### `class DataAnimation` #TAG:DataAnimation
 
-`config/managers/animation_data.py:19`–`34`
+`config/managers/animation_data.py:20`–`35`
 
-- `config/managers/animation_data.py:20` `__init__(self, name, data_in)` #TAG:DataAnimation.__init__
-- `config/managers/animation_data.py:33` `add_frame(self, width, height, x, y, duration, index)` #TAG:DataAnimation.add_frame
+- `config/managers/animation_data.py:21` `__init__(self, name, data_in)` #TAG:DataAnimation.__init__
+- `config/managers/animation_data.py:34` `add_frame(self, width, height, x, y, duration, index)` #TAG:DataAnimation.add_frame
 
 ### `class DataAnimationCategory` #TAG:DataAnimationCategory
 
-`config/managers/animation_data.py:37`–`50`
+`config/managers/animation_data.py:38`–`56`
 
-- `config/managers/animation_data.py:38` `__init__(self, config)` #TAG:DataAnimationCategory.__init__
-- `config/managers/animation_data.py:48` `_prepare_sequences(self)` #TAG:DataAnimationCategory._prepare_sequences
+- `config/managers/animation_data.py:39` `__init__(self, config)` #TAG:DataAnimationCategory.__init__
+- `config/managers/animation_data.py:54` `_prepare_sequences(self)` #TAG:DataAnimationCategory._prepare_sequences
 
 ### `class AssetAnimationManager(CoreAsset)` #TAG:AssetAnimationManager
 
-`config/managers/animation_data.py:53`–`94`
+`config/managers/animation_data.py:59`–`100`
 
-- `config/managers/animation_data.py:56` `__init__(self)` #TAG:AssetAnimationManager.__init__
-- `config/managers/animation_data.py:60` `get(self, name: str) -> DataAnimationCategory | None` #TAG:AssetAnimationManager.get
-- `config/managers/animation_data.py:63` `__load_animations(self, config: dict[str, any]) -> AssetAnimationManager` #TAG:AssetAnimationManager.__load_animations
-- `config/managers/animation_data.py:68` `load_assets(self, category_name: str) -> DataAnimationCategory | None` #TAG:AssetAnimationManager.load_assets
-- `config/managers/animation_data.py:84` `unload_assets(self, category_name: str)` #TAG:AssetAnimationManager.unload_assets
-- `config/managers/animation_data.py:90` `reload(self, config: dict[str, any] | tuple[str, any])` #TAG:AssetAnimationManager.reload
-- `config/managers/animation_data.py:93` `prepare(self, config: dict[str, any]) -> AssetAnimationManager` #TAG:AssetAnimationManager.prepare
+- `config/managers/animation_data.py:62` `__init__(self)` #TAG:AssetAnimationManager.__init__
+- `config/managers/animation_data.py:66` `get(self, name: str) -> DataAnimationCategory | None` #TAG:AssetAnimationManager.get
+- `config/managers/animation_data.py:69` `__load_animations(self, config: dict[str, any]) -> AssetAnimationManager` #TAG:AssetAnimationManager.__load_animations
+- `config/managers/animation_data.py:74` `load_assets(self, category_name: str) -> DataAnimationCategory | None` #TAG:AssetAnimationManager.load_assets
+- `config/managers/animation_data.py:90` `unload_assets(self, category_name: str)` #TAG:AssetAnimationManager.unload_assets
+- `config/managers/animation_data.py:96` `reload(self, config: dict[str, any] | tuple[str, any])` #TAG:AssetAnimationManager.reload
+- `config/managers/animation_data.py:99` `prepare(self, config: dict[str, any]) -> AssetAnimationManager` #TAG:AssetAnimationManager.prepare

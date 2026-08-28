@@ -32,8 +32,10 @@ import re
 
 import pygame
 import pytmx
+import pytmx.util_pygame
 
 from config.managers.core_data import CoreAsset
+from scripts.core.art import resolve_art
 from scripts.core.errors import (PyoneerAssetMissingError, PyoneerConfigError,
                                  warn_content)
 from scripts.core.log import trace_assets
@@ -58,6 +60,25 @@ REPO_ROOT = os.path.dirname(
 )
 
 TMX_SUFFIX = ".tmx"
+
+
+def tileset_image_loader(filename: str, colorkey=None, **kwargs):
+    """pytmx's image hook, with the shipped pack behind the declared path.
+
+    pytmx joins a `<image source>` onto the map's directory and opens the
+    result itself, so this is the ONLY seam where a tmx tileset image can
+    be redirected. `resolve_art` hands back the same string whenever a file
+    is already there, which is why a machine holding real art loads exactly
+    the bytes it loaded before; `scripts/core/art.py` states the rule.
+
+    `pytmx.load_pygame` cannot be used to install this: it ASSIGNS
+    `kwargs["image_loader"]` over anything a caller passed, so the map is
+    built through `TiledMap` directly. Everything else about the parse is
+    pytmx's own, including the smart convert/convert_alpha choice this
+    delegates to.
+    """
+    return pytmx.util_pygame.pygame_image_loader(
+        resolve_art(filename), colorkey, **kwargs)
 
 # What `file` may end in, and which reader claims it. A table rather than an
 # if/else chain so the error for an unknown extension can list what IS
@@ -362,7 +383,7 @@ class BlitmapRuntime:
     # -- images ------------------------------------------------------------
     def _load_sheets(self) -> None:
         for linked in self.tilesets:
-            path = linked.image_path()
+            path = resolve_art(linked.image_path())
             if not path:
                 warn_content(
                     "tileset %r in %s declares no image, so every gid in its "
@@ -553,7 +574,8 @@ class AssetMapManager(CoreAsset):
         if map_data.native:
             return BlitmapRuntime(load_map(map_data.file))
         try:
-            return pytmx.load_pygame(map_data.file)
+            return pytmx.TiledMap(map_data.file,
+                                  image_loader=tileset_image_loader)
         except FileNotFoundError as exc:
             # pytmx resolves <tileset source=...> relative to the .tmx and
             # raises a bare FileNotFoundError from three frames inside a

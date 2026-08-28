@@ -4,6 +4,7 @@ import pygame
 from pygame import Surface
 
 from config.managers.core_data import CoreAsset
+from scripts.core.art import resolve_art
 
 
 class DataAnimationFrame:
@@ -41,7 +42,12 @@ class DataAnimationCategory:
         self.seq_data = config['sequences']
         self.order = config['order']
         self.type = config['type']
-        self.file = config['file']
+        # Resolved once, here, so both readers of `.file` -- this manager's
+        # cache and `GameAnimationHandler`'s eager load -- open the same
+        # image. A sheet the author supplied wins byte for byte; one they
+        # have not falls to the shipped pack under data/art/, which is what
+        # `scripts/core/art.py` is for.
+        self.file = resolve_art(config['file'])
         self.sequences: dict[str, DataAnimation] = {}
         self._prepare_sequences()
 

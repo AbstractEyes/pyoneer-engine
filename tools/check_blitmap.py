@@ -65,10 +65,17 @@ from scripts.loaders.tileset_file import (
     plan_intern,
     resolve_image,
 )
+from scripts.core.art import resolve_art
 
 ROOT = _bootstrap.REPO_ROOT
 REAL_MAP = os.path.join(ROOT, "data", "maps", "test.tmx")
-REAL_IMAGE = os.path.join(ROOT, "data", "graphics", "tilesets", "System", "TileA2.png")
+# Through `resolve_art`, so this names whatever real sheet THIS checkout
+# has: the author's own file when data/graphics/ holds one, and the tracked
+# generated twin under data/art/ on a clone that has no data/graphics/ at
+# all. Hardcoding the first spelling made a fresh clone fail this check for
+# a reason that had nothing to do with the format it covers.
+REAL_IMAGE = resolve_art(
+    os.path.join(ROOT, "data", "graphics", "tilesets", "System", "TileA2.png"))
 
 failures: list[str] = []
 

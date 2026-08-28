@@ -5,7 +5,7 @@ editor is pygame-free and pytmx's pygame loader is not.
 
 Degrades on purpose. This repository ships without art, so a tileset image
 will often be missing. Rather than refusing to draw a map, a missing image
-produces a deterministic colour swatch per gid -- enough to see structure,
+produces a deterministic color swatch per gid -- enough to see structure,
 edit layers, and place objects, and visibly not real art.
 """
 from __future__ import annotations
@@ -15,6 +15,8 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
+
+from scripts.core.art import resolve_art
 
 
 @dataclass
@@ -47,7 +49,12 @@ class TilesetAtlas:
         for element in document.root.findall("tileset"):
             image_element = element.find("image")
             source = image_element.get("source", "") if image_element is not None else ""
-            resolved = os.path.normpath(os.path.join(base, source)) if source else ""
+            # Through the engine's own resolver, so the canvas shows the
+            # SAME pixels the engine will draw: a clone has no
+            # data/graphics/ and every tileset would otherwise fall to a
+            # colour swatch per gid while the game itself rendered art.
+            resolved = resolve_art(
+                os.path.normpath(os.path.join(base, source))) if source else ""
             image = None
             if resolved and os.path.isfile(resolved):
                 loaded = QImage(resolved)
@@ -113,7 +120,7 @@ class TilesetAtlas:
         return QPixmap.fromImage(entry.image.copy(rect))
 
     def __swatch(self, gid: int) -> QPixmap:
-        """A stable, readable stand-in: same gid always gets the same colour."""
+        """A stable, readable stand-in: same gid always gets the same color."""
         pixmap = QPixmap(self.tile_width, self.tile_height)
         pixmap.fill(gid_colour(gid))
         painter = QPainter(pixmap)
@@ -124,7 +131,7 @@ class TilesetAtlas:
 
 
 def gid_colour(gid: int) -> QColor:
-    """Deterministic colour for a gid. Golden-ratio hue so neighbours differ."""
+    """Deterministic color for a gid. Golden-ratio hue so neighbors differ."""
     hue = int((gid * 137.508) % 360)
     saturation = 90 + (gid * 37) % 60
     value = 130 + (gid * 61) % 90

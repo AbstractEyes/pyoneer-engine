@@ -1,7 +1,8 @@
 # Art brief -- top-down RPG
 
-This repository ships without art (see `docs/ASSETS.md`). Placeholders come
-from `tools/make_placeholder_art.py`.
+The art that ships is generated (see `docs/ASSETS.md`): `data/art/` is
+tracked, and `.venv/Scripts/python.exe -m tools.art` redraws it. Your own
+sheets go in `data/graphics/`, which wins over the pack.
 
 When you need a real palette, this is the template to hand to an image
 model. It is written to be pasted as-is.

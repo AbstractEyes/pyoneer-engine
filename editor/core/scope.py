@@ -274,7 +274,8 @@ _CODE_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
     )),
     ("assets", (
         "docs/ASSETS.md",
-        "tools/make_placeholder_art.py",
+        "tools/art/",
+        "scripts/core/art.py",
         "config/animations.json",
     )),
     ("code:*", ()),
