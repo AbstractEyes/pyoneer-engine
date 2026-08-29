@@ -196,6 +196,15 @@ def write_mask_sheet(path: str, tile_width: int, tile_height: int) -> bool:
     return True
 
 
+INHERITED_OPACITY: float = 0.45
+"""How solid the tile-mode mask overlay is drawn.
+
+Dimmer than the collision-mode readout because it sits ON TOP of
+the art an author is placing: it has to be legible without hiding
+the tile it describes.
+"""
+
+
 @dataclass(frozen=True)
 class CollisionTilesetOffer:
     """What declaring a `collision` tileset on one map would write.
@@ -1219,6 +1228,26 @@ class MapCanvas(QGraphicsView):
                     found[tileset.first_gid + local] = opinion
         return found
 
+    def inherited_cells(self) -> list[int]:
+        """Row-major masks for the active layer: what each placed tile carries.
+
+        Level one seen through the MAP rather than through the tileset sheet.
+        `tile_masks()` answers "which gids are masked"; this answers "what is
+        under this cell of the map", which is the question an author painting
+        tiles is actually asking.
+
+        NO_DATA for a cell whose gid carries no mask, and for every cell when
+        no tile layer is selected -- an empty answer draws nothing rather than
+        drawing a wall the map does not have.
+        """
+        layer = self.__active_tile_layer()
+        if layer is None:
+            return []
+        by_gid = self.tile_masks()
+        if not by_gid:
+            return []
+        return [by_gid.get(gid, NO_DATA) for gid in layer.gids()]
+
     def __detach_overlay(self) -> None:
         if self.__overlay is not None and self.__overlay.scene() is not None:
             self.__overlay.scene().removeItem(self.__overlay)
@@ -1278,8 +1307,10 @@ class MapCanvas(QGraphicsView):
             self.__overlay_geometry = geometry
             self.__collision_stale = True
         self.scene().addItem(self.__overlay)
-        self.__overlay.setVisible(self.mode is EditMode.COLLISION)
-        if self.mode is EditMode.COLLISION and self.__collision_stale:
+        self.__overlay.setVisible(True)
+        self.__overlay.setOpacity(
+            1.0 if self.mode is EditMode.COLLISION else INHERITED_OPACITY)
+        if self.__collision_stale:
             self.__bake_overlay()
 
     def __on_transaction(self, _transaction, action: str) -> None:
@@ -1340,6 +1371,12 @@ class MapCanvas(QGraphicsView):
         if overlay is None:
             return
         self.__collision_stale = False
+        if self.mode is not EditMode.COLLISION:
+            # Tile mode shows what each PLACED tile brings with it, so an
+            # author can see a wall tile's own passability while painting art
+            # rather than having to switch modes to find out.
+            overlay.bake(self.inherited_cells())
+            return
         if self.all_layers:
             # At the overlay's OWN resolution, and every member scaled into
             # it -- see `collision_stack`. The overlay was sized from the

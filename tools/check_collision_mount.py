@@ -717,7 +717,12 @@ try:
     expect("and it is in the scene", overlay.scene() is canvas.scene(), True)
     expect("above the grid, below the stroke ghost",
            1000 < overlay.zValue() < 2000, True)
-    expect("hidden until collision mode", overlay.isVisible(), False)
+    # Visible in BOTH modes, and the mode decides what it shows: collision
+    # mode reads the companion, tile mode reads what each placed tile brings
+    # with it. Dimmed for the second, because there it sits over the art.
+    expect("shown in tile mode too", overlay.isVisible(), True)
+    expect("...dimmed, so the tile under it stays legible",
+           overlay.opacity() < 1.0, True)
     expect("the fixture's collision tileset was found",
            canvas.collision_first_gid, COLLISION_FIRST_GID)
 
@@ -935,8 +940,13 @@ try:
     canvas.set_all_layers(False)
     canvas.set_mode(EditMode.TILES)
     application.processEvents()
-    expect("leaving collision mode hides the readout",
-           canvas.overlay.isVisible(), False)
+    expect("leaving collision mode keeps the readout, dimmed",
+           (canvas.overlay.isVisible(), canvas.overlay.opacity() < 1.0),
+           (True, True))
+    expect("...and returning to collision mode brings it back to full",
+           (canvas.set_mode(EditMode.COLLISION),
+            application.processEvents(),
+            canvas.overlay.opacity())[2], 1.0)
 
     window.close()
 
@@ -2307,6 +2317,40 @@ try:
            [{"name": "Art", "tile": WALL_GID - 1, "mask": BLOCK_ALL}])
     expect("THE MASK REACHED THE TILESET",
            canvas.tile_masks(), {WALL_GID: BLOCK_ALL})
+
+    # THE POINT OF THE TILE-MODE VIEW: a placed tile shows the passability it
+    # brings with it, so an author painting art sees which tiles are solid
+    # without switching modes. Both halves -- a masked gid reads its mask, an
+    # unmasked one reads NO_DATA rather than a wall.
+    canvas.set_mode(EditMode.TILES)
+    application.processEvents()
+    art = baking.project.map("fixture").tile_layer(canvas.active_layer)
+    art_gids = art.gids()
+    inherited = canvas.inherited_cells()
+    expect("one inherited cell per map cell", len(inherited), len(art_gids))
+    expect("a cell holding the baked tile reads that tile's mask",
+           sorted({m for g, m in zip(art_gids, inherited) if g == WALL_GID}),
+           [BLOCK_ALL] if WALL_GID in art_gids else [])
+    expect("...and a cell holding an unmasked tile reads NO_DATA",
+           {m for g, m in zip(art_gids, inherited)
+            if g != WALL_GID} <= {NO_DATA}, True)
+    # AND IT REACHES THE DISPLAY. The three above prove the data is right;
+    # without this one the wire from `inherited_cells` into the overlay can be
+    # cut and every assertion still passes, which is the shape that ships a
+    # correct answer nobody can see.
+    baked_at = [i for i, g in enumerate(art_gids) if g == WALL_GID]
+    expect("the fixture places the baked tile somewhere", bool(baked_at), True)
+    if baked_at:
+        cell = baked_at[0]
+        x, y = cell % art.width, cell // art.width
+        expect("the OVERLAY draws that tile's mask at its cell",
+               canvas.overlay.mask_at(x, y), BLOCK_ALL)
+        empty = [i for i, g in enumerate(art_gids) if g != WALL_GID]
+        ex, ey = empty[0] % art.width, empty[0] // art.width
+        expect("...and draws nothing where no tile carries one",
+               canvas.overlay.mask_at(ex, ey), NO_DATA)
+    canvas.set_mode(EditMode.COLLISION)
+    application.processEvents()
     expect("...the sidecar was provisioned, nothing asked",
            os.path.isfile(sidecar), True)
     expect("...and the tmx declares it now",
