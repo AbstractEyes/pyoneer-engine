@@ -18,6 +18,23 @@ Layer visibility is a checkbox on the layer row. It is a VIEW toggle only --
 it hides the layer in the canvas and changes nothing in the file, because a
 tmx `visible` attribute is authored content and toggling it while looking
 around would be a silent edit.
+
+A COMPANION IS NOT A LAYER YOU LOOK AT               #TAG:companion_folded_into_its_layer
+-------------------------------------
+A collision companion holds masks, not art: it declares `pyoneer_renders`
+false, the engine skips it and so does the canvas, so its row offered a
+visibility checkbox that changed nothing, a genre warning that was false
+for it, and -- worst -- a selectable target that accepted art strokes the
+runtime then read as no-data. It is folded away, and the art layer it
+belongs to carries a badge instead: how many masks it has, and the reason
+they do not reach the field when there is one.
+
+The fold set comes from `companion_pairs`, which reads
+`pyoneer_passability` and ranks the pairs; it is never taken from the
+`Collision` name suffix. A layer somebody called `RoofCollision` and never
+declared is an ordinary paintable layer and stays on screen, and a
+declaration naming a layer the map does not have folds nothing -- so the
+dangling case an author can actually fix stays visible.
 """
 from __future__ import annotations
 
@@ -37,6 +54,13 @@ from PySide6.QtWidgets import (
 
 from scripts.core.depth import MAP_DEPTH, OBJECT_DEPTH
 
+from editor.core.collision import (
+    NO_DATA,
+    collision_first_gid,
+    companion_pairs,
+    gid_to_opinion,
+    world_coordinate_fault,
+)
 from editor.core.commands import Command
 from editor.core.inspect import Field
 from editor.core.project import layer_tree
@@ -44,6 +68,10 @@ from editor.core.scope import Scope
 from editor.ui.docks import ScopedDock
 
 _KIND_MARK = {"tile": "▦", "object": "◈", "image": "▣", "group": "▾"}
+
+#: The mask badge, drawn from the same Geometric Shapes block as the kind
+#: marks above so it cannot be the one glyph a font lacks.
+_MASK_MARK = "▨"
 
 _TOP_LEVEL = "(top level)"
 
@@ -54,6 +82,10 @@ class HierarchyDock(ScopedDock):
     follows_selection = True
 
     visibility_changed = Signal(str, bool)
+
+    #: Why the companion fold is off, or "" when it is on. Read by `refresh`
+    #: on the very first build, before `__collision` has ever run.
+    __collision_refusal = ""
 
     def build_content(self) -> QWidget:
         holder = QWidget()
@@ -197,6 +229,48 @@ class HierarchyDock(ScopedDock):
             f"remove the {self._scope.get('layer')!r} layer" if removable
             else "select a layer to remove it")
 
+    # -- collision companions ----------------------------------------------
+
+    def __collision(self, document):
+        """Which layers to fold away, and what badge their art layer wears.
+
+        Returns `(folded, badges)`, or `(None, {})` when the map's collision
+        declarations cannot be read at all -- `companion_subcell` and the
+        rest raise on contradictory content, and a panel that swallowed that
+        would hide layers for a reason it never said.
+
+        A badge is `(masks, companion, fault)`. `masks` counts CELLS THAT
+        DECODE, not cells that are non-empty: a companion gid outside the
+        collision tileset's range reads as NO_DATA in the engine, so
+        counting it would report walls the field does not have. With no
+        collision tileset in the map nothing decodes and the count is zero,
+        which is the same answer `gid_to_opinion` gives.
+
+        The `if gid` in front of the decode is not decoration: a companion is
+        empty almost everywhere, and it turns 10,000 function calls per
+        refresh into a truth test plus one call per painted cell.
+        """
+        self.__collision_refusal = ""
+        try:
+            pairs = companion_pairs(document)
+            first_gid = collision_first_gid(document)
+            badges: dict[str, tuple[int, str, str | None]] = {}
+            for art, companion in pairs:
+                gids = document.tile_layer(companion).gids()
+                count = 0
+                if first_gid is not None:
+                    for gid in gids:
+                        if gid and gid_to_opinion(gid, first_gid) != NO_DATA:
+                            count += 1
+                badges[art] = (count, companion,
+                               world_coordinate_fault(document, art))
+        except Exception as exc:                                # noqa: BLE001
+            self.__collision_refusal = (
+                f"this map's collision declarations could not be read, so no "
+                f"companion layer is folded away: {exc}")
+            return None, {}
+        return {companion for _art, companion in pairs}, badges
+
     # -- building ----------------------------------------------------------
 
     def refresh(self) -> None:
@@ -228,11 +302,22 @@ class HierarchyDock(ScopedDock):
         root.setForeground(0, Qt.gray)
         self.tree.addTopLevelItem(root)
 
+        folded, badges = self.__collision(document)
+        if folded is None:
+            # NOTHING IS HIDDEN ON A QUESTION NOBODY COULD ANSWER. A map whose
+            # collision declarations cannot be read is exactly the map whose
+            # companion the author has to go and look at, so the fold is off
+            # and the reason is on the map row rather than on a layer that is
+            # no longer there to carry it.
+            folded, badges = set(), {}
+            root.setForeground(0, Qt.darkYellow)
+            root.setToolTip(0, self.__collision_refusal)
+
         pack = self.session.project.genre
         objects_shown = 0
         for node in layer_tree(document):
             objects_shown += self.__add_node(root, node, document, pack,
-                                             map_name, needle)
+                                             map_name, needle, folded, badges)
         # A map has a handful of layers, so expanding everything is simpler
         # and more useful than remembering collapse state. Revisit if a map
         # ever carries enough objects for that to be noise.
@@ -247,7 +332,8 @@ class HierarchyDock(ScopedDock):
                            else f"{total} object{'' if total == 1 else 's'}")
 
     def __add_node(self, parent, node, document, pack, map_name,
-                   needle: str) -> int:
+                   needle: str, folded: set[str],
+                   badges: dict[str, tuple[int, str, str | None]]) -> int:
         if not node.selectable:
             item = QTreeWidgetItem([f"{_KIND_MARK['group']} {node.name}"])
             item.setForeground(0, Qt.gray)
@@ -257,26 +343,54 @@ class HierarchyDock(ScopedDock):
             shown = 0
             for child in node.children:
                 shown += self.__add_node(item, child, document, pack,
-                                         map_name, needle)
+                                         map_name, needle, folded, badges)
             item.setExpanded(True)
             return shown
 
+        if node.kind == "tile" and node.name in folded:
+            # Its art layer draws the badge. A companion inside a group is
+            # folded the same way, which is why this sits here and not in a
+            # filter over the top-level list.
+            return 0
+
         declared = pack.layer(node.name)
         depth = f"d{declared.depth}" if declared else "d?"
-        item = QTreeWidgetItem(
-            [f"{_KIND_MARK.get(node.kind, '?')} {node.name}    {node.kind}  {depth}"])
+        badge = badges.get(node.name)
+        label = (f"{_KIND_MARK.get(node.kind, '?')} {node.name}    "
+                 f"{node.kind}  {depth}")
+        if badge is not None:
+            label += f"   {_MASK_MARK}{badge[0]}"
+        item = QTreeWidgetItem([label])
         item.setData(0, Qt.UserRole, f"map:{map_name}/layer:{node.name}")
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
         item.setCheckState(0, Qt.Unchecked if node.name in self.__hidden()
                            else Qt.Checked)
+        notes: list[str] = []
+        warn = declared is None
         if declared is None:
+            notes.append(f"{node.name!r} is not declared by genre {pack.id!r}. "
+                         f"If scripts/core/depth.py does not map it either, "
+                         f"it will not render at all.")
+        elif declared.doc:
+            notes.append(declared.doc)
+        if badge is not None:
+            count, companion, fault = badge
+            notes.append(f"{count} mask{'' if count == 1 else 's'} painted "
+                         f"for this layer, in {companion!r} — a data layer, "
+                         f"which is why it is not a row of its own. The "
+                         f"layer inspector's `passability` property names it.")
+            if fault is not None:
+                # `world_coordinate_fault`'s own words, forwarded rather than
+                # paraphrased: it names the properties in the spelling the
+                # author has to go and edit, and it is the reason
+                # `collision_layers` leaves this layer out of the stack.
+                warn = True
+                notes.append(f"BUT {node.name!r} is {fault}, so its cells are "
+                             f"not the map's cells and nothing on it blocks "
+                             f"movement: those {count} masks reach no field.")
+        if warn:
             item.setForeground(0, Qt.darkYellow)
-            item.setToolTip(0,
-                            f"{node.name!r} is not declared by genre {pack.id!r}. "
-                            f"If scripts/core/depth.py does not map it either, "
-                            f"it will not render at all.")
-        else:
-            item.setToolTip(0, declared.doc)
+        item.setToolTip(0, '\n\n'.join(notes))
         parent.addChild(item)
 
         shown = 0

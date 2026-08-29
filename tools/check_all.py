@@ -33,9 +33,12 @@ CHECKS = [
     ("input", "edge detection, multi-binding, load-time validation"),
     ("animation", "sequence switching, pause/resume, pre-sliced frames"),
     ("singletons", "one CoreAssetManager, tmx cached until reload is asked for"),
-    ("tmx_roundtrip", "byte-identical tmx save, minimal-diff tile and object edits"),
-    ("tileset", "byte-exact tileset add/remove, gid-range and extent guards"),
-    ("tileset_verbs", "tileset add/remove/restore verbs with exact undo, and "
+    ("tmx_roundtrip", "byte-identical tmx save, minimal-diff tile, object "
+                      "and tileset-growth edits"),
+    ("tileset", "byte-exact tileset add/remove/grow/rename, gid-range and "
+                "extent guards, and growth that moves no placed gid"),
+    ("tileset_verbs", "tileset add/remove/restore/grow/rename verbs with exact "
+                      "undo, gid headroom bought at add time, and "
                       "the tile-mask verb that writes a tileset's .blitmask "
                       "and declares it"),
     ("blitmap", "the native .blitmap/.tileset format and the tmx converter"),
@@ -71,6 +74,10 @@ CHECKS = [
                         "over a map whose tiles carry their own masks, and a "
                         "tile picked in the palette baking its own mask into "
                         "the tileset"),
+    ("collision_fold", "the collision companion has no row in the "
+                       "hierarchy, a layer merely named like one still "
+                       "does, its masks still bake into the same field, "
+                       "and the no-opinion chip clears a cell and a tile"),
     ("collision_runtime", "the engine reads a mask, stacks a tileset's own "
                           "defaults under it, gates movement, and keeps a "
                           "layer that moves under the camera out of the "
@@ -81,6 +88,10 @@ CHECKS = [
                     "authoring time, exact undo"),
     ("editor_ui", "panels build, canvas edits are commands, a palette click "
                   "in collision mode masks the tile, responses apply"),
+    ("palette", "every tileset stacked in one scroll, a stamp clamped to the "
+                "sheet it started in, a selection addressed by name so no "
+                "command can move it, and an import that crops the region "
+                "it was shown into a grid the engine cuts the same way"),
     ("demos", "three prototype games boot headless and answer injected input"),
     ("prototype", "the design form resolves against the registries, and its "
                   "worked example boots"),

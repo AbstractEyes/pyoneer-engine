@@ -29,6 +29,32 @@ class TilesetEntry:
     columns: int
     source: str
     image: QImage | None
+    #: The gutters Tiled writes: `margin` before the first tile, `spacing`
+    #: between adjacent ones. Carried because the ENGINE honours both and
+    #: the editor has to cut the same pixels -- a sheet with a margin drawn
+    #: without one shows every tile offset by the border, and the two halves
+    #: of the editor then disagree about what a gid looks like with nothing
+    #: raising anywhere.
+    margin: int = 0
+    spacing: int = 0
+
+    @property
+    def rows(self) -> int:
+        """How many rows the declared tiles occupy, ragged last row included."""
+        columns = max(1, self.columns)
+        return max(0, (self.tile_count + columns - 1) // columns)
+
+    def tile_rect(self, index: int) -> QRect:
+        """Where local id `index` sits on the sheet.
+
+        The engine's own slicing, spelled once: a tile starts at
+        `margin + n * (size + spacing)` on each axis.
+        """
+        columns = max(1, self.columns)
+        return QRect(
+            self.margin + (index % columns) * (self.tile_width + self.spacing),
+            self.margin + (index // columns) * (self.tile_height + self.spacing),
+            self.tile_width, self.tile_height)
 
 
 class TilesetAtlas:
@@ -70,6 +96,8 @@ class TilesetAtlas:
                 columns=int(element.get("columns", "1")) or 1,
                 source=source,
                 image=image,
+                margin=int(element.get("margin", "0")),
+                spacing=int(element.get("spacing", "0")),
             ))
         self.entries.sort(key=lambda e: e.first_gid)
 
@@ -112,12 +140,8 @@ class TilesetAtlas:
         return made
 
     def __from_image(self, entry: TilesetEntry, gid: int) -> QPixmap:
-        index = gid - entry.first_gid
-        column = index % entry.columns
-        row = index // entry.columns
-        rect = QRect(column * entry.tile_width, row * entry.tile_height,
-                     entry.tile_width, entry.tile_height)
-        return QPixmap.fromImage(entry.image.copy(rect))
+        return QPixmap.fromImage(
+            entry.image.copy(entry.tile_rect(gid - entry.first_gid)))
 
     def __swatch(self, gid: int) -> QPixmap:
         """A stable, readable stand-in: same gid always gets the same color."""

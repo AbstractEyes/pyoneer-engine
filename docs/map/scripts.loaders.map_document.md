@@ -5,7 +5,7 @@
 
 > A round-trip-safe read/WRITE document layer for Tiled .tmx files.
 
-`scripts.loaders.map_document` · 2069 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.loaders.map_document` · 2401 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -152,7 +152,7 @@
 
 ### `class MapDocument` #TAG:MapDocument
 
-`scripts/loaders/map_document.py:873`–`2068`
+`scripts/loaders/map_document.py:873`–`2400`
 
 > A .tmx file held as an editable, byte-faithful XML document.
 
@@ -229,24 +229,32 @@
   - A tileset image path, resolved the way Tiled resolves it.
 - `scripts/loaders/map_document.py:1622` `add_tileset(self, name: str, image_source: str, *, tile_width: int | None=None, tile_height: int | None=None, margin: int=0, spacing: int=0, columns: int | None=None, tile_count: int | None=None, image_width: int | None=None, image_height: int | None=None, first_gid: int | None=None) -> TilesetRef` #TAG:MapDocument.add_tileset
   - Add an EMBEDDED `<tileset>` with one `<image>` child.
-- `scripts/loaders/map_document.py:1815` `remove_tileset(self, key: str | int, *, force: bool=False) -> bool` #TAG:MapDocument.remove_tileset
+- `scripts/loaders/map_document.py:1815` `_gid_pressure(self, threshold: int) -> tuple[int, dict[str, int]]` #TAG:MapDocument._gid_pressure
+  - (total, per-layer counts) of painted gids at or above `threshold`.
+- `scripts/loaders/map_document.py:1848` `tileset_headroom(self, key: str | int) -> int` #TAG:MapDocument.tileset_headroom
+  - How many MORE tiles this tileset could own before it collided.
+- `scripts/loaders/map_document.py:1874` `grow_tileset(self, key: str | int, *, image_source: str | None=None, image_width: int | None=None, image_height: int | None=None, tile_count: int | None=None) -> dict[str, Any]` #TAG:MapDocument.grow_tileset
+  - Point a tileset at a re-cut sheet and change how many tiles it
+- `scripts/loaders/map_document.py:2103` `rename_tileset(self, key: str | int, new_name: str) -> str` #TAG:MapDocument.rename_tileset
+  - Give a tileset a different name. Returns the name it had.
+- `scripts/loaders/map_document.py:2147` `remove_tileset(self, key: str | int, *, force: bool=False) -> bool` #TAG:MapDocument.remove_tileset
   - Remove a tileset by name or firstgid. False if it was not there.
-- `scripts/loaders/map_document.py:1882` `serialize_tileset(self, key: str | int) -> dict[str, Any] | None` #TAG:MapDocument.serialize_tileset
+- `scripts/loaders/map_document.py:2214` `serialize_tileset(self, key: str | int) -> dict[str, Any] | None` #TAG:MapDocument.serialize_tileset
   - Everything needed to put a tileset back exactly where it was.
-- `scripts/loaders/map_document.py:1914` `restore_tileset(self, payload: dict[str, Any]) -> str` #TAG:MapDocument.restore_tileset
+- `scripts/loaders/map_document.py:2246` `restore_tileset(self, payload: dict[str, Any]) -> str` #TAG:MapDocument.restore_tileset
   - Put back a tileset serialized by `serialize_tileset`.
-- `scripts/loaders/map_document.py:1958` `_claim_object_id(self) -> int` #TAG:MapDocument._claim_object_id
+- `scripts/loaders/map_document.py:2290` `_claim_object_id(self) -> int` #TAG:MapDocument._claim_object_id
   - Hand out the next object id, honouring the map's nextobjectid.
-- `scripts/loaders/map_document.py:1968` `_release_object_id(self, object_id: int) -> None` #TAG:MapDocument._release_object_id
+- `scripts/loaders/map_document.py:2300` `_release_object_id(self, object_id: int) -> None` #TAG:MapDocument._release_object_id
   - Undo a claim, but ONLY the most recent one.
-- `scripts/loaders/map_document.py:1981` `_rebuild_parents(self) -> None` #TAG:MapDocument._rebuild_parents
-- `scripts/loaders/map_document.py:1986` `_indent_of(self, element: ElementTree.Element) -> str` #TAG:MapDocument._indent_of
+- `scripts/loaders/map_document.py:2313` `_rebuild_parents(self) -> None` #TAG:MapDocument._rebuild_parents
+- `scripts/loaders/map_document.py:2318` `_indent_of(self, element: ElementTree.Element) -> str` #TAG:MapDocument._indent_of
   - The horizontal whitespace preceding `element` on its own line.
-- `scripts/loaders/map_document.py:2001` `_child_indent(self, parent: ElementTree.Element) -> str` #TAG:MapDocument._child_indent
+- `scripts/loaders/map_document.py:2333` `_child_indent(self, parent: ElementTree.Element) -> str` #TAG:MapDocument._child_indent
   - Indentation for a NEW child of `parent`.
-- `scripts/loaders/map_document.py:2016` `_append_child(self, parent: ElementTree.Element, tag: str, index: int | None=None) -> ElementTree.Element` #TAG:MapDocument._append_child
+- `scripts/loaders/map_document.py:2348` `_append_child(self, parent: ElementTree.Element, tag: str, index: int | None=None) -> ElementTree.Element` #TAG:MapDocument._append_child
   - Insert a new element, indented to match its siblings.
-- `scripts/loaders/map_document.py:2051` `_remove_child(self, parent: ElementTree.Element, element: ElementTree.Element) -> None` #TAG:MapDocument._remove_child
+- `scripts/loaders/map_document.py:2383` `_remove_child(self, parent: ElementTree.Element, element: ElementTree.Element) -> None` #TAG:MapDocument._remove_child
   - Remove an element and hand its trailing whitespace back.
-- `scripts/loaders/map_document.py:2063` `_touch(self) -> None` #TAG:MapDocument._touch
-- `scripts/loaders/map_document.py:2066` `__repr__(self) -> str` #TAG:MapDocument.__repr__
+- `scripts/loaders/map_document.py:2395` `_touch(self) -> None` #TAG:MapDocument._touch
+- `scripts/loaders/map_document.py:2398` `__repr__(self) -> str` #TAG:MapDocument.__repr__

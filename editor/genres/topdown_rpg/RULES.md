@@ -117,23 +117,37 @@ Object coordinates are **world pixels**, not tiles. Tiled anchors a
 rectangle object at its top-left and a tile object at its bottom-left;
 mind the difference when placing things.
 
-### Solid is a companion layer
+### Solid is the TILE first, then the cell
 
-`Floor` is art. What blocks movement is authored into a **companion tile
-layer** -- `FloorCollision` by default, or whatever `Floor`'s
-`pyoneer_passability` property names -- one four-bit mask per cell (down 1,
-left 2, right 4, up 8; a **set** bit means **blocked**). The editor's
-collision mode creates that layer on the first stroke and marks it
-`pyoneer_renders=false` so it never draws; `gid 0` there means *nobody said
-anything*, not *open*.
+`Floor` is art. What blocks movement is a four-bit mask -- down 1, left 2,
+right 4, up 8, and a **set** bit means **blocked** -- and it is authored at
+two levels, in this order:
 
-`scripts/core/collision_runtime.py` reads it and clamps a move, and
+1. **The tile's own mask**, in a `.blitmask` beside the map named by the
+   tileset's `pyoneer_collision` property. Stamping the tile authors the
+   collision, which is the level that scales: give the wall tile `15` once and
+   every wall you ever paint is solid.
+2. **The cell**, in a **companion tile layer** -- `FloorCollision` by default,
+   or whatever `Floor`'s `pyoneer_passability` property names. It exists to say
+   *"not THIS one"*: a door left open in a wall, a hole in a fence. A painted
+   cell **overrides** the tile default rather than merging with it, so `0`
+   (open) over a solid tile is open, and `gid 0` -- an empty cell -- means
+   *nobody said anything*, which falls back to the tile.
+
+The companion has no row in the editor's hierarchy on purpose: it declares
+`pyoneer_renders=false` and nothing draws it, so the art layer carries a mask
+count badge instead. Select the **art** layer, pick a mask swatch, and paint.
+Shift+click a map cell gives the TILE under it that mask. Do not author a
+third source of truth.
+
+`scripts/core/collision_runtime.py` reads both levels and clamps a move, and
 `topdown_move` inherits that gate for free by going through
 `GameEntity.move_direction`. Two limits worth knowing before designing
 against it: the test is at one anchor point per entity rather than a box, and
 blocking is symmetric, so a one-way tile is not expressible. `LayerRenderer`
-feeds the gate at bind, from whatever the map declares — and a map with no
-companion layer feeds it `None`, which means ungated rather than open. See the
+feeds the gate at bind, from whatever the map declares — and a map that
+declares **neither** a tile mask nor a companion feeds it `None`, which means
+ungated rather than open. See the
 integration table in `docs/BEHAVIORS.md`, which is measured rather than
 asserted.
 

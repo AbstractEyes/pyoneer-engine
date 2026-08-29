@@ -88,7 +88,6 @@ from editor.core.layers import (
     BLOCK_UP,
     PASS_ALL,
     STAR,
-    describe_mask,
 )
 # `EditMode` lives in `editor/core/paint.py`, which imports no Qt, and is
 # re-exported here so `from editor.ui.collision_view import EditMode` keeps
@@ -102,6 +101,21 @@ from editor.core.paint import EditMode, Tool
 #: needs no redesign: the ring owns the centre and the bars own the edges,
 #: and they never overlap.
 MASK_DOMAIN: tuple[int, ...] = tuple(range(STAR + 1))
+
+#: What the mask BRUSH may be set to: every authorable mask, plus NO_DATA.
+#:                                                #TAG:no_data_is_a_brush_not_a_mask
+#: MASK_DOMAIN itself does not grow, and cannot: it doubles as the physical
+#: layout of `Collision.png` -- `write_mask_sheet` sizes the sheet from its
+#: length and `CollisionTilesetOffer.holds` refuses a map declaring fewer
+#: tiles -- so an eighteenth entry would invalidate every sheet already on
+#: disk and refuse the author's own map.
+#:
+#: NO_DATA needs neither, because it is not stored as a tile: on a CELL it
+#: is gid 0, the empty cell the eraser already writes, and on a TILE it is
+#: the `-1` `map.tileset.mask.set` documents as "no opinion" and nothing in
+#: the UI could produce. It is a value of the brush, so it belongs to the
+#: palette's layout and not to the sheet's.
+BRUSH_DOMAIN: tuple[int, ...] = MASK_DOMAIN + (NO_DATA,)
 
 _DIRECTION_BITS = (BLOCK_UP, BLOCK_DOWN, BLOCK_LEFT, BLOCK_RIGHT)
 
@@ -182,6 +196,16 @@ OVERRIDE_INK = QColor(28, 32, 44, 235)
 
 #: Free in `main_window._TOOL_SHORTCUTS`, checked before choosing it.
 MODE_SHORTCUT = "C"
+
+#: The keyline on the two swatches that draw no glyph at all.
+#:
+#: PASS_ALL and NO_DATA are the pair this vocabulary most needs told apart,
+#: and the pair it drew identically: `PASS_ALL` is an ASSERTION -- a hole in
+#: the wall -- that ends the resolve at that level, and NO_DATA is silence
+#: that falls through to the tile's own mask. `canvas._BAKED_PEN` solves the
+#: same problem the same way one level up, so the answer is a keyline:
+#: SOLID for the assertion, DOTTED for the silence.
+CHIP_KEYLINE = QColor(198, 204, 214, 220)
 
 
 # --------------------------------------------------------------------------
@@ -932,14 +956,15 @@ def build_mode_actions(parent: QWidget,
 # --------------------------------------------------------------------------
 
 class MaskPalette(QWidget):
-    """Seventeen swatches: what `TilePalette` becomes in collision mode.
+    """Seventeen masks and the chip that takes one back off.
 
     Laid out four wide so the column index is the low two bits (down, left)
     and the row index is the high two (right, up) -- picking "blocks left and
-    right" is then a position, not a hunt. Star sits alone on the last row,
-    which is honest: it is not a direction.
+    right" is then a position, not a hunt. Star sits on the last row, which
+    is honest: it is not a direction. NO_DATA sits beside it, for the same
+    reason and one step further out -- it is not even a mask.
 
-    Emits a MASK, not a gid. Turning it into a gid needs the companion
+    Emits an OPINION, not a gid. Turning it into a gid needs the companion
     layer's firstgid, which the canvas knows and this widget should not.
     """
 
@@ -954,7 +979,15 @@ class MaskPalette(QWidget):
         self.__glyphs = glyph_pixmaps(cell, cell)
 
         self.surface = _MaskSurface(self)
-        self.caption = QLabel(describe_mask(self.__mask))
+        # The only place either gesture is written down. A drag picks a
+        # stamp in the tile palette and nothing says so there either, which
+        # is the complaint this dock should not repeat.
+        self.surface.setToolTip(
+            "click a swatch, then click a cell to paint that mask · "
+            "shift+click a tile on the map to give THAT TILE the mask, "
+            "everywhere it is stamped · the dotted chip clears one, "
+            "and is not the same as the open square beside it")
+        self.caption = QLabel(describe_opinion(self.__mask))
         self.caption.setStyleSheet("color: palette(mid); font-size: 11px;")
         self.caption.setWordWrap(True)
 
@@ -974,19 +1007,22 @@ class MaskPalette(QWidget):
 
     @property
     def rows(self) -> int:
-        return (len(MASK_DOMAIN) + self.COLUMNS - 1) // self.COLUMNS
+        return (len(BRUSH_DOMAIN) + self.COLUMNS - 1) // self.COLUMNS
 
     def mask_at(self, column: int, row: int) -> int | None:
         index = row * self.COLUMNS + column
-        if not (0 <= column < self.COLUMNS and 0 <= index < len(MASK_DOMAIN)):
+        if not (0 <= column < self.COLUMNS and 0 <= index < len(BRUSH_DOMAIN)):
             return None
-        return MASK_DOMAIN[index]
+        return BRUSH_DOMAIN[index]
 
     def select_mask(self, mask: int, *, notify: bool = True) -> None:
-        if mask not in MASK_DOMAIN:
+        if mask not in BRUSH_DOMAIN:
             return
         self.__mask = mask
-        self.caption.setText(describe_mask(mask))
+        # `describe_opinion`, not `describe_mask`: the latter reads every bit
+        # of -1 as set and calls the chip "blocks down, left, right, up",
+        # which is the opposite of what it does.
+        self.caption.setText(describe_opinion(mask))
         self.surface.update()
         if notify:
             self.mask_picked.emit(mask)
@@ -1007,7 +1043,7 @@ class _MaskSurface(QWidget):
     def paintEvent(self, _event) -> None:                     # noqa: N802
         painter = QPainter(self)
         step, cell = self.__step(), self.palette.cell
-        for index, mask in enumerate(MASK_DOMAIN):
+        for index, mask in enumerate(BRUSH_DOMAIN):
             x = (index % MaskPalette.COLUMNS) * step + 3
             y = (index // MaskPalette.COLUMNS) * step + 3
             # A neutral plate under every swatch, so "open" is a visible
@@ -1016,6 +1052,12 @@ class _MaskSurface(QWidget):
             glyph = self.palette.glyphs.get(mask)
             if glyph is not None:
                 painter.drawPixmap(x, y, glyph)
+            if mask in (PASS_ALL, NO_DATA):
+                pen = QPen(CHIP_KEYLINE, 1)
+                pen.setStyle(Qt.SolidLine if mask == PASS_ALL else Qt.DotLine)
+                painter.setPen(pen)
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(x + 4, y + 4, cell - 9, cell - 9)
             if mask == self.palette.mask:
                 painter.setPen(QPen(QColor(120, 200, 255), 2))
                 painter.setBrush(Qt.NoBrush)

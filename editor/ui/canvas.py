@@ -55,10 +55,9 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QComboBox,
     QGraphicsItemGroup,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
@@ -66,6 +65,7 @@ from PySide6.QtWidgets import (
     QGraphicsSimpleTextItem,
     QGraphicsView,
     QLabel,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -90,6 +90,7 @@ from editor.core.collision import (
     SUBCELL,
     CollisionLayer,
     companion_subcell,
+    describe_opinion,
     field_subcell,
     gid_to_opinion,
     opinion_to_gid,
@@ -1194,8 +1195,11 @@ class MapCanvas(QGraphicsView):
             }))
 
         what = f"tile {gids[0]}" if len(gids) == 1 else f"{len(gids)} tiles"
+        # `describe_opinion`, never `describe_mask`: the chip's -1 has every
+        # bit set, so `describe_mask` reads the one value that CLEARS a mask
+        # as the one that blocks every direction.
         if not self.window().run(commands,
-                                 label=f"{what} {describe_mask(mask)}"):
+                                 label=f"{what} {describe_opinion(mask)}"):
             return False
         # AFTER run(), which writes its own line to the same status bar, so
         # the author is left looking at what the click did rather than at the
@@ -1205,7 +1209,7 @@ class MapCanvas(QGraphicsView):
             note = (" — turn All layers on to see it: this view draws one "
                     "companion's own cells, and a tile's mask is not one")
         self.status.emit(
-            f"{what}: {describe_mask(mask)}, everywhere "
+            f"{what}: {describe_opinion(mask)}, everywhere "
             f"{'it is' if len(gids) == 1 else 'they are'} stamped{note}")
         return True
 
@@ -1571,6 +1575,16 @@ class MapCanvas(QGraphicsView):
             event.accept()
             return
 
+        if (event.modifiers() & Qt.ShiftModifier
+                and event.button() == Qt.LeftButton):
+            # MAP cells, not `cell_at`'s. What carries a mask is the TILE,
+            # and in collision mode `cell_at` answers in sub-cells -- sixteen
+            # of which sit on one tile at 4x.
+            self.__mask_tile_at(int(point.x() // self.tile_width),
+                                int(point.y() // self.tile_height))
+            event.accept()
+            return
+
         if self.mode is EditMode.COLLISION:
             if event.button() in (Qt.LeftButton, Qt.RightButton):
                 self.__begin_collision(
@@ -1751,8 +1765,12 @@ class MapCanvas(QGraphicsView):
         self.__pending_tileset = None
         self.__wrote_sheet = False
         first_gid = self.collision_first_gid
+        # THE NO-OPINION CHIP CLEARS, so it is the eraser wearing a swatch:
+        # `opinion_to_gid(NO_DATA, ...)` is 0 whatever the firstgid is, which
+        # is the one value in the brush that needs no tileset to encode.
+        clears = erase or self.mask == NO_DATA
         if first_gid is None:
-            if erase:
+            if clears:
                 # Erasing writes gid 0, which needs no tileset, and there is
                 # nothing here to erase -- so a right-drag over a map with no
                 # collision must not declare a gid range to service it.
@@ -1917,6 +1935,41 @@ class MapCanvas(QGraphicsView):
         if subcell > 1:
             args["subcell"] = subcell
         return args
+
+    def __mask_tile_at(self, column: int, row: int) -> None:
+        """Shift+Left on the MAP: give the tile under it the mask brush.
+
+        The two-step is the one a palette click already uses -- pick the
+        mask, then pick what it applies to -- with the MAP standing in for
+        the tileset sheet. What it removes is the hunt: finding which of a
+        768-tile sheet a wall was, when the wall is on screen in front of
+        you.
+
+        IT NEEDS NO MODE. The mask is whatever the mask palette holds, the
+        target is the tile under the cursor, and in TILES mode the answer
+        appears where the click landed -- `__bake_overlay` draws
+        `inherited_cells()` there, which is level one, which is the level
+        this writes. That is the whole of "apply collision and see it
+        without switching modes".
+
+        `bake_tile_mask` owns every command and every refusal past this
+        point, so this is a BINDING and not a second way to author a mask.
+        """
+        layer = self.__active_tile_layer()
+        if layer is None:
+            self.status.emit("select a tile layer, then shift+click a tile on "
+                             "it to give that tile this mask")
+            return
+        if not (0 <= column < layer.width and 0 <= row < layer.height):
+            self.status.emit("that is outside the map")
+            return
+        gid = layer.get_tile(column, row)
+        if gid <= 0:
+            self.status.emit(
+                f"cell ({column}, {row}) of {self.active_layer!r} is empty — "
+                f"a mask lives on a tile, and there is no tile here")
+            return
+        self.bake_tile_mask(Stamp.single(gid))
 
     def __pick_mask(self, column: int, row: int) -> None:
         """Alt+click, or the picker tool, in collision mode."""
@@ -2129,33 +2182,96 @@ class _TerrainStroke:
 # The tile palette
 # --------------------------------------------------------------------------
 
-class TilePalette(QWidget):
-    """Pick a tile, or drag out a rectangle to pick a multi-tile stamp.
+@dataclass(frozen=True)
+class PaletteSection:
+    """One tileset's strip of the stacked palette.
 
-    One tileset at a time, laid out with that tileset's OWN column count --
-    a fixed grid would produce nonsense stamps for any other geometry.
+    Its OWN column count and its OWN cell size, because a fixed grid across
+    tilesets would produce nonsense stamps for any geometry but the first --
+    a gid's row and column are read off the tileset that owns it.
+    """
+
+    entry: Any                  # a TilesetEntry
+    cell: int
+    top: int                    # y of the header strip
+    grid_top: int               # y of the first row of tiles
+    columns: int
+    rows: int
+
+    @property
+    def name(self) -> str:
+        return self.entry.name
+
+    @property
+    def width(self) -> int:
+        return self.columns * self.cell
+
+    @property
+    def bottom(self) -> int:
+        return self.grid_top + self.rows * self.cell
+
+    def rect(self, column: int, row: int) -> QRectF:
+        """Where one tile of this section sits on the palette surface."""
+        return QRectF(column * self.cell, self.grid_top + row * self.cell,
+                      self.cell, self.cell)
+
+
+class TilePalette(QWidget):
+    """Every tileset the map declares, stacked in one scrolling column.
+
+    ONE COLUMN, NOT A CHOOSER. A dropdown made "which sheet holds this tile"
+    a question the author had to answer before they could look, and the
+    atlas already answers it -- `TilesetAtlas.entry_for` walks the same
+    ordered list this widget lays out. Stacking is also what makes a tileset
+    a NAMED, visible thing: the header is where a sheet says what it is
+    called and how many tiles it has.
+
+    A DRAG PICKS A STAMP, and it is clamped to one section: a rectangle
+    spanning two tilesets would produce perfectly legal gids and a nonsense
+    picture.
+
+    THE SELECTION IS AN ADDRESS -- a tileset NAME plus a rectangle in that
+    tileset's own local ids. Every command rebuilds this widget, and a
+    selection keyed on position would either vanish on the first stroke or,
+    worse, slide onto a different sheet's tiles when a tileset above it is
+    removed.
     """
 
     stamp_picked = Signal(object)      # a Stamp
+    add_tiles_requested = Signal()
+
+    #: The header strip's height, and the gap under each section.
+    HEADER = 18
+    GAP = 6
+    #: Integer zoom only. A fractionally scaled pixel-art picker is a blurred
+    #: picker, and the tile it shows is not the tile the map will draw.
+    ZOOMS = (1, 2, 3, 4)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.atlas: TilesetAtlas | None = None
-        self.entry = None
-        self.cell = 16
+        self.sections: list[PaletteSection] = []
+        self.zoom = 1
         #: gid -> the mask its TILESET bakes in, from `MapCanvas.tile_masks`.
         #: Drawn over the sheet so an author can SEE which tiles are already
         #: baked: level one lives in a file beside the .tmx, and the only
         #: other readout is the All-layers overlay, which answers about map
         #: cells rather than about the tile in hand.
         self.masks: dict[int, int] = {}
-        self.__anchor: tuple[int, int] | None = None
-        self.__current: tuple[int, int] | None = None
+        #: (tileset name, left, top, width, height) in that tileset's local
+        #: ids, or None. See the class docstring.
+        self.selection: tuple[str, int, int, int, int] | None = None
+        self.__anchor: tuple[str, int, int] | None = None
 
-        self.chooser = QComboBox()
-        self.chooser.currentIndexChanged.connect(self.__on_choose)
+        self.add_button = QPushButton("+  Add tiles…")
+        self.add_button.setToolTip(
+            "select a region of any image and add it as a named tileset")
+        self.add_button.clicked.connect(self.add_tiles_requested)
 
         self.surface = _PaletteSurface(self)
+        self.surface.setToolTip(
+            "drag to pick a multi-tile stamp · ctrl+wheel zooms · "
+            "alt+click on the map picks the tile under the cursor")
         self.scroll = QScrollArea()
         self.scroll.setWidget(self.surface)
         self.scroll.setWidgetResizable(False)
@@ -2166,92 +2282,163 @@ class TilePalette(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(3)
-        layout.addWidget(self.chooser)
+        layout.addWidget(self.add_button)
         layout.addWidget(self.scroll, 1)
         layout.addWidget(self.caption)
 
     # -- data --------------------------------------------------------------
 
     def set_atlas(self, atlas: TilesetAtlas) -> None:
-        remembered = self.chooser.currentIndex()
         self.atlas = atlas
-        self.chooser.blockSignals(True)
-        self.chooser.clear()
-        for entry in atlas.entries:
-            missing = "" if entry.image is not None else "   (no art)"
-            self.chooser.addItem(f"{entry.name}   {entry.tile_count} tiles{missing}")
-        self.chooser.setCurrentIndex(max(0, min(remembered,
-                                                self.chooser.count() - 1)))
-        self.chooser.blockSignals(False)
-        self.__on_choose(self.chooser.currentIndex())
+        self.__layout()
+        self.__reseat_selection()
+        self.surface.rebuild()
 
     def set_masks(self, masks: dict[int, int]) -> None:
         """Which gids their own tileset already masks. See `masks`.
 
         DOES NOT REBUILD. Its one caller is `EditorWindow.refresh_all`, which
         calls `set_atlas` on the very next line, and `set_atlas` rebuilds the
-        sheet unconditionally through `__on_choose` -- so the sheet is drawn
-        once, with its badges already on. A second caller using this alone
-        has to rebuild itself.
+        sheet unconditionally -- so the sheet is drawn once, with its badges
+        already on. A second caller using this alone has to rebuild itself.
         """
         self.masks = dict(masks)
 
-    def __on_choose(self, index: int) -> None:
-        if self.atlas is None or not (0 <= index < len(self.atlas.entries)):
+    def set_zoom(self, zoom: int) -> None:
+        """Draw the sheets at `zoom` screen pixels per source pixel."""
+        wanted = max(self.ZOOMS[0], min(int(zoom), self.ZOOMS[-1]))
+        if wanted == self.zoom:
             return
-        self.entry = self.atlas.entries[index]
-        self.cell = max(self.entry.tile_width, 8)
-        self.__anchor = self.__current = None
+        self.zoom = wanted
+        self.__layout()
         self.surface.rebuild()
+        self.__show_selection()
+
+    def __layout(self) -> None:
+        """Stack the atlas's entries into sections, top to bottom.
+
+        THE MASK SHEET IS NOT ART, so it gets no section. Its seventeen
+        glyphs are an encoding -- tile N of that sheet IS mask N -- and
+        offering them beside the scenery invites an author to paint a wall
+        symbol onto a floor, which is legal TMX that draws a wall symbol.
+        The ATLAS still carries it, because the overlay and every piece of
+        gid arithmetic need it; only this picker looks away.
+        """
+        self.sections = []
+        if self.atlas is None:
+            return
+        y = 0
+        for entry in self.atlas.entries:
+            # The engine's own predicate, one spelling. A second way to say
+            # "this is the collision tileset" is a wall the player cannot
+            # feel: no error, no warning, just a sheet in the wrong list.
+            if entry.name.lower() == COLLISION_TILESET:
+                continue
+            section = PaletteSection(
+                entry=entry, cell=max(entry.tile_width, 8) * self.zoom,
+                top=y, grid_top=y + self.HEADER,
+                columns=max(1, entry.columns), rows=max(1, entry.rows))
+            self.sections.append(section)
+            y = section.bottom + self.GAP
 
     @property
-    def columns(self) -> int:
-        return self.entry.columns if self.entry else 1
+    def surface_size(self) -> tuple[int, int]:
+        if not self.sections:
+            return 1, 1
+        return (max(section.width for section in self.sections),
+                self.sections[-1].bottom + self.GAP)
 
-    @property
-    def rows(self) -> int:
-        if not self.entry:
-            return 0
-        return max(1, (self.entry.tile_count + self.columns - 1) // self.columns)
+    # -- addressing --------------------------------------------------------
 
-    def gid_at(self, column: int, row: int) -> int | None:
-        if self.entry is None:
+    def section(self, name: str) -> PaletteSection | None:
+        for section in self.sections:
+            if section.name == name:
+                return section
+        return None
+
+    def locate(self, x: float, y: float) -> tuple[PaletteSection, int, int] | None:
+        """Surface point -> the section under it and a cell inside it.
+
+        None only above the first section or below the last. A point in a
+        header, or in the gutter beside a narrow sheet, is CLAMPED into that
+        section rather than dropped, so a drag that strays never silently
+        stops extending.
+        """
+        if not self.sections:
             return None
-        index = row * self.columns + column
-        if not (0 <= column < self.columns and 0 <= index < self.entry.tile_count):
+        found = None
+        for section in self.sections:
+            if y >= section.top:
+                found = section
+            else:
+                break
+        if found is None or y >= self.sections[-1].bottom + self.GAP:
             return None
-        return self.entry.first_gid + index
+        return (found, ) + self.clamp(found, x, y)
+
+    @staticmethod
+    def clamp(section: PaletteSection, x: float, y: float) -> tuple[int, int]:
+        """A point, as a cell of `section`, never outside its grid."""
+        column = max(0, min(int(x) // section.cell, section.columns - 1))
+        row = max(0, min(int(y - section.grid_top) // section.cell,
+                         section.rows - 1))
+        return column, row
+
+    def gid_at(self, section: PaletteSection, column: int, row: int) -> int | None:
+        index = row * section.columns + column
+        if not (0 <= column < section.columns
+                and 0 <= index < section.entry.tile_count):
+            return None
+        return section.entry.first_gid + index
+
+    def tile_point(self, name: str, column: int, row: int) -> QPointF | None:
+        """The centre of one tile, in surface coordinates.
+
+        The one mapping a caller outside this widget needs -- a check
+        driving a real mouse press, and `select_gid` scrolling to a pick.
+        """
+        section = self.section(name)
+        if section is None:
+            return None
+        return section.rect(column, row).center()
 
     # -- selection ---------------------------------------------------------
 
-    def begin(self, column: int, row: int) -> None:
-        self.__anchor = self.__current = (column, row)
+    def begin_at(self, x: float, y: float) -> None:
+        located = self.locate(x, y)
+        if located is None:
+            return
+        section, column, row = located
+        self.__anchor = (section.name, column, row)
+        self.selection = (section.name, column, row, 1, 1)
         self.surface.update()
 
-    def extend(self, column: int, row: int) -> None:
+    def extend_at(self, x: float, y: float) -> None:
+        """Grow the selection, ALWAYS inside the anchor's own section."""
         if self.__anchor is None:
             return
-        self.__current = (column, row)
+        name, anchor_column, anchor_row = self.__anchor
+        section = self.section(name)
+        if section is None:
+            return
+        column, row = self.clamp(section, x, y)
+        left, right = sorted((anchor_column, column))
+        top, bottom = sorted((anchor_row, row))
+        self.selection = (name, left, top, right - left + 1, bottom - top + 1)
         self.surface.update()
 
     def commit(self) -> None:
-        if self.__anchor is None or self.__current is None:
+        self.__anchor = None
+        stamp = self.stamp()
+        if stamp is None:
             return
-        left, right = sorted((self.__anchor[0], self.__current[0]))
-        top, bottom = sorted((self.__anchor[1], self.__current[1]))
-        rows: list[list[int]] = []
-        for row in range(top, bottom + 1):
-            line: list[int] = []
-            for column in range(left, right + 1):
-                gid = self.gid_at(column, row)
-                # -1 means "leave this cell alone" -- a ragged selection at
-                # the end of a tileset stays a rectangle with holes rather
-                # than silently shrinking.
-                line.append(gid if gid is not None else -1)
-            rows.append(line)
-        if not rows or not rows[0]:
+        if all(gid <= 0 for gid in stamp.gids):
+            # A rectangle entirely inside a ragged sheet's short last row.
+            # Emitting it would set a brush that paints nothing and, in
+            # collision mode, aim a mask at no tile at all -- both of which
+            # look exactly like a click that worked.
+            self.caption.setText("that rectangle holds no tiles")
             return
-        stamp = Stamp.from_rows(rows)
         self.stamp_picked.emit(stamp)
         # CAPTIONED AFTER THE EMIT: in collision mode that signal is what
         # writes the mask, and `refresh_all` hands this widget the new
@@ -2259,39 +2446,115 @@ class TilePalette(QWidget):
         # mask their own click had just replaced.
         self.caption.setText(self.describe(stamp))
 
+    def stamp(self) -> Stamp | None:
+        """The current selection as a Stamp, or None when there is none."""
+        if self.selection is None:
+            return None
+        name, left, top, width, height = self.selection
+        section = self.section(name)
+        if section is None:
+            return None
+        rows: list[list[int]] = []
+        for row in range(top, top + height):
+            # -1 means "leave this cell alone" -- a ragged selection at the
+            # end of a tileset stays a rectangle with holes rather than
+            # silently shrinking.
+            rows.append([self.gid_at(section, column, row) or -1
+                         for column in range(left, left + width)])
+        if not rows or not rows[0]:
+            return None
+        return Stamp.from_rows(rows)
+
     def describe(self, stamp: Stamp) -> str:
-        """The caption for a pick: what it is, and what it already carries."""
-        head = (f"gid {stamp.primary}" if stamp.is_single
-                else f"{stamp.width}×{stamp.height} stamp from gid "
-                     f"{stamp.primary}")
+        """The caption for a pick: what it is, and what it already carries.
+
+        Names the tiles it REALLY holds, not the size of the rectangle. A
+        drag off the end of a sheet is a legal pick made mostly of holes,
+        and captioning that `11×3` says the opposite of what it does.
+        """
+        real = sum(1 for gid in stamp.gids if gid > 0)
+        if stamp.is_single:
+            head = f"gid {stamp.primary}"
+        else:
+            head = (f"{stamp.width}×{stamp.height}  ·  {real} tiles from gid "
+                    f"{stamp.primary}")
+            empty = stamp.width * stamp.height - real
+            if empty:
+                head += f"  ({empty} empty)"
         mask = self.masks.get(stamp.primary)
         return head if mask is None else f"{head}  ·  {describe_mask(mask)}"
 
     def selection_rect(self) -> tuple[int, int, int, int] | None:
-        if self.__anchor is None or self.__current is None:
+        """The selection in its own tileset's local ids, without the name."""
+        if self.selection is None:
             return None
-        left, right = sorted((self.__anchor[0], self.__current[0]))
-        top, bottom = sorted((self.__anchor[1], self.__current[1]))
-        return left, top, right - left + 1, bottom - top + 1
+        return self.selection[1:]
+
+    def selection_section(self) -> PaletteSection | None:
+        return None if self.selection is None else self.section(self.selection[0])
+
+    def __reseat_selection(self) -> None:
+        """Keep the highlight on the SAME tiles across a rebuild.
+
+        Keyed on the tileset's name, so adding or removing another tileset
+        moves nothing. A selection whose tileset is gone is dropped rather
+        than clamped onto whatever now sits at that index.
+        """
+        if self.selection is None:
+            return
+        name, left, top, width, height = self.selection
+        section = self.section(name)
+        if section is None:
+            self.selection = None
+            return
+        left = max(0, min(left, section.columns - 1))
+        top = max(0, min(top, section.rows - 1))
+        self.selection = (name, left, top,
+                          max(1, min(width, section.columns - left)),
+                          max(1, min(height, section.rows - top)))
 
     def select_gid(self, gid: int) -> None:
         """Move the highlight to a gid chosen elsewhere (the canvas picker)."""
         if self.atlas is None:
             return
-        for index, entry in enumerate(self.atlas.entries):
-            if entry.first_gid <= gid < entry.first_gid + max(1, entry.tile_count):
-                if self.chooser.currentIndex() != index:
-                    self.chooser.setCurrentIndex(index)
-                offset = gid - entry.first_gid
-                self.__anchor = self.__current = (offset % entry.columns,
-                                                  offset // entry.columns)
-                self.caption.setText(self.describe(Stamp.single(gid)))
-                self.surface.update()
-                return
+        entry = self.atlas.entry_for(gid)
+        section = self.section(entry.name) if entry is not None else None
+        if section is None:
+            return
+        offset = gid - section.entry.first_gid
+        self.selection = (section.name, offset % section.columns,
+                          offset // section.columns, 1, 1)
+        self.caption.setText(self.describe(Stamp.single(gid)))
+        self.surface.update()
+        self.__show_selection()
+
+    def __show_selection(self) -> None:
+        """Scroll the highlight into view.
+
+        A picker that moved a highlight the author cannot see has, from
+        where they are sitting, done nothing at all.
+        """
+        section = self.selection_section()
+        if section is None:
+            return
+        _name, left, top, width, height = self.selection
+        rect = section.rect(left, top).united(
+            section.rect(left + width - 1, top + height - 1))
+        self.scroll.ensureVisible(int(rect.center().x()),
+                                  int(rect.center().y()),
+                                  int(rect.width() / 2) + 8,
+                                  int(rect.height() / 2) + 8)
 
 
 class _PaletteSurface(QWidget):
-    """The drawn grid. Split out so the palette can own scrolling."""
+    """The drawn stack. Split out so the palette can own scrolling."""
+
+    #: The header strip and its text. Fixed rather than themed, like the
+    #: sheet background: these sit against tile art, not against the window.
+    HEADER_FILL = QColor(46, 46, 56)
+    HEADER_TEXT = QColor(226, 226, 236)
+    HEADER_DIM = QColor(150, 150, 165)
+    SHEET_FILL = QColor(20, 20, 24)
 
     def __init__(self, palette: TilePalette):
         super().__init__()
@@ -2300,30 +2563,54 @@ class _PaletteSurface(QWidget):
         self.setMouseTracking(True)
 
     def rebuild(self) -> None:
-        entry = self.palette.entry
-        if entry is None:
-            self.__pixmap = None
-            self.resize(1, 1)
-            self.update()
-            return
-        cell = self.palette.cell
-        pixmap = QPixmap(self.palette.columns * cell, self.palette.rows * cell)
-        pixmap.fill(QColor(20, 20, 24))
+        width, height = self.palette.surface_size
+        pixmap = QPixmap(width, height)
+        pixmap.fill(self.SHEET_FILL)
         painter = QPainter(pixmap)
+        for section in self.palette.sections:
+            self.__draw_header(painter, section, width)
+            self.__draw_sheet(painter, section)
+        painter.end()
+        self.__pixmap = pixmap
+        self.resize(pixmap.size())
+        self.update()
+
+    def __draw_header(self, painter: QPainter, section: PaletteSection,
+                      width: int) -> None:
+        strip = QRectF(0, section.top, width, TilePalette.HEADER)
+        painter.fillRect(strip, self.HEADER_FILL)
+        font = painter.font()
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(self.HEADER_TEXT)
+        painter.drawText(strip.adjusted(5, 0, -5, 0),
+                         Qt.AlignVCenter | Qt.AlignLeft, section.name)
+        font.setBold(False)
+        painter.setFont(font)
+        painter.setPen(self.HEADER_DIM)
+        count = f"{section.entry.tile_count} tiles"
+        if section.entry.image is None:
+            count += "  ·  no art"
+        painter.drawText(strip.adjusted(5, 0, -5, 0),
+                         Qt.AlignVCenter | Qt.AlignRight, count)
+
+    def __draw_sheet(self, painter: QPainter, section: PaletteSection) -> None:
+        entry = section.entry
         masks = self.palette.masks
-        # The overlay's OWN glyphs, at this palette's cell size -- a second
+        # The overlay's OWN glyphs, at this section's cell size -- a second
         # drawing of "blocks left and right" would be two pictures of one
         # mask, drifting apart.
-        glyphs = glyph_pixmaps(cell, cell) if masks else {}
+        glyphs = glyph_pixmaps(section.cell, section.cell) if masks else {}
         for index in range(entry.tile_count):
             gid = entry.first_gid + index
-            x = (index % self.palette.columns) * cell
-            y = (index // self.palette.columns) * cell
+            x = (index % section.columns) * section.cell
+            y = section.grid_top + (index // section.columns) * section.cell
             tile = self.palette.atlas.pixmap(gid)
             if tile is not None:
-                painter.drawPixmap(x, y, tile)
+                painter.drawPixmap(x, y, section.cell, section.cell, tile)
             else:
-                painter.fillRect(x, y, cell, cell, gid_colour(gid))
+                painter.fillRect(x, y, section.cell, section.cell,
+                                 gid_colour(gid))
             mask = masks.get(gid)
             if mask is None:
                 continue
@@ -2333,37 +2620,44 @@ class _PaletteSurface(QWidget):
             # And the frame, whatever the glyph drew -- see `_BAKED_PEN`.
             painter.setPen(QPen(_BAKED_PEN, 1))
             painter.setBrush(Qt.NoBrush)
-            painter.drawRect(x, y, cell - 1, cell - 1)
-        painter.end()
-        self.__pixmap = pixmap
-        self.resize(pixmap.size())
-        self.update()
+            painter.drawRect(x, y, section.cell - 1, section.cell - 1)
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         if self.__pixmap is not None:
             painter.drawPixmap(0, 0, self.__pixmap)
-        rect = self.palette.selection_rect()
-        if rect is not None:
-            cell = self.palette.cell
-            x, y, width, height = rect
+        section = self.palette.selection_section()
+        if section is not None:
+            _name, left, top, width, height = self.palette.selection
+            rect = section.rect(left, top).united(
+                section.rect(left + width - 1, top + height - 1))
             painter.setPen(QPen(QColor(120, 200, 255), 2))
             painter.setBrush(QBrush(QColor(120, 200, 255, 50)))
-            painter.drawRect(x * cell, y * cell, width * cell, height * cell)
+            painter.drawRect(rect)
         painter.end()
 
-    def __cell(self, position) -> tuple[int, int]:
-        cell = self.palette.cell
-        return int(position.x()) // cell, int(position.y()) // cell
+    def wheelEvent(self, event) -> None:                          # noqa: N802
+        """Ctrl+wheel zooms; a plain wheel scrolls the stack.
+
+        The other way round on a column holding every tileset in the map
+        would make the one gesture that reaches the bottom of the list also
+        the one that changes its size.
+        """
+        if not (event.modifiers() & Qt.ControlModifier):
+            event.ignore()
+            return
+        step = 1 if event.angleDelta().y() > 0 else -1
+        self.palette.set_zoom(self.palette.zoom + step)
+        event.accept()
 
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.LeftButton:
             return
-        self.palette.begin(*self.__cell(event.position()))
+        self.palette.begin_at(event.position().x(), event.position().y())
 
     def mouseMoveEvent(self, event) -> None:
         if event.buttons() & Qt.LeftButton:
-            self.palette.extend(*self.__cell(event.position()))
+            self.palette.extend_at(event.position().x(), event.position().y())
 
     def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:

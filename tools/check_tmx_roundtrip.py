@@ -477,6 +477,84 @@ try:
 
     # --------------------------------------------------------------------
     print()
+    print("growing and renaming a tileset survive the mixed-indent file")
+    # --------------------------------------------------------------------
+    # Growth rewrites four attribute VALUES and adds no element, so the
+    # whitespace question is not "does the indent get computed" -- it is
+    # "does anything else move". Measured on the shipped file, because that
+    # is the one that mixes tab-indented and space-indented blocks and is
+    # CRLF throughout, and measured on a tileset THIS SECTION ADDS, so
+    # nothing here depends on what the author has painted or imported.
+    grower = MapDocument.load(MAP_PATH)
+    expect("a fresh load of the shipped file round trips",
+           grower.to_bytes(), ORIGINAL)
+
+    def placed(doc):
+        """Every gid the map places: csv cells and tile objects both, raw."""
+        return ({name: doc.tile_layer(name).gids()
+                 for name in doc.tile_layer_names()},
+                [(element.get("id"), element.get("gid"))
+                 for group in doc.root.iter("objectgroup")
+                 for element in group.findall("object")])
+
+    BEFORE = placed(grower)
+    tile_w, tile_h = grower.tile_width, grower.tile_height
+    borrowed = grower.tilesets()[0].image_source
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        added = grower.add_tileset("RoundTripGrowth", borrowed,
+                                   image_width=tile_w * 4,
+                                   image_height=tile_h * 3)
+    ADDED = grower.to_bytes()
+    expect("the added tileset is a plain 4x3 grid at the top of the space",
+           (added.columns, added.tile_count, added.margin, added.spacing),
+           (4, 12, 0, 0))
+    expect("and adding it moved no placed gid", placed(grower), BEFORE)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        restore = grower.grow_tileset("RoundTripGrowth",
+                                      image_height=tile_h * 6)
+    grown = grower.to_bytes()
+    expect("the grown sheet holds twice the tiles",
+           grower.tileset("RoundTripGrowth").tile_count, 24)
+    expect("its stride did not move",
+           grower.tileset("RoundTripGrowth").columns, 4)
+    expect("NOT ONE PLACED GID MOVED", placed(grower), BEFORE)
+    span = diff_span(ADDED, grown)
+    element_start = ADDED.index(b'<tileset firstgid="%d" name="RoundTripGrowth"'
+                                % added.first_gid)
+    expect("the diff is inside the grown element and nowhere else",
+           (span is not None and span[0] > element_start,
+            span is not None and span[1] < len(ADDED)), (True, True))
+    expect("no lone LF was introduced", grown.count(b"\r\n"), grown.count(b"\n"))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        grower.grow_tileset("RoundTripGrowth", image_source=restore["image"],
+                            image_width=restore["image_width"],
+                            image_height=restore["image_height"],
+                            tile_count=restore["tile_count"])
+    expect("and the four values it returned put the file back byte for byte",
+           grower.to_bytes(), ADDED)
+
+    previous = grower.rename_tileset("RoundTripGrowth", "RoundTripRenamed")
+    expect("rename returns the name it replaced", previous, "RoundTripGrowth")
+    expect("and moves that attribute and nothing else",
+           grower.to_bytes(),
+           ADDED.replace(b'name="RoundTripGrowth"', b'name="RoundTripRenamed"'))
+    expect("NOT ONE PLACED GID MOVED", placed(grower), BEFORE)
+    grower.rename_tileset("RoundTripRenamed", "RoundTripGrowth")
+    expect("renaming back is byte identical", grower.to_bytes(), ADDED)
+
+    grower.remove_tileset("RoundTripGrowth")
+    expect("and taking the whole fixture out returns the shipped bytes",
+           grower.to_bytes(), ORIGINAL)
+    with open(MAP_PATH, "rb") as handle:
+        expect("the shipped file was never written to", handle.read(), ORIGINAL)
+
+    # --------------------------------------------------------------------
+    print()
     print("a saved file still parses in pytmx")
     # --------------------------------------------------------------------
     spawn_path = os.path.join(scratch, "spawned.tmx")

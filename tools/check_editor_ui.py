@@ -62,7 +62,7 @@ if importlib.util.find_spec("PySide6") is None:
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QPointF, QRect, Qt                   # noqa: E402
+from PySide6.QtCore import QEvent, QPointF, Qt                          # noqa: E402
 from PySide6.QtGui import QAction, QMouseEvent                          # noqa: E402
 from PySide6.QtWidgets import (                                         # noqa: E402
     QApplication,
@@ -72,6 +72,7 @@ from PySide6.QtWidgets import (                                         # noqa: 
 
 from editor.core import genre as genre_module                          # noqa: E402
 from editor.core.autotile import TerrainSet                             # noqa: E402
+from editor.core.collision import NO_DATA, companion_pairs              # noqa: E402
 from editor.core.commands import Command                                # noqa: E402
 from editor.core.layers import BLOCK_ALL, PASS_ALL                      # noqa: E402
 from editor.core.paint import EditMode, Stamp, Tool, grid_lines         # noqa: E402
@@ -80,7 +81,11 @@ from editor.core.session import Session                                 # noqa: 
 from scripts.game.behavior.base import BEHAVIORS                        # noqa: E402
 from editor.ui import ask as ask_module                                 # noqa: E402
 from editor.ui.actions_panel import NOT_WIRED                           # noqa: E402
-from editor.ui.collision_view import MASK_DOMAIN, MaskPalette            # noqa: E402
+from editor.ui.collision_view import (                                  # noqa: E402
+    BRUSH_DOMAIN,
+    MASK_DOMAIN,
+    MaskPalette,
+)
 from editor.ui.main_window import (                                      # noqa: E402
     TILES_AS_MASK_TARGET,
     TILES_TITLE,
@@ -245,11 +250,15 @@ tilecount="4" columns="2">
 """
 
 
-def pick_tile(window, column, row):
-    """Press and release on one cell of the TILE palette, as a mouse does."""
+def pick_tile(window, tileset, column, row):
+    """Press and release on one cell of the TILE palette, as a mouse does.
+
+    Addressed by TILESET NAME, because the palette stacks every sheet the
+    map declares into one surface: a bare row and column would name a
+    different tile the moment another tileset is declared above it.
+    """
     surface = window.palette.surface
-    cell = window.palette.cell
-    point = QPointF(column * cell + cell / 2, row * cell + cell / 2)
+    point = window.palette.tile_point(tileset, column, row)
     for kind, handler in ((QEvent.Type.MouseButtonPress,
                            surface.mousePressEvent),
                           (QEvent.Type.MouseButtonRelease,
@@ -263,7 +272,10 @@ def pick_mask(window, mask):
     """Press on one swatch of the MASK palette, addressed by its value."""
     surface = window.mask_palette.surface
     step = window.mask_palette.cell + 6
-    index = MASK_DOMAIN.index(mask)
+    # BRUSH_DOMAIN, not MASK_DOMAIN: the palette lays out the seventeen
+    # storable masks AND the no-opinion chip, and the chip is the swatch a
+    # check most needs to be able to press.
+    index = BRUSH_DOMAIN.index(mask)
     column, row = index % MaskPalette.COLUMNS, index // MaskPalette.COLUMNS
     point = QPointF(column * step + step / 2, row * step + step / 2)
     surface.mousePressEvent(
@@ -272,8 +284,8 @@ def pick_mask(window, mask):
     application.processEvents()
 
 
-def sheet_cells(palette):
-    """Each tile's own patch of the DRAWN sheet, keyed by grid position.
+def sheet_cells(palette, tileset):
+    """Each tile's own patch of one DRAWN sheet, keyed by grid position.
 
     The composited pixmap rather than a widget grab, and that is the whole
     reason this helper exists: the selection rectangle is painted OVER the
@@ -282,11 +294,11 @@ def sheet_cells(palette):
     that cannot fail, which is not an assertion.
     """
     image = palette.surface._PaletteSurface__pixmap.toImage()
-    cell = palette.cell
-    return {(column, row): image.copy(QRect(column * cell, row * cell,
-                                            cell, cell))
-            for row in range(palette.rows)
-            for column in range(palette.columns)}
+    section = palette.section(tileset)
+    return {(column, row): image.copy(
+                section.rect(column, row).toRect())
+            for row in range(section.rows)
+            for column in range(section.columns)}
 
 
 
@@ -376,9 +388,19 @@ try:
     # Tile layers AND object layers are addressable; the two Tiled groups
     # above them are structure and are not.
     _doc = window.session.project.map(window.map_name)
+    # Minus the collision companions. They hold masks rather than art, and
+    # the hierarchy folds each one into a badge on the layer that declares
+    # it -- #TAG:companion_folded_into_its_layer. DERIVED from
+    # `companion_pairs`, the same function the fold is derived from, so this
+    # still says nothing about which layers the author has painted.
+    _companions = {companion for _art, companion in companion_pairs(_doc)}
     expect("every real layer is addressable, and only those",
            sum(1 for a in addressable if "/layer:" in a),
-           len(_doc.tile_layer_names()) + len(_doc.object_layer_names()))
+           len(_doc.tile_layer_names()) + len(_doc.object_layer_names())
+           - len(_companions))
+    expect("and a companion has no row at all, not merely no address",
+           sorted(c for c in _companions
+                  if any(c in text for text in labels)), [])
 
     # ----------------------------------------------------------------
     print()
@@ -912,14 +934,20 @@ try:
                 + [f"exec:{name}" for name in re.findall(r"(\w+)\.exec_?\(\)", text)])
 
     # A module may open a modal ONLY if it exposes a seam a check can
-    # replace -- that is the whole property, and it is why the exclusions
-    # below are a short list rather than a convenience. `ask.py` and
-    # `tileset_dialog.py` are DIALOG modules: opening one is their job, and
-    # each is asserted replaceable just below, so excluding them is earned
-    # rather than assumed. `main_window.py` keeps the genuine stops.
-    # `canvas.py` belongs to the collision path, where
-    # `check_collision_mount.py` asserts the same property from the far side.
-    DIALOG_MODULES = ("ask.py", "tileset_dialog.py")
+    # replace -- that is the whole property, and it is why the exclusion
+    # below is a single name rather than a convenience. `ask.py` is the one
+    # DIALOG module: opening one is its job, and it is asserted replaceable
+    # just below, so excluding it is earned rather than assumed.
+    # `main_window.py` keeps the genuine stops. `canvas.py` belongs to the
+    # collision path, where `check_collision_mount.py` asserts the same
+    # property from the far side.
+    #
+    # `tileset_dialog.py` is NOT exempt any more, and that is the point: the
+    # tile importer used to be exempt on the strength of a replaceable
+    # `ask()` that called `exec()`. It is a non-modal window now, so it goes
+    # into the census below with every other panel and has to prove it
+    # blocks nothing at all.
+    DIALOG_MODULES = ("ask.py", )
     panels = sorted(
         name for name in os.listdir(os.path.join(REPO, "editor", "ui"))
         if name.endswith(".py")
@@ -1516,42 +1544,69 @@ try:
     print()
     print("a tileset can be added from the GUI at all")
     # ----------------------------------------------------------------
-    # `TilesetImportDialog.ask()` needs a menu action, or `map.tileset.add`
-    # has no door in the editor at all and every path that needs a tileset
-    # grows its own importer.
-    from editor.ui import tileset_dialog                          # noqa: E402
-    import editor.ui.main_window as main_window_module            # noqa: E402
-
+    # The importer needs a door, or `map.tileset.add` has no way into the
+    # editor at all and every path that needs a tileset grows its own
+    # importer. There are two doors now -- the menu and the palette's own
+    # button -- and both are asserted to reach the same one window.
     expect("the action exists and is live with a map open",
            window.add_tileset_action.isEnabled(), True)
-    request = tileset_dialog.TilesetImport(
-        name="probe", image="../graphics/tilesets/System/Probe.png",
-        tile_width=16, tile_height=16, margin=0, spacing=0,
-        image_width=272, image_height=16, columns=17, rows=1, tile_count=17)
-    real_ask = main_window_module.TilesetImportDialog.ask
-    main_window_module.TilesetImportDialog.ask = staticmethod(
-        lambda *a, **k: request)
     no_modals()
     window.add_tileset_action.trigger()
     application.processEvents()
-    expect("triggering it declared the tileset",
+    view = window.tileset_import
+    expect("triggering it opened the importer", view is not None, True)
+    # THE PROPERTY RULE 11 IS ABOUT, asserted rather than described: a
+    # blocking dialog would never have returned from `trigger()` above, so
+    # reaching this line at all is half of it, and the window being visible
+    # while the editor is still usable is the other half.
+    expect("...as a NON-MODAL window, with the editor still live",
+           (view.isVisible(), view.isModal(), window.isEnabled()),
+           (True, False, True))
+    expect("...and it asked nothing on the way", modals(), [])
+
+    # The palette's button is the same door, not a second one.
+    window.palette.add_button.click()
+    application.processEvents()
+    expect("the palette's own button reaches the same window",
+           window.tileset_import is view, True)
+
+    # A REAL IMPORT, driven the way a human drives it: point at a sheet,
+    # take the whole thing, press Add.
+    view.set_image_path(os.path.join(REPO, "data", "art", "tilesets",
+                                     "System", "TileC.png"))
+    view.set_name("probe")
+    view.refresh()
+    expect("a readable sheet makes Add live",
+           (view.problem(), view.add_button.isEnabled()), (None, True))
+    view.add_button.click()
+    application.processEvents()
+    expect("pressing Add declared the tileset",
            "probe" in session.project.map("test").tileset_names(), True)
     expect("through the command stream, as one transaction",
            [c.verb for c in session.history()[-1].commands],
            ["map.tileset.add"])
-    expect("and asked nothing beyond the import dialog itself", modals(), [])
+    expect("and asked nothing", modals(), [])
+    expect("the view STAYS OPEN for the next region",
+           view.isVisible(), True)
+    expect("...knowing the name it just used is taken, with the reason",
+           view.problem(), "This map already has a tileset named 'probe'.")
     window.undo()
     expect("one undo takes it back byte-identically",
            session.project.map("test").to_bytes() == ORIGINAL, True)
+    # The other side of that, and the reason the view is TOLD rather than
+    # left to tally: undo frees the name again, and a view keeping its own
+    # count would go on refusing one the author had just taken back.
+    expect("...and undo frees the name again",
+           (view.problem(), view.add_button.isEnabled()), (None, True))
 
-    # The other half: cancelling the dialog runs nothing at all.
-    main_window_module.TilesetImportDialog.ask = staticmethod(
-        lambda *a, **k: None)
+    # The other half: a view that emits nothing runs nothing at all.
     before_cancel = len(session.history())
-    window.add_tileset_action.trigger()
-    expect("cancelling it changes nothing",
+    view.close()
+    application.processEvents()
+    expect("closing it changes nothing",
            len(session.history()), before_cancel)
-    main_window_module.TilesetImportDialog.ask = real_ask
+    expect("...and the window forgets it, so the door opens again",
+           window.tileset_import, None)
 
     # ----------------------------------------------------------------
     print()
@@ -1631,7 +1686,8 @@ try:
     no_modals()
 
     expect("the fixture's one tileset is in the palette",
-           (len(masked.canvas.atlas.entries), palette.entry.name), (1, "Art"))
+           (len(masked.canvas.atlas.entries),
+            [s.name for s in palette.sections]), (1, ["Art"]))
     expect("...and nothing is baked yet, so the palette badges nothing",
            palette.masks, {})
     # Compared as a BOOLEAN rather than printed: the collision title carries
@@ -1642,7 +1698,7 @@ try:
 
     # A REAL PRESS ON THE PALETTE, in tiles mode: a brush, and no command.
     quiet = len(masked_session.history())
-    pick_tile(masked, 1, 0)
+    pick_tile(masked, "Art", 1, 0)
     expect("a palette click in TILES mode sets the brush",
            masked.canvas.stamp.primary, MASKED_GID)
     expect("...and writes nothing", len(masked_session.history()), quiet)
@@ -1668,8 +1724,8 @@ try:
     expect("...and picking a mask on its own writes nothing",
            len(masked_session.history()), quiet)
 
-    before_sheet = sheet_cells(palette)
-    pick_tile(masked, 1, 0)
+    before_sheet = sheet_cells(palette, "Art")
+    pick_tile(masked, "Art", 1, 0)
 
     # Every command since the baseline, not `history()[-1]`: a wire that
     # went dead leaves the history EMPTY, and indexing it then raises a
@@ -1684,7 +1740,7 @@ try:
     expect("...the palette was handed the answer, not left to guess",
            palette.masks, {MASKED_GID: BLOCK_ALL})
     # A palette that knows and does not draw is the same as not knowing.
-    changed = [key for key, image in sheet_cells(palette).items()
+    changed = [key for key, image in sheet_cells(palette, "Art").items()
                if image != before_sheet[key]]
     expect("...AND THE SHEET REDREW, at that tile and at no other",
            changed, [(1, 0)])
@@ -1715,12 +1771,25 @@ try:
             "brush" in masked.stamp_label.text()), (True, False))
     expect("...and no dialog anywhere on that path", modals(), [])
 
+    # THE CHIP THROUGH THE WHOLE WINDOW. -1 has every direction bit set, so
+    # a toolbar that formatted it with `describe_mask` would label the one
+    # value that CLEARS a mask as the one that blocks everything.
+    pick_mask(masked, NO_DATA)
+    pick_tile(masked, "Art", 1, 0)
+    expect("the no-opinion chip clears a tile's mask from the window",
+           masked.canvas.tile_masks(), {})
+    expect("...and the toolbar says so instead of 'blocks' anything",
+           ("no opinion" in masked.stamp_label.text(),
+            "blocks" in masked.stamp_label.text()), (True, False))
+    masked.undo()
+    application.processEvents()
+
     masked.undo()
     application.processEvents()
     expect("UNDO takes the mask, the badge and the declaration back",
            (masked.canvas.tile_masks(), palette.masks), ({}, {}))
     expect("...the sheet with them",
-           sheet_cells(palette) == before_sheet, True)
+           sheet_cells(palette, "Art") == before_sheet, True)
     expect("...and the tmx byte for byte",
            masked_session.project.map("masked").to_bytes() == MASKED_ORIGINAL,
            True)
@@ -1731,10 +1800,10 @@ try:
     # the glyph alone. "Open" and "nothing said" are the one distinction
     # level one exists to make.
     pick_mask(masked, PASS_ALL)
-    pick_tile(masked, 1, 0)
+    pick_tile(masked, "Art", 1, 0)
     expect("a tile baked OPEN is stored as open, not as nothing",
            masked.canvas.tile_masks(), {MASKED_GID: PASS_ALL})
-    changed = [key for key, image in sheet_cells(palette).items()
+    changed = [key for key, image in sheet_cells(palette, "Art").items()
                if image != before_sheet[key]]
     expect("...and the palette SHOWS it, though its glyph draws nothing",
            changed, [(1, 0)])

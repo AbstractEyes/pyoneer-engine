@@ -1,5 +1,6 @@
 <!-- pyoneer-doc: L2 -->
 <!-- pyoneer-stamp: hand-written; error strings below were produced by running the code at 5dd012d on 2026-08-16, and every source address was converted from file:line to #TAG: at d8c303f -->
+<!-- pyoneer-stamp: the collision section and its two rows in the raises/silent table were added on 2026-08-29 against the working tree, after per-tile masks and the folded companion changed which level answers first -->
 
 # Diagnose — "why doesn't my entity do the thing"
 
@@ -23,6 +24,8 @@ nothing. Knowing which family your symptom is in halves the search.
 | unmapped tile layer name | | ✔ never draws |
 | no `player_input` token | | ✔ never moves |
 | collision field says BLOCK_ALL | | ✔ never moves |
+| a stamped tile carries its own mask | | ✔ blocks with no cell painted |
+| masks painted on a parallaxed layer | warns at load | ✔ never reach the field |
 
 ---
 
@@ -131,6 +134,38 @@ these produce the same symptom:
    *spawned* outside is frozen forever, reporting blocked in all four
    directions. A body that cannot move in any direction at the map edge is this,
    not gravity.
+
+---
+
+## "I painted collision and nothing blocks" / "this wall blocks and I never painted it"
+
+Passability resolves in three levels and the first that is not `NO_DATA` wins,
+so both directions of surprise come from asking the wrong level.
+[`TILESETS.md`](TILESETS.md) is how to author each one; this is how to find out
+which one answered.
+
+1. **The tile already had an opinion.** A tileset can carry a `.blitmask`
+   naming a mask per tile (`#TAG:tileset_defaults`), so stamping the tile
+   authors the collision. A wall you never painted a cell for is this. It is
+   level one, and it is visible: the map display draws each placed tile's own
+   mask dimmed over the art, and the palette marks the tiles that carry one.
+2. **A painted cell OVERRIDES that default rather than adding to it.**
+   `PASS_ALL` over a `BLOCK_ALL` tile is open, not the union — that is the
+   whole point of level two. If you want the tile's answer back, clear the cell
+   with the dotted no-opinion chip (`#TAG:BRUSH_DOMAIN`), which writes gid 0.
+   Painting the empty-looking `PASS_ALL` swatch instead asserts *open* and
+   stops the resolve there.
+3. **The layer you painted on never reaches the field.** A layer that moves
+   under the camera is excluded by `#TAG:world_coordinate_fault`, so masks on a
+   parallax layer are authored, stored and dead. The hierarchy row carries a
+   warning badge and the engine warns at load; nothing else does.
+4. **There is no companion layer and no tile mask at all**, which bakes `None`
+   — *ungated*, not *open*. What that does to a side-on body is
+   ["It falls forever"](#it-falls-forever--it-will-not-land) above.
+
+The companion layer has no row in the hierarchy, deliberately. It is not
+missing: select the **art** layer, and the badge after its depth is that
+layer's live mask count.
 
 ---
 

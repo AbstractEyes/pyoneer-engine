@@ -38,5 +38,9 @@ as long as the config describes it, and `GameAnimation.slice_frames`
 raises naming the sequence and frame if a rectangle falls outside the
 sheet.
 
-For tilesets, keep the same 32x32 cell and give Tiled the image at the
-`source` path recorded in the `.tmx`.
+For tilesets, keep the same 32x32 cell and draw the tiles **edge to edge with
+no border and no gutter**: the editor and the engine only agree about which
+pixels a gid names at margin 0 and spacing 0, so a decorative frame around the
+sheet costs a row of wrong tiles. The sheet does not have to be only tiles you
+want -- `Tiles ▸ + Add tiles…` selects a rectangle of any image, offsets and
+resizes it, and crops what you chose into its own tileset.

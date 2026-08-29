@@ -37,12 +37,17 @@ For the tileset, a separate sheet, same 32x32 cell:
 |---|---|
 | 1 | solid ground: left cap, centre, right cap, single |
 | 2 | solid ground interior fill, 4 variants |
-| 3 | one-way platform: left, centre, right |
+| 3 | thin platform: left, centre, right |
 | 4 | hazard: spikes, 4 orientations |
 
-Only what lands on the `Floor` layer is solid, so keep visually-solid and
-actually-solid tiles distinguishable at a glance -- a decorative brick that
-looks like the real one is a bug factory.
+Draw the tiles **edge to edge, no border and no gutter**: the editor and the
+engine only agree about which pixels a gid names at margin 0 and spacing 0.
+
+Nothing is solid because of where it is drawn -- solidity is a mask given to
+the tile, so a decorative brick and a real wall are two tiles that must be
+distinguishable at a glance or the map becomes a guessing game. Row 3 is a
+*thin* platform, not a one-way one: blocking is symmetric here, so a ledge you
+can jump up through and also land on is not expressible.
 
 Frame rectangles are declared per sequence in `config/animations.json`
 (`x`, `y`, `width`, `height`), so any layout works as long as the config

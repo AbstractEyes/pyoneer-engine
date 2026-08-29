@@ -124,6 +124,8 @@ from scripts.core.collision_runtime import (  # noqa: F401
     Resolution,
     TilesetDefaults,
     abstains,
+    collision_first_gid,
+    companion_pairs,
     companion_reader,
     companion_subcell,
     describe_opinion,
@@ -139,6 +141,7 @@ from scripts.core.collision_runtime import (  # noqa: F401
     tileset_reader,
     token_to_opinion,
     transform_mask,
+    world_coordinate_fault,
 )
 
 

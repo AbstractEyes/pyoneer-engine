@@ -693,6 +693,276 @@ try:
 
     # ----------------------------------------------------------------------
     print()
+    print("a tileset grows by ROWS into headroom, and no placed gid moves")
+    # ----------------------------------------------------------------------
+    # Two tilesets, painted cells in BOTH, and a reserved gid hole between
+    # them. This is the fixture the whole growth model has to survive: if a
+    # grow silently renumbers anything, the Props gids below change meaning
+    # and the map paints the wrong art with nothing raised.
+    #
+    # BOTH tilesets are painted through a FLIPPED gid (0x80000000 | local),
+    # and Props is painted through a tile object as well -- the half that
+    # lives in an attribute and never appears in any <data>. The flips are
+    # what make the counting assertions discriminating: unmasked, Ground's
+    # 2147483652 reads as a number far ABOVE Props' firstgid, so a scan that
+    # forgot to mask would report one more cell than a renumber touches.
+    GROWTH = (
+        b'<?xml version="1.0" encoding="UTF-8"?>\r\n'
+        b'<map version="1.2" orientation="orthogonal" renderorder="right-down"'
+        b' width="2" height="2" tilewidth="16" tileheight="16" infinite="0"'
+        b' nextlayerid="3" nextobjectid="2">\r\n'
+        b'\t<tileset firstgid="1" name="Ground" tilewidth="16" tileheight="16"'
+        b' tilecount="4" columns="2">\r\n'
+        b'\t\t<image source="ground.png" width="32" height="32"/>\r\n'
+        b'\t</tileset>\r\n'
+        b'\t<tileset firstgid="101" name="Props" tilewidth="16"'
+        b' tileheight="16" tilecount="4" columns="2">\r\n'
+        b'\t\t<image source="props.png" width="32" height="32"/>\r\n'
+        b'\t</tileset>\r\n'
+        b'\t<layer id="1" name="Floor" width="2" height="2">\r\n'
+        b'\t\t<data encoding="csv">\r\n'
+        b'1,2147483652,\r\n101,2147483752\r\n'
+        b'</data>\r\n'
+        b'\t</layer>\r\n'
+        b'\t<objectgroup id="2" name="entity">\r\n'
+        b'\t\t<object id="1" gid="104" x="0" y="16" width="16" height="16"/>\r\n'
+        b'\t</objectgroup>\r\n'
+        b'</map>\r\n'
+    )
+    for stem, size in (("ground", (32, 32)), ("props", (32, 32)),
+                       ("ground_tall", (32, 48)), ("ground_wide", (48, 32))):
+        with open(os.path.join(scratch, stem + ".png"), "wb") as handle:
+            handle.write(png_bytes(*size))
+    GROW_PATH = os.path.join(scratch, "growth.tmx")
+    with open(GROW_PATH, "wb") as handle:
+        handle.write(GROWTH)
+
+    def painted(doc):
+        """Every placed gid in the map: csv cells and tile objects both.
+
+        Raw, flip flags intact. This is the value the whole section
+        compares -- "no placed gid moved" is a statement about these
+        numbers, and about nothing else.
+        """
+        cells = {name: doc.tile_layer(name).gids() for name in doc.tile_layer_names()}
+        objects = [(int(element.get("id", "0")), int(element.get("gid", "0")))
+                   for group in doc.root.iter("objectgroup")
+                   for element in group.findall("object")]
+        return cells, objects
+
+    grower = MapDocument.load(GROW_PATH)
+    expect("the growth fixture round trips before any edit",
+           grower.to_bytes(), GROWTH)
+    BEFORE = painted(grower)
+    expect("both tilesets are painted, one of them through a flip bit",
+           BEFORE, ({"Floor": [1, 2147483652, 101, 2147483752]}, [(1, 104)]))
+    expect("Ground's headroom is the hole under Props",
+           grower.tileset_headroom("Ground"), 96)
+    expect("the top tileset's headroom runs to the flip bits, not to 2**31",
+           grower.tileset_headroom("Props"), 0x1FFFFFFF - 104)
+
+    previous = grower.grow_tileset("Ground", image_source="ground_tall.png")
+    expect("grow returns the four values it replaced", previous,
+           {"image": "ground.png", "image_width": 32, "image_height": 32,
+            "tile_count": 4})
+    expect("the sheet grew by one row", grower.tileset("Ground").tile_count, 6)
+    expect("its column count did not move", grower.tileset("Ground").columns, 2)
+    expect("NOT ONE PLACED GID MOVED", painted(grower), BEFORE)
+    expect("the headroom shrank by exactly the tiles claimed",
+           grower.tileset_headroom("Ground"), 94)
+
+    grown_bytes = grower.to_bytes()
+    span = diff_span(GROWTH, grown_bytes)
+    expect("the diff is confined to the Ground <tileset> element",
+           (span[0] > GROWTH.index(b'<tileset firstgid="1"'),
+            span[1] < GROWTH.index(b"</tileset>")), (True, True))
+    expect("the new tile count is written",
+           b'tilecount="6" columns="2"' in grown_bytes, True)
+    expect("the new sheet and its measured size are written",
+           b'<image source="ground_tall.png" width="32" height="48"/>'
+           in grown_bytes, True)
+    expect("no lone LF was introduced",
+           grown_bytes.count(b"\r\n"), grown_bytes.count(b"\n"))
+
+    grower.grow_tileset("Ground", image_source=previous["image"],
+                        image_width=previous["image_width"],
+                        image_height=previous["image_height"],
+                        tile_count=previous["tile_count"])
+    expect("the four returned values ARE the inverse, byte for byte",
+           grower.to_bytes(), GROWTH)
+
+    # ----------------------------------------------------------------------
+    print()
+    print("...and every way of growing that would repaint the map is refused")
+    # ----------------------------------------------------------------------
+    raises("a WIDER sheet is refused: it renumbers every id after row 0",
+           PyoneerConfigError,
+           lambda: grower.grow_tileset("Ground", image_source="ground_wide.png"),
+           contains="renumbers every tile after the first row")
+    raises("growing into the tileset above is refused by name",
+           PyoneerConfigError,
+           lambda: grower.grow_tileset("Ground", image_width=32,
+                                       image_height=816, tile_count=101),
+           contains="already owned by Props at 101-104")
+    exceeded = None
+    try:
+        grower.grow_tileset("Ground", image_width=32, image_height=816,
+                            tile_count=101)
+    except PyoneerConfigError as exc:
+        exceeded = str(exc)
+    expect("the refusal quotes the room this tileset does have",
+           "room for 96 more tiles" in (exceeded or ""), True)
+    # The number a caller needs in order to decide, counted rather than
+    # estimated -- and counted through the flip mask and the tile objects,
+    # which is what makes it 3 and not 1.
+    expect("and what renumbering the survivors would cost, in painted gids",
+           "renumber 3 painted gid(s) (Floor x2, entity x1)" in (exceeded or ""),
+           True)
+
+    raises("truncating over a painted cell is refused",
+           PyoneerConfigError,
+           lambda: grower.grow_tileset("Ground", tile_count=3),
+           contains="still point at gids 4-4 (Floor x1)")
+    raises("...and the flipped gid and the tile object are both counted",
+           PyoneerConfigError,
+           lambda: grower.grow_tileset("Props", tile_count=3),
+           contains="2 tile(s) still point at gids 104-104")
+    expect("no refusal changed a single byte", grower.to_bytes(), GROWTH)
+
+    # Truncation is not banned, only truncation over live gids: grow, then
+    # take the empty rows straight back. This is the "resizable and
+    # truncatable" half of the ask, and it has to be provably reachable or
+    # the guard above is just a ban.
+    grower.grow_tileset("Ground", image_source="ground_tall.png")
+    expect("the grown rows are empty, so truncating them back is allowed",
+           (grower.grow_tileset("Ground", image_source="ground.png",
+                                tile_count=4),
+            grower.to_bytes())[1], GROWTH)
+
+    raises("a count the sheet cannot hold is refused",
+           PyoneerConfigError,
+           lambda: grower.grow_tileset("Ground", tile_count=5),
+           contains="holds 4")
+    raises("a count of zero is refused; removal is the verb for that",
+           PyoneerConfigError,
+           lambda: grower.grow_tileset("Ground", tile_count=0),
+           contains="remove it instead")
+    expect_raises("an unknown tileset raises rather than growing nothing",
+                  KeyError, lambda: grower.grow_tileset("Nope", tile_count=2))
+
+    spaced = MapDocument.from_bytes(
+        GROWTH.replace(b'name="Ground" tilewidth="16" tileheight="16"',
+                       b'name="Ground" tilewidth="16" tileheight="16"'
+                       b' spacing="2"'),
+        path=GROW_PATH)
+    raises("a margin/spacing sheet is refused: the readers disagree on columns",
+           PyoneerConfigError,
+           lambda: spaced.grow_tileset("Ground", tile_count=2),
+           contains="only agree on a tileset's column count at 0/0")
+
+    collection = MapDocument.from_bytes(
+        GROWTH.replace(b'\t\t<image source="ground.png" width="32" height="32"/>',
+                       b'\t\t<tile id="0">\r\n'
+                       b'\t\t\t<image source="a.png" width="16" height="16"/>\r\n'
+                       b'\t\t</tile>'),
+        path=GROW_PATH)
+    raises("a collection-of-images tileset is refused, naming its shape",
+           PyoneerConfigError,
+           lambda: collection.grow_tileset("Ground", tile_count=2),
+           contains="collection of images")
+
+    padded = MapDocument.from_bytes(GROWTH.replace(b'tilecount="4" columns="2">\r\n'
+                                                   b'\t\t<image source="ground.png"',
+                                                   b'tilecount="04" columns="2">\r\n'
+                                                   b'\t\t<image source="ground.png"'),
+                                    path=GROW_PATH)
+    raises("an integer the inverse could not respell is refused",
+           PyoneerConfigError,
+           lambda: padded.grow_tileset("Ground", tile_count=2),
+           contains="not spelled the way this edit writes an integer back")
+
+    mismatched = MapDocument.from_bytes(
+        GROWTH.replace(b'name="Ground" tilewidth="16" tileheight="16"'
+                       b' tilecount="4" columns="2"',
+                       b'name="Ground" tilewidth="16" tileheight="16"'
+                       b' tilecount="4" columns="4"'),
+        path=GROW_PATH)
+    raises("a declared stride the sheet contradicts is refused",
+           PyoneerConfigError,
+           lambda: mismatched.grow_tileset("Ground", tile_count=4),
+           contains="already disagree about this tileset's stride")
+
+    raises("an external tileset cannot be grown", PyoneerConfigError,
+           lambda: external.grow_tileset(1, tile_count=4),
+           contains="live in the .tsx")
+    raises("...and its unknown extent makes headroom unknowable too",
+           PyoneerConfigError, lambda: external.tileset_headroom(1),
+           contains="do not declare their extent")
+
+    # ----------------------------------------------------------------------
+    print()
+    print("headroom is bought at add time, and spent by growth later")
+    # ----------------------------------------------------------------------
+    # The whole point of the model: `add_tileset` already accepts a firstgid
+    # ABOVE the packed one, so a map can be authored with a reserved hole
+    # under every range. Growth then costs zero cell rewrites instead of the
+    # whole-map renumber the refusal above prices.
+    reserved = MapDocument.from_bytes(NO_LAYERS,
+                                      path=os.path.join(scratch, "reserved.tmx"))
+    expect("packed, the only tileset's headroom runs to the top of the space",
+           reserved.tileset_headroom("Only"), 0x1FFFFFFF - 12)
+    reserved.add_tileset("Above", "ground.png", first_gid=1025,
+                         image_width=32, image_height=32)
+    expect("a reserved firstgid leaves a hole beneath it",
+           reserved.tileset_headroom("Only"), 1012)
+    expect("and the next append lands above the reservation, not inside it",
+           reserved.next_tileset_firstgid(), 1029)
+    expect("growing all the way into the hole is free", (
+        reserved.grow_tileset("Only", image_width=64, image_height=4096,
+                              tile_count=1024),
+        reserved.tileset("Only").last_gid)[1], 1024)
+    expect("which spends the headroom exactly",
+           reserved.tileset_headroom("Only"), 0)
+    raises("one tile past it is refused, and says how much room there was",
+           PyoneerConfigError,
+           lambda: reserved.grow_tileset("Only", image_width=64,
+                                         image_height=4112, tile_count=1025),
+           contains="room for 0 more tiles")
+
+    # ----------------------------------------------------------------------
+    print()
+    print("a tileset is nameable, and renaming moves no gid")
+    # ----------------------------------------------------------------------
+    expect("rename returns the name it replaced",
+           grower.rename_tileset("Ground", "Village exteriors"), "Ground")
+    expect("the new name addresses it",
+           grower.tileset("Village exteriors").first_gid, 1)
+    expect("NOT ONE PLACED GID MOVED", painted(grower), BEFORE)
+    expect("only the name attribute changed",
+           grower.to_bytes(),
+           GROWTH.replace(b'name="Ground"', b'name="Village exteriors"'))
+    expect("renaming back is byte identical",
+           (grower.rename_tileset("Village exteriors", "Ground"),
+            grower.to_bytes())[1], GROWTH)
+    expect("renaming to the name it already has is a no-op",
+           (grower.rename_tileset("Ground", "Ground"),
+            grower.to_bytes())[1], GROWTH)
+    raises("a duplicate name is refused: the name is an address",
+           PyoneerConfigError,
+           lambda: grower.rename_tileset("Ground", "Props"),
+           contains="already has a tileset named 'Props'")
+    raises("an empty name is refused for the same reason",
+           PyoneerConfigError, lambda: grower.rename_tileset("Ground", ""),
+           contains="a tileset needs a name")
+    raises("an external tileset has no name here to rename",
+           PyoneerConfigError, lambda: external.rename_tileset(1, "Named"),
+           contains="carries no name in this file")
+    expect_raises("renaming a tileset that is not there raises", KeyError,
+                  lambda: grower.rename_tileset("Nope", "Whatever"))
+    expect("no refusal changed a single byte", grower.to_bytes(), GROWTH)
+
+    # ----------------------------------------------------------------------
+    print()
     print("warnings fire where a silent success would be a lie")
     # ----------------------------------------------------------------------
     warn_path = os.path.join(scratch, "warn.tmx")

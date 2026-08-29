@@ -3,9 +3,9 @@
 
 # `editor/ui/tileset_dialog.py` — tier 2 #TAG:editor/ui/tileset_dialog.py
 
-> Import a tileset: pick a sheet, cut it into a grid, see the grid first.
+> Import a tileset by SELECTING A REGION of any image.
 
-`editor.ui.tileset_dialog` · 480 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.tileset_dialog` · 948 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,55 +13,103 @@
 
 ## Module constants
 
-- `editor/ui/tileset_dialog.py:67` `IMAGE_FILTER` #TAG:IMAGE_FILTER
+- `editor/ui/tileset_dialog.py:86` `IMAGE_FILTER` #TAG:IMAGE_FILTER
+- `editor/ui/tileset_dialog.py:93` `CROP_DIR` #TAG:CROP_DIR
 
 ## Functions
 
-- `editor/ui/tileset_dialog.py:115` `relative_image_path(image_path: str, map_dir: str) -> str` #TAG:relative_image_path
+- `editor/ui/tileset_dialog.py:96` `safe_stem(name: str) -> str` #TAG:safe_stem
+  - A filename for a tileset called `name`.
+- `editor/ui/tileset_dialog.py:107` `write_region(image: QImage, rect: QRect, path: str) -> bool` #TAG:write_region
+  - Put a cropped sheet on disk. Returns True when it wrote one.
+- `editor/ui/tileset_dialog.py:187` `relative_image_path(image_path: str, map_dir: str) -> str` #TAG:relative_image_path
   - The path to write into the .tmx: relative to the MAP, forward slashes.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class TilesetImport` #TAG:TilesetImport
 
-`editor/ui/tileset_dialog.py:72`–`112`
+`editor/ui/tileset_dialog.py:141`–`184`
 
 > What the user asked for, as plain data.
 
-- `editor/ui/tileset_dialog.py:92` `command_args(self) -> dict[str, Any]` #TAG:TilesetImport.command_args
+- `editor/ui/tileset_dialog.py:165` `command_args(self) -> dict[str, Any]` #TAG:TilesetImport.command_args
   - Arguments for `map.tileset.add`.
 
 ### `class GridPreview(QWidget)` #TAG:GridPreview
 
-`editor/ui/tileset_dialog.py:141`–`206`
+`editor/ui/tileset_dialog.py:218`–`457`
 
-> The sheet with the proposed cut drawn over it.
+> The sheet, with the selected region drawn as a snapped rubber band.
 
-- `editor/ui/tileset_dialog.py:151` `__init__(self, parent: QWidget | None=None)` #TAG:GridPreview.__init__
-- `editor/ui/tileset_dialog.py:162` `describe(self, image: QImage | None, tile_width: int, tile_height: int, margin: int, spacing: int, columns: int, rows: int) -> None` #TAG:GridPreview.describe
-- `editor/ui/tileset_dialog.py:173` `paintEvent(self, event) -> None` #TAG:GridPreview.paintEvent
+- `editor/ui/tileset_dialog.py:235` `__init__(self, parent: QWidget | None=None)` #TAG:GridPreview.__init__
+- `editor/ui/tileset_dialog.py:249` `describe(self, image: QImage | None, tile_width: int, tile_height: int, region_x: int, region_y: int, columns: int, rows: int) -> None` #TAG:GridPreview.describe
+- `editor/ui/tileset_dialog.py:262` `fit(self) -> tuple[float, float, float]` #TAG:GridPreview.fit
+  - Where the image is drawn: left, top, and the scale it is drawn at.
+- `editor/ui/tileset_dialog.py:283` `band_rect(self) -> QRectF` #TAG:GridPreview.band_rect
+  - The band in WIDGET coordinates.
+- `editor/ui/tileset_dialog.py:290` `__image_point(self, position) -> QPointF` #TAG:GridPreview.__image_point
+- `editor/ui/tileset_dialog.py:296` `paintEvent(self, event) -> None` #TAG:GridPreview.paintEvent
+- `editor/ui/tileset_dialog.py:352` `@staticmethod __grips(band: QRectF) -> list[QPointF]` #TAG:GridPreview.__grips
+- `editor/ui/tileset_dialog.py:360` `zone(self, position) -> tuple[int, int] | None` #TAG:GridPreview.zone
+  - Which part of the band a widget point is on.
+- `editor/ui/tileset_dialog.py:381` `mousePressEvent(self, event) -> None` #TAG:GridPreview.mousePressEvent
+- `editor/ui/tileset_dialog.py:403` `mouseMoveEvent(self, event) -> None` #TAG:GridPreview.mouseMoveEvent
+- `editor/ui/tileset_dialog.py:427` `mouseReleaseEvent(self, event) -> None` #TAG:GridPreview.mouseReleaseEvent
+- `editor/ui/tileset_dialog.py:432` `@staticmethod __resize(edge: int, start: int, count: int, position: float, size: int, limit: int) -> tuple[int, int]` #TAG:GridPreview.__resize
+  - One axis of a handle drag, in whole tiles off the band's own grid.
+- `editor/ui/tileset_dialog.py:451` `@staticmethod __clamp(value: int, low: int, high: int) -> int` #TAG:GridPreview.__clamp
+- `editor/ui/tileset_dialog.py:454` `__emit(self) -> None` #TAG:GridPreview.__emit
 
 ### `class TilesetImportDialog(QDialog)` #TAG:TilesetImportDialog
 
-`editor/ui/tileset_dialog.py:209`–`479`
+`editor/ui/tileset_dialog.py:460`–`947`
 
-> Collect one embedded tileset's declaration. Applies nothing.
+> Select tiles out of an image and add them as a named tileset.
 
-- `editor/ui/tileset_dialog.py:218` `__init__(self, map_dir: str, *, tile_width: int=16, tile_height: int=16, existing_names: Iterable[str]=(), parent: QWidget | None=None)` #TAG:TilesetImportDialog.__init__
-- `editor/ui/tileset_dialog.py:310` `@staticmethod __spin(low: int, high: int, value: int) -> QSpinBox` #TAG:TilesetImportDialog.__spin
-- `editor/ui/tileset_dialog.py:319` `__browse(self) -> None` #TAG:TilesetImportDialog.__browse
-- `editor/ui/tileset_dialog.py:325` `set_image_path(self, path: str) -> None` #TAG:TilesetImportDialog.set_image_path
+- `editor/ui/tileset_dialog.py:472` `__init__(self, map_dir: str, *, tile_width: int=16, tile_height: int=16, existing_names: Iterable[str]=(), next_gid: int=1, parent: QWidget | None=None)` #TAG:TilesetImportDialog.__init__
+- `editor/ui/tileset_dialog.py:591` `@staticmethod __spin(low: int, high: int, value: int, suffix: str) -> QSpinBox` #TAG:TilesetImportDialog.__spin
+- `editor/ui/tileset_dialog.py:599` `@staticmethod __pair(first: QWidget, second: QWidget) -> QWidget` #TAG:TilesetImportDialog.__pair
+- `editor/ui/tileset_dialog.py:610` `__browse(self) -> None` #TAG:TilesetImportDialog.__browse
+- `editor/ui/tileset_dialog.py:616` `set_image_path(self, path: str) -> None` #TAG:TilesetImportDialog.set_image_path
   - Point at a sheet.
-- `editor/ui/tileset_dialog.py:334` `__on_path_changed(self, text: str) -> None` #TAG:TilesetImportDialog.__on_path_changed
-- `editor/ui/tileset_dialog.py:341` `__on_name_edited(self, _text: str) -> None` #TAG:TilesetImportDialog.__on_name_edited
-- `editor/ui/tileset_dialog.py:347` `__load_image(self) -> None` #TAG:TilesetImportDialog.__load_image
-- `editor/ui/tileset_dialog.py:362` `refresh(self) -> None` #TAG:TilesetImportDialog.refresh
-  - Recompute the grid and everything that shows it.
-- `editor/ui/tileset_dialog.py:385` `problem(self) -> str | None` #TAG:TilesetImportDialog.problem
+- `editor/ui/tileset_dialog.py:625` `select_region(self, x: int, y: int, columns: int, rows: int) -> None` #TAG:TilesetImportDialog.select_region
+  - Set the selection outright, the way a drag would.
+- `editor/ui/tileset_dialog.py:639` `__on_path_changed(self, text: str) -> None` #TAG:TilesetImportDialog.__on_path_changed
+- `editor/ui/tileset_dialog.py:646` `__on_name_edited(self, _text: str) -> None` #TAG:TilesetImportDialog.__on_name_edited
+- `editor/ui/tileset_dialog.py:652` `__on_field_changed(self, _value: int) -> None` #TAG:TilesetImportDialog.__on_field_changed
+- `editor/ui/tileset_dialog.py:656` `__on_count_edited(self, _value: int) -> None` #TAG:TilesetImportDialog.__on_count_edited
+- `editor/ui/tileset_dialog.py:662` `__on_region_dragged(self, x: int, y: int, columns: int, rows: int) -> None` #TAG:TilesetImportDialog.__on_region_dragged
+- `editor/ui/tileset_dialog.py:665` `__load_image(self) -> None` #TAG:TilesetImportDialog.__load_image
+- `editor/ui/tileset_dialog.py:678` `__select_whole_sheet(self) -> None` #TAG:TilesetImportDialog.__select_whole_sheet
+  - The default selection: everything, cut at the current tile size.
+- `editor/ui/tileset_dialog.py:694` `@property region_columns(self) -> int` #TAG:TilesetImportDialog.region_columns
+  - Columns that fit between the offset and the right edge.
+- `editor/ui/tileset_dialog.py:700` `@property region_rows(self) -> int` #TAG:TilesetImportDialog.region_rows
+- `editor/ui/tileset_dialog.py:704` `refresh(self) -> None` #TAG:TilesetImportDialog.refresh
+  - Recompute the selection and everything that shows it.
+- `editor/ui/tileset_dialog.py:732` `@property columns(self) -> int` #TAG:TilesetImportDialog.columns
+- `editor/ui/tileset_dialog.py:736` `@property rows(self) -> int` #TAG:TilesetImportDialog.rows
+- `editor/ui/tileset_dialog.py:740` `@property tile_count(self) -> int` #TAG:TilesetImportDialog.tile_count
+- `editor/ui/tileset_dialog.py:744` `@property whole_sheet(self) -> bool` #TAG:TilesetImportDialog.whole_sheet
+  - Does the selection claim the entire image, untruncated?
+- `editor/ui/tileset_dialog.py:756` `crop_path(self) -> str` #TAG:TilesetImportDialog.crop_path
+  - Where a cropped selection would be written, absolutely.
+- `editor/ui/tileset_dialog.py:761` `problem(self) -> str | None` #TAG:TilesetImportDialog.problem
   - Why this cannot be imported yet, or None when it can.
-- `editor/ui/tileset_dialog.py:413` `summary_text(self) -> str` #TAG:TilesetImportDialog.summary_text
-  - One line naming the grid, and the leftover when there is one.
-- `editor/ui/tileset_dialog.py:442` `value(self) -> TilesetImport | None` #TAG:TilesetImportDialog.value
+- `editor/ui/tileset_dialog.py:793` `summary_text(self) -> str` #TAG:TilesetImportDialog.summary_text
+  - One line naming the cut, the gids, and the leftover pixels.
+- `editor/ui/tileset_dialog.py:829` `value(self) -> TilesetImport | None` #TAG:TilesetImportDialog.value
   - What the user asked for, or None while it is not importable.
-- `editor/ui/tileset_dialog.py:465` `@staticmethod ask(map_dir: str, *, tile_width: int=16, tile_height: int=16, existing_names: Iterable[str]=(), parent: QWidget | None=None) -> TilesetImport | None` #TAG:TilesetImportDialog.ask
-  - Show the dialog and return the request, or None if cancelled.
+- `editor/ui/tileset_dialog.py:860` `region_rect(self) -> QRect` #TAG:TilesetImportDialog.region_rect
+  - The selected pixels of the SOURCE image.
+- `editor/ui/tileset_dialog.py:866` `commit(self) -> TilesetImport | None` #TAG:TilesetImportDialog.commit
+  - Materialise the selection and emit it. Does not close.
+- `editor/ui/tileset_dialog.py:889` `set_name(self, name: str) -> None` #TAG:TilesetImportDialog.set_name
+  - Name it the way a human does: this sticks, and auto-fill stops.
+- `editor/ui/tileset_dialog.py:894` `known_names(self, names: Iterable[str], *, next_gid: int | None=None) -> None` #TAG:TilesetImportDialog.known_names
+  - What the map holds NOW, and where its gids start.
+- `editor/ui/tileset_dialog.py:914` `__free_name(self) -> str` #TAG:TilesetImportDialog.__free_name
+  - The file's own stem, numbered up until the map has no such name.
+- `editor/ui/tileset_dialog.py:923` `@staticmethod open_for(map_dir: str, *, on_import: Callable[[TilesetImport], None], tile_width: int=16, tile_height: int=16, existing_names: Iterable[str]=(), next_gid: int=1, parent: QWidget | None=None) -> 'TilesetImportDialog'` #TAG:TilesetImportDialog.open_for
+  - Show the view NON-MODALLY and hand every Add to `on_import`.

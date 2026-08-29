@@ -16,7 +16,7 @@ Rules that are enforced, not suggested:
 - Types are checked and never coerced. `"5"` is not `5`.
 - A response is one transaction. One bad line rolls back the rest.
 
-35 verbs:
+37 verbs:
 
 ### `map.layer.add`
 
@@ -274,7 +274,7 @@ Set many tiles at once. Cheaper and more readable than one command per tile, and
 
 ### `map.tileset.add`
 
-Add an embedded tileset, appended above every gid range the map already uses. Anything left unset is measured rather than assumed: tile size defaults to the map's, the image is sized from its own header, and columns/tilecount fall out of the grid. Inserting BELOW an existing range is refused -- it would renumber every csv token in the file.
+Add an embedded tileset, appended above every gid range the map already uses. Anything left unset is measured rather than assumed: tile size defaults to the map's, the image is sized from its own header, and columns/tilecount fall out of the grid. Inserting BELOW an existing range is refused -- it would renumber every csv token in the file. Passing a first_gid ABOVE it is how a tileset is given room to grow into later.
 
 *Scopes:* `map:*`
 
@@ -290,9 +290,29 @@ Add an embedded tileset, appended above every gid range the map already uses. An
 | `image_height` | int | no (default `None`) | sheet height in pixels; omit and the PNG header is read |
 | `columns` | int | no (default `None`) | override the derived column count; only for a sheet whose grid the formula cannot describe |
 | `tile_count` | int | no (default `None`) | override the derived tile count |
+| `first_gid` | int | no (default `0`) | the range this tileset claims, instead of the packed one. Above every range in use, never below one -- the gap it leaves is HEADROOM, and map.tileset.grow spends it later without renumbering a single cell |
 
 ```json
 {"verb": "map.tileset.add", "scope": "map:test", "args": {"name": "Dungeon", "image": "../graphics/tilesets/System/Dungeon.png"}}
+```
+
+### `map.tileset.grow`
+
+Point a tileset at a re-cut sheet and change how many tiles it owns, without moving one placed gid. This is how a tileset stops being a fixed-size sheet: crop the region you want out of any image, write it under the old rows at the SAME WIDTH, and grow the count. Rows are the only safe axis -- a local tile id is row * columns + column and every reader takes that stride from the sheet's width, so a wider sheet renumbers every id after the first row and repaints the map with nothing raised. A wider sheet is refused, and so is growing into a range another tileset already owns, which pytmx resolves two contradictory ways. Shrinking is the same verb with a smaller count and is refused while any tile still points into the part that would go. The inverse restores the image path, both of its dimensions and the tile count -- the four values this writes and the only four.
+
+*Scopes:* `map:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `name` | str | no (default `''`) | tileset name; leave empty and pass first_gid for an external <tileset source=...>, which carries no name in this file |
+| `first_gid` | int | no (default `0`) | address the tileset by its firstgid instead of its name |
+| `image` | str | no (default `''`) | the sheet's new path AS WRITTEN INTO THE FILE, relative to the .tmx; empty keeps the image it already has and changes only the count |
+| `image_width` | int | no (default `None`) | the new sheet's width in pixels; omit and the PNG header is read. It must still cut into the same number of columns |
+| `image_height` | int | no (default `None`) | the new sheet's height in pixels; omit and the PNG header is read |
+| `tile_count` | int | no (default `None`) | how many tiles the tileset owns afterwards; omit for every tile the new sheet holds, and pass a smaller number to truncate a ragged last row |
+
+```json
+{"verb": "map.tileset.grow", "scope": "map:test", "args": {"name": "Dungeon", "image": "../graphics/Dungeon.png", "tile_count": 96}}
 ```
 
 ### `map.tileset.mask.restore`
@@ -344,6 +364,22 @@ Remove a tileset by name, or by firstgid for an external one. REFUSED while any 
 
 ```json
 {"verb": "map.tileset.remove", "scope": "map:test", "args": {"name": "Dungeon"}}
+```
+
+### `map.tileset.rename`
+
+Rename a tileset. No gid moves -- a name is not part of the numbering -- but it is the key every other tileset verb addresses one by, and a .blitmask stores it in its own header. The engine REFUSES to load a map whose masks name a different tileset, so when the sidecar names the old one this rewrites that line in the same transaction. It does not rename the sidecar FILE: the tileset declares its path with pyoneer_collision and a mask file may be deliberately shared. The inverse is this verb with the two names swapped, which puts the header back too.
+
+*Scopes:* `map:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `name` | str | no (default `''`) | the tileset's current name; leave empty and pass first_gid to address it by range |
+| `first_gid` | int | no (default `0`) | address the tileset by its firstgid instead of its name |
+| `to` | str | yes | the new name; unique within the map, and non-empty because it is an address |
+
+```json
+{"verb": "map.tileset.rename", "scope": "map:test", "args": {"name": "TileA2", "to": "Village exteriors"}}
 ```
 
 ### `map.tileset.restore`

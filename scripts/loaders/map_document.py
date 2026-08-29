@@ -1812,6 +1812,338 @@ class MapDocument:
                 "and draw nothing for it." % (name, image_source, resolved))
         return self.__tileset_ref(element)
 
+    def _gid_pressure(self, threshold: int) -> tuple[int, dict[str, int]]:
+        """(total, per-layer counts) of painted gids at or above `threshold`.
+
+        What moving a firstgid up to `threshold` would cost, counted rather
+        than estimated. Both halves of the numbering are walked -- csv
+        tokens and `<object gid=...>`, flip flags masked off first -- because
+        a renumber that skips the objects leaves every tile object painting
+        the art of whatever tileset now owns its old gid.
+
+        The number exists to be quoted in a refusal. "Growing this would
+        renumber 10,897 cells across 8 layers" is a decision the caller can
+        make; "refused" on its own is not.
+        """
+        per_layer: dict[str, int] = {}
+        total = 0
+        for name in self.tile_layer_names():
+            hits = sum(1 for raw in self.tile_layer(name).gids()
+                       if raw and (raw & _GID_VALUE_MASK) >= threshold)
+            if hits:
+                per_layer[name] = hits
+                total += hits
+        for group in self.root.iter("objectgroup"):
+            hits = 0
+            for element in group.findall("object"):
+                raw = _int_attribute(element, "gid", 0)
+                if raw and (raw & _GID_VALUE_MASK) >= threshold:
+                    hits += 1
+            if hits:
+                name = group.get("name", "")
+                per_layer[name] = per_layer.get(name, 0) + hits
+                total += hits
+        return total, per_layer
+
+    def tileset_headroom(self, key: str | int) -> int:
+        """How many MORE tiles this tileset could own before it collided.
+
+        The distance from its last gid up to the lowest firstgid above it,
+        or up to the top of the gid space when nothing sits above it -- a
+        gid at 0x20000000 lands in the bits Tiled packs its flip flags into,
+        so that is where the space ends rather than at 2^31.
+
+        This is the number that decides whether growth is free. `add_tileset`
+        already accepts a `first_gid` above the packed one, so a map can be
+        authored with a reserved hole under each range, and every tile inside
+        that hole is claimable later without moving one csv token. Growth
+        past it cannot be bought by moving the next firstgid instead: that
+        renumbers every gid at or above it in every layer and in every
+        `<object gid=...>`.
+        """
+        ref = self.tileset(key)
+        self.require_known_extents("measure a tileset's headroom")
+        ceiling = _GID_VALUE_MASK
+        for other in self.tilesets():
+            if other.element is ref.element:
+                continue
+            if other.first_gid > ref.last_gid:
+                ceiling = min(ceiling, other.first_gid - 1)
+        return ceiling - ref.last_gid
+
+    def grow_tileset(self, key: str | int, *,
+                     image_source: str | None = None,
+                     image_width: int | None = None,
+                     image_height: int | None = None,
+                     tile_count: int | None = None) -> dict[str, Any]:
+        """Point a tileset at a re-cut sheet and change how many tiles it
+        owns. Returns the four values it replaced, which ARE its inverse.
+
+        THE ONLY SAFE AXIS IS ROWS.                  #TAG:growth_is_rows_only
+        A tile's local id is `row * columns + column`, and every reader
+        derives that stride from the sheet's WIDTH -- pytmx walks the image
+        in ranges over its pixel size, the editor's atlas divides by tile
+        width. So a WIDER sheet renumbers every id after the first row and
+        repaints every painted cell with different art, silently, with
+        nothing raised anywhere. A TALLER sheet at the same width adds ids
+        after the last one and moves nothing. The column count is therefore
+        not a parameter here: a new image whose width yields a different
+        column count is refused.
+
+        The second axis is the gid range above. Growth extends this range
+        upward into whatever sits there, and pytmx resolves an overlap two
+        incompatible ways -- by sorted firstgid in `get_tileset_from_gid`,
+        by document order in `reload_images` -- so the same file paints
+        differently depending on which `<tileset>` was declared first. That
+        is refused too, naming what is in the way, how much room this
+        tileset does have, and what renumbering the survivors would cost in
+        painted cells.
+
+        SHRINKING is this method with a smaller count, and is refused while
+        any tile or tile object still points into the range it would drop.
+        Clearing those first through `map.tile.set_many` keeps an exact
+        inverse; dropping them here would not.
+        """
+        ref = self.tileset(key)
+        label = ref.name or ref.source or str(key)
+        if ref.is_external:
+            raise PyoneerConfigError(
+                "cannot grow external tileset %r: its image and its tile "
+                "count live in the .tsx, which is a second file and outside "
+                "this document's byte-exactness contract" % label,
+                source=self.path)
+        self.require_known_extents("grow a tileset")
+        if ref.margin or ref.spacing:
+            raise PyoneerConfigError(
+                "cannot grow tileset %r: it declares margin=%d spacing=%d, "
+                "and Tiled, pytmx and the editor's atlas only agree on a "
+                "tileset's column count at 0/0. Growth is arithmetic over "
+                "that count, so growing a sheet the three readers cut "
+                "differently would move a different set of tiles in each"
+                % (label, ref.margin, ref.spacing), source=self.path)
+        image = ref.element.find("image")
+        if image is None:
+            raise PyoneerConfigError(
+                "cannot grow tileset %r: it declares no <image>, so it is a "
+                "collection of images (one <tile><image/></tile> per tile) "
+                "rather than a grid. That shape appends by adding a <tile> "
+                "child, which is a different edit with a different inverse"
+                % label, source=self.path)
+
+        # Every attribute this rewrites has to come back byte for byte when
+        # the inverse writes the old number, and `str(int(raw))` is what the
+        # inverse will write. A file spelling `tilecount="0012"` would come
+        # back as `"12"` -- a diff nothing else in the file explains.
+        for owner, attribute in ((ref.element, "tilecount"),
+                                 (image, "width"), (image, "height")):
+            raw = owner.get(attribute)
+            if raw is None:
+                raise PyoneerConfigError(
+                    "cannot grow tileset %r: its <%s> declares no %s, and "
+                    "growth is arithmetic over the sheet's own grid -- with "
+                    "no %s there is nothing to grow from"
+                    % (label, owner.tag, attribute, attribute),
+                    source=self.path)
+            try:
+                canonical = str(int(raw))
+            except (TypeError, ValueError):
+                canonical = None
+            if canonical != raw:
+                raise PyoneerConfigError(
+                    "cannot grow tileset %r: <%s %s=%r> is not spelled the "
+                    "way this edit writes an integer back, so undoing it "
+                    "would not reproduce the file byte for byte"
+                    % (label, owner.tag, attribute, raw), source=self.path)
+
+        old_source = image.get("source", "")
+        old_width, old_height = int(image.get("width")), int(image.get("height"))
+        new_source = old_source if image_source is None else str(image_source)
+        if not new_source:
+            raise PyoneerConfigError(
+                "cannot grow tileset %r: an embedded tileset draws from one "
+                "image and this would leave it with none" % label,
+                source=self.path)
+
+        new_width, new_height = old_width, old_height
+        if (image_width is None or image_height is None) and new_source != old_source:
+            probe = self.__resolve_image(new_source)
+            if probe is None or not os.path.isfile(probe):
+                raise PyoneerConfigError(
+                    "cannot measure the new sheet %r for tileset %r (%s); "
+                    "pass image_width and image_height explicitly"
+                    % (new_source, label,
+                       "this document has no path to resolve it against"
+                       if probe is None else "looked in %s" % probe),
+                    source=self.path)
+            new_width, new_height = image_size(probe)
+        if image_width is not None:
+            new_width = int(image_width)
+        if image_height is not None:
+            new_height = int(image_height)
+
+        if ref.columns <= 0:
+            raise PyoneerConfigError(
+                "cannot grow tileset %r: it declares no columns, and a local "
+                "tile id is row * columns + column. With no stride there is "
+                "no way to say which ids a taller sheet would add" % label,
+                source=self.path)
+        old_columns, _old_rows, _old_fits = tileset_geometry(
+            old_width, old_height, ref.tile_width, ref.tile_height)
+        if old_columns != ref.columns:
+            raise PyoneerConfigError(
+                "cannot grow tileset %r: it declares columns=%d over a %dx%d "
+                "sheet of %dx%d tiles, which is %d columns wide. The map and "
+                "the sheet already disagree about this tileset's stride, so "
+                "growing it would move tiles by an amount neither number "
+                "describes" % (label, ref.columns, old_width, old_height,
+                               ref.tile_width, ref.tile_height, old_columns),
+                source=self.path)
+        new_columns, _new_rows, fits = tileset_geometry(
+            new_width, new_height, ref.tile_width, ref.tile_height)
+        if new_columns != ref.columns:
+            raise PyoneerConfigError(
+                "refusing to grow tileset %r from a %d-column sheet to a "
+                "%d-column one: a local tile id is row * columns + column, so "
+                "changing the stride renumbers every tile after the first "
+                "row. Nothing raises when that happens -- every painted cell "
+                "in the map simply draws different art. Grow the sheet "
+                "DOWNWARD, at %d pixels wide"
+                % (label, ref.columns, new_columns, old_width),
+                source=self.path)
+
+        wanted = fits if tile_count is None else int(tile_count)
+        if wanted <= 0:
+            raise PyoneerConfigError(
+                "tileset %r would hold no tiles; remove it instead, which "
+                "checks first that nothing still points into its range"
+                % label, source=self.path)
+        if wanted > fits:
+            raise PyoneerConfigError(
+                "cannot give tileset %r %d tiles: a %dx%d sheet of %dx%d "
+                "tiles holds %d. The gids past that edge would still resolve "
+                "to this tileset and draw nothing"
+                % (label, wanted, new_width, new_height, ref.tile_width,
+                   ref.tile_height, fits), source=self.path)
+
+        new_last = ref.first_gid + wanted - 1
+        if wanted > ref.tile_count:
+            blocked = [other for other in self.tilesets()
+                       if other.element is not ref.element
+                       and other.tile_count > 0
+                       and other.first_gid <= new_last
+                       and other.last_gid >= ref.first_gid]
+            if blocked:
+                threshold = min(other.first_gid for other in blocked)
+                total, per_layer = self._gid_pressure(threshold)
+                raise PyoneerConfigError(
+                    "refusing to grow tileset %r from %d tiles to %d: gids "
+                    "%d-%d are already owned by %s. An overlap raises nowhere "
+                    "-- pytmx picks the winner by sorted firstgid in one "
+                    "function and by document order in another, so the same "
+                    "file paints differently depending on which <tileset> was "
+                    "declared first. This tileset has room for %d more tiles. "
+                    "Moving the ones above it instead would renumber %d "
+                    "painted gid(s) (%s), which is a whole-map rewrite: clear "
+                    "them with map.tile.set_many, whose inverse is exact, or "
+                    "give this tileset headroom when it is added"
+                    % (label, ref.tile_count, wanted, threshold, new_last,
+                       ", ".join("%s at %d-%d" % (o.name or o.source or "?",
+                                                  o.first_gid, o.last_gid)
+                                 for o in blocked),
+                       self.tileset_headroom(key), total,
+                       ", ".join("%s x%d" % (n, c)
+                                 for n, c in sorted(per_layer.items()))
+                       or "none painted"),
+                    source=self.path)
+        elif wanted < ref.tile_count:
+            dropped = ref.first_gid + wanted
+            tiles = [row for row in self.tiles_using_tileset(key)
+                     if (row[3] & _GID_VALUE_MASK) >= dropped]
+            objects = [row for row in self.objects_using_tileset(key)
+                       if (row[2] & _GID_VALUE_MASK) >= dropped]
+            if tiles or objects:
+                per_layer = {}
+                for layer_name, _x, _y, _gid in tiles:
+                    per_layer[layer_name] = per_layer.get(layer_name, 0) + 1
+                for layer_name, _oid, _gid in objects:
+                    per_layer[layer_name] = per_layer.get(layer_name, 0) + 1
+                raise PyoneerConfigError(
+                    "refusing to truncate tileset %r from %d tiles to %d: %d "
+                    "tile(s) still point at gids %d-%d (%s). Those gids would "
+                    "leave this tileset's range and resolve to whatever sits "
+                    "below, which raises nowhere and paints the wrong art. "
+                    "Clear them first with map.tile.set_many, whose inverse "
+                    "is exact"
+                    % (label, ref.tile_count, wanted,
+                       len(tiles) + len(objects), dropped, ref.last_gid,
+                       ", ".join("%s x%d" % (n, c)
+                                 for n, c in sorted(per_layer.items()))),
+                    source=self.path)
+
+        previous = {"image": old_source, "image_width": old_width,
+                    "image_height": old_height, "tile_count": ref.tile_count}
+        # `set` on a key that is already there keeps its position, so none of
+        # these four attributes moves and the diff is the four numbers.
+        image.set("source", new_source)
+        image.set("width", str(new_width))
+        image.set("height", str(new_height))
+        ref.element.set("tilecount", str(wanted))
+        self._touch()
+        trace_assets("grow_tileset name=%s tiles=%s->%s image=%s",
+                     label, ref.tile_count, wanted, new_source)
+
+        resolved = self.__resolve_image(new_source)
+        if resolved is not None and not os.path.isfile(resolved):
+            warn_content(
+                "tileset %r now points at %r, which does not exist relative "
+                "to the map (%s). Tiled and the engine will both load the "
+                "map and draw nothing for it." % (label, new_source, resolved))
+        return previous
+
+    def rename_tileset(self, key: str | int, new_name: str) -> str:
+        """Give a tileset a different name. Returns the name it had.
+
+        One attribute, and nothing numeric: a name is not part of the gid
+        arithmetic, so no placed tile changes meaning. What it IS part of is
+        addressing -- every other tileset verb takes this string as its key
+        -- and a `.blitmask` stores it in its own header, where
+        `tileset_defaults` raises when the two disagree. Renaming that header
+        is the command layer's half of the job, because a sidecar is a second
+        file and this document owns exactly one.
+
+        An EXTERNAL tileset carries no name here at all (it lives in the
+        .tsx) and is refused rather than given one: an added attribute would
+        be a name this file claims and the .tsx contradicts.
+        """
+        element = self._tileset_element(key)
+        if element is None:
+            raise PyoneerAssetMissingError(
+                "tileset", str(key), available=self.tileset_names(),
+                source=self.path)
+        new_name = str(new_name)
+        if not new_name:
+            raise PyoneerConfigError(
+                "a tileset needs a name; it is the key every other tileset "
+                "verb addresses it by", source=self.path)
+        previous = element.get("name")
+        if previous is None:
+            raise PyoneerConfigError(
+                "the tileset at firstgid %s carries no name in this file, so "
+                "there is nothing to rename. An external <tileset source=...> "
+                "keeps its name in the .tsx"
+                % element.get("firstgid", "?"), source=self.path)
+        if new_name == previous:
+            return previous
+        if new_name in self.tileset_names():
+            raise PyoneerConfigError(
+                "this map already has a tileset named %r, and the name is the "
+                "key the tileset verbs address one by" % new_name,
+                source=self.path)
+        element.set("name", new_name)
+        self._touch()
+        trace_assets("rename_tileset %s -> %s", previous, new_name)
+        return previous
+
     def remove_tileset(self, key: str | int, *, force: bool = False) -> bool:
         """Remove a tileset by name or firstgid. False if it was not there.
 

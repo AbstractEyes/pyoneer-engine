@@ -14,9 +14,9 @@ control, tile collision and a spawn system all exist now.
 | tile map loading and compositing | a swept or box collider; the test is one anchor point |
 | a spawn path that reads each object's `pyoneer_behaviors` and composes it | a genre pack's default list being applied for you -- the object carries its own |
 | gravity, terminal velocity, air control and a jump with coyote time -- the `platformer_move` behavior | jump *buffering* (pressing early, before landing) |
-| a passability gate that is baked at map load and handed to every entity bound | a body gated on a map that declares no companion layer -- that bakes `None`, which is ungated |
+| a passability gate baked at map load from a tileset's own tile masks AND from companion layers, handed to every entity bound | a body gated on a map that declares neither -- that bakes `None`, which is ungated |
 | behavior composition: swap what an entity does by editing a list | a class-free way to mark which object the human drives; that is `player_input` in the list |
-| input actions with real edge detection, `jump` among them | anything that reads the actors table at runtime |
+| input actions with real edge detection, `jump` among them | a behavior parameter that is not declared in its own spec -- the actors table fills declared keys, it does not invent them |
 
 **Read `docs/BEHAVIORS.md` before this file.** It is generated from the
 registry the engine binds from, so it cannot describe a behavior that does
@@ -81,12 +81,13 @@ player are one class and one spawn entry, distinguished by one token.
 
 ### Four things that will bite a platformer body
 
-1. **A map with no companion layer bakes `None`, and `None` means UNGATED.**
-   The field IS assigned now -- `LayerRenderer` bakes the map's passability at
-   bind and hands it to every entity, both routes -- so a body falling forever
-   is not a missing wire, it is a map with nothing painted on it. Paint a mask
-   in the editor's collision mode, or the body has no world to stand on. Check
-   the integration table in `docs/BEHAVIORS.md`, which is measured.
+1. **A map that declares neither a tile mask nor a companion bakes `None`, and
+   `None` means UNGATED.** The field IS assigned -- `LayerRenderer` bakes the
+   map's passability at bind and hands it to every entity, both routes -- so a
+   body falling forever is not a missing wire, it is a map with nothing
+   authored on it. Give the ground tileset a `.blitmask` (one mask per tile, in
+   the palette) or paint cells on the art layer; either alone produces a field.
+   Check the integration table in `docs/BEHAVIORS.md`, which is measured.
 2. **An authoring error in the list raises at LOAD, not at play.** An unknown
    token, a duplicate, or two behaviors that conflict all stop the map from
    spawning and name the `<object>` that carried them. That is deliberate: a
@@ -104,23 +105,30 @@ player are one class and one spawn entry, distinguished by one token.
    change in `scripts/core/collision_runtime.py`, not something to fake in a
    behavior.
 
-### Solid is a companion layer, not the Floor layer's tiles
+### Solid is the tile's own mask, then the cell -- never the Floor gid
 
-The previous revision said a non-zero gid on `Floor` is solid. It is not, and
-it never was in the shipped engine.
+A non-zero gid on `Floor` is **not** solid. `Floor` is art. Passability is a
+four-bit mask -- down 1, left 2, right 4, up 8, and a **set** bit means
+**blocked** -- authored at two levels, strongest last:
 
-`Floor` is art. Passability is authored into a **companion tile layer** --
-`FloorCollision` by default, or whatever `Floor`'s `pyoneer_passability`
-property names -- where each cell holds a four-bit mask (down 1, left 2,
-right 4, up 8; a **set** bit means **blocked**). The editor's collision mode
-creates that layer on the first mask stroke and marks it
-`pyoneer_renders=false` so it never draws. `gid 0` there means *nobody said
-anything*, not *open*.
+1. **The tile's own mask**, in a `.blitmask` beside the map named by the
+   tileset's `pyoneer_collision` property. Stamping the tile authors the
+   collision. For a platformer this is the level you want: give the ground tile
+   `BLOCK_UP` (8) once and every platform you paint supports a body.
+2. **The cell**, in a **companion tile layer** -- `FloorCollision` by default,
+   or whatever `Floor`'s `pyoneer_passability` property names. It says *"not
+   THIS one"*. A painted cell **overrides** the tile default rather than
+   merging with it, and `gid 0` -- an empty cell -- means *nobody said
+   anything*, which falls back to the tile.
 
-That is still exactly one source of collision truth, which is the rule the
-old text was protecting. Do not add a second. Painting a `Floor` tile does
-not make it solid, and it should not — a doorway and its frame come from the
-same tileset.
+Two levels, one resolution order, still exactly one source of collision truth.
+Do not add a third. A doorway and its frame come from the same tileset, which
+is precisely why the tile's mask is a default and the cell can contradict it.
+
+The companion has no row in the editor's hierarchy: it declares
+`pyoneer_renders=false` and nothing draws it. Select the **art** layer, pick a
+mask swatch, and paint; shift+click a map cell to give the TILE under it that
+mask instead.
 
 Hazards go on the `entity` object layer as objects, not as tiles, so they can
 carry damage values and trigger regions.

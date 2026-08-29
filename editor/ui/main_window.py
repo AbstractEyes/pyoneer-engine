@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
 )
 
 from editor.core import ide
+from editor.core.collision import describe_opinion
 from editor.core.commands import Command
 from editor.core.errors import PyoneerEditorError
 from editor.core.genre import RuleViolation
@@ -102,6 +103,10 @@ class EditorWindow(QMainWindow):
         self.settings = EditorSettings()
         self.map_name = (session.project.map_names() or ["<none>"])[0]
         self.database: DatabaseWindow | None = None
+        #: The tile importer while it is open. Non-modal, so the window has
+        #: to hold it: without a reference Python collects it the moment
+        #: `add_tileset` returns and it vanishes as it appears.
+        self.tileset_import = None
         # The dialog seams, same as every panel's. See editor/ui/ask.py.
         self.ask = ask_form
         self.confirm = confirm
@@ -164,7 +169,8 @@ class EditorWindow(QMainWindow):
         self.__build_toolbar()
         self.statusBar().showMessage(
             "left drag paints · right drag erases · middle or space pans · "
-            "ctrl+wheel zooms · alt+click picks")
+            "wheel zooms the map, ctrl+wheel the palette · alt+click picks "
+            "the tile under the cursor · drag in the palette picks a stamp")
 
         self.__watcher = QFileSystemWatcher(self)
         self.__watcher.directoryChanged.connect(self.__on_requests_changed)
@@ -185,6 +191,10 @@ class EditorWindow(QMainWindow):
         dock.setObjectName("Tiles")
         self.palette = TilePalette(dock)
         self.palette.stamp_picked.connect(self.__on_stamp)
+        # The palette's own door onto the importer, beside the tilesets it
+        # will be added to. The menu entry stays -- one action, two places a
+        # hand already is.
+        self.palette.add_tiles_requested.connect(self.add_tileset)
         dock.setWidget(self.palette)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         return dock
@@ -447,6 +457,8 @@ class EditorWindow(QMainWindow):
             # canvas's memo, and nothing at all on a map that declares none.
             self.palette.set_masks(self.canvas.tile_masks())
             self.palette.set_atlas(self.canvas.atlas)
+        if self.tileset_import is not None:
+            self.__safely(self.__refresh_tileset_import, "Add tiles")
         for dock in self.docks:
             self.__safely(dock.refresh, dock.base_title)
         if self.database is not None:
@@ -567,8 +579,12 @@ class EditorWindow(QMainWindow):
         if self.canvas.mode is EditMode.COLLISION:
             target = (f"gid {stamp.primary}" if stamp.is_single
                       else f"{stamp.width}×{stamp.height} tiles")
+            # `describe_opinion`, because the mask brush can now hold the
+            # no-opinion chip: `describe_mask` reads -1 as every bit set and
+            # would label the value that CLEARS a mask "blocks down, left,
+            # right, up".
             self.stamp_label.setText(
-                f"  {describe_mask(self.canvas.mask)} → {target}  ")
+                f"  {describe_opinion(self.canvas.mask)} → {target}  ")
             return
         self.stamp_label.setText(
             f"  brush: gid {stamp.primary}  " if stamp.is_single
@@ -697,13 +713,13 @@ class EditorWindow(QMainWindow):
         self.database.activateWindow()
 
     def add_tileset(self) -> None:
-        """Declare a sheet on the open map.
+        """Open the tile importer on the current map, without blocking it.
 
-        `TilesetImportDialog` was finished, had a complete `ask()` whose own
-        docstring says "so the menu action stays two lines", and no menu
-        action existed -- so no tileset could be added from the GUI at all.
-        That absence is why the collision path grew its own 191-word modal
-        tileset importer: it was the only door onto `map.tileset.add`.
+        NON-MODAL, and reopened rather than duplicated. Selecting a region
+        is something an author does several times off one sheet, and each
+        one wants a look at the map it is going into -- a dialog that owned
+        the whole window would make "add four regions" four round trips
+        through a menu.
         """
         try:
             document = self.session.project.map(self.map_name)
@@ -711,16 +727,54 @@ class EditorWindow(QMainWindow):
             self.report(f"cannot read map:{self.map_name}: {exc}",
                         key="add_tileset")
             return
-        request = TilesetImportDialog.ask(
-            os.path.dirname(document.path),
-            tile_width=document.tile_width, tile_height=document.tile_height,
-            existing_names=document.tileset_names(), parent=self)
-        if request is None:
+        if self.tileset_import is not None:
+            self.tileset_import.raise_()
+            self.tileset_import.activateWindow()
             return
-        if self.run(Command("map.tileset.add", Scope.of(("map", self.map_name)),
-                            request.command_args())):
-            self.notify(f"declared {request.name!r} — {request.tile_count} "
-                        f"tiles are now in the palette", seconds=8)
+        view = TilesetImportDialog.open_for(
+            os.path.dirname(document.path),
+            on_import=self.import_tileset,
+            tile_width=document.tile_width, tile_height=document.tile_height,
+            existing_names=document.tileset_names(),
+            next_gid=document.next_tileset_firstgid(), parent=self)
+        self.tileset_import = view
+        # BOTH signals. `finished` fires the moment it closes, which is what
+        # makes reopening deterministic; `destroyed` is the backstop for a
+        # window torn down some other way. A stale pointer here would make
+        # the next Add raise a window Qt has already deleted.
+        view.finished.connect(self.__forget_tileset_import)
+        view.destroyed.connect(self.__forget_tileset_import)
+
+    def __forget_tileset_import(self, *_args) -> None:
+        self.tileset_import = None
+
+    def __refresh_tileset_import(self) -> None:
+        """Tell the open importer what the map holds after this command.
+
+        Undo is why this is pushed rather than remembered: taking an import
+        back frees its name and its gid range again, and a view holding its
+        own tally would refuse the author the name they had just released.
+        """
+        document = self.session.project.map(self.map_name)
+        self.tileset_import.known_names(
+            document.tileset_names(),
+            next_gid=document.next_tileset_firstgid())
+
+    def import_tileset(self, request) -> None:
+        """One Add from the importer, as a command.
+
+        The crop -- when there is one -- is already on disk by the time this
+        runs; see `TilesetImportDialog.commit`. All that is left is the
+        declaration, which is undoable, and telling the view the name is
+        taken so its next region is offered a fresh one.
+        """
+        if not self.run(Command("map.tileset.add",
+                                Scope.of(("map", self.map_name)),
+                                request.command_args())):
+            return
+        cut = " (cropped)" if request.cropped else ""
+        self.notify(f"declared {request.name!r} — {request.tile_count} "
+                    f"tiles are now in the palette{cut}", seconds=8)
 
     def switch_genre(self) -> None:
         from editor.core import genre as genre_module

@@ -17,7 +17,7 @@ have been written, passed, and never run by the suite. A check that
 did not run has proved nothing, which is why an absent optional
 dependency reports `SKIP` and never `PASS`.
 
-49 checks:
+51 checks:
 
 | check | roster line | module says |
 |---|---|---|
@@ -35,9 +35,9 @@ dependency reports `SKIP` and never `PASS`.
 | `input` | edge detection, multi-binding, load-time validation | Verify InputActionManager edge semantics by driving synthetic key state. |
 | `animation` | sequence switching, pause/resume, pre-sliced frames | Verify GameAnimationHandler switching, pausing and resuming. |
 | `singletons` | one CoreAssetManager, tmx cached until reload is asked for | Verify CoreAssetManager is constructed once and never silently rebuilt. |
-| `tmx_roundtrip` | byte-identical tmx save, minimal-diff tile and object edits | Measure the .tmx write path against the shipped 133,940-byte map. |
-| `tileset` | byte-exact tileset add/remove, gid-range and extent guards | Measure MapDocument's tileset methods against BYTES, not against XML. |
-| `tileset_verbs` | tileset add/remove/restore verbs with exact undo, and the tile-mask verb that writes a tileset's .blitmask and declares it | Verify the tileset verbs: exact inverses, and a refusal that survives. |
+| `tmx_roundtrip` | byte-identical tmx save, minimal-diff tile, object and tileset-growth edits | Measure the .tmx write path against the shipped 133,940-byte map. |
+| `tileset` | byte-exact tileset add/remove/grow/rename, gid-range and extent guards, and growth that moves no placed gid | Measure MapDocument's tileset methods against BYTES, not against XML. |
+| `tileset_verbs` | tileset add/remove/restore/grow/rename verbs with exact undo, gid headroom bought at add time, and the tile-mask verb that writes a tileset's .blitmask and declares it | Verify the tileset verbs: exact inverses, and a refusal that survives. |
 | `blitmap` | the native .blitmap/.tileset format and the tmx converter | Measure the native .blitmap / .tileset formats and the tmx converter. |
 | `blitmap_engine` | the engine loads a .blitmap equivalently to its tmx | Measure the engine's .blitmap load path against the pytmx one it joins. |
 | `spawn` | object layer -> entity registry, depth resolution, y-origin | Verify the object-layer -> entity spawn path. |
@@ -59,11 +59,13 @@ dependency reports `SKIP` and never `PASS`.
 | `collision_view` | collision overlay builds, glyphs distinguish direction bits, a read past a companion's edge abstains, and the level channel credits the tile or the paint | Verify the collision overlay, its glyphs and the mode switch. |
 | `map_events` | trigger vocabulary, collision filters, tmx round trip | Verify the map-event vocabulary: round trip, validation, filter semantics. |
 | `collision_mount` | the overlay, the mode, one stroke one transaction, a 4x map whose mask lands under the cursor, the resolution a created companion is given, and the overlay agreeing with field_from_map cell for cell over a map whose tiles carry their own masks, and a tile picked in the palette baking its own mask into the tileset | Assert the collision stack is actually WIRED to the canvas. |
+| `collision_fold` | the collision companion has no row in the hierarchy, a layer merely named like one still does, its masks still bake into the same field, and the no-opinion chip clears a cell and a tile | The collision companion is gone from the panel and still in the field. |
 | `collision_runtime` | the engine reads a mask, stacks a tileset's own defaults under it, gates movement, and keeps a layer that moves under the camera out of the stack whether or not masks were painted on it | Verify that the engine reads authored masks and refuses a blocked step. |
 | `collision_field` | map load bakes passability and every body is handed it | Prove the map's passability actually reaches the bodies that move on it. |
 | `actions_panel` | trigger authoring, action verbs, exact inverses | Assert the authoring surfaces for map events and the collision tileset. |
 | `behavior_ui` | behavior checklist from the registry, refusals at authoring time, exact undo | The editor's behavior surface: the checklist, the refusals, the undo. |
 | `editor_ui` | panels build, canvas edits are commands, a palette click in collision mode masks the tile, responses apply | Drive the editor's Qt window offscreen and assert it holds together. |
+| `palette` | every tileset stacked in one scroll, a stamp clamped to the sheet it started in, a selection addressed by name so no command can move it, and an import that crops the region it was shown into a grid the engine cuts the same way | The stacked tile palette, and importing a tileset by selecting a region. |
 | `demos` | three prototype games boot headless and answer injected input | Boot every demo headless, drive it with injected input, and assert what it |
 | `prototype` | the design form resolves against the registries, and its worked example boots | Resolve every field the design template names, then boot its worked example. |
 | `art_tilesets` | the generated terrain and clutter sheets: every corner mask's occupancy, every tile inside its own cell, and no pixel read from a file | Verify the generated tilesets: corner occupancy, containment, provenance. |

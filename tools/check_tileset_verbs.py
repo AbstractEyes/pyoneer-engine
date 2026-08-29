@@ -68,6 +68,7 @@ from editor.core.scope import Scope
 from editor.core.session import Session
 from scripts.core.collision_runtime import field_from_map
 from scripts.core.errors import PyoneerConfigError
+from scripts.loaders.map_document import tileset_geometry
 
 REPO = _bootstrap.REPO_ROOT
 failures: list[str] = []
@@ -229,6 +230,40 @@ MASKED = (
     b'</map>\n'
 )
 
+# A map with a RESERVED GID HOLE: Lower owns 1-12, Upper starts at 101, and
+# the 88 gids between them belong to nobody. That hole is what makes growth
+# free -- Lower can claim any of it without moving one csv token, and cannot
+# claim the 89th tile without moving Upper.
+#
+# Painted in BOTH ranges, and Lower's second cell carries the horizontal-flip
+# bit. Unmasked, 2147483660 reads as a number far above Upper's firstgid, so
+# a scan that forgot to mask reports one more cell than a renumber touches.
+# The tile object is the other half that is easy to forget: its gid lives in
+# an attribute and never appears in any <data>.
+GROWABLE = (
+    b'<?xml version="1.0" encoding="UTF-8"?>\r\n'
+    b'<map version="1.2" orientation="orthogonal" renderorder="right-down"'
+    b' width="2" height="2" tilewidth="16" tileheight="16"'
+    b' nextlayerid="3" nextobjectid="2">\r\n'
+    b'\t<tileset firstgid="1" name="Lower" tilewidth="16" tileheight="16"'
+    b' tilecount="12" columns="4">\r\n'
+    b'\t\t<image source="sheet.png" width="64" height="48"/>\r\n'
+    b'\t</tileset>\r\n'
+    b'\t<tileset firstgid="101" name="Upper" tilewidth="16" tileheight="16"'
+    b' tilecount="12" columns="4">\r\n'
+    b'\t\t<image source="sheet.png" width="64" height="48"/>\r\n'
+    b'\t</tileset>\r\n'
+    b'\t<layer id="1" name="Floor" width="2" height="2">\r\n'
+    b'\t\t<data encoding="csv">\r\n'
+    b'1,2147483660,\r\n101,112\r\n'
+    b'</data>\r\n'
+    b'\t</layer>\r\n'
+    b'\t<objectgroup id="2" name="entity">\r\n'
+    b'\t\t<object id="1" gid="105" x="0" y="16" width="16" height="16"/>\r\n'
+    b'\t</objectgroup>\r\n'
+    b'</map>\r\n'
+)
+
 # Tile 2 (row 0, column 2) is the gid the Floor layer above paints, so this
 # is a mask the engine really reads. Canonical spelling: `Blitmask.render`
 # writes the magic, then size, then metadata in the order it was parsed.
@@ -259,6 +294,11 @@ try:
     NESTED_SHEET = os.path.join(graphics_dir, "nested.png")
     with open(NESTED_SHEET, "wb") as handle:
         handle.write(png_bytes(32, 32))
+    # The same width as sheet.png and one row taller. That is the only shape
+    # map.tileset.grow accepts, because a local id is row * columns + column
+    # and every reader takes the stride from the sheet's width.
+    with open(os.path.join(maps_dir, "tall.png"), "wb") as handle:
+        handle.write(png_bytes(64, 64))
 
     shutil.copy2(os.path.join(REPO, "data", "maps", "test.tmx"),
                  os.path.join(maps_dir, "test.tmx"))
@@ -268,6 +308,8 @@ try:
         handle.write(EXTERNAL)
     with open(os.path.join(maps_dir, "masked.tmx"), "wb") as handle:
         handle.write(MASKED)
+    with open(os.path.join(maps_dir, "growth.tmx"), "wb") as handle:
+        handle.write(GROWABLE)
     AUTHORED = os.path.join(maps_dir, "Art.blitmask")
     with open(AUTHORED, "w", encoding="utf-8", newline="") as handle:
         handle.write(AUTHORED_MASK)
@@ -275,7 +317,8 @@ try:
               encoding="utf-8") as handle:
         json.dump({"data": [
             {"name": name, "identifier": name, "file": f"data/maps/{name}.tmx"}
-            for name in ("test", "used", "external", "masked")]}, handle)
+            for name in ("test", "used", "external", "masked",
+                         "growth")]}, handle)
 
     with open(os.path.join(maps_dir, "test.tmx"), "rb") as handle:
         ORIGINAL = handle.read()
@@ -285,6 +328,7 @@ try:
     USED = Scope.of(("map", "used"))
     EXT = Scope.of(("map", "external"))
     MASK = Scope.of(("map", "masked"))
+    GROW = Scope.of(("map", "growth"))
 
     def document(name: str):
         return session.project.map(name)
@@ -294,6 +338,20 @@ try:
         return [(ref.name, ref.first_gid, ref.tile_count)
                 for ref in document(name).tilesets()]
 
+    def placed(name: str):
+        """Every gid the map places: csv cells and tile objects both.
+
+        Raw, flip flags intact. "No placed gid moved" is a claim about these
+        numbers and about nothing else, so the growth assertions compare the
+        whole structure rather than sampling one cell.
+        """
+        doc = document(name)
+        return ({layer: doc.tile_layer(layer).gids()
+                 for layer in doc.tile_layer_names()},
+                [(int(element.get("id", "0")), int(element.get("gid", "0")))
+                 for group in doc.root.iter("objectgroup")
+                 for element in group.findall("object")])
+
     # ----------------------------------------------------------------------
     print("the vocabulary reaches the document's tileset half at all")
     # ----------------------------------------------------------------------
@@ -302,9 +360,9 @@ try:
     # any of them, so nothing in the editor -- human or AI -- could reach it.
     registered = [name for name in verb_names() if name.startswith("map.tileset.")]
     expect("every tileset verb is registered", registered,
-           ["map.tileset.add", "map.tileset.mask.restore",
+           ["map.tileset.add", "map.tileset.grow", "map.tileset.mask.restore",
             "map.tileset.mask.set", "map.tileset.remove",
-            "map.tileset.restore"])
+            "map.tileset.rename", "map.tileset.restore"])
     expect("they act on a map, not on a layer",
            [verb(n).scopes for n in registered],
            [("map:*",)] * len(registered))
@@ -871,14 +929,20 @@ try:
 
     # ----------------------------------------------------------------------
     print()
-    print("the import dialog: geometry without a window")
+    print("the import dialog's answer is one map.tileset.add accepts")
     # ----------------------------------------------------------------------
+    # ONLY the seam. What the dialog LOOKS like -- its region band, its
+    # spinboxes, the wording of its summary -- is measured by
+    # tools/check_palette.py, which owns that widget. What is measured here
+    # is the handover: the dataclass it hands back has to be acceptable to
+    # this verb with nothing in between reshaping it, and what lands in the
+    # file has to be what it described.
     if importlib.util.find_spec("PySide6") is None:
         print("  SKIP PySide6 is not installed "
               "(pip install -r editor/requirements.txt)")
     else:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-        from PySide6.QtWidgets import QApplication, QDialogButtonBox
+        from PySide6.QtWidgets import QApplication
         from editor.ui.tileset_dialog import (TilesetImport,
                                               TilesetImportDialog,
                                               relative_image_path)
@@ -896,50 +960,10 @@ try:
                dialog.problem(), "Choose a tileset image.")
 
         dialog.set_image_path(SHEET)
-        expect("QImage measured the sheet",
-               (dialog.image_width, dialog.image_height), (64, 48))
-        expect("the name auto-fills from the file stem",
-               dialog.name_field.text(), "sheet")
-        expect("64x48 at 16px is 4 columns of 3 rows",
-               (dialog.columns, dialog.rows, dialog.tile_count), (4, 3, 12))
-        expect("and the summary says so",
-               dialog.summary_text(), "64x48 -> 4 columns x 3 rows = 12 tiles")
+        expect("the whole sheet is selected, cut by the document's own formula",
+               (dialog.columns, dialog.rows, dialog.tile_count),
+               tileset_geometry(64, 48, 16, 16))
         expect("nothing blocks the import", dialog.problem(), None)
-        expect("the Add button is live",
-               dialog.buttons.button(QDialogButtonBox.Ok).isEnabled(), True)
-
-        # The three cases where naive `width // tile_width` gives the wrong
-        # answer, which is the whole reason this dialog borrows the
-        # document's own formula instead of dividing.
-        dialog.spacing_spin.setValue(2)
-        expect("spacing leaves no gap after the last column",
-               (dialog.columns, dialog.rows, dialog.tile_count), (3, 2, 6))
-        dialog.spacing_spin.setValue(0)
-        dialog.margin_spin.setValue(2)
-        expect("margin eats from the leading edge",
-               (dialog.columns, dialog.rows, dialog.tile_count), (3, 2, 6))
-        dialog.margin_spin.setValue(0)
-        # The mistake this preview exists for: 64x48 cut at 15 is STILL
-        # "4 columns x 3 rows", a completely believable answer, and the only
-        # trace of it in the numbers is the strip of pixels left over.
-        dialog.tile_width_spin.setValue(15)
-        dialog.tile_height_spin.setValue(15)
-        expect("an off-by-one tile size still yields a believable count",
-               (dialog.columns, dialog.rows, dialog.tile_count), (4, 3, 12))
-        expect("so the leftover pixels are named out loud",
-               dialog.summary_text(),
-               "64x48 -> 4 columns x 3 rows = 12 tiles  "
-               "(4 px to the right and 3 px below claimed by no tile)")
-        dialog.tile_width_spin.setValue(16)
-        dialog.tile_height_spin.setValue(16)
-
-        dialog.tile_width_spin.setValue(128)
-        expect("a tile larger than the sheet is refused, not negative",
-               dialog.tile_count, 0)
-        expect("and the button goes dead",
-               dialog.buttons.button(QDialogButtonBox.Ok).isEnabled(), False)
-        expect("value() withholds an unimportable request", dialog.value(), None)
-        dialog.tile_width_spin.setValue(16)
 
         taken = TilesetImportDialog(maps_dir, existing_names=["sheet"])
         taken.set_image_path(SHEET)
@@ -947,8 +971,6 @@ try:
                taken.problem(), "This map already has a tileset named 'sheet'.")
         expect("and nothing is handed back", taken.value(), None)
 
-        # The loop this dialog exists to close: its answer has to be
-        # acceptable to the verb WITHOUT anything in between reshaping it.
         spec = dialog.value()
         expect("the answer is a plain dataclass",
                isinstance(spec, TilesetImport), True)
@@ -956,7 +978,7 @@ try:
         accepted = {p.name for p in verb("map.tileset.add").params}
         expect("every argument it produces is one map.tileset.add declares",
                sorted(set(arguments) - accepted), [])
-        expect("the image path it produces is the map-relative one",
+        expect("including the image path, spelled relative to the map",
                arguments["image"], "sheet.png")
 
         arguments["name"] = "FromDialog"
@@ -964,7 +986,7 @@ try:
             warnings.simplefilter("ignore")
             session.run(Command("map.tileset.add", TEST, arguments))
         landed = document("test").tileset("FromDialog")
-        expect("the dialog's grid is the grid the file records",
+        expect("the grid it described is the grid the file records",
                (landed.columns, landed.tile_count),
                (spec.columns, spec.tile_count))
         expect("and its image path went in verbatim",
@@ -972,6 +994,211 @@ try:
         session.undo()
         expect("undo of a dialog-driven add is byte-exact",
                document("test").to_bytes(), ORIGINAL)
+
+    # ----------------------------------------------------------------------
+    print()
+    print("grow: whole rows appended into headroom, and undo takes them back")
+    # ----------------------------------------------------------------------
+    # Its own map, so nothing above can have left the fixture half-edited.
+    # Two tilesets with a RESERVED gid hole between them and painted cells in
+    # both: this is the shape the whole growth model exists for. Lower can
+    # claim 88 more tiles without touching one csv token, and cannot claim
+    # the 89th without moving Upper.
+    expect("the growth fixture round trips before anything runs",
+           document("growth").to_bytes(), GROWABLE)
+    expect("it declares a reserved hole, not a packed pair",
+           tileset_state("growth"), [("Lower", 1, 12), ("Upper", 101, 12)])
+    PAINTED = placed("growth")
+    expect("both ranges are painted, one of them through a flip bit",
+           PAINTED, ({"Floor": [1, 2147483660, 101, 112]}, [(1, 105)]))
+
+    grown = session.run(Command("map.tileset.grow", GROW,
+                                {"name": "Lower", "image": "tall.png"}))
+    expect("the sheet under it grew by a whole row",
+           tileset_state("growth"), [("Lower", 1, 16), ("Upper", 101, 12)])
+    expect("NOT ONE PLACED GID MOVED", placed("growth"), PAINTED)
+    expect("the file actually changed",
+           document("growth").to_bytes() == GROWABLE, False)
+    expect("the inverse is a grow carrying the four values it replaced",
+           (grown.inverses[0].verb, grown.inverses[0].args),
+           ("map.tileset.grow",
+            {"name": "Lower", "first_gid": 0, "image": "sheet.png",
+             "image_width": 64, "image_height": 48, "tile_count": 12}))
+
+    session.undo()
+    expect("undo puts the sheet and the count back",
+           tileset_state("growth"), [("Lower", 1, 12), ("Upper", 101, 12)])
+    expect("byte for byte", document("growth").to_bytes(), GROWABLE)
+    session.redo()
+    expect("redo grows it again",
+           document("growth").tileset("Lower").tile_count, 16)
+    session.undo()
+    expect("and undo is still exact", document("growth").to_bytes(), GROWABLE)
+
+    repeat = session.run(Command("map.tileset.grow", GROW, {"name": "Lower"}))
+    expect("growing to the size it already is has no inverse to run",
+           repeat.inverses[0].verb, "noop")
+    expect("and changed nothing", document("growth").to_bytes(), GROWABLE)
+
+    depth = len(session.history())
+    blocked = raises(
+        "growing past the reservation is refused, not accommodated",
+        PyoneerCommandApplyError,
+        lambda: session.run(Command("map.tileset.grow", GROW, {
+            "name": "Lower", "image_width": 64, "image_height": 416,
+            "tile_count": 101})),
+        contains="already owned by Upper at 101-112")
+    if blocked is not None:
+        # The three things a caller needs in order to act, carried through
+        # the command layer unreworded: how much room there is, what the
+        # alternative costs, and which verb keeps an exact inverse.
+        expect("the message survives the command layer: the room available",
+               "room for 88 more tiles" in str(blocked), True)
+        expect("the message survives: what a renumber would cost",
+               "renumber 3 painted gid(s) (Floor x2, entity x1)" in str(blocked),
+               True)
+        expect("the message survives: what to do instead",
+               "map.tile.set_many" in str(blocked), True)
+        expect("and the transaction rolled back cleanly", blocked.rolled_back, True)
+    expect("the refused growth left the file untouched",
+           document("growth").to_bytes(), GROWABLE)
+
+    raises("a wider sheet is refused through the verb too",
+           PyoneerCommandApplyError,
+           lambda: session.run(Command("map.tileset.grow", GROW, {
+               "name": "Lower", "image_width": 80, "image_height": 48})),
+           contains="renumbers every tile after the first row")
+    raises("so is truncating over a painted cell",
+           PyoneerCommandApplyError,
+           lambda: session.run(Command("map.tileset.grow", GROW, {
+               "name": "Lower", "tile_count": 11})),
+           contains="still point at gids 12-12")
+    raises("an external tileset cannot be grown, addressed by firstgid",
+           PyoneerCommandApplyError,
+           lambda: session.run(Command("map.tileset.grow", EXT,
+                                       {"first_gid": 1, "tile_count": 4})),
+           contains="live in the .tsx")
+    raises("and a grow that addresses nothing is an argument error",
+           PyoneerCommandApplyError,
+           lambda: session.run(Command("map.tileset.grow", GROW, {})),
+           contains="first_gid")
+    expect("no refusal touched the file", document("growth").to_bytes(), GROWABLE)
+    expect("and none of them left a step in the history",
+           len(session.history()), depth)
+
+    # ----------------------------------------------------------------------
+    print()
+    print("headroom is bought at add time and spent by growth later")
+    # ----------------------------------------------------------------------
+    # `first_gid` on map.tileset.add is what makes growth free for a tileset
+    # that is not the top one. Without it the only tileset with room is the
+    # last, and every other grow costs a whole-map renumber.
+    session.run(Command("map.tileset.add", GROW, {
+        "name": "Reserved", "image": "sheet.png", "first_gid": 1001}))
+    expect("the tileset took the firstgid it asked for, not the packed one",
+           tileset_state("growth"),
+           [("Lower", 1, 12), ("Upper", 101, 12), ("Reserved", 1001, 12)])
+    expect("which leaves Upper a hole to grow into",
+           document("growth").tileset_headroom("Upper"), 888)
+    session.run(Command("map.tileset.grow", GROW, {
+        "name": "Upper", "image_width": 64, "image_height": 3600,
+        "tile_count": 900}))
+    expect("and Upper spends it without moving a gid", placed("growth"), PAINTED)
+    expect("the hole is exactly used up",
+           document("growth").tileset_headroom("Upper"), 0)
+    raises("one tile more is refused", PyoneerCommandApplyError,
+           lambda: session.run(Command("map.tileset.grow", GROW, {
+               "name": "Upper", "image_width": 64, "image_height": 3616,
+               "tile_count": 901})),
+           contains="room for 0 more tiles")
+    session.undo()
+    session.undo()
+    expect("unwinding both is byte-exact",
+           document("growth").to_bytes(), GROWABLE)
+    raises("a firstgid below a live range is still refused",
+           PyoneerCommandApplyError,
+           lambda: session.run(Command("map.tileset.add", GROW, {
+               "name": "Beneath", "image": "sheet.png", "first_gid": 50})),
+           contains="renumbering every csv token")
+    expect("which left the file alone", document("growth").to_bytes(), GROWABLE)
+
+    # ----------------------------------------------------------------------
+    print()
+    print("rename: the name moves, and the masks that name it move with it")
+    # ----------------------------------------------------------------------
+    # The failure this exists to catch is silent in the editor and fatal in
+    # the engine: `tileset_defaults` REFUSES to load a map whose .blitmask
+    # says it belongs to a tileset the map calls something else. A rename
+    # that stopped at the .tmx would look perfect in the hierarchy and make
+    # the map unloadable.
+    expect("the masked fixture's .tmx is where the earlier sections left it",
+           document("masked").to_bytes(), MASKED)
+    # DERIVED, not pinned: an earlier section deliberately leaves the sidecar
+    # one row taller than the author wrote it, and a constant here would be
+    # asserting that section's leftovers rather than this one's edit.
+    before_mask = sidecar_text("Art.blitmask")
+    expect("...and its sidecar still names the tileset it belongs to",
+           "name Art" + chr(10) in (before_mask or ""), True)
+    before_rename = field_from_map(document("masked"))
+    renamed = session.run(Command("map.tileset.rename", MASK,
+                                  {"name": "Art", "to": "Village exteriors"}))
+    expect("the .tmx carries the new name and nothing else moved",
+           document("masked").to_bytes(),
+           MASKED.replace(b'name="Art"', b'name="Village exteriors"'))
+    expect("the sidecar's own header followed it, and only that line",
+           sidecar_text("Art.blitmask"),
+           before_mask.replace("name Art" + chr(10),
+                               "name Village exteriors" + chr(10)))
+    expect("the sidecar FILE was not renamed -- a mask may be shared",
+           os.path.isfile(sidecar("Art.blitmask")), True)
+    expect("so the engine still bakes the identical field",
+           field_from_map(document("masked")), before_rename)
+    expect("the inverse is this verb with the two names swapped",
+           (renamed.inverses[0].verb, renamed.inverses[0].args),
+           ("map.tileset.rename",
+            {"name": "Village exteriors", "first_gid": 0, "to": "Art"}))
+
+    session.undo()
+    expect("undo restores the .tmx byte for byte",
+           document("masked").to_bytes(), MASKED)
+    expect("and the sidecar with it", sidecar_text("Art.blitmask"), before_mask)
+    expect("and the field is unchanged throughout",
+           field_from_map(document("masked")), before_rename)
+
+    print()
+    print("a tileset with no masks renames without provisioning any")
+    plain = session.run(Command("map.tileset.rename", GROW,
+                                {"name": "Lower", "to": "Terrain"}))
+    expect("the name moved", tileset_state("growth"),
+           [("Terrain", 1, 12), ("Upper", 101, 12)])
+    expect("NOT ONE PLACED GID MOVED", placed("growth"), PAINTED)
+    expect("and no sidecar appeared beside a tileset that declared none",
+           sidecar_text("Terrain.blitmask"), None)
+    expect("the inverse names the tileset by the name it now has",
+           plain.inverses[0].args["name"], "Terrain")
+    session.undo()
+    expect("undo is byte-exact", document("growth").to_bytes(), GROWABLE)
+
+    expect("renaming to the name it already holds has no inverse to run",
+           session.run(Command("map.tileset.rename", GROW,
+                               {"name": "Lower", "to": "Lower"}
+                               )).inverses[0].verb, "noop")
+    raises("a duplicate name is refused: the name is an address",
+           PyoneerCommandApplyError,
+           lambda: session.run(Command("map.tileset.rename", GROW,
+                                       {"name": "Lower", "to": "Upper"})),
+           contains="already has a tileset named 'Upper'")
+    raises("an empty name is refused for the same reason",
+           PyoneerCommandApplyError,
+           lambda: session.run(Command("map.tileset.rename", GROW,
+                                       {"name": "Lower", "to": ""})),
+           contains="a tileset needs a name")
+    raises("an external tileset carries no name here to rename",
+           PyoneerCommandApplyError,
+           lambda: session.run(Command("map.tileset.rename", EXT,
+                                       {"first_gid": 1, "to": "Named"})),
+           contains="carries no name in this file")
+    expect("no refusal touched the file", document("growth").to_bytes(), GROWABLE)
 
     # ----------------------------------------------------------------------
     print()

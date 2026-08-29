@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L0 -->
-<!-- pyoneer-stamp: hand-written; every claim below re-measured against d8c303f on 2026-08-16, EXCEPT the last ACTIVE WARNINGS entry and the `.blitmap` collision gap, measured on 2026-08-18 by the greps they name. The tile-mask click was absent at 8915ee0 and landed mid-pass; that is why it is in `Landed recently` and not in the gap list -->
+<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29 -->
 
 # Pyoneer — read this first
 
@@ -132,6 +132,10 @@ pyoneer_                            EVERY tmx custom property starts with this
 pyoneer_behaviors                   comma-separated token list, ON THE OBJECT
 pyoneer_param_<key>                 one behavior parameter, on the same object
 pyoneer_actor                       actors-table row id; READ, see below
+pyoneer_collision                   ON A <tileset>: the .blitmask holding that
+                                    sheet's per-tile masks -- collision level one
+pyoneer_passability                 ON AN ART LAYER: the companion tile layer
+                                    holding its per-cell masks -- level two
 ```
 
 A minimal driven top-down body declares
@@ -161,9 +165,10 @@ topic, different layers, and different files.
 |---|---|
 | "what exists" · "where does X live" · "is there already a function for this" | [`docs/MAP.md`](docs/MAP.md) — GENERATED tier 1, then one tier-2 file |
 | "what does this behavior do" · "how do I make it move" · "add a behavior" | [`docs/BEHAVIORS.md`](docs/BEHAVIORS.md) — GENERATED; trust its **measured integration table** over any prose, including its own preamble |
-| "my entity does not move" · "nothing happens when I press a key" · "it falls forever" · "it raises at load" | [`docs/DIAGNOSE.md`](docs/DIAGNOSE.md) |
+| "my entity does not move" · "nothing happens when I press a key" · "it falls forever" · "it raises at load" · "I painted collision and nothing blocks" | [`docs/DIAGNOSE.md`](docs/DIAGNOSE.md) |
 | "what can I place on an object layer" · "what goes in `type=`" · "why does my layer not draw" · "what key is bound to what" | [`docs/PLACEABLE.md`](docs/PLACEABLE.md) — GENERATED |
 | "make me a platformer" · "make me a top-down RPG" | `editor/genres/<id>/RULES.md`, then `docs/BEHAVIORS.md` |
+| "how do I make a tileset" · "how do I add tiles from an image" · "can I use part of this PNG" · "how do I make a tile solid" · "where did the collision layer go" · "why will this tileset not grow" | [`docs/TILESETS.md`](docs/TILESETS.md) |
 | "how do I change project data from a script" · "what verbs exist" | [`docs/COMMANDS.md`](docs/COMMANDS.md) — GENERATED |
 | "show me a game that works" · "start a new demo" | [`docs/DEMOS.md`](docs/DEMOS.md) |
 | "design a small game" · "design me a small game" · "I have an idea, what do I write down" · "write the spec before the code" · "what goes in the behavior list" · "what can I actually build with this today" | [`docs/DESIGN_TEMPLATE.md`](docs/DESIGN_TEMPLATE.md) — a fill-in form, five minutes, every field resolved against a live registry by a check |
@@ -300,7 +305,7 @@ of repetition.
   file.** The move that looks responsible is to land the engine read, the
   model, the verb and the check, then stop at the file a sibling agent is
   holding: the seam is one line, you wrote it down in the handoff, and not
-  causing an edit conflict is good manners. Three sightings. Sub-cell collision
+  causing an edit conflict is good manners. Four sightings. Sub-cell collision
   landed in the engine at `b438c85` and a click could not address a sub-cell
   until the very next commit, `62c5677`. The editor's Database window has
   authored `data/project/tables/` since `2ddee3d` (2026-08-08) and no
@@ -311,10 +316,13 @@ of repetition.
   `map.tileset.mask.set` at `8915ee0` -- where
   `grep -rn "map.tileset.mask" editor/ui/` still returned nothing, so the one
   thing the author had asked for could not be done -- and only the pass after
-  that wired `Canvas.bake_tile_mask`. Note that the middle sighting runs the
-  other way round: this is not "the editor lags the engine", it is that NOBODY
-  owns a seam, so each pass ships a layer that is complete, checked, and
-  unreachable by the person who asked for it.
+  that wired `Canvas.bake_tile_mask`. And `#TAG:map.tileset.grow` and
+  `#TAG:map.tileset.rename` shipped with exact inverses, teeth on both
+  refusals, and no control anywhere calling either -- the tileset the author
+  asked to be growable and nameable is neither from inside the window. Note
+  that the middle sighting runs the other way round: this is not "the editor
+  lags the engine", it is that NOBODY owns a seam, so each pass ships a layer
+  that is complete, checked, and unreachable by the person who asked for it.
   Counter-move: before you call a pass done, grep for a caller from the layer
   ABOVE the thing you just built -- zero hits means the capability exists and
   the author cannot get at it. When the file really is held, the unwired seam
@@ -403,15 +411,37 @@ Each address below is a tag, so it stays true when the code moves.
   `tools/check_docs.py`'s `LINE_ANCHOR_DEBT` is now the empty dict, which is
   the strongest form the rule can take: **any** bare `file.py:LINE` in a live
   document is a failure, with no exemption left to argue about.
+- **The editor and the engine disagree about a collection-of-images tileset,
+  in silence.** A `<tileset>` whose children are `<tile id="N"><image/></tile>`
+  with no `<image>` of its own reads correctly in `MapDocument` (byte-exact
+  round trip, correct extent) and pytmx draws its loose images at the right
+  gids -- while `#TAG:TilesetAtlas` draws procedural colour swatches for it and
+  does not even report it as missing art. `#TAG:tileset_defaults` also refuses
+  `columns <= 0`, which is what Tiled writes for that shape, so such a tileset
+  cannot carry per-tile masks as authored. This editor never writes the shape;
+  a reader can still open a map that does. The two methods that would fix it
+  are in `#TAG:editor/ui/tileset.py` and neither touches the format.
+- **`#TAG:map.tileset.grow` and `#TAG:map.tileset.rename` have no caller in the
+  window.** Both are registered, both refuse with teeth, both invert exactly,
+  and neither is reachable from a control -- so a tileset is growable and
+  nameable from a script and from nowhere else. This is the fourth sighting of
+  the ACTIVE WARNING above, and it is ranked in
+  [`docs/NEXT.md`](docs/NEXT.md) with the grep that measures it.
 - **`tools/` is not in the code map**, deliberately — a check module is read
   whole or not at all. So `grep -rn "#TAG:"` answers nothing about the check
   suite; [`docs/CHECKS.md`](docs/CHECKS.md) is the index for that half of the
   tree, and it is generated too.
-- **Landed recently, so verify before trusting a doc that says otherwise:** an
-  action router assigned as `entity.action_sink`, `LayerRenderer.unbind`, an
-  editor behavior panel, and `Canvas.bake_tile_mask` -- the palette click that
-  finally calls `map.tileset.mask.set`. Four of this list's entries died in
-  one afternoon; the last one died DURING the pass that was writing it down.
+- **Landed recently, so verify before trusting a doc that says otherwise:** the
+  whole tileset surface. `#TAG:MapDocument.grow_tileset` and
+  `#TAG:MapDocument.rename_tileset` with `#TAG:MapDocument.tileset_headroom`
+  under them; `#TAG:TilePalette` as one stacked column with the selection held
+  as a tileset NAME plus a rectangle; `#TAG:TilesetImportDialog` as a non-modal
+  region crop with `margin`/`spacing` gone; and the collision companion folded
+  out of the hierarchy (`#TAG:companion_folded_into_its_layer`) with
+  `#TAG:BRUSH_DOMAIN`'s no-opinion chip as the way to clear either level.
+  [`docs/TILESETS.md`](docs/TILESETS.md) is the current account of all of it.
+  Entries leave this list fast -- the previous four died in one afternoon and
+  one of them died DURING the pass that was writing it down.
   **Re-measure this section; do not cite it.**
 
 ## TODO-VERIFY
@@ -460,4 +490,10 @@ probably renamed.
 #TAG:map.object.property.set :: "map.object.property.set"
 #TAG:actor_row :: return tables.row(ACTORS, wanted, blame)
 #TAG:resolve_params :: if actors_row is not None and param.key in actors_row
+#TAG:growth_is_rows_only :: THE ONLY SAFE AXIS IS ROWS
+#TAG:MapDocument.tileset_headroom :: the lowest firstgid above it
+#TAG:companion_folded_into_its_layer :: A COMPANION IS NOT A LAYER YOU LOOK AT
+#TAG:MASK_DOMAIN :: tuple(range(STAR + 1))
+#TAG:BRUSH_DOMAIN :: MASK_DOMAIN + (NO_DATA,)
+#TAG:CROP_DIR :: CROP_DIR = "tilesets"
 ```

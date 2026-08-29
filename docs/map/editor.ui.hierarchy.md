@@ -5,32 +5,34 @@
 
 > The hierarchy -- one tree for the whole map, Unity/Godot style.
 
-`editor.ui.hierarchy` · 359 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.hierarchy` · 473 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    editor.core.commands editor.core.inspect editor.core.project editor.core.scope editor.ui.docks scripts.core.depth
+    editor.core.collision editor.core.commands editor.core.inspect editor.core.project editor.core.scope editor.ui.docks scripts.core.depth
 
 ## Classes
 
 ### `class HierarchyDock(ScopedDock)` #TAG:HierarchyDock
 
-`editor/ui/hierarchy.py:51`–`357`
+`editor/ui/hierarchy.py:79`–`471`
 
 > Everything in the map, in the order it was authored.
 
-- `editor/ui/hierarchy.py:58` `build_content(self) -> QWidget` #TAG:HierarchyDock.build_content
-- `editor/ui/hierarchy.py:98` `__known_names(self, kind: str, taken: set[str]) -> list[str]` #TAG:HierarchyDock.__known_names
+- `editor/ui/hierarchy.py:90` `build_content(self) -> QWidget` #TAG:HierarchyDock.build_content
+- `editor/ui/hierarchy.py:130` `__known_names(self, kind: str, taken: set[str]) -> list[str]` #TAG:HierarchyDock.__known_names
   - Layer names that will draw, minus the ones already used.
-- `editor/ui/hierarchy.py:118` `__on_add(self, kind: str) -> None` #TAG:HierarchyDock.__on_add
-- `editor/ui/hierarchy.py:165` `__on_remove(self) -> None` #TAG:HierarchyDock.__on_remove
-- `editor/ui/hierarchy.py:178` `__sync_buttons(self) -> None` #TAG:HierarchyDock.__sync_buttons
+- `editor/ui/hierarchy.py:150` `__on_add(self, kind: str) -> None` #TAG:HierarchyDock.__on_add
+- `editor/ui/hierarchy.py:197` `__on_remove(self) -> None` #TAG:HierarchyDock.__on_remove
+- `editor/ui/hierarchy.py:210` `__sync_buttons(self) -> None` #TAG:HierarchyDock.__sync_buttons
   - Enable only what can actually happen, and say why when it cannot.
-- `editor/ui/hierarchy.py:202` `refresh(self) -> None` #TAG:HierarchyDock.refresh
-- `editor/ui/hierarchy.py:249` `__add_node(self, parent, node, document, pack, map_name, needle: str) -> int` #TAG:HierarchyDock.__add_node
-- `editor/ui/hierarchy.py:306` `__on_current(self, current, _previous) -> None` #TAG:HierarchyDock.__on_current
-- `editor/ui/hierarchy.py:318` `on_selection_changed(self, scope: Scope) -> None` #TAG:HierarchyDock.on_selection_changed
+- `editor/ui/hierarchy.py:234` `__collision(self, document)` #TAG:HierarchyDock.__collision
+  - Which layers to fold away, and what badge their art layer wears.
+- `editor/ui/hierarchy.py:276` `refresh(self) -> None` #TAG:HierarchyDock.refresh
+- `editor/ui/hierarchy.py:334` `__add_node(self, parent, node, document, pack, map_name, needle: str, folded: set[str], badges: dict[str, tuple[int, str, str | None]]) -> int` #TAG:HierarchyDock.__add_node
+- `editor/ui/hierarchy.py:420` `__on_current(self, current, _previous) -> None` #TAG:HierarchyDock.__on_current
+- `editor/ui/hierarchy.py:432` `on_selection_changed(self, scope: Scope) -> None` #TAG:HierarchyDock.on_selection_changed
   - Follow a selection made elsewhere -- canvas, problems, anywhere.
-- `editor/ui/hierarchy.py:334` `__reselect(self, wanted: str | None=None) -> None` #TAG:HierarchyDock.__reselect
-- `editor/ui/hierarchy.py:347` `__hidden(self) -> set[str]` #TAG:HierarchyDock.__hidden
-- `editor/ui/hierarchy.py:352` `__on_check(self, item, _column) -> None` #TAG:HierarchyDock.__on_check
+- `editor/ui/hierarchy.py:448` `__reselect(self, wanted: str | None=None) -> None` #TAG:HierarchyDock.__reselect
+- `editor/ui/hierarchy.py:461` `__hidden(self) -> set[str]` #TAG:HierarchyDock.__hidden
+- `editor/ui/hierarchy.py:466` `__on_check(self, item, _column) -> None` #TAG:HierarchyDock.__on_check

@@ -1,5 +1,6 @@
 <!-- pyoneer-doc: L2 -->
 <!-- pyoneer-stamp: hand-written architecture; the "not built yet" list and the action-queue reasons were re-measured against d8c303f on 2026-08-16 and five stale claims were corrected in place -->
+<!-- pyoneer-stamp: the Panels table's Tiles row, the mouse and wheel bindings under Painting, and the check enumeration under Status were re-measured against the working tree on 2026-08-29. The tileset and collision surface itself is docs/TILESETS.md, not here -->
 <!-- pyoneer-stamp: earlier: counts re-checked at 5dd012d on 2026-08-16 -->
 
 # The editor
@@ -224,7 +225,7 @@ machinery that is not there.
 |---|---|---|
 | Hierarchy | the whole map as one tree — groups, layers, objects | yes |
 | Inspector | every field of the selected thing, editable | yes |
-| Tiles | one tileset at a time; drag a rectangle for a multi-tile stamp | — |
+| Tiles | every tileset stacked in one scroll; drag a rectangle for a multi-tile stamp. [`TILESETS.md`](TILESETS.md) | — |
 | Problems | soft rule violations; nothing here blocks | no |
 | Manifest | staged notes, grouped by scope | no |
 | History | every command that ran, human or AI | no |
@@ -248,8 +249,14 @@ out — which is the only reason its edge cases are testable.
 - A brush *anchors* its stamp under the cursor; an area tool *tiles* the
   stamp across the area, aligned to map coordinates so two rectangles
   painted with the same pattern line up.
-- Left paints, right erases, middle or space pans, ctrl+wheel zooms, alt
-  picks. Tiled's conventions, not invented ones.
+- Left paints, right erases, middle or space pans, alt picks, shift+left
+  gives the tile under the cursor the selected passability mask. Tiled's
+  conventions where they exist — the one deliberate departure is that a
+  **plain** wheel zooms the canvas and shift+wheel scrolls, because panning
+  is middle-drag here so scrolling is the rare gesture. The palette is the
+  other way round, since a column holding every tileset needs scrolling
+  more than it needs zoom: plain wheel scrolls, ctrl+wheel steps the cell
+  size through 1×–4×, integers only.
 
 **Terrain (autotile)** is `editor/core/autotile.py`, and it is a Wang
 **corner** set rather than an orthogonal bitmask because the art demands it.
@@ -301,11 +308,12 @@ construction and cannot affect the project, the game, or the editor.
 
 ## Status
 
-Asserted by `tools/check_editor.py`, `check_paint.py`, `check_autotile.py`
-and `check_editor_ui.py`. The suite's size is generated into
+Asserted by the `editor`, `paint`, `autotile`, `editor_ui`, `palette`,
+`behavior_ui`, `actions_panel`, `collision_view`, `collision_mount` and
+`collision_fold` checks. The roster is generated into
 [`CHECKS.md`](CHECKS.md) and the verb vocabulary into [`COMMANDS.md`](COMMANDS.md);
-both numbers were stale in this paragraph before those files existed. What
-those four checks cover:
+both numbers were stale in this paragraph before those files existed, so read
+the count there and never here. Between them they cover:
 
 - scopes, command stream, transactions, exact undo/redo, atomic rollback
 - every registered verb, across tiles, objects, tables and project settings
@@ -315,6 +323,11 @@ those four checks cover:
 - autotile: the pixel-verified corner table, terrain recovery, diagonals
 - the Qt window driven offscreen: panels, selection sync, canvas edits as
   commands, the database window, response application
+- the stacked tile palette and the region-crop importer, asserted against
+  *pytmx*'s reading of the resulting tileset rather than only the editor's
+- the collision surface: the companion folded out of the hierarchy, the map's
+  passability field identical before and after the editor opens it, and a
+  no-opinion click that changes a pixel of the overlay rather than only a list
 
 Not built yet — **re-measured at `d8c303f`, and four entries came off this
 list because they had shipped.** The removed four are recorded below rather

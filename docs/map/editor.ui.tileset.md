@@ -5,7 +5,7 @@
 
 > Turn a map's `<tileset>` declarations into per-gid pixmaps.
 
-`editor.ui.tileset` · 160 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.tileset` · 184 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,32 +13,35 @@
 
 ## Functions
 
-- `editor/ui/tileset.py:133` `gid_colour(gid: int) -> QColor` #TAG:gid_colour
+- `editor/ui/tileset.py:157` `gid_colour(gid: int) -> QColor` #TAG:gid_colour
   - Deterministic color for a gid. Golden-ratio hue so neighbors differ.
-- `editor/ui/tileset.py:141` `render_layer(layer, atlas: TilesetAtlas) -> QPixmap` #TAG:render_layer
+- `editor/ui/tileset.py:165` `render_layer(layer, atlas: TilesetAtlas) -> QPixmap` #TAG:render_layer
   - Composite one tile layer into a single pixmap.
 
 ## Classes
 
 ### `@dataclass class TilesetEntry` #TAG:TilesetEntry
 
-`editor/ui/tileset.py:23`–`31`
+`editor/ui/tileset.py:23`–`57`
 
-- (no methods)
+- `editor/ui/tileset.py:42` `@property rows(self) -> int` #TAG:TilesetEntry.rows
+  - How many rows the declared tiles occupy, ragged last row included.
+- `editor/ui/tileset.py:47` `tile_rect(self, index: int) -> QRect` #TAG:TilesetEntry.tile_rect
+  - Where local id `index` sits on the sheet.
 
 ### `class TilesetAtlas` #TAG:TilesetAtlas
 
-`editor/ui/tileset.py:34`–`130`
+`editor/ui/tileset.py:60`–`154`
 
 > gid -> pixmap, for one map.
 
-- `editor/ui/tileset.py:37` `__init__(self, document, *, tile_width: int, tile_height: int)` #TAG:TilesetAtlas.__init__
-- `editor/ui/tileset.py:47` `__load(self, document) -> None` #TAG:TilesetAtlas.__load
-- `editor/ui/tileset.py:79` `@property has_art(self) -> bool` #TAG:TilesetAtlas.has_art
-- `editor/ui/tileset.py:83` `@property max_gid(self) -> int` #TAG:TilesetAtlas.max_gid
-- `editor/ui/tileset.py:89` `entry_for(self, gid: int) -> TilesetEntry | None` #TAG:TilesetAtlas.entry_for
-- `editor/ui/tileset.py:102` `pixmap(self, gid: int) -> QPixmap | None` #TAG:TilesetAtlas.pixmap
+- `editor/ui/tileset.py:63` `__init__(self, document, *, tile_width: int, tile_height: int)` #TAG:TilesetAtlas.__init__
+- `editor/ui/tileset.py:73` `__load(self, document) -> None` #TAG:TilesetAtlas.__load
+- `editor/ui/tileset.py:107` `@property has_art(self) -> bool` #TAG:TilesetAtlas.has_art
+- `editor/ui/tileset.py:111` `@property max_gid(self) -> int` #TAG:TilesetAtlas.max_gid
+- `editor/ui/tileset.py:117` `entry_for(self, gid: int) -> TilesetEntry | None` #TAG:TilesetAtlas.entry_for
+- `editor/ui/tileset.py:130` `pixmap(self, gid: int) -> QPixmap | None` #TAG:TilesetAtlas.pixmap
   - The tile image for `gid`, or a swatch when the art is missing.
-- `editor/ui/tileset.py:114` `__from_image(self, entry: TilesetEntry, gid: int) -> QPixmap` #TAG:TilesetAtlas.__from_image
-- `editor/ui/tileset.py:122` `__swatch(self, gid: int) -> QPixmap` #TAG:TilesetAtlas.__swatch
+- `editor/ui/tileset.py:142` `__from_image(self, entry: TilesetEntry, gid: int) -> QPixmap` #TAG:TilesetAtlas.__from_image
+- `editor/ui/tileset.py:146` `__swatch(self, gid: int) -> QPixmap` #TAG:TilesetAtlas.__swatch
   - A stable, readable stand-in: same gid always gets the same color.

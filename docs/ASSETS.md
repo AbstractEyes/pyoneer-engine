@@ -1,5 +1,6 @@
 <!-- pyoneer-doc: L2 -->
 <!-- pyoneer-stamp: hand-written; every claim re-measured on 2026-08-28 by moving data/graphics aside, running the whole roster and tools/smoke.py --frames 60 both ways, and moving it back. The two commands are named beside each claim -->
+<!-- pyoneer-stamp: the editor's crop destination and its no-cleanup bargain were added on 2026-08-29 from #TAG:CROP_DIR and #TAG:write_region -->
 
 # Assets
 
@@ -143,6 +144,7 @@ workspace copy both hard-coded a `data/graphics/` path — and both now go throu
 |---|---|
 | entity spritesheet | `config/animations.json` → `entity.file` |
 | map tilesets | `<tileset source=...>` inside `data/maps/test.tmx` |
+| a tileset cropped in the editor | `data/maps/tilesets/<Name>.png` — `#TAG:CROP_DIR`, beside the map rather than beside the source, because the source may be read-only, outside the project, or on another drive |
 | map file list | `config/maps.json` → `data[].file` |
 | the two roots | `#TAG:scripts/core/art.py` — `GRAPHICS_ROOT`, `SHIPPED_ROOT` |
 | resolution | `config/managers/map_data.py` resolves relative to the repo root |
@@ -162,6 +164,12 @@ workspace copy both hard-coded a `data/graphics/` path — and both now go throu
   An existing map whose gids point into that region draws nothing there.
 - **No animated water.** Nothing in this engine reads a frame table for a
   tile, so an animated terrain sheet would have no reader.
+- **A cropped tileset is never cleaned up.** Undoing a `map.tileset.add`
+  removes the declaration and leaves the PNG the import wrote — the same
+  bargain `map.tileset.mask.set` strikes with its `.blitmask`, and it is
+  asserted rather than accidental. Re-importing the identical region reuses the
+  file; a different region under the same name raises rather than overwriting
+  art some other map may be declared against.
 - **Sound is not covered.** `data/sounds/` is untouched by any of this.
 
 ## Recovering the original tree

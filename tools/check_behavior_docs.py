@@ -64,7 +64,7 @@ pygame.init()
 from editor.core import genre as genre_module
 from editor.core.genre import (GenreField, GenreLayer, GenreObjectClass,
                                GenrePack, GenreTable)
-from scripts.core import layer_profile
+from scripts.core import collision_runtime, layer_profile
 from scripts.core.event_manager import PyoneerEvent
 from scripts.core.event_types import GameEventType
 from scripts.core.spawn import SPAWN_REGISTRY
@@ -352,7 +352,12 @@ def vocabulary_violations(text: str, where: str, registry=None) -> list[str]:
     a dead property.
     """
     table = BEHAVIOR_REGISTRY if registry is None else registry
-    known = set(layer_profile.KNOWN) | {BEHAVIORS, ACTOR}
+    # layer_profile.KNOWN covers what a LAYER or an OBJECT may declare.
+    # `pyoneer_collision` is neither -- it sits on a <tileset> element and
+    # names the .blitmask that tileset's tiles carry -- so it is imported from
+    # the module that reads it rather than spelled again here.
+    known = (set(layer_profile.KNOWN) | {BEHAVIORS, ACTOR}
+             | {collision_runtime.DEFAULTS_PROPERTY})
     # The two bare prefixes are legal prose -- "the `pyoneer_` prefix is
     # load-bearing", "a stray `pyoneer_param_` nothing consumes" -- and are
     # not claims that a property by that name exists.

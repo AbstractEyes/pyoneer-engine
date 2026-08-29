@@ -5,7 +5,7 @@
 
 > Seeing collision: the overlay, the glyphs, and the mode that swaps to them.
 
-`editor.ui.collision_view` · 1033 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.collision_view` · 1075 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,122 +13,124 @@
 
 ## Module constants
 
-- `editor/ui/collision_view.py:104` `MASK_DOMAIN` #TAG:MASK_DOMAIN
-- `editor/ui/collision_view.py:122` `LEVEL_NONE` #TAG:LEVEL_NONE
-- `editor/ui/collision_view.py:124` `LEVEL_TILESET` #TAG:LEVEL_TILESET
-- `editor/ui/collision_view.py:126` `LEVEL_COMPANION` #TAG:LEVEL_COMPANION
-- `editor/ui/collision_view.py:130` `LEVEL_OVERRIDE` #TAG:LEVEL_OVERRIDE
-- `editor/ui/collision_view.py:134` `LEVEL_NAMES` #TAG:LEVEL_NAMES
-- `editor/ui/collision_view.py:148` `WASH` #TAG:WASH
-- `editor/ui/collision_view.py:151` `BAR` #TAG:BAR
-- `editor/ui/collision_view.py:155` `KEYLINE` #TAG:KEYLINE
-- `editor/ui/collision_view.py:158` `STAR_INK` #TAG:STAR_INK
-- `editor/ui/collision_view.py:159` `STAR_OUTLINE` #TAG:STAR_OUTLINE
-- `editor/ui/collision_view.py:161` `CONFLICT` #TAG:CONFLICT
-- `editor/ui/collision_view.py:163` `PROVENANCE` #TAG:PROVENANCE
-- `editor/ui/collision_view.py:171` `LEVEL_INK` #TAG:LEVEL_INK
-- `editor/ui/collision_view.py:176` `OVERRIDE_INK` #TAG:OVERRIDE_INK
-- `editor/ui/collision_view.py:184` `MODE_SHORTCUT` #TAG:MODE_SHORTCUT
-- `editor/ui/collision_view.py:285` `KEYLINE_MIN_BAR` #TAG:KEYLINE_MIN_BAR
+- `editor/ui/collision_view.py:103` `MASK_DOMAIN` #TAG:MASK_DOMAIN
+- `editor/ui/collision_view.py:118` `BRUSH_DOMAIN` #TAG:BRUSH_DOMAIN
+- `editor/ui/collision_view.py:136` `LEVEL_NONE` #TAG:LEVEL_NONE
+- `editor/ui/collision_view.py:138` `LEVEL_TILESET` #TAG:LEVEL_TILESET
+- `editor/ui/collision_view.py:140` `LEVEL_COMPANION` #TAG:LEVEL_COMPANION
+- `editor/ui/collision_view.py:144` `LEVEL_OVERRIDE` #TAG:LEVEL_OVERRIDE
+- `editor/ui/collision_view.py:148` `LEVEL_NAMES` #TAG:LEVEL_NAMES
+- `editor/ui/collision_view.py:162` `WASH` #TAG:WASH
+- `editor/ui/collision_view.py:165` `BAR` #TAG:BAR
+- `editor/ui/collision_view.py:169` `KEYLINE` #TAG:KEYLINE
+- `editor/ui/collision_view.py:172` `STAR_INK` #TAG:STAR_INK
+- `editor/ui/collision_view.py:173` `STAR_OUTLINE` #TAG:STAR_OUTLINE
+- `editor/ui/collision_view.py:175` `CONFLICT` #TAG:CONFLICT
+- `editor/ui/collision_view.py:177` `PROVENANCE` #TAG:PROVENANCE
+- `editor/ui/collision_view.py:185` `LEVEL_INK` #TAG:LEVEL_INK
+- `editor/ui/collision_view.py:190` `OVERRIDE_INK` #TAG:OVERRIDE_INK
+- `editor/ui/collision_view.py:198` `MODE_SHORTCUT` #TAG:MODE_SHORTCUT
+- `editor/ui/collision_view.py:208` `CHIP_KEYLINE` #TAG:CHIP_KEYLINE
+- `editor/ui/collision_view.py:309` `KEYLINE_MIN_BAR` #TAG:KEYLINE_MIN_BAR
 
 ## Functions
 
-- `editor/ui/collision_view.py:195` `glyph_pixmaps(tile_width: int, tile_height: int, keyline: QColor | None=None) -> Mapping[int, QPixmap]` #TAG:glyph_pixmaps
+- `editor/ui/collision_view.py:219` `glyph_pixmaps(tile_width: int, tile_height: int, keyline: QColor | None=None) -> Mapping[int, QPixmap]` #TAG:glyph_pixmaps
   - Every mask in `MASK_DOMAIN`, drawn once and cached.
-- `editor/ui/collision_view.py:215` `clear_cache() -> None` #TAG:collision_view.clear_cache
+- `editor/ui/collision_view.py:239` `clear_cache() -> None` #TAG:collision_view.clear_cache
   - Drop cached glyphs and icons, e.g. after a palette change.
-- `editor/ui/collision_view.py:221` `_build_glyph(mask: int, tile_width: int, tile_height: int, keyline: QColor) -> QPixmap` #TAG:_build_glyph
+- `editor/ui/collision_view.py:245` `_build_glyph(mask: int, tile_width: int, tile_height: int, keyline: QColor) -> QPixmap` #TAG:_build_glyph
   - One cell's instrumentation, cell-relative so it scales with zoom.
-- `editor/ui/collision_view.py:288` `_wants_keyline(ux: float, uy: float) -> bool` #TAG:_wants_keyline
+- `editor/ui/collision_view.py:312` `_wants_keyline(ux: float, uy: float) -> bool` #TAG:_wants_keyline
   - Is there room for the hairline on the bar's inward edge?
-- `editor/ui/collision_view.py:299` `_bar_geometry(bit: int, width: float, height: float, ux: float, uy: float) -> tuple[QRectF, tuple[QPointF, QPointF]]` #TAG:_bar_geometry
+- `editor/ui/collision_view.py:323` `_bar_geometry(bit: int, width: float, height: float, ux: float, uy: float) -> tuple[QRectF, tuple[QPointF, QPointF]]` #TAG:_bar_geometry
   - A blocked edge's bar, and the segment to keyline on its inward side.
-- `editor/ui/collision_view.py:327` `_draw_star(painter: QPainter, width: float, height: float, unit: float) -> None` #TAG:_draw_star
+- `editor/ui/collision_view.py:351` `_draw_star(painter: QPainter, width: float, height: float, unit: float) -> None` #TAG:_draw_star
   - A centred amber annulus: outer d 8u, inner d 3.2u.
-- `editor/ui/collision_view.py:356` `mode_icon(mode: EditMode, size: int=22) -> QIcon` #TAG:mode_icon
+- `editor/ui/collision_view.py:380` `mode_icon(mode: EditMode, size: int=22) -> QIcon` #TAG:mode_icon
   - Toolbar icon for a mode, cached like `icons.tool_icon`.
-- `editor/ui/collision_view.py:364` `all_layers_icon(size: int=22) -> QIcon` #TAG:all_layers_icon
-- `editor/ui/collision_view.py:371` `_build_mode_icon(mode: EditMode, size: int) -> QIcon` #TAG:_build_mode_icon
-- `editor/ui/collision_view.py:398` `_build_all_layers_icon(size: int) -> QIcon` #TAG:_build_all_layers_icon
-- `editor/ui/collision_view.py:711` `masks_from_layer(layer, first_gid: int) -> list[int]` #TAG:masks_from_layer
+- `editor/ui/collision_view.py:388` `all_layers_icon(size: int=22) -> QIcon` #TAG:all_layers_icon
+- `editor/ui/collision_view.py:395` `_build_mode_icon(mode: EditMode, size: int) -> QIcon` #TAG:_build_mode_icon
+- `editor/ui/collision_view.py:422` `_build_all_layers_icon(size: int) -> QIcon` #TAG:_build_all_layers_icon
+- `editor/ui/collision_view.py:735` `masks_from_layer(layer, first_gid: int) -> list[int]` #TAG:masks_from_layer
   - A companion tile layer's gids as opinions, row-major, ready for `bake`.
-- `editor/ui/collision_view.py:732` `layer_from_masks(masks: Sequence[int], width: int, name: str='') -> CollisionLayer` #TAG:layer_from_masks
+- `editor/ui/collision_view.py:756` `layer_from_masks(masks: Sequence[int], width: int, name: str='') -> CollisionLayer` #TAG:layer_from_masks
   - A flat mask list as a stack member, for previews and fixtures.
-- `editor/ui/collision_view.py:749` `deciding_level(layer: CollisionLayer, x: int, y: int) -> int` #TAG:deciding_level
+- `editor/ui/collision_view.py:773` `deciding_level(layer: CollisionLayer, x: int, y: int) -> int` #TAG:deciding_level
   - Which of ONE layer's three levels produced `opinion_at`, or LEVEL_NONE.
-- `editor/ui/collision_view.py:786` `resolve_cell(layers: Sequence[CollisionLayer], x: int, y: int, *, undecided: int=NO_DATA) -> tuple[int, int, bool, int]` #TAG:resolve_cell
+- `editor/ui/collision_view.py:810` `resolve_cell(layers: Sequence[CollisionLayer], x: int, y: int, *, undecided: int=NO_DATA) -> tuple[int, int, bool, int]` #TAG:resolve_cell
   - One cell, all four channels: (mask, layer, conflicted, level).
-- `editor/ui/collision_view.py:807` `resolve_field(layers: Sequence[CollisionLayer], width: int, height: int, *, undecided: int=NO_DATA) -> tuple[list[int], list[int], list[bool], list[int]]` #TAG:resolve_field
+- `editor/ui/collision_view.py:831` `resolve_field(layers: Sequence[CollisionLayer], width: int, height: int, *, undecided: int=NO_DATA) -> tuple[list[int], list[int], list[bool], list[int]]` #TAG:resolve_field
   - The whole resolved field as plain data, for anything without a pixmap.
-- `editor/ui/collision_view.py:884` `build_mode_actions(parent: QWidget, on_change: Callable[[EditMode], None] | None=None, on_all_layers: Callable[[bool], None] | None=None, *, size: int=22) -> ModeActions` #TAG:build_mode_actions
+- `editor/ui/collision_view.py:908` `build_mode_actions(parent: QWidget, on_change: Callable[[EditMode], None] | None=None, on_all_layers: Callable[[bool], None] | None=None, *, size: int=22) -> ModeActions` #TAG:build_mode_actions
   - An exclusive Tiles/Collision pair, plus the All-layers toggle.
 
 ## Classes
 
 ### `class CollisionOverlay(QGraphicsItem)` #TAG:CollisionOverlay
 
-`editor/ui/collision_view.py:418`–`704`
+`editor/ui/collision_view.py:442`–`728`
 
 > A scene-sized collision readout as one owned pixmap.
 
-- `editor/ui/collision_view.py:441` `__init__(self, width: int, height: int, tile_width: int, tile_height: int, keyline: QColor | None=None)` #TAG:CollisionOverlay.__init__
-- `editor/ui/collision_view.py:475` `boundingRect(self) -> QRectF` #TAG:CollisionOverlay.boundingRect
-- `editor/ui/collision_view.py:479` `paint(self, painter: QPainter, option, widget=None) -> None` #TAG:CollisionOverlay.paint
-- `editor/ui/collision_view.py:490` `bake(self, masks: Sequence[int]) -> None` #TAG:CollisionOverlay.bake
+- `editor/ui/collision_view.py:465` `__init__(self, width: int, height: int, tile_width: int, tile_height: int, keyline: QColor | None=None)` #TAG:CollisionOverlay.__init__
+- `editor/ui/collision_view.py:499` `boundingRect(self) -> QRectF` #TAG:CollisionOverlay.boundingRect
+- `editor/ui/collision_view.py:503` `paint(self, painter: QPainter, option, widget=None) -> None` #TAG:CollisionOverlay.paint
+- `editor/ui/collision_view.py:514` `bake(self, masks: Sequence[int]) -> None` #TAG:CollisionOverlay.bake
   - Render ONE layer's masks, row-major, length width*height.
-- `editor/ui/collision_view.py:503` `bake_resolved(self, layers: Sequence[CollisionLayer], *, undecided: int=NO_DATA) -> None` #TAG:CollisionOverlay.bake_resolved
+- `editor/ui/collision_view.py:527` `bake_resolved(self, layers: Sequence[CollisionLayer], *, undecided: int=NO_DATA) -> None` #TAG:CollisionOverlay.bake_resolved
   - Render every collision layer at once, resolved to one answer.
-- `editor/ui/collision_view.py:526` `set_cell(self, x: int, y: int, mask: int, *, owner: int=-1, conflicted: bool=False, level: int=LEVEL_NONE) -> None` #TAG:CollisionOverlay.set_cell
+- `editor/ui/collision_view.py:550` `set_cell(self, x: int, y: int, mask: int, *, owner: int=-1, conflicted: bool=False, level: int=LEVEL_NONE) -> None` #TAG:CollisionOverlay.set_cell
   - Change one cell in place, without re-baking the field.
-- `editor/ui/collision_view.py:558` `set_glyphs(self, glyphs: Mapping[int, QPixmap]) -> None` #TAG:CollisionOverlay.set_glyphs
+- `editor/ui/collision_view.py:582` `set_glyphs(self, glyphs: Mapping[int, QPixmap]) -> None` #TAG:CollisionOverlay.set_glyphs
   - Swap the glyph set and re-render what is already baked.
-- `editor/ui/collision_view.py:565` `mask_at(self, x: int, y: int) -> int` #TAG:CollisionOverlay.mask_at
-- `editor/ui/collision_view.py:570` `owner_at(self, x: int, y: int) -> int` #TAG:CollisionOverlay.owner_at
+- `editor/ui/collision_view.py:589` `mask_at(self, x: int, y: int) -> int` #TAG:CollisionOverlay.mask_at
+- `editor/ui/collision_view.py:594` `owner_at(self, x: int, y: int) -> int` #TAG:CollisionOverlay.owner_at
   - Which layer decided this cell, or -1 (also -1 outside a resolve).
-- `editor/ui/collision_view.py:577` `conflicted_at(self, x: int, y: int) -> bool` #TAG:CollisionOverlay.conflicted_at
-- `editor/ui/collision_view.py:583` `level_at(self, x: int, y: int) -> int` #TAG:CollisionOverlay.level_at
+- `editor/ui/collision_view.py:601` `conflicted_at(self, x: int, y: int) -> bool` #TAG:CollisionOverlay.conflicted_at
+- `editor/ui/collision_view.py:607` `level_at(self, x: int, y: int) -> int` #TAG:CollisionOverlay.level_at
   - Which LEVEL of the deciding layer answered, or LEVEL_NONE.
-- `editor/ui/collision_view.py:596` `cell_image(self, x: int, y: int) -> QImage` #TAG:CollisionOverlay.cell_image
+- `editor/ui/collision_view.py:620` `cell_image(self, x: int, y: int) -> QImage` #TAG:CollisionOverlay.cell_image
   - A COPY of one cell's rendered pixels, for tooltips and checks.
-- `editor/ui/collision_view.py:605` `describe(self, x: int, y: int) -> str` #TAG:CollisionOverlay.describe
+- `editor/ui/collision_view.py:629` `describe(self, x: int, y: int) -> str` #TAG:CollisionOverlay.describe
   - A status-bar line for the cell under the cursor.
-- `editor/ui/collision_view.py:622` `__fit(self, masks: Sequence[int]) -> list[int]` #TAG:CollisionOverlay.__fit
-- `editor/ui/collision_view.py:629` `__render_all(self) -> None` #TAG:CollisionOverlay.__render_all
-- `editor/ui/collision_view.py:647` `__paint_cell(self, painter: QPainter, x: int, y: int, mask: int, owner: int, conflicted: bool, level: int=LEVEL_NONE) -> None` #TAG:CollisionOverlay.__paint_cell
-- `editor/ui/collision_view.py:672` `__paint_level(self, painter: QPainter, left: float, top: float, ux: float, uy: float, level: int) -> None` #TAG:CollisionOverlay.__paint_level
+- `editor/ui/collision_view.py:646` `__fit(self, masks: Sequence[int]) -> list[int]` #TAG:CollisionOverlay.__fit
+- `editor/ui/collision_view.py:653` `__render_all(self) -> None` #TAG:CollisionOverlay.__render_all
+- `editor/ui/collision_view.py:671` `__paint_cell(self, painter: QPainter, x: int, y: int, mask: int, owner: int, conflicted: bool, level: int=LEVEL_NONE) -> None` #TAG:CollisionOverlay.__paint_cell
+- `editor/ui/collision_view.py:696` `__paint_level(self, painter: QPainter, left: float, top: float, ux: float, uy: float, level: int) -> None` #TAG:CollisionOverlay.__paint_level
   - The LEVEL wedge: the top-right corner, 3u on a side.
 
 ### `@dataclass class ModeActions` #TAG:ModeActions
 
-`editor/ui/collision_view.py:846`–`881`
+`editor/ui/collision_view.py:870`–`905`
 
 > The toolbar controls for the mode, built as one unit.
 
-- `editor/ui/collision_view.py:864` `@property mode(self) -> EditMode` #TAG:ModeActions.mode
-- `editor/ui/collision_view.py:867` `set_mode(self, mode: EditMode) -> None` #TAG:ModeActions.set_mode
+- `editor/ui/collision_view.py:888` `@property mode(self) -> EditMode` #TAG:ModeActions.mode
+- `editor/ui/collision_view.py:891` `set_mode(self, mode: EditMode) -> None` #TAG:ModeActions.set_mode
   - Idempotent: re-selecting the live mode does not re-notify, which
-- `editor/ui/collision_view.py:880` `@property all_layers_on(self) -> bool` #TAG:ModeActions.all_layers_on
+- `editor/ui/collision_view.py:904` `@property all_layers_on(self) -> bool` #TAG:ModeActions.all_layers_on
 
 ### `class MaskPalette(QWidget)` #TAG:MaskPalette
 
-`editor/ui/collision_view.py:934`–`992`
+`editor/ui/collision_view.py:958`–`1028`
 
-> Seventeen swatches: what `TilePalette` becomes in collision mode.
+> Seventeen masks and the chip that takes one back off.
 
-- `editor/ui/collision_view.py:950` `__init__(self, parent: QWidget | None=None, *, cell: int=34)` #TAG:MaskPalette.__init__
-- `editor/ui/collision_view.py:968` `@property mask(self) -> int` #TAG:MaskPalette.mask
-- `editor/ui/collision_view.py:972` `@property glyphs(self) -> Mapping[int, QPixmap]` #TAG:MaskPalette.glyphs
-- `editor/ui/collision_view.py:976` `@property rows(self) -> int` #TAG:MaskPalette.rows
-- `editor/ui/collision_view.py:979` `mask_at(self, column: int, row: int) -> int | None` #TAG:MaskPalette.mask_at
-- `editor/ui/collision_view.py:985` `select_mask(self, mask: int, *, notify: bool=True) -> None` #TAG:MaskPalette.select_mask
+- `editor/ui/collision_view.py:975` `__init__(self, parent: QWidget | None=None, *, cell: int=34)` #TAG:MaskPalette.__init__
+- `editor/ui/collision_view.py:1001` `@property mask(self) -> int` #TAG:MaskPalette.mask
+- `editor/ui/collision_view.py:1005` `@property glyphs(self) -> Mapping[int, QPixmap]` #TAG:MaskPalette.glyphs
+- `editor/ui/collision_view.py:1009` `@property rows(self) -> int` #TAG:MaskPalette.rows
+- `editor/ui/collision_view.py:1012` `mask_at(self, column: int, row: int) -> int | None` #TAG:MaskPalette.mask_at
+- `editor/ui/collision_view.py:1018` `select_mask(self, mask: int, *, notify: bool=True) -> None` #TAG:MaskPalette.select_mask
 
 ### `class _MaskSurface(QWidget)` #TAG:_MaskSurface
 
-`editor/ui/collision_view.py:995`–`1032`
+`editor/ui/collision_view.py:1031`–`1074`
 
 > The drawn grid. Split out so the palette owns the caption.
 
-- `editor/ui/collision_view.py:998` `__init__(self, palette: MaskPalette)` #TAG:_MaskSurface.__init__
-- `editor/ui/collision_view.py:1004` `__step(self) -> int` #TAG:_MaskSurface.__step
-- `editor/ui/collision_view.py:1007` `paintEvent(self, _event) -> None` #TAG:_MaskSurface.paintEvent
-- `editor/ui/collision_view.py:1025` `mousePressEvent(self, event) -> None` #TAG:_MaskSurface.mousePressEvent
+- `editor/ui/collision_view.py:1034` `__init__(self, palette: MaskPalette)` #TAG:_MaskSurface.__init__
+- `editor/ui/collision_view.py:1040` `__step(self) -> int` #TAG:_MaskSurface.__step
+- `editor/ui/collision_view.py:1043` `paintEvent(self, _event) -> None` #TAG:_MaskSurface.paintEvent
+- `editor/ui/collision_view.py:1067` `mousePressEvent(self, event) -> None` #TAG:_MaskSurface.mousePressEvent

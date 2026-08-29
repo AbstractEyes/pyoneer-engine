@@ -450,7 +450,8 @@ def _tileset_key(cmd: Command) -> str | int:
             "assumed: tile size defaults to the map's, the image is sized "
             "from its own header, and columns/tilecount fall out of the "
             "grid. Inserting BELOW an existing range is refused -- it would "
-            "renumber every csv token in the file.",
+            "renumber every csv token in the file. Passing a first_gid "
+            "ABOVE it is how a tileset is given room to grow into later.",
     scopes=["map:*"],
     params=[
         Param("name", str, "tileset name; unique within the map, and the key "
@@ -475,6 +476,12 @@ def _tileset_key(cmd: Command) -> str | int:
               required=False, default=None),
         Param("tile_count", int, "override the derived tile count",
               required=False, default=None),
+        Param("first_gid", int, "the range this tileset claims, instead of "
+                                "the packed one. Above every range in use, "
+                                "never below one -- the gap it leaves is "
+                                "HEADROOM, and map.tileset.grow spends it "
+                                "later without renumbering a single cell",
+              required=False, default=0),
     ],
     example='{"verb": "map.tileset.add", "scope": "map:test", "args":'
             ' {"name": "Dungeon",'
@@ -492,6 +499,7 @@ def _tileset_add(project: Project, cmd: Command) -> Command:
         tile_count=cmd.args["tile_count"],
         image_width=cmd.args["image_width"],
         image_height=cmd.args["image_height"],
+        first_gid=cmd.args["first_gid"] or None,
     )
     # force stays FALSE, deliberately. Taking an add back is only safe while
     # nothing points into the range it created, and the refusal IS the
@@ -601,6 +609,157 @@ def _tileset_restore(project: Project, cmd: Command) -> Command:
 
 
 # --------------------------------------------------------------------------
+@command(
+    "map.tileset.grow",  # #TAG:map.tileset.grow
+    summary="Point a tileset at a re-cut sheet and change how many tiles it "
+            "owns, without moving one placed gid. This is how a tileset "
+            "stops being a fixed-size sheet: crop the region you want out of "
+            "any image, write it under the old rows at the SAME WIDTH, and "
+            "grow the count. Rows are the only safe axis -- a local tile id "
+            "is row * columns + column and every reader takes that stride "
+            "from the sheet's width, so a wider sheet renumbers every id "
+            "after the first row and repaints the map with nothing raised. A "
+            "wider sheet is refused, and so is growing into a range another "
+            "tileset already owns, which pytmx resolves two contradictory "
+            "ways. Shrinking is the same verb with a smaller count and is "
+            "refused while any tile still points into the part that would go. "
+            "The inverse restores the image path, both of its dimensions and "
+            "the tile count -- the four values this writes and the only four.",
+    scopes=["map:*"],
+    params=[
+        Param("name", str, "tileset name; leave empty and pass first_gid for "
+                           "an external <tileset source=...>, which carries "
+                           "no name in this file",
+              required=False, default=""),
+        Param("first_gid", int, "address the tileset by its firstgid instead "
+                                "of its name", required=False, default=0),
+        Param("image", str, "the sheet's new path AS WRITTEN INTO THE FILE, "
+                            "relative to the .tmx; empty keeps the image it "
+                            "already has and changes only the count",
+              required=False, default=""),
+        Param("image_width", int, "the new sheet's width in pixels; omit and "
+                                  "the PNG header is read. It must still cut "
+                                  "into the same number of columns",
+              required=False, default=None),
+        Param("image_height", int, "the new sheet's height in pixels; omit "
+                                   "and the PNG header is read",
+              required=False, default=None),
+        Param("tile_count", int, "how many tiles the tileset owns afterwards; "
+                                 "omit for every tile the new sheet holds, "
+                                 "and pass a smaller number to truncate a "
+                                 "ragged last row",
+              required=False, default=None),
+    ],
+    example='{"verb": "map.tileset.grow", "scope": "map:test", "args":'
+            ' {"name": "Dungeon", "image": "../graphics/Dungeon.png",'
+            ' "tile_count": 96}}',
+)
+def _tileset_grow(project: Project, cmd: Command) -> Command | None:
+    document = project.map(cmd.scope.require("map"))
+    key = _tileset_key(cmd)
+    previous = document.grow_tileset(
+        key,
+        image_source=cmd.args["image"] or None,
+        image_width=cmd.args["image_width"],
+        image_height=cmd.args["image_height"],
+        tile_count=cmd.args["tile_count"])
+
+    after = document.tileset(key)
+    image = after.element.find("image")
+    if (previous["image"] == image.get("source", "")
+            and previous["image_width"] == int(image.get("width"))
+            and previous["image_height"] == int(image.get("height"))
+            and previous["tile_count"] == after.tile_count):
+        # Nothing moved, so there is nothing to undo. A no-op that still
+        # pushed an inverse would put a step in the undo list that reads
+        # like an edit and restores the values it already found.
+        return None
+
+    # The inverse SHRINKS, and it goes through the same orphan guard the
+    # forward call does. That is deliberate and it is the same bargain
+    # map.tileset.add's inverse strikes: if a later command painted into the
+    # rows this one added, its own inverse runs first and clears them. An
+    # inverse that forced its way past the guard would leave those gids
+    # resolving to the tileset below, silently, with the wrong art.
+    return Command("map.tileset.grow", cmd.scope, {
+        "name": cmd.args["name"], "first_gid": cmd.args["first_gid"],
+        "image": previous["image"],
+        "image_width": previous["image_width"],
+        "image_height": previous["image_height"],
+        "tile_count": previous["tile_count"]})
+
+
+@command(
+    "map.tileset.rename",  # #TAG:map.tileset.rename
+    summary="Rename a tileset. No gid moves -- a name is not part of the "
+            "numbering -- but it is the key every other tileset verb "
+            "addresses one by, and a .blitmask stores it in its own header. "
+            "The engine REFUSES to load a map whose masks name a different "
+            "tileset, so when the sidecar names the old one this rewrites "
+            "that line in the same transaction. It does not rename the "
+            "sidecar FILE: the tileset declares its path with "
+            "pyoneer_collision and a mask file may be deliberately shared. "
+            "The inverse is this verb with the two names swapped, which puts "
+            "the header back too.",
+    scopes=["map:*"],
+    params=[
+        Param("name", str, "the tileset's current name; leave empty and pass "
+                           "first_gid to address it by range",
+              required=False, default=""),
+        Param("first_gid", int, "address the tileset by its firstgid instead "
+                                "of its name", required=False, default=0),
+        Param("to", str, "the new name; unique within the map, and non-empty "
+                         "because it is an address"),
+    ],
+    example='{"verb": "map.tileset.rename", "scope": "map:test", "args":'
+            ' {"name": "TileA2", "to": "Village exteriors"}}',
+)
+def _tileset_rename(project: Project, cmd: Command) -> Command | None:
+    document = project.map(cmd.scope.require("map"))
+    key = _tileset_key(cmd)
+    ref = document.tileset(key)
+    previous, wanted = ref.name, cmd.args["to"]
+    if wanted == previous:
+        return None
+
+    # Read the sidecar BEFORE the attribute moves, and write it AFTER. A
+    # mask file that cannot be read then leaves the document exactly as it
+    # was found, rather than leaving a .tmx whose name the masks contradict
+    # -- which is a map `tileset_defaults` refuses to load at all.
+    # `_mask_file_path` lives with the mask verbs below; it is the same
+    # arithmetic they use, spelled once.
+    reference = str(document.properties_of(ref.element)
+                    .get(DEFAULTS_PROPERTY, "") or "").strip()
+    grid, resolved = None, ""
+    if reference:
+        resolved = _mask_file_path(document, reference, cmd)
+        if os.path.isfile(resolved):
+            grid = Blitmask.load(resolved)
+        else:
+            warnings.warn(
+                f"tileset {previous!r} declares {DEFAULTS_PROPERTY}="
+                f"{reference!r}, which resolves to {resolved} and is not "
+                f"there, so this rename cannot carry its masks with it. The "
+                f"map already refuses to load until that file is restored or "
+                f"the property removed.", PyoneerContentWarning)
+
+    document.rename_tileset(key, wanted)
+
+    if grid is not None and str(grid.meta.get("name", "") or "") == previous:
+        # Assigning an existing key keeps its position in the dict, and
+        # `render` walks the metadata in that order -- so this is one line of
+        # the file, not a reshuffled header.
+        meta = dict(grid.meta)
+        meta["name"] = wanted
+        Blitmask(grid.width, grid.height, grid.opinions, meta).save(resolved)
+
+    # Addressed by the NEW name rather than by whatever this call was given:
+    # a tileset that was addressed by firstgid still has a name afterwards,
+    # and the name is the key that survives a firstgid this verb never reads.
+    return Command("map.tileset.rename", cmd.scope,
+                   {"name": wanted, "first_gid": 0, "to": previous})
+
+
 # Tile masks -- level one of the collision stack, authored from the editor
 #
 # `scripts/core/collision_runtime.py` reads a tileset's per-tile masks out of

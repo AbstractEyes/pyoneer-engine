@@ -26,15 +26,15 @@ is the whole entry point. It needs no `PYTHONPATH` and no install step.
 
 ## Status
 
-Working, and honest about where it is not. 37,630 lines of tracked Python
-across 145 files — `scripts/` 12,773, `editor/` 12,947, `tools/` 11,118.
+Working, and honest about where it is not. 78,094 lines of tracked Python
+across 201 files — `tools/` 38,102, `scripts/` 20,068, `editor/` 17,348.
 
 | | |
 |---|---|
 | Runs | yes — headless or windowed, on pygame 2.6 / Python 3.11 |
-| Tested | 29 check tools plus a frame-level regression harness |
+| Tested | 51 check tools plus a frame-level regression harness |
 | Stable API | **no.** Names are still moving. See [Known rough edges](#known-rough-edges) |
-| Docs | design plans in [`docs/`](docs/), reconciled against the code. `ENGINE_REVIEW.md` is a dated snapshot and carries a banner saying so |
+| Docs | [`docs/`](docs/), reconciled against the code and layered: generated files regenerate from the registry that executes them, hand-written ones carry a dated stamp, and finished plans move to [`docs/history/`](docs/history/) with an exemption banner |
 
 This is a personal engine being cleaned up in public, not a released library.
 It is usable, and reading it will teach you something about deferred
@@ -191,6 +191,8 @@ doc.tile_layer("Floor").set_tile(4, 7, gid=65)
 doc.object_layer("entity").add_object(name="chest", type="Chest", x=128, y=96)
 doc.add_layer("Collision", kind="tile")
 doc.add_tileset("props", "../graphics/props.png")   # geometry is measured
+doc.grow_tileset("props", tile_count=96)            # rows only, headroom checked
+doc.rename_tileset("props", "Village props")
 doc.save()
 ```
 
@@ -204,9 +206,11 @@ There is also a **native format**, `scripts/loaders/blitmap.py` and
 `tileset_file.py`: `.blitmap` and `.tileset` are tab-indented plain text that
 parse with no pygame, no pytmx and no Qt, plus a converter that carries a
 `.tmx` across losslessly and *names* in `Conversion.dropped` anything it
-cannot. It is a format and a converter only — **nothing in the engine reads
-one yet**, deliberately, because making it do so touches the renderer, the
-asset manager and the scene at once.
+cannot. `config/managers/map_data.py` dispatches on the extension, so the
+engine loads either one; `check_blitmap_engine.py` asserts the two readers
+produce the same layers, gids, properties and tile pixels. What a `.blitmap`
+does not carry is collision: it has no companion layers, and the
+`pyoneer_collision` reference its `.tileset` records is opened by nothing.
 
 ## The editor
 
@@ -256,36 +260,57 @@ A response is applied as one transaction. Unknown verb, unknown argument,
 missing argument or wrong type rejects the whole thing — nothing is ever
 half-applied, and types are never coerced (`"5"` is not `5`).
 
-### Painting, terrain and collision
+### Tilesets, painting and collision
 
-The canvas has two **modes**, and the mode changes what every tool writes.
-In tile mode the tools paint art; in **collision mode** the same brush,
-rectangle, fill and picker paint a passability mask, with a palette of
-direction bits instead of a tileset. A tool the mode cannot express is
-disabled rather than left clickable and silent.
+The tile palette is one scrolling column holding **every** tileset the map
+declares, each under a header naming it and its tile count. A drag picks a
+multi-tile stamp, clamped to the sheet it started in, and the selection is
+remembered as a tileset *name* plus a rectangle in that sheet's own local ids
+— so a command cannot slide the highlight onto a different sheet's tiles.
 
-The reason a whole second editing surface costs so little is that it is not a
-second surface. A mask is stored in a companion tile layer as
-`first_gid + mask` — which is an ordinary gid — so a collision stroke reuses
-the very same `paint.Stroke` and commits the very same `map.tile.set_many`,
-and inherits one-drag-one-transaction undo and an exact inverse for free.
-The companion layer is created by the first stroke that needs it, inside the
-same transaction, so one undo takes the layer, its declaration and its tiles
-back out together. Erasing writes gid 0, which in a companion means
-`NO_DATA` — "nobody said anything here" — deliberately not the same claim as
-"open".
+**A tileset is built from a region of any image.** Drag a rectangle over the
+picture, nudge its offset, resize it, truncate a ragged last row, and commit:
+the selected pixels are cropped to a PNG beside the map and declared as a
+plain `margin=0 spacing=0` grid over that file. That is deliberate rather than
+lazy — measured, the editor's atlas and pytmx agree about which pixels a gid
+names *only* at margin 0, spacing 0 and a full-width column count, and two
+readers disagreeing about what a gid looks like raises nowhere.
+
+**A tileset grows** by pointing it at a taller sheet at the same width:
+`map.tileset.grow` rewrites the image and the tile count and nothing else, so
+no placed gid moves. A *wider* sheet is refused, because a local id is
+`row * columns + column` and widening renumbers every id after the first row —
+silently, with the right schema and the wrong art everywhere. Growth into
+another tileset's gid range is refused for the same reason, and the refusal
+prices the alternative; `map.tileset.add` takes an explicit `first_gid`, so a
+map can reserve headroom under each range and make growth free.
+
+**Collision is a brush, not a layer.** A mask is stored as `first_gid + mask`
+in a companion tile layer — an ordinary gid — so a collision stroke reuses the
+very same `paint.Stroke`, commits the very same `map.tile.set_many`, and
+inherits one-drag-one-transaction undo and an exact inverse for free. The
+companion is created by the first stroke that needs it, inside the same
+transaction. It has no row in the hierarchy: it declares `pyoneer_renders=false`
+and nothing draws it, so its row offered a checkbox that changed nothing and a
+selectable target that swallowed art. The art layer carries a mask-count badge
+instead, and the badge turns to a warning when those masks reach no field.
+
+A tile can also carry its own mask, and that is the one that scales: stamping
+the tile *is* authoring the collision, so a companion cell stops meaning "this
+is a wall" and means only "not THIS one". Pick a mask swatch and click the
+tile in the palette, or shift+click the wall on the map. Erasing writes gid 0,
+which in a companion means `NO_DATA` — "nobody said anything here" —
+deliberately not the same claim as "open", and the palette gives each of those
+two its own keyline because they draw the same glyph and mean opposites.
 
 Terrain painting is a Wang **corner** set rather than an orthogonal bitmask,
 because the art demands it; a whole terrain is one integer, so choosing one is
 "click any tile of it". See [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md) for
 the half-cell trap that follows from corner lattices.
 
-**The engine cannot read these masks yet.** The editor authors them, the tmx
-carries them, `check_collision.py` proves the round trip — and nothing in
-`scripts/` decodes one. That is the largest gap in this repository and it is
-[`docs/history/NEXT_ce66ce5.md`](docs/history/NEXT_ce66ce5.md) item 2 -- the
-ranked list as it stood at `ce66ce5`. `docs/NEXT.md` is a DIFFERENT document
-now; citing it here would silently point at the wrong list.
+The whole tileset surface — the palette, region import, growth, naming, tile
+masks and where the collision layer went — is
+[`docs/TILESETS.md`](docs/TILESETS.md).
 
 Genre packs in `editor/genres/` declare what a genre's maps and data look
 like, so "make me a platformer with guns and aliens" costs a page of
@@ -300,7 +325,7 @@ Design and reasoning: [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md).
 .venv/Scripts/python.exe tools/check_all.py
 ```
 
-29 checks plus a frame-level drift comparison, one exit code. They are not unit
+51 checks plus a frame-level drift comparison, one exit code. They are not unit
 tests; each one boots or drives real engine code and asserts measured
 behaviour — token counts, dispatch counts, frame hashes, pixel equality.
 
@@ -359,11 +384,11 @@ config/                     JSON: animations, entities, inputs, maps, theme
 editor/                     the authoring application (PySide6; separate process)
   core/                       headless: scopes, commands, genres, requests
     collision.py                masks, three-level resolution, .blitmask
-    map_events.py               trigger vocabulary (no panel offers it yet)
+    map_events.py               trigger vocabulary (authored; no runtime)
   genres/                     genre packs — layers, tables, rules, art briefs
   ui/                         Qt panels; views only, no authority
 tools/                      checks, smoke harness, utilities
-docs/                       design plans, the code review, and NEXT.md
+docs/                       layered docs; history/ holds the dated archives
 ```
 
 `editor/` may import `scripts/`. `scripts/` may never import `editor/` —
@@ -375,20 +400,20 @@ the editor deleted.
 Stated plainly, because most of them are recorded with measurements in
 [`docs/`](docs/):
 
-- **The engine cannot read a collision mask.** The editor authors them in a
-  mounted, tested UI; nothing in `scripts/` decodes one. Biggest gap here.
-- **Placing an object does not yet spawn an entity in a running game.** The
-  reader exists and is proven — `scripts/core/spawn.py` and
-  `scripts/loaders/map_loader.py` turn tmx objects into entities with depths
-  resolved, behind a 525-line check — but nothing calls `spawn_objects`
-  outside that check, and `GameSceneMap.core_lifecycle_build` still has
-  `# load the entities` as a comment with nothing under it.
-- **`.blitmap` has no reader.** The native format, its converter and asset
-  interning are finished and checked; the engine still loads `.tmx` only.
-- **The tileset import dialog is not reachable.** `map.tileset.add` is a
-  registered verb and `editor/ui/tileset_dialog.py` is a working dialog with
-  a live grid preview, but no menu constructs it — so adding the `collision`
-  tileset that collision mode needs still means a trip through Tiled.
+- **Growing and renaming a tileset are script-only.** `map.tileset.grow` and
+  `map.tileset.rename` are registered verbs with exact inverses and refusals
+  that have teeth, and no control in the window calls either — so the tileset
+  the editor can grow, it can only grow from a response bundle or a Python
+  driver. `docs/NEXT.md` carries the grep that measures it.
+- **A collection-of-images tileset draws wrong in the editor.** A `<tileset>`
+  built from `<tile><image/></tile>` children reads correctly in `MapDocument`
+  and renders correctly through pytmx; the editor's atlas draws procedural
+  colour swatches for it and warns about nothing. This editor never writes
+  that shape, but Tiled does.
+- **Map event triggers are authored and never executed.**
+  `editor/core/map_events.py` is a complete, checked vocabulary and
+  `editor/ui/actions_panel.py` now offers it — and nothing in `scripts/` reads
+  a `pyoneer_trigger`, so an authored trigger is data with no runtime.
 - **`GameComponent` is a god class.** ~9 responsibilities in one file. Being
   split incrementally; `docs/history/IMPROVEMENT_PLAN.md` segment 8.
 - **Boot costs ~350 ms**, most of it map compositing proving its merges are
@@ -408,9 +433,6 @@ Stated plainly, because most of them are recorded with measurements in
   `MOUSE_DRAG_BEGIN`/`END` are bindable, but nothing wires them together.
 - **The editor cannot edit shape geometry.** Polygon, ellipse and text
   objects are shown and preserved byte-exactly; their points are read-only.
-- **Map event triggers have no authoring surface.** `editor/core/map_events.py`
-  is a complete, checked vocabulary that no panel offers — and nothing in the
-  engine would execute one if it did.
 
 `docs/NEXT.md` is the ranked list of what is actually next.
 
