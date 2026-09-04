@@ -151,9 +151,18 @@ class SceneManager:
         the properties' own `pyoneer_param_*`, then the actors row, then each
         parameter's declared default.
 
+        The constructor arguments come from the renderer's `spawn_defaults`,
+        the SAME dict `spawn_objects` applies to a map-placed object, merged
+        under `kwargs` -- see `__constructor_arguments` for the precedence and
+        for what it cost to read that slot on one route only.
+
         `depth=None` resolves through `scripts.core.spawn.resolve_depth`:
         `pyoneer_depth` on the properties, then the per-class convention,
-        then the default.
+        then the default. The constructed class's own `__name__` is handed to
+        that second rung, because a registry entry may be an alias ("Hero" ->
+        GamePlayer) and the depth table is keyed by CLASS -- the map route
+        passes it, so a runtime spawn of the same type must resolve the same
+        depth rather than falling through to the default.
 
         The `moveto` is not optional. `GameEntity.__init__` accepts a
         `transform` keyword and THROWS IT AWAY, so an entity has to be placed
@@ -168,7 +177,8 @@ class SceneManager:
         self.__require_scene("spawn %r into" % type_name)
         props = dict(properties or {})
         where = "SceneManager.spawn(%r)" % type_name
-        entity = spawn(type_name, registry, **kwargs)
+        entity = spawn(type_name, registry,
+                       **self.__constructor_arguments(type_name, kwargs))
         entity.moveto((float(position[0]), float(position[1])))
         requests = read_requests(props, self.__actor_row(props, where),
                                  where=where)
@@ -179,9 +189,54 @@ class SceneManager:
             # half-composed would present as a physics bug rather than as an
             # authoring error.
             entity.behaviors.attach_all(build_behaviors(requests))
-        self.bind(resolve_depth(type_name, props, where=where)
+        self.bind(resolve_depth(type_name, props,
+                                class_name=type(entity).__name__, where=where)
                   if depth is None else depth, entity)
         return entity
+
+    def __constructor_arguments(self,
+                                type_name: str,
+                                kwargs: Mapping[str, Any]) -> dict[str, Any]:
+        """`type_name`'s constructor arguments: the renderer's defaults under `kwargs`.
+
+        THE RENDERER'S SLOT, NOT A SECOND ONE OF THIS MANAGER'S OWN, exactly
+        as `__actor_row` reads `renderer.tables`. `spawn_defaults` carries
+        what a .tmx object cannot -- an `InputActionManager`, a parsed
+        animation category, the collision anchor `main.py` derives from the
+        sheet -- and it is keyed by the same tmx TYPE NAME `spawn_objects`
+        keys it by, so a body built here and a body Tiled placed beside it are
+        constructed from one dict.
+
+        Copying those defaults into a second table here is the move this
+        repository has already paid 425 duplicate lines for; two tables would
+        drift, and the symptom would be a runtime projectile anchored at its
+        head while the authored NPC next to it stood on its feet. That was not
+        hypothetical: until this method existed, `spawn_defaults` reached the
+        map route and nothing else, so EVERY runtime spawn was head-anchored
+        and walked 63.9990234375 pixels into a floor at y=64 for the shipped
+        44x64 frame -- and looked, from outside, exactly like a body standing
+        on it.
+
+        PRECEDENCE: AN EXPLICIT KEYWORD WINS, PER KEY. `kwargs` is applied
+        LAST, so a caller naming `collision_offset` gets the one it named and
+        still inherits every default it did not name. The order is the ladder
+        `resolve_depth` and `resolve_params` already climb -- most specific
+        first -- and it is the only order that works in both directions: a
+        default that overwrote an argument would make a deliberately placed
+        collision point impossible to ask for, while no default at all is the
+        defect this method exists to close.
+
+        A missing default costs nothing, matching `tables`: no renderer, no
+        entry for this type, or an entry omitting a key all leave the class's
+        own constructor default in place. That is not a fallback hiding a
+        contract violation -- an argument this dict cannot supply is one the
+        class already declares a default for, and a class that truly needs one
+        raises from its own `__init__` naming itself.
+        """
+        defaults = getattr(self.renderer, "spawn_defaults", None) or {}
+        arguments = dict(defaults.get(type_name) or {})
+        arguments.update(kwargs)
+        return arguments
 
     def __actor_row(self,
                     properties: Mapping[str, Any],

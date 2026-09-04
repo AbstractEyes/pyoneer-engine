@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the audio + map + queue pass: items 15, 16 and 17 are new, each carrying the grep that measured it that day. Item 15 is the fourth ACTIVE WARNING's shape again and is the most expensive of the three: an entire op vocabulary that no running game can reach. Items 1-14 were not re-measured in that pass and keep their own dates. -->
+<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the audio + map + queue pass: items 15, 16 and 17 are new, each carrying the grep that measured it that day. Item 15 is the fourth ACTIVE WARNING's shape again and is the most expensive of the three: an entire op vocabulary that no running game can reach. Items 1-14 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the spawn-funnel + boot-path pass, item 18 is new and carries the grep that measured it that day. It is a recorded DECISION rather than a task, in the shape of items 11 and 14: the rename it describes was possible in that pass and was deliberately not done, because three checks assert the two names as data and a partial rename is a red suite for the next reader. Items 1-17 were not re-measured in that pass and keep their own dates. -->
 
 # Next — what is open, ranked, and the command that measured it
 
@@ -355,6 +355,27 @@ deleting `DemoGame.load_test_objects` (now nearly identical to its parent's)
 moves `check_demos`'s "overrides exactly the hooks it claims to" list.
 Measured 2026-09-04: `grep -n "driven_record" demos/runtime.py` returns
 **3**; `grep -n "PLAYER_TOKEN" main.py` returns **2**.
+
+**18. `prepare_test_scene` and `load_test_objects` are named for a map that no
+longer exists.** They are `MainGame`'s two boot hooks and the extension points
+every demo overrides, and the "test" in both of them meant `data/maps/test.tmx`
+-- the author's private canvas, retired on 2026-09-04 and replaced by the
+shipped `data/maps/starter.tmx`. A reader meeting `load_test_objects` in the
+boot path reasonably concludes it is scaffolding, which is the opposite of true:
+it is where the game adopts its player and registers its one action route.
+DEFERRED DELIBERATELY, and this entry is the decision rather than the task: the
+rename is mechanical but it is not local, and three checks assert the two
+strings as data -- `check_demos` pins the exact overridden/inherited name sets,
+`check_prototype` pins the one name `StoryGame` adds, and `check_spawn_runtime`
+finds the scene builder by AST name -- so a partial rename is a red suite for
+whoever runs it next. It wants a pass that owns `main.py`, `demos/` and
+`tools/` together and does all of it in one commit, with
+`tools/gen_map.py --write` in the same change. `docs/history/` keeps the old
+names either way; an archive is supposed to.
+Measured 2026-09-04:
+`grep -rn "load_test_objects\|prepare_test_scene" --include=*.py --include=*.md .`
+returns **28** lines in **10** files once `docs/map/` and `docs/history/` are
+excluded, **5** of those files under `tools/`.
 
 ## What is NOT on this list, and why
 

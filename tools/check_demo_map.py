@@ -41,6 +41,13 @@ every gate below is asserted in both directions:
                         the clamp provably came from the map
     the authored action chain reaches the scene's router on a press
                     AND does not fire again while the verb is still held
+    a map whose ADOPTED body lacks `player_input` warns once, naming that
+    object, its layer and the token
+                    AND a map whose adopted body HAS it warns not at all --
+                        on a fixture that still carries a SECOND, undriven
+                        body, so "warned too broadly" fails this half
+                    AND the warning is a warning: both maps still load, both
+                        still spawn, both still adopt a player and run frames
 
 WHAT THIS CHECK MAY PIN, AND WHAT IT MAY NOT
 --------------------------------------------
@@ -69,6 +76,7 @@ import _bootstrap  # noqa: F401  (must precede engine imports)
 import ast
 import json
 import os
+import tempfile
 import warnings
 
 import pygame
@@ -97,11 +105,16 @@ pygame.key.get_pressed = lambda: _FakeKeys()   # noqa: E731
 
 from scripts.core.collision_runtime import (BLOCK_ALL, EDGE_INSET,  # noqa: E402
                                             PASS_ALL, STAR)
+from config.managers.map_data import MapData                      # noqa: E402
 from scripts.core.depth import OBJECT_CONVERTER                  # noqa: E402
-from scripts.core.errors import PyoneerAssetMissingError          # noqa: E402
+from scripts.core.errors import (PyoneerAssetMissingError,       # noqa: E402
+                                 PyoneerContentWarning)
 from scripts.core.input import KEYBOARD                           # noqa: E402
 from scripts.core.renderer import EntityLayer                     # noqa: E402
 from scripts.core.spawn import SPAWN_REGISTRY, spawn              # noqa: E402
+from scripts.game.behavior import BEHAVIORS                       # noqa: E402
+from scripts.game.game_camera import GameCamera                  # noqa: E402
+from scripts.game.game_map import GameMap                        # noqa: E402
 from scripts.loaders.map_document import MapDocument              # noqa: E402
 
 import main as main_module                                        # noqa: E402
@@ -451,6 +464,179 @@ expect_raises("...and a name neither root holds RAISES rather than going quiet",
               PyoneerAssetMissingError,
               lambda: game.audio.locate("sfx/no_such_sound.wav"),
               "sfx/no_such_sound.wav")
+
+# ---------------------------------------------------------------------------
+print()
+print("7. a map whose adopted player cannot be driven says so, once")
+# ---------------------------------------------------------------------------
+# ON A FIXTURE, and law 4 is the whole reason: the claim is about what
+# `MainGame` DOES when a map's adopted body carries no `player_input`, and
+# `data/maps/starter.tmx` is a working map whose hero carries it. Editing the
+# shipped map to make it fail would pin content and break law 11 besides, so
+# this writes two maps of its own that differ in ONE property value.
+#
+# The subclass overrides `load_map` and nothing else -- the same hook
+# `demos/runtime.py` overrides, and for the same reason. `prepare_test_scene`,
+# `load_test_objects`, the adoption and the diagnostic are all the shipped
+# ones, inherited by identity, so this measures main.py rather than a copy of
+# it.
+
+WORKSPACE = tempfile.mkdtemp(prefix="pyoneer_demo_map_")
+
+DRIVEN_LIST = "%s,topdown_move,animation_drive" % main_module.PLAYER_TOKEN
+UNDRIVEN_LIST = "topdown_move,animation_drive"
+FIXTURE_LAYER = "entity"
+
+FIXTURE_ROW = ",".join(["1"] * 8)
+FIXTURE_HEAD = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.0" orientation="orthogonal" \
+renderorder="right-down" width="8" height="8" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="9" nextobjectid="9">
+ <tileset firstgid="1" name="probe" tilewidth="16" tileheight="16" tilecount="4" columns="2">
+  <image source="probe.png" width="32" height="32"/>
+ </tileset>
+ <layer id="1" name="Floor" width="8" height="8">
+  <data encoding="csv">
+%s
+</data>
+ </layer>
+""" % (",\n".join([FIXTURE_ROW] * 8),)
+
+
+def fixture_object(object_id: int, x: int, tokens: str) -> str:
+    """One `<object type="GamePlayer">` declaring exactly one property."""
+    return ('  <object id="%d" name="body%d" type="GamePlayer" x="%d" y="32" '
+            'width="16" height="16">\n'
+            '   <properties>\n'
+            '    <property name="%s" value="%s"/>\n'
+            '   </properties>\n'
+            '  </object>\n' % (object_id, object_id, x, BEHAVIORS, tokens))
+
+
+def write_fixture(key: str, first: str, second: str) -> str:
+    """A two-body map. Body 1 is spawned first, so body 1 is the adopted one."""
+    text = (FIXTURE_HEAD
+            + ' <objectgroup id="4" name="%s">\n' % FIXTURE_LAYER
+            + fixture_object(1, 16, first)
+            + fixture_object(2, 80, second)
+            + ' </objectgroup>\n</map>\n')
+    path = os.path.join(WORKSPACE, key + ".tmx")
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    return path
+
+
+# A real 2x2 sheet beside them, because pytmx loads the tileset image for
+# real and a missing one raises before any of this is reached.
+_sheet = pygame.Surface((32, 32))
+for _index, _colour in enumerate(((180, 40, 40), (40, 180, 40),
+                                  (40, 40, 180), (180, 180, 40))):
+    _sheet.fill(_colour, pygame.Rect((_index % 2) * 16, (_index // 2) * 16,
+                                     16, 16))
+pygame.image.save(_sheet, os.path.join(WORKSPACE, "probe.png"))
+
+
+class FixtureGame(MainGame):
+    """The shipped game, booted on a map this check wrote.
+
+    `MAP_KEY` and `MAP_FILE` are set per subclass so the asset manager's
+    parse cache cannot hand one fixture's parsed map to the other.
+    """
+
+    MAP_KEY: str = ""
+    MAP_FILE: str = ""
+
+    def load_map(self):
+        self.assets.maps.maps[self.MAP_KEY] = MapData({
+            "name": self.MAP_KEY,
+            "identifier": self.MAP_KEY,
+            "file": self.MAP_FILE,
+        })
+        map_data = self.assets.maps.load_assets(self.MAP_KEY)
+        camera = GameCamera(
+            pygame.Vector2(self.screen.get_width(), self.screen.get_height()),
+            pygame.Rect(0, 0,
+                        map_data.tilewidth * map_data.width,
+                        map_data.tileheight * map_data.height),
+            scale=1)
+        return camera, GameMap(map_data)
+
+
+def boot_fixture(key: str, first: str, second: str):
+    """Boot one fixture map. Returns the game and its CONTENT warnings."""
+    path = write_fixture(key, first, second)
+    cls = type("FixtureGame_" + key, (FixtureGame,),
+               {"MAP_KEY": key, "MAP_FILE": path})
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        booted = cls(autostart=False)
+        booted.begin(max_frames=1)
+    return booted, [str(entry.message) for entry in caught
+                    if issubclass(entry.category, PyoneerContentWarning)]
+
+
+def walked(booted, frames: int = 30) -> bool:
+    """Hold `right` for `frames` and say whether the adopted body moved."""
+    start = tuple(booted.player.transform.position)
+    hold(booted, "right")
+    for _ in range(frames):
+        booted.tick()
+    hold(booted)
+    return tuple(booted.player.transform.position) != start
+
+
+# --- half one: the adopted body has no `player_input` -----------------------
+undriven, undriven_warnings = boot_fixture("undriven", UNDRIVEN_LIST,
+                                           UNDRIVEN_LIST)
+expect("a map whose adopted body lacks the token warns exactly ONCE",
+       len(undriven_warnings), 1)
+said = undriven_warnings[0] if undriven_warnings else ""
+expect("...naming the <object> that was adopted",
+       "<object id=1>" in said, True)
+expect("...and the object layer it sits on", FIXTURE_LAYER in said, True)
+expect("...and the token that is missing",
+       main_module.PLAYER_TOKEN in said, True)
+expect("...and the property an author has to add it to",
+       BEHAVIORS in said, True)
+# NARROWNESS, measured on the map that has TWO undriven bodies: a diagnostic
+# that walked every record would name the second one too, and the count above
+# would already be 2. Both halves of the same mistake, because a rewrite could
+# produce one single warning that names everything.
+expect("...and it does NOT name the body the game did not adopt",
+       "id=2" in said, False)
+
+# --- the warning is a WARNING, not a raise ---------------------------------
+undriven_records = list(undriven.renderer.spawned_entities)
+expect("the map still loaded and still spawned both bodies",
+       len(undriven_records), 2)
+expect("...the game still adopted one of them and ran its frame",
+       (undriven.player is not None, undriven.frame), (True, 1))
+expect("...and the camera still follows it",
+       undriven.scene.camera.target is undriven.player, True)
+expect("...the adopted one being the object the warning named",
+       undriven.player is undriven_records[0].entity, True)
+# WHAT THE WARNING IS ABOUT, measured rather than asserted: this is the
+# silence the diagnostic exists to break.
+expect("...and that body really cannot be driven: held frames move it nowhere",
+       walked(undriven), False)
+
+# --- half two: the adopted body HAS the token ------------------------------
+# The fixture still carries a SECOND body without it -- a decoy, a patrol, a
+# signpost -- so a diagnostic that warned about every undriven entity fails
+# here rather than passing quietly.
+driven_game, driven_warnings = boot_fixture("driven", DRIVEN_LIST,
+                                            UNDRIVEN_LIST)
+expect("a map whose adopted body HAS the token warns not at all",
+       driven_warnings, [])
+expect("...on a map that still carries an undriven second body",
+       [record.object_id for record in driven_game.renderer.spawned_entities
+        if not any(request.spec.name == main_module.PLAYER_TOKEN
+                   for request in record.behaviors)], [2])
+expect("...and the adopted body is the one carrying the token",
+       driven_game.player is driven_game.renderer.spawned_entities[0].entity,
+       True)
+expect("...and THIS one does move when the same verb is held for the same "
+       "number of frames", walked(driven_game), True)
 
 # ---------------------------------------------------------------------------
 print()

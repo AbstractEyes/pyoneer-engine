@@ -17,8 +17,9 @@ from scripts.game.entity.game_player import GamePlayer
 from config.managers.animation_data import DataAnimationCategory
 from config.managers.core_asset_manager import CoreAssetManager
 from scripts.core.audio import AudioManager
-from scripts.core.errors import PyoneerConfigError
+from scripts.core.errors import PyoneerConfigError, warn_content
 from scripts.core.input import InputActionManager
+from scripts.game.behavior import BEHAVIORS
 from scripts.game.entity.game_animation import GameAnimationHandler
 from scripts.core.scene.scene_manager import SceneManager
 from scripts.core.component import GameComponent
@@ -188,9 +189,73 @@ class MainGame:
         test_objects = self.load_test_objects()
         for obj in test_objects:
             self.scene.bind(obj[0], obj[1])
+        # AFTER the hook, because the hook is what adopts a player, and HERE
+        # rather than inside it for the reason the hook's own route comment
+        # gives in reverse: a subclass inherits this method by identity and
+        # overrides that one, so this is the only place a DIAGNOSTIC reaches
+        # every game built on this class. That inheritance is wrong for
+        # wiring -- `interact_action`'s route is registered in the hook
+        # precisely so a subclass does not silently get it -- and right for a
+        # warning, which is a report about the author's map and not
+        # behaviour the subclass would have to opt out of.
+        self.warn_undriven_player()
         self.scene.current_scene.core_lifecycle_prepare_pre()
         self.scene.current_scene.core_lifecycle_prepare()
         self.scene.current_scene.core_lifecycle_prepare_post()
+
+    def warn_undriven_player(self) -> None:
+        """Say so when the body this game adopted as the player cannot move.
+
+        `player_input` is the ENTIRE marker for "this is the one the human
+        drives" -- no class, no `pyoneer_player` flag, no boolean -- so an
+        object the game adopts as the player and which does not carry that
+        token is an authored body nothing will ever steer. Measured before
+        this existed: the camera locked onto it, followed it faithfully, and
+        holding a movement verb for 30 frames moved it zero pixels, with
+        nothing said at boot.
+
+        A WARNING, not a raise, and the split is the engine's own: a contract
+        violation raises, unusable AUTHORED CONTENT warns. A map is edited
+        halfway -- the object placed, the behavior list not typed yet -- and
+        an engine that refused to load it would take the editor down with the
+        author still working in it.
+
+        NARROW ON PURPOSE. Only the adopted body is named. Every other entity
+        on the map legitimately lacks the token -- a patrol, a decoy, a
+        signpost -- and a warning that fired on all of them would be the
+        noise that teaches an author to ignore this channel. Three silences
+        follow from that and each is deliberate: nothing adopted (an empty
+        object layer) names no object because there is none; a `self.player`
+        no spawn record claims is a body some subclass BUILT in Python, which
+        is not authored content and has no `<object>` to point at; and the
+        adopted body carrying the token is the working case.
+
+        The token is compared against the registry's own spelling
+        (`request.spec.name`) rather than against the raw property text, so a
+        future `player_input_recorder` is not mistaken for it -- the same
+        comparison the adoption itself uses, because a diagnostic that
+        disagrees with the pick it describes is worse than none.
+        """
+        if self.player is None:
+            return
+        record = next((entry for entry in self.renderer.spawned_entities
+                       if entry.entity is self.player), None)
+        if record is None:
+            return
+        if any(request.spec.name == PLAYER_TOKEN
+               for request in record.behaviors):
+            return
+        warn_content(
+            "the map's <object id=%d> on layer %r (type %s) is the body this "
+            "game adopted as the player, and its %s list does not carry %r, "
+            "which is the whole marker for \"the human drives this one\". "
+            "Nothing will poll the keyboard for it: the camera will follow a "
+            "body that never moves. Add %r to that object's %s property -- "
+            "for a top-down body the usual list is %r."
+            % (record.object_id, record.layer_name, record.type_name,
+               BEHAVIORS, PLAYER_TOKEN, PLAYER_TOKEN, BEHAVIORS,
+               "%s,topdown_move,animation_drive" % PLAYER_TOKEN)
+        )
 
     def spawn_arguments(self) -> dict[str, dict]:
         """Constructor arguments for the entity types a map may place.
@@ -353,7 +418,25 @@ class MainGame:
         """Make a noise when a body's `interact_action` fires.
 
         An `ActionRouter` handler: `(entity, fired)` is what `action_relay`
-        passes, so this needs no adapter. Registered in `prepare_test_scene`.
+        passes, so this needs no adapter. Registered in `load_test_objects`,
+        and NOT in `prepare_test_scene` -- this sentence said the latter for
+        a while, and following it reproduces a real failure. The reason is
+        the one written at the registration itself: a subclass INHERITS
+        `prepare_test_scene` by identity and OVERRIDES `load_test_objects`,
+        so a route registered in the caller is the shipped game's wiring
+        silently installed in every game built on this class. Measured by
+        moving it there: three of `tools/check_prototype.py`'s assertions go
+        red, because the narrative kit's router then carries this game's
+        route alongside its own. `tools/check_demo_map.py` stays green
+        through the whole mistake -- it boots THIS class and no subclass of
+        it, so nothing it looks at can see the difference. Do not read that
+        PASS as permission.
+
+        (And do not name the sibling suite here: this module is the smoke
+        baseline, so a check asserts main.py does not so much as SPELL that
+        package's name -- writing the path of its check file in this
+        docstring turns that check red, which is how this paragraph was
+        first written and then measured.)
 
         Unguarded on purpose. `self.audio` is assigned in `load_config`,
         which runs before any scene exists, so a None here is a WIRING bug and

@@ -12,6 +12,8 @@ until an author noticed an entity missing, or drawn behind a wall:
         because the spawn happens BEFORE the first bake and not after
     a bulk spawn at N depths costs one regroup and zero re-rasterizations
     a spawned entity is bound into the SCENE too, so it actually updates
+    a RUNTIME spawn is constructed from the same `spawn_defaults` the map
+        spawn is, so both routes stand on the same pixel of the sprite
 
 WHAT "ONE REGROUP" IS MEASURED AS, AND WHY IT IS NOT A REGROUP COUNT
 --------------------------------------------------------------------
@@ -55,7 +57,9 @@ SCREEN = pygame.display.set_mode((128, 128))
 import pytmx
 
 from scripts.core import blitpool
-from scripts.core.depth import MAP_DEPTH
+from scripts.core.collision_runtime import (BLOCK_ALL, EDGE_INSET, PASS_ALL,
+                                            CollisionField)
+from scripts.core.depth import MAP_DEPTH, OBJECT_CONVERTER
 from scripts.core.errors import (PyoneerAssetMissingError,
                                  PyoneerConfigError)
 from scripts.core.renderer import (EntityLayer, LayerRenderer, MapComposite,
@@ -75,6 +79,14 @@ failures: list[str] = []
 
 def expect(label, got, want):
     ok = got == want
+    print(f"  {'ok  ' if ok else 'FAIL'} {label:<58} got={got} want={want}")
+    if not ok:
+        failures.append(label)
+
+
+def expect_close(label, got, want, tolerance=1e-6):
+    """Same as expect, for a float the collision walk builds by subtraction."""
+    ok = abs(got - want) <= tolerance
     print(f"  {'ok  ' if ok else 'FAIL'} {label:<58} got={got} want={want}")
     if not ok:
         failures.append(label)
@@ -142,6 +154,20 @@ class ProbeEntity(GameEntity):
 
     def core_frame_update(self, event=None):
         self.updates += 1
+
+
+class GameUIEntity(ProbeEntity):
+    """A probe named for an OBJECT_CONVERTER row, so an ALIAS is separable.
+
+    `SPAWN_REGISTRY` may map a tmx type to a class of a different name
+    ("Hero" -> GamePlayer), and `OBJECT_CONVERTER` is keyed by CLASS. While
+    every registered entry is same-named, "resolve the depth from the TYPE"
+    and "resolve it from the CLASS" are one lookup and no assertion can tell
+    the two routes apart. This name is one `OBJECT_CONVERTER` promises and
+    `scripts/` defines nowhere -- `tools/check_spawn.py` borrows it for the
+    same reason, and its own claim that no such class exists reads only
+    `scripts/game/entity/`, so a probe here cannot satisfy it by accident.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -828,10 +854,183 @@ try:
     expect("a runtime spawn naming no row still gets the declared default",
            bare.behaviors.get("platformer_move").move_speed, default_speed)
 
+    # ------------------- and the SAME slot for its constructor arguments
+    print()
+    print("a runtime spawn is CONSTRUCTED from spawn_defaults, as a map object is")
+    # The sibling of the section above, and the one that was missing. `tables`
+    # reached both routes; `spawn_defaults` reached the map and stopped. The
+    # argument that makes it matter is `collision_offset`: a .tmx cannot carry
+    # the pixel of the sprite the gate is asked about, `main.py` derives it
+    # from the animation category, and with the slot read on one route only
+    # every projectile, NPC and summon a script built was gated at its
+    # top-left pixel -- the top of its head -- while the body Tiled placed
+    # beside it stood on its feet.
+    #
+    # THE FIXTURE IS THIS FILE'S OWN, and its numbers are TYPED OUT rather
+    # than measured off config/animations.json, for the reason
+    # tools/check_collision_runtime.py types the same pair out: a measured
+    # constant restates whatever the sheet happens to be today, and would go
+    # on agreeing with itself after someone re-cut that sheet and left every
+    # body anchored below its own feet.
+    SPRITE_HEIGHT = 64
+    FEET = (22.0, 63.0)
+    """Centre-bottom of the shipped 44x64 frame: half wide, one above the edge."""
+    HEAD = (0.0, 0.0)
+    """`GameEntity`'s own default, and the shape of the defect."""
+
+    # One column, three rows of 32px. Rows 0 and 1 are open and row 2 is
+    # solid, so a body standing at y=0 has its HEAD point in row 0 and its
+    # FEET point (y=63) in row 1: the floor at y=64 is ONE pixel under its
+    # feet and SIXTY-FOUR under its head. Asked for the same 16px step, one
+    # anchor is stopped by that floor and the other walks through the open
+    # air above it untouched -- which is the negative that lets every
+    # assertion below actually fail.
+    FLOOR_TOP = 64.0
+    STEP_DOWN = 16.0
+    """8 px/tick * delta 2.0. That speed comes from the defaults dict, and 8
+    is deliberately NOT GameEntity's own fallback of 16, so `move_speed`
+    reports whether the movement block travelled the slot as well."""
+    floor = CollisionField(1, 3, bytes([PASS_ALL, PASS_ALL, BLOCK_ALL]),
+                           tile_width=32, tile_height=32)
+
+    ANCHORED = {"Probe": {"collision_offset": FEET,
+                          "movement_config": {"move_speed": 8,
+                                              "sprint_mult": 2}}}
+
+    anchor_manager = SceneManager(_HostStub())
+    anchor_manager.add_scene("anchor", GameScene("anchor"))
+    anchor_manager.set_scene("anchor")
+    anchor_renderer = LayerRenderer(SCREEN)
+    anchor_renderer.bind_camera(GameCamera(pygame.Vector2(128, 128),
+                                           pygame.Rect(0, 0, 128, 128), scale=1))
+    anchor_renderer.spawn_defaults = ANCHORED
+    # Assigned by hand because this manager binds no map. `__gate` hands the
+    # field to every entity that arrives through `bind`, so the runtime
+    # spawns below are gated exactly as a map-placed body is.
+    anchor_renderer.collision_field = floor
+    anchor_manager.bind("renderer", anchor_renderer)
+
+    standing = anchor_manager.spawn("Probe", (0.0, 0.0), depth=50)
+    expect("a runtime spawn takes its anchor out of the renderer's one slot",
+           standing.collision_offset, FEET)
+    expect("...and the rest of that entry with it, not just the one key",
+           standing.move_speed, 8)
+    expect("...and the renderer gated it on the way in",
+           standing.collision_field is floor, True)
+    standing.move_direction(2.0, "down")
+    expect_close("...so a floor its FEET reach stops it",
+                 standing.transform.position.y, 1.0 - EDGE_INSET)
+    expect_close("...leaving its bottom pixel resting ON that floor",
+                 standing.transform.position.y + SPRITE_HEIGHT - 1,
+                 FLOOR_TOP - EDGE_INSET)
+
+    # HALF TWO, and the direction that breaks the moment a default is merged
+    # the other way round: a script placing a body's collision point
+    # deliberately could never ask for it again.
+    given = anchor_manager.spawn("Probe", (0.0, 0.0), depth=50,
+                                 collision_offset=HEAD)
+    expect("an explicit argument WINS: the default must not overwrite it",
+           given.collision_offset, HEAD)
+    given.move_direction(2.0, "down")
+    expect_close("...and THAT body is not stopped by the same floor, because "
+                 "only its head is tested",
+                 given.transform.position.y, STEP_DOWN)
+    expect("the two disagree, so neither line passes by accident",
+           given.transform.position.y > standing.transform.position.y, True)
+    expect("...and only the head-anchored one ends with its sprite in the floor",
+           (given.transform.position.y + SPRITE_HEIGHT - 1 >= FLOOR_TOP,
+            standing.transform.position.y + SPRITE_HEIGHT - 1 >= FLOOR_TOP),
+           (True, False))
+
+    # PER KEY, which is what makes "explicit wins" a merge and not a
+    # replacement: a caller naming one argument must not silently lose the
+    # others the slot was carrying for it.
+    mixed = anchor_manager.spawn("Probe", (0.0, 0.0), depth=50,
+                                 movement_config={"move_speed": 99})
+    expect("the key the caller named is the caller's", mixed.move_speed, 99)
+    expect("...and the key it did not name still comes from the slot",
+           mixed.collision_offset, FEET)
+
+    # MISSING COSTS NOTHING, matching `tables`. A type the slot says nothing
+    # about is constructed exactly as it was before any of this existed.
+    untouched = anchor_manager.spawn("Configured", (0.0, 0.0), depth=50)
+    expect("a type the slot never mentions keeps its class defaults",
+           (untouched.collision_offset, untouched.move_speed), (HEAD, 16))
+
+    # ONE SLOT, READ AT SPAWN TIME. A copy taken when the renderer was bound
+    # would pass every assertion above and drift the moment anyone assigned
+    # the renderer's dict afterwards -- which is precisely how a second table
+    # starts.
+    expect("SceneManager keeps no defaults slot of its own to drift",
+           hasattr(anchor_manager, "spawn_defaults"), False)
+    anchor_renderer.spawn_defaults = dict(
+        ANCHORED, Configured={"collision_offset": (1.0, 2.0)})
+    late = anchor_manager.spawn("Configured", (0.0, 0.0), depth=50)
+    expect("...it reads the renderer's dict at spawn, never a copy of it",
+           late.collision_offset, (1.0, 2.0))
+
+    # AND THE MAP ROUTE STILL HAS IT, so this fed a second reader rather than
+    # moving the problem from one route to the other.
+    map_route = LayerRenderer(SCREEN)
+    map_route.bind_camera(GameCamera(pygame.Vector2(128, 128),
+                                     pygame.Rect(0, 0, 128, 128), scale=1))
+    map_route.spawn_defaults = ANCHORED
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("always")
+        map_route.bind("MAP", GameMap(pytmx.load_pygame(fixture)))
+    placed = [record.entity for record in map_route.spawned_entities
+              if record.type_name == "Probe"]
+    expect("every map-placed body of that type still gets the anchor",
+           (len(placed), sorted({body.collision_offset for body in placed})),
+           (5, [FEET]))
+    walker = placed[0]
+    walker.moveto((0.0, 0.0))
+    walker.collision_field = floor
+    walker.move_direction(2.0, "down")
+    expect_close("...and comes to rest on the same pixel the runtime body did",
+                 walker.transform.position.y, standing.transform.position.y)
+
+    # ------------------------------------ and the depth ladder, both rungs
+    print()
+    print("a runtime spawn resolves depth from the class it BUILT, as the map does")
+    # The other half of the same divergence: `spawn_objects` hands the
+    # constructed class's `__name__` to `resolve_depth` and this route did
+    # not, so an aliased type ("Hero" -> GamePlayer) resolved a per-class
+    # depth on the map and fell through to the default at runtime. TWO
+    # REGISTRATIONS OF ONE CLASS, differing only in the tmx type name they
+    # are filed under, so the answer cannot be coming from the class alone.
+    register("Hero", GameUIEntity)
+    register("GameFloorEntity", GameUIEntity)
+    expect("the three rungs under test are three DIFFERENT depths, so no "
+           "lookup passes by accident",
+           len({OBJECT_CONVERTER["GameUIEntity"],
+                OBJECT_CONVERTER["GameFloorEntity"], DEFAULT_OBJECT_DEPTH}), 3)
+
+    def depth_of(renderer, entity):
+        """Which EntityLayer depth the renderer actually bound `entity` into."""
+        found = sorted(depth for depth, layers in renderer.layers.items()
+                       for layer in layers if isinstance(layer, EntityLayer)
+                       and any(held is entity for held in layer.entities))
+        return found[0] if len(found) == 1 else found
+
+    aliased = anchor_manager.spawn("Hero", (0.0, 0.0))
+    expect("an aliased type resolves the depth of the class it built",
+           depth_of(anchor_renderer, aliased), OBJECT_CONVERTER["GameUIEntity"])
+    filed = anchor_manager.spawn("GameFloorEntity", (0.0, 0.0))
+    expect("...while the TYPE name still wins that rung, from the same class",
+           depth_of(anchor_renderer, filed),
+           OBJECT_CONVERTER["GameFloorEntity"])
+    declared = anchor_manager.spawn("Hero", (0.0, 0.0),
+                                    properties={"pyoneer_depth": 77})
+    expect("...and the object's own property still beats both",
+           depth_of(anchor_renderer, declared), 77)
+
 
 finally:
     SPAWN_REGISTRY.pop("Probe", None)
     SPAWN_REGISTRY.pop("Configured", None)
+    SPAWN_REGISTRY.pop("Hero", None)
+    SPAWN_REGISTRY.pop("GameFloorEntity", None)
     shutil.rmtree(workspace, ignore_errors=True)
 
 print()

@@ -3,7 +3,7 @@
 
 # `scripts/core/scene/scene_manager.py` — tier 2 #TAG:scripts/core/scene/scene_manager.py
 
-`scripts.core.scene.scene_manager` · 342 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.scene.scene_manager` · 397 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,7 +13,7 @@
 
 ### `class SceneManager` #TAG:SceneManager
 
-`scripts/core/scene/scene_manager.py:32`–`342`
+`scripts/core/scene/scene_manager.py:32`–`397`
 
 - `scripts/core/scene/scene_manager.py:33` `__init__(self, game)` #TAG:SceneManager.__init__
 - `scripts/core/scene/scene_manager.py:70` `__bind_renderer(self, renderer: LayerRenderer | None)` #TAG:SceneManager.__bind_renderer
@@ -27,19 +27,21 @@
   - Give the entities the map just spawned their frame updates.
 - `scripts/core/scene/scene_manager.py:136` `spawn(self, type_name: str, position: Sequence[float]=(0.0, 0.0), *, depth: int | str | None=None, properties: Mapping[str, Any] | None=None, registry: Mapping[str, Callable] | None=None, **kwargs: Any) -> Any` #TAG:SceneManager.spawn
   - Construct, place, compose and bind one entity. The inverse of despawn.
-- `scripts/core/scene/scene_manager.py:186` `__actor_row(self, properties: Mapping[str, Any], where: str) -> Mapping[str, Any] | None` #TAG:SceneManager.__actor_row
+- `scripts/core/scene/scene_manager.py:197` `__constructor_arguments(self, type_name: str, kwargs: Mapping[str, Any]) -> dict[str, Any]` #TAG:SceneManager.__constructor_arguments
+  - `type_name`'s constructor arguments: the renderer's defaults under `kwargs`.
+- `scripts/core/scene/scene_manager.py:241` `__actor_row(self, properties: Mapping[str, Any], where: str) -> Mapping[str, Any] | None` #TAG:SceneManager.__actor_row
   - The actors row `properties` names, read through the renderer's tables.
-- `scripts/core/scene/scene_manager.py:203` `__forget_spawn_record(self, game_object) -> bool` #TAG:SceneManager.__forget_spawn_record
+- `scripts/core/scene/scene_manager.py:258` `__forget_spawn_record(self, game_object) -> bool` #TAG:SceneManager.__forget_spawn_record
   - Drop `game_object`'s row from `renderer.spawned_entities`.
-- `scripts/core/scene/scene_manager.py:227` `despawn(self, game_object: PyoneerGameObject) -> bool` #TAG:SceneManager.despawn
+- `scripts/core/scene/scene_manager.py:282` `despawn(self, game_object: PyoneerGameObject) -> bool` #TAG:SceneManager.despawn
   - Take a bound object out of the scene AND out of the renderer.
-- `scripts/core/scene/scene_manager.py:266` `reap(self) -> tuple` #TAG:SceneManager.reap
+- `scripts/core/scene/scene_manager.py:321` `reap(self) -> tuple` #TAG:SceneManager.reap
   - Despawn every bound object that has declared itself gone.
-- `scripts/core/scene/scene_manager.py:290` `add_scene(self, name: str, scene: GameScene)` #TAG:SceneManager.add_scene
-- `scripts/core/scene/scene_manager.py:293` `set_scene(self, name: str)` #TAG:SceneManager.set_scene
-- `scripts/core/scene/scene_manager.py:296` `pre_update(self, delta: float)` #TAG:SceneManager.pre_update
-- `scripts/core/scene/scene_manager.py:300` `update(self, delta: float)` #TAG:SceneManager.update
-- `scripts/core/scene/scene_manager.py:307` `post_update(self, delta: float)` #TAG:SceneManager.post_update
-- `scripts/core/scene/scene_manager.py:319` `inputs(self)` #TAG:SceneManager.inputs
-- `scripts/core/scene/scene_manager.py:332` `__on_window_resize(self, event: PyoneerEvent)` #TAG:SceneManager.__on_window_resize
+- `scripts/core/scene/scene_manager.py:345` `add_scene(self, name: str, scene: GameScene)` #TAG:SceneManager.add_scene
+- `scripts/core/scene/scene_manager.py:348` `set_scene(self, name: str)` #TAG:SceneManager.set_scene
+- `scripts/core/scene/scene_manager.py:351` `pre_update(self, delta: float)` #TAG:SceneManager.pre_update
+- `scripts/core/scene/scene_manager.py:355` `update(self, delta: float)` #TAG:SceneManager.update
+- `scripts/core/scene/scene_manager.py:362` `post_update(self, delta: float)` #TAG:SceneManager.post_update
+- `scripts/core/scene/scene_manager.py:374` `inputs(self)` #TAG:SceneManager.inputs
+- `scripts/core/scene/scene_manager.py:387` `__on_window_resize(self, event: PyoneerEvent)` #TAG:SceneManager.__on_window_resize
   - Re-take the display surface at the new size and re-point everything

@@ -402,13 +402,31 @@ class LayerRenderer:
         """Depth bands whose pixels are stale but whose grouping still holds."""
 
         self.spawn_defaults: dict[str, dict] = {}
-        """Per-type constructor keyword arguments for map-placed objects.
+        """Per-type constructor keyword arguments for every entity built here.
 
         A .tmx object carries a type, a position and custom properties, but it
-        cannot carry an `InputActionManager` or a parsed animation category,
-        and the renderer owns no asset managers to build them from. Whoever
-        does hands them over before the map is bound. Empty means every
-        registered class is constructible with no arguments.
+        cannot carry an `InputActionManager`, a parsed animation category, or
+        the collision anchor derived from the sheet those frames were cut
+        from, and the renderer owns no asset managers to build any of them.
+        Whoever does hands them over before the map is bound. Empty means
+        every registered class is constructible with no arguments.
+
+        ONE SLOT, BOTH ROUTES, for the reason the renderer holds
+        `collision_field` and `tables`: it is the single funnel every entity
+        passes through, so `spawn_objects` reads this for a map-placed object
+        and `SceneManager.spawn` reads the same dict for a runtime one, and
+        the two cannot end up constructed differently.
+
+        This docstring said "map-placed objects" for as long as only one of
+        the two read it, and the cost is measured in `main.py`'s
+        `feet_anchor`: with `collision_offset` reaching the map route alone,
+        every body a script or a behavior built at runtime was gated at its
+        top-left pixel -- the top of its head -- and walked 63.9990234375
+        pixels into a floor at y=64 for the shipped 44x64 frame, while the
+        body Tiled placed beside it stood on its feet.
+
+        A per-CALL keyword still beats the per-CLASS value in here; the
+        precedence and its reasoning live in `SceneManager.spawn`.
         """
 
         self.tables: ProjectTables | None = None
@@ -423,6 +441,12 @@ class LayerRenderer:
         The renderer holds it for the reason it holds `collision_field`: it is
         the single funnel every entity passes through, so one slot serves the
         map spawn and `SceneManager.spawn` alike.
+
+        `spawn_defaults` above states that same rule now. It merely SAT
+        beside this slot for a while without following it -- read by the map
+        spawn and by nothing else -- and a sentence that describes an
+        intention for one slot while its neighbour quietly does otherwise is
+        exactly what a half-wired funnel looks like from in here.
 
         None costs nothing -- `actor_row` returns None for an object that
         names no row. `main.py` assigns `load_tables()` at boot.

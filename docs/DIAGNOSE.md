@@ -1,6 +1,7 @@
 <!-- pyoneer-doc: L2 -->
 <!-- pyoneer-stamp: hand-written; error strings below were produced by running the code at 5dd012d on 2026-08-16, and every source address was converted from file:line to #TAG: at d8c303f -->
 <!-- pyoneer-stamp: the collision section and its two rows in the raises/silent table were added on 2026-08-29 against the working tree, after per-tile masks and the folded companion changed which level answers first -->
+<!-- pyoneer-stamp: on 2026-09-04, at the finalize of the spawn-funnel + boot-path pass, the `no player_input token` row SPLIT and step 1 of "Nothing happens when I press a key" gained the boot warning: `MainGame` now emits a PyoneerContentWarning naming the <object> it adopted as the player when that body's list lacks the token, so that symptom is no longer wholly silent for the one body it is worst on. Re-measured by booting a fixture both ways -->
 
 # Diagnose — "why doesn't my entity do the thing"
 
@@ -22,7 +23,8 @@ nothing. Knowing which family your symptom is in halves the search.
 | unknown animation sequence | ✔ at `start()` | |
 | unknown movement **direction** | | ✔ moves zero |
 | unmapped tile layer name | | ✔ never draws |
-| no `player_input` token | | ✔ never moves |
+| no `player_input` token, on the body the game ADOPTED | warns at boot | ✔ never moves |
+| no `player_input` token, on any other body | | ✔ never moves |
 | collision field says BLOCK_ALL | | ✔ never moves |
 | a stamped tile carries its own mask | | ✔ blocks with no cell painted |
 | masks painted on a parallaxed layer | warns at load | ✔ never reach the field |
@@ -73,6 +75,17 @@ Walk this in order. It is the order the frame actually runs.
    drives this". Without it nothing writes a `MoveIntent` and every downstream
    behavior reads an empty one. A body with `topdown_move` and no
    `player_input` is a correct, inert body.
+   **For the one body the game adopts as the player, the boot says so**
+   (`#TAG:MainGame.warn_undriven_player`) -- a `PyoneerContentWarning`
+   naming that `<object>`, its layer, the missing token and the property to
+   put it in. A warning and not a raise: an object placed with its list not
+   yet typed is a map halfway through being edited, and refusing to load it
+   would take the editor down with the author still inside. It is
+   deliberately narrow -- only the ADOPTED body -- so a patrol, a decoy or a
+   signpost stays silent, and it says nothing at all when the game adopted
+   nothing, or when a subclass built the player in Python instead of
+   authoring it. So silence here does not mean the token is on the body you
+   were looking at; it means it is on the body the camera followed.
 2. **Is a key bound to the verb?** `config/inputs.json` is the whole binding
    surface and nothing in `demos/` names a keycode. Rebinding there changes the
    game and changes nothing else.
