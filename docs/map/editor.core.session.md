@@ -5,41 +5,46 @@
 
 > An editing session: a project, its command stream, and its staged notes.
 
-`editor.core.session` · 130 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.session` · 241 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    editor.core editor.core.commands editor.core.genre editor.core.project editor.core.request editor.core.scope
+    editor.core editor.core.collision editor.core.commands editor.core.genre editor.core.project editor.core.request editor.core.scope scripts.core.layer_profile
 
 ## Functions
 
-- `editor/core/session.py:125` `open_here(genre_id: str | None=None) -> Session` #TAG:open_here
+- `editor/core/session.py:236` `open_here(genre_id: str | None=None) -> Session` #TAG:open_here
   - Open the repository this file lives in. Convenience for tools.
 
 ## Classes
 
 ### `class Session` #TAG:Session
 
-`editor/core/session.py:30`–`122`
+`editor/core/session.py:38`–`233`
 
 > One open project, with undo history and a staged manifest.
 
-- `editor/core/session.py:33` `__init__(self, project: Project)` #TAG:Session.__init__
-- `editor/core/session.py:42` `@classmethod open(cls, root: str, *, genre_id: str | None=None) -> 'Session'` #TAG:Session.open
-- `editor/core/session.py:47` `run(self, commands: Command | Iterable[Command], *, label: str | None=None, source: str='editor') -> Transaction` #TAG:Session.run
+- `editor/core/session.py:41` `__init__(self, project: Project)` #TAG:Session.__init__
+- `editor/core/session.py:50` `@classmethod open(cls, root: str, *, genre_id: str | None=None) -> 'Session'` #TAG:Session.open
+- `editor/core/session.py:55` `run(self, commands: Command | Iterable[Command], *, label: str | None=None, source: str='editor') -> Transaction` #TAG:Session.run
   - The only way anything changes. Atomic; raises on any failure.
-- `editor/core/session.py:52` `undo(self) -> Transaction | None` #TAG:Session.undo
-- `editor/core/session.py:55` `redo(self) -> Transaction | None` #TAG:Session.redo
-- `editor/core/session.py:58` `save(self) -> list[str]` #TAG:Session.save
-- `editor/core/session.py:62` `@property dirty(self) -> bool` #TAG:Session.dirty
-- `editor/core/session.py:67` `stage(self, scope: Scope | str, text: str, kind: str='change') -> Note` #TAG:Session.stage
+- `editor/core/session.py:60` `undo(self) -> Transaction | None` #TAG:Session.undo
+- `editor/core/session.py:63` `redo(self) -> Transaction | None` #TAG:Session.redo
+- `editor/core/session.py:66` `save(self) -> list[str]` #TAG:Session.save
+- `editor/core/session.py:70` `@property dirty(self) -> bool` #TAG:Session.dirty
+- `editor/core/session.py:75` `stage(self, scope: Scope | str, text: str, kind: str='change') -> Note` #TAG:Session.stage
   - Attach a note to a scope. This is the prompt strip's whole job.
-- `editor/core/session.py:72` `ship(self, *, title: str='') -> Bundle` #TAG:Session.ship
+- `editor/core/session.py:80` `ship(self, *, title: str='') -> Bundle` #TAG:Session.ship
   - Write the staged notes as a request bundle and clear them.
-- `editor/core/session.py:83` `apply_response(self, path: str) -> Transaction` #TAG:Session.apply_response
+- `editor/core/session.py:89` `ask(self, scope: Scope | str, text: str, kind: str='change', *, requests_dir: str | None=None) -> str` #TAG:Session.ask
+  - One note, one bundle, cut to one address. Returns its path.
+- `editor/core/session.py:122` `apply_response(self, path: str) -> Transaction` #TAG:Session.apply_response
   - Apply a `response.jsonl` as one undoable transaction.
-- `editor/core/session.py:93` `problems(self) -> list[RuleViolation]` #TAG:Session.problems
-- `editor/core/session.py:96` `history(self) -> list[Transaction]` #TAG:Session.history
-- `editor/core/session.py:99` `subscribe(self, fn: Callable[[Transaction, str], None]) -> None` #TAG:Session.subscribe
-- `editor/core/session.py:104` `known_scopes(self) -> list[Scope]` #TAG:Session.known_scopes
+- `editor/core/session.py:132` `problems(self) -> list[RuleViolation]` #TAG:Session.problems
+  - Everything wrong with the project: the genre's rules, plus the one
+- `editor/core/session.py:139` `__dead_masks(self) -> Iterable[RuleViolation]` #TAG:Session.__dead_masks
+  - Masks that are painted, look painted, and gate nothing.
+- `editor/core/session.py:207` `history(self) -> list[Transaction]` #TAG:Session.history
+- `editor/core/session.py:210` `subscribe(self, fn: Callable[[Transaction, str], None]) -> None` #TAG:Session.subscribe
+- `editor/core/session.py:215` `known_scopes(self) -> list[Scope]` #TAG:Session.known_scopes
   - Every scope currently worth naming, for pickers and validation.

@@ -35,8 +35,33 @@ The fold set comes from `companion_pairs`, which reads
 declared is an ordinary paintable layer and stays on screen, and a
 declaration naming a layer the map does not have folds nothing -- so the
 dangling case an author can actually fix stays visible.
+
+A ROW IS A CONTROL, NOT A LABEL
+-------------------------------
+Double-clicking an object row centres the canvas on it. Right-clicking one
+opens Select, Focus, Edit, Cut, Copy, Paste and Delete. Right-clicking an
+object LAYER row opens the same menu with Paste live and the object entries
+greyed -- without that, the only surface a cut object could be pasted back
+onto would be the row that was just cut away, and a clipboard you cannot
+empty is a clipboard that does not work.
+
+An entry that cannot act is DISABLED and carries the reason in its own
+label, the way `TilePalette.tileset_menu` does one panel over: a control
+that is present and refusing has already spent the click by the time the
+refusal arrives. Over any other row -- a tile layer, a group, the map --
+the menu does not open at all, because a menu whose every entry is greyed
+tells the author they missed without telling them what they missed.
+
+The clipboard holds AUTHORED DATA AND NEVER AN ID; see `ObjectClipping`
+for why an id must not make the trip. A paste is ONE `map.object.add`, so
+it is one undo step, and it lands a tile away from the last one it made
+rather than exactly on its source -- a duplicate nobody can see is
+indistinguishable from nothing having happened.
 """
 from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -44,6 +69,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -53,6 +79,9 @@ from PySide6.QtWidgets import (
 )
 
 from scripts.core.depth import MAP_DEPTH, OBJECT_DEPTH
+from scripts.core.errors import PyoneerError
+from scripts.game.behavior.base import BEHAVIORS
+from scripts.game.behavior.registry import validate_list
 
 from editor.core.collision import (
     NO_DATA,
@@ -65,6 +94,13 @@ from editor.core.commands import Command
 from editor.core.inspect import Field
 from editor.core.project import layer_tree
 from editor.core.scope import Scope
+# The menu seam, imported rather than respelled. `_exec_menu` pops with
+# `popup` and never with the blocking call law 13 is about, and it is held
+# as an instance attribute so a check can read the menu a real right-click
+# built. Its own docstring says why there is one function and not one per
+# panel: a second spelling is a second menu nothing is watching, which is
+# how the modal that hung this suite for 40+ minutes got in.
+from editor.ui.canvas import _exec_menu, _hold_menu
 from editor.ui.docks import ScopedDock
 
 _KIND_MARK = {"tile": "▦", "object": "◈", "image": "▣", "group": "▾"}
@@ -74,6 +110,48 @@ _KIND_MARK = {"tile": "▦", "object": "◈", "image": "▣", "group": "▾"}
 _MASK_MARK = "▨"
 
 _TOP_LEVEL = "(top level)"
+
+
+@dataclass(frozen=True)
+class ObjectClipping:
+    """One object's authored data, with its id deliberately left behind.
+
+    AN ID DOES NOT MAKE THE TRIP. An id is per-map and per-document, and
+    this document RECYCLES them -- `MapDocument._release_object_id` rolls
+    `nextobjectid` back so that add-then-remove is byte-exact, which means
+    the id you copied is very likely handed to a DIFFERENT object before
+    you paste. A clipping that carried one would paste onto a stranger,
+    and the canvas already learned this lesson the expensive way: its
+    selection names an object and not an id for the same reason.
+
+    `properties` is EVERY custom property, not only the `pyoneer_` ones.
+    The behavior list and its parameters are the point of the exercise,
+    but an object also carries whatever the author invented -- `locked`,
+    `loot` -- and a copy that quietly dropped those is a duplicate that
+    looks right and plays differently (law 7). They are held as a sorted
+    tuple of pairs so a clipping cannot be edited after the fact by
+    whoever is holding it.
+
+    `map_name` rides along so a paste can tell same-map from cross-map. It
+    is never written into anything: it exists for `paste_refusal`, where a
+    gid is the one field whose meaning does not survive the trip.
+    """
+
+    map_name: str
+    layer: str
+    type: str
+    name: str
+    x: float
+    y: float
+    width: float
+    height: float
+    gid: int
+    properties: tuple[tuple[str, Any], ...]
+    label: str
+
+    def property_dict(self) -> dict[str, Any]:
+        """A fresh mutable copy, for handing to `map.object.add`."""
+        return dict(self.properties)
 
 
 class HierarchyDock(ScopedDock):
@@ -87,7 +165,22 @@ class HierarchyDock(ScopedDock):
     #: on the very first build, before `__collision` has ever run.
     __collision_refusal = ""
 
+    #: What Copy and Cut last took. Held on the CLASS, not the instance, so
+    #: one cut can be pasted after the window has switched maps -- the dock
+    #: survives that, but a clipboard hidden behind a per-instance attribute
+    #: would still be the wrong shape the day a second window exists.
+    _clipboard: "ObjectClipping | None" = None
+
+    #: How many times the current clipping has been pasted. Reset by every
+    #: Copy and Cut, and the whole reason two pastes never land on top of
+    #: each other. See `paste_position`.
+    _paste_step: int = 0
+
     def build_content(self) -> QWidget:
+        # The menu seam, replaceable per instance exactly like `self.ask`:
+        # a check replaces it to READ the menu a real right-click built,
+        # and the unreplaced path pops rather than blocking (law 13).
+        self.popup_menu = _exec_menu
         holder = QWidget()
         layout = QVBoxLayout(holder)
         layout.setContentsMargins(4, 4, 4, 2)
@@ -110,6 +203,9 @@ class HierarchyDock(ScopedDock):
         self.tree.setUniformRowHeights(True)
         self.tree.currentItemChanged.connect(self.__on_current)
         self.tree.itemChanged.connect(self.__on_check)
+        self.tree.itemDoubleClicked.connect(self.__on_double)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.__on_context_menu)
         layout.addWidget(self.tree, 1)
 
         buttons = QHBoxLayout()
@@ -194,18 +290,67 @@ class HierarchyDock(ScopedDock):
                            {"name": name, "kind": kind,
                             "group": "" if group == _TOP_LEVEL else group}))
 
+    def __orphaned_companion(self, layer: str) -> list[str]:
+        """The companion `layer` takes with it -- at most one, often none.
+
+        A COMPANION LEAVES WITH THE LAYER IT BELONGS TO. #TAG:companion_leaves_with_its_layer
+        Removing the art layer alone stranded it, and a stranded companion
+        is no longer folded: it UNFOLDS into the tree as a
+        `pyoneer_renders` false row holding masks for a layer that is gone
+        -- the visible collision tilemap this panel exists to abolish,
+        produced by the one operation an author performs on a painted
+        layer. The minus button cannot reach it either, because a folded
+        companion has no row to select.
+
+        Two refusals, both deliberate:
+
+          * A companion a SECOND art layer still points at is LEFT ALONE.
+            Two layers sharing one companion is legal, and taking it away
+            from a living layer is a worse outcome than leaving a stray.
+          * The pairing is `companion_pairs` and nothing else -- not the
+            `Collision` name suffix, and not `pyoneer_passability` being
+            present. `companion_name` is declared-wins-over-CONVENTION, so
+            an undeclared `Floor` pairs with `FloorCollision`, and a test
+            for the property would miss every layer the author has.
+        """
+        try:
+            document = self.session.project.map(self._scope.require("map"))
+            pairs = companion_pairs(document)
+        except Exception as exc:                                # noqa: BLE001
+            # The same answer `refresh` gives when the declarations cannot
+            # be read: nothing is folded, so the companion still HAS a row
+            # and the author can remove it themselves. Taking a layer away
+            # on a question nobody could answer is the one removal undo
+            # cannot explain.
+            self.notify(f"this map's collision declarations could not be "
+                        f"read, so only {layer!r} was considered for "
+                        f"removal: {exc}", seconds=10)
+            return []
+        shared = {companion for art, companion in pairs if art != layer}
+        return [companion for art, companion in pairs
+                if art == layer and companion not in shared]
+
     def __on_remove(self) -> None:
         layer = self._scope.get("layer")
         if layer is None or self._scope.kind == "object":
             return
+        map_scope = Scope.of(("map", self._scope.require("map")))
+        going = [layer] + self.__orphaned_companion(layer)
+        # ONE transaction, so ONE Ctrl+Z takes both back. Two `run` calls
+        # would leave the author pressing undo once and looking at half a
+        # deleted pair -- an art layer restored with no masks, or masks with
+        # no layer.
+        commands = [Command("map.layer.remove", map_scope.child("layer", name))
+                    for name in going]
         # No confirmation: undo restores the layer byte-for-byte, and that
         # reassurance is reported after the click rather than asked before it.
-        if self.window().run(Command(
-                "map.layer.remove",
-                Scope.of(("map", self._scope.require("map")),
-                         ("layer", layer)))):
-            self.notify(f"removed {layer!r} and everything on it — "
-                        f"Ctrl+Z restores it byte-for-byte", seconds=10)
+        if self.window().run(commands, label=f"remove {', '.join(going)}"):
+            with_companion = ("" if len(going) == 1 else
+                              f" and its mask companion {going[1]!r}")
+            self.notify(f"removed {layer!r}{with_companion} and everything "
+                        f"on it — one Ctrl+Z restores "
+                        f"{'it' if len(going) == 1 else 'both'} "
+                        f"byte-for-byte", seconds=10)
 
     def __sync_buttons(self) -> None:
         """Enable only what can actually happen, and say why when it cannot.
@@ -415,7 +560,460 @@ class HierarchyDock(ScopedDock):
             item.setExpanded(True)
         return shown
 
+    # -- the row menu ------------------------------------------------------
+
+    def row_scope(self, point) -> Scope | None:
+        """The scope of the row under a VIEWPORT point, or None.
+
+        THE HIT TEST IS THE SILENT HALF. `itemAt` answers None past the end
+        of the list and for a point that is over no row at all, which is
+        what stops a menu from acting on whatever happened to be selected
+        instead of on what the author pointed at -- the same failure
+        `TilePalette.header_at` exists to prevent one panel over, where a
+        clamping hit test would have offered to rename the wrong sheet.
+        """
+        item = self.tree.itemAt(point)
+        if item is None:
+            return None
+        raw = item.data(0, Qt.UserRole)
+        if not raw:
+            return None
+        return Scope.parse(raw)
+
+    def __on_context_menu(self, point) -> None:
+        """`customContextMenuRequested` delivers a point in the TREE's own
+        coordinates and every hit test below wants the VIEWPORT's; the two
+        differ by the frame. One conversion, in one place, so no caller has
+        to remember which of the two it is holding."""
+        self.open_object_menu(self.tree.viewport().mapFrom(self.tree, point))
+
+    def open_object_menu(self, point) -> None:
+        """Right-click, in viewport coordinates.
+
+        Opens on an object row, and on an object LAYER row so that a
+        clipping has somewhere to land. Over anything else it opens NOTHING
+        and says what the button means instead -- `MapCanvas` answers the
+        same question the same way over bare ground.
+        """
+        scope = self.row_scope(point)
+        if scope is None or not (scope.kind == "object"
+                                 or self.is_object_layer(scope)):
+            self.notify("right-click an object for Select, Focus, Edit, Cut, "
+                        "Copy and Delete — or an object layer to paste onto")
+            return
+        menu = self.object_menu(scope)
+        # Parented to the tree, so it was never a top-level orphan (law
+        # 12) -- and freed when it closes rather than now, because `popup`
+        # returns with it still on screen. See `_hold_menu`.
+        _hold_menu(menu)
+        self.popup_menu(menu, self.tree.viewport().mapToGlobal(point))
+
+    def object_menu(self, scope: Scope) -> QMenu:
+        """The row menu, built and not yet shown.
+
+        Built apart from being shown for `TilePalette.tileset_menu`'s two
+        reasons: a check can trigger an entry without touching a modal (law
+        13), and every entry's ENABLEMENT is a fact about the map that has
+        to be read BEFORE the menu appears rather than after the click.
+        """
+        menu = QMenu(self.tree)
+        menu.setToolTipsVisible(True)
+        on_object = self.object_refusal(scope)
+
+        self.__entry(menu, "Select", "",
+                     "make this the editor's selection — the inspector, the "
+                     "prompt strip and the canvas all follow it",
+                     lambda: self.select_scope(scope))
+        self.__entry(menu, "Focus", self.focus_refusal(scope),
+                     "centre the canvas on it and select it",
+                     lambda: self.focus_object(scope))
+        self.__entry(menu, "Edit…", on_object,
+                     "open the entity editing screen on it",
+                     lambda: self.edit_object(scope))
+        self.__entry(menu, "Cut", on_object,
+                     "copy it and take it off the map, in ONE undo step",
+                     lambda: self.cut_object(scope))
+        self.__entry(menu, "Copy", on_object,
+                     "take its type, its size and every custom property — "
+                     "never its id, which this document recycles",
+                     lambda: self.copy_object(scope))
+        self.__entry(menu, "Paste", self.paste_refusal(scope),
+                     "add a copy, a tile away from the last one",
+                     lambda: self.paste_object(scope))
+        self.__entry(menu, "Delete", on_object,
+                     "remove it. One Ctrl+Z puts it back with every property "
+                     "it carried",
+                     lambda: self.delete_object(scope))
+        return menu
+
+    def __entry(self, menu: QMenu, text: str, refusal: str, tip: str, act):
+        """One menu row. A refusal greys it AND goes in its own label.
+
+        The house rule, and the reason it is a helper rather than seven
+        copies of an if: a control that is present and refusing has already
+        spent the click by the time the refusal arrives, so the reason has
+        to be readable on the way TO the click.
+        """
+        entry = menu.addAction(text)
+        entry.triggered.connect(lambda _checked=False: act())
+        if refusal:
+            entry.setEnabled(False)
+            entry.setText(f"{text}  ·  {refusal}")
+            entry.setToolTip(refusal)
+        else:
+            entry.setToolTip(tip)
+        return entry
+
+    # -- what a row can and cannot do --------------------------------------
+
+    def __object(self, scope: Scope):
+        """The `MapObject` a scope names, or None. Never raises.
+
+        Asked while a menu is being BUILT, where a raise would take the
+        gesture with it -- and a row can outlive its object by one refresh,
+        which is exactly the case the menu has to be able to grey out.
+        """
+        if scope.kind != "object":
+            return None
+        try:
+            document = self.session.project.map(scope.require("map"))
+            layer = scope.require("layer")
+            if layer not in document.object_layer_names():
+                return None
+            return document.object_layer(layer).find(int(scope.name))
+        except Exception:                                       # noqa: BLE001
+            return None
+
+    @staticmethod
+    def object_label(found) -> str:
+        """How one object says which one it is, in a message.
+
+        Its authored name when it has one, because that is the string the
+        author typed and the only one they will recognise; the id when it
+        has none, whole rather than invented into something friendlier.
+        """
+        return f"{found.name or '#%d' % found.id} ({found.type or 'no type'})"
+
+    def object_refusal(self, scope: Scope) -> str:
+        """Why Edit, Cut, Copy and Delete cannot act on this row, or ""."""
+        if scope.kind == "layer":
+            return f"the {scope.name!r} layer is not an object"
+        if scope.kind != "object":
+            return f"{scope} is not an object"
+        if self.__object(scope) is None:
+            return f"{scope} no longer resolves to an object on this map"
+        return ""
+
+    def __canvas_focus(self):
+        """`MapCanvas.focus_object`, or None while the canvas has none."""
+        return getattr(getattr(self.window(), "canvas", None),
+                       "focus_object", None)
+
+    def focus_refusal(self, scope: Scope) -> str:
+        """Why Focus cannot act, or "".
+
+        Names the MISSING METHOD when that is the answer. The canvas owns
+        centring and this panel calls it; a Focus entry that was live and
+        then quietly did nothing would be the reachability failure this
+        repository keeps repeating, dressed as a working control.
+        """
+        blocked = self.object_refusal(scope)
+        if blocked:
+            return blocked
+        if not callable(self.__canvas_focus()):
+            return ("this canvas has no focus_object(scope) yet, so nothing "
+                    "here can centre the view on an object")
+        return ""
+
+    def paste_layer(self, scope: Scope) -> str | None:
+        """The object layer a paste on this row would land on, or None."""
+        if scope.kind not in ("layer", "object"):
+            return None
+        name = scope.get("layer")
+        map_name = scope.get("map")
+        if name is None or map_name is None:
+            return None
+        try:
+            document = self.session.project.map(map_name)
+        except Exception:                                       # noqa: BLE001
+            return None
+        return name if name in document.object_layer_names() else None
+
+    def is_object_layer(self, scope: Scope) -> bool:
+        return scope.kind == "layer" and self.paste_layer(scope) is not None
+
+    def paste_refusal(self, scope: Scope) -> str:
+        """Why Paste cannot act on this row, or "".
+
+        TWO REFUSALS THAT ARE NOT ABOUT THE ROW, and both are about a
+        clipping meaning something different where it is going:
+
+          * A GID IS A NUMBER IN ONE MAP'S TILESETS. Cross-map paste is
+            otherwise free -- an object's authored data is its own -- but a
+            `gid` names a tile through the target map's `firstgid`s, so the
+            same number in another map draws different art or none at all,
+            raising nowhere. That is refused rather than pasted; a gidless
+            object crosses maps freely.
+          * A BEHAVIOR TOKEN THE REGISTRY DOES NOT KNOW. `resolve` raises
+            on one by design (law 8), so a paste that stripped it would
+            produce an object that looks authored and does nothing. The
+            token is named here, in the entry's own label, and the
+            authority is `validate_list` rather than a membership test --
+            it also catches the duplicate and the declared conflict, which
+            a membership test would paste straight through.
+        """
+        clip = self._clipboard
+        if clip is None:
+            return "nothing has been copied yet"
+        map_name = scope.get("map")
+        if map_name is None:
+            return "this row is not on a map"
+        if self.paste_layer(scope) is None:
+            return "an object goes on an object layer, and this row is not one"
+        if clip.map_name != map_name and clip.gid:
+            return (f"{clip.label} draws tile gid {clip.gid}, which is a "
+                    f"number in map:{clip.map_name}'s tilesets and not in "
+                    f"map:{map_name}'s")
+        try:
+            validate_list(clip.property_dict().get(BEHAVIORS),
+                          where=f"the copied {clip.label}")
+        except PyoneerError as exc:                             # noqa: BLE001
+            token = getattr(exc, "name", "")
+            return (f"its {BEHAVIORS} names {token!r}, which no behavior is "
+                    f"registered under" if token
+                    else getattr(exc, "message", str(exc)))
+        return ""
+
+    # -- what a row can do -------------------------------------------------
+
+    def edit_object(self, scope: Scope) -> bool:
+        """Open the entity editing screen. The window owns that door.
+
+        `EditorWindow.edit_object` is already the far end of the canvas's
+        double-click, so this calls it rather than growing a second route
+        to the same window -- two openers is two places for the one-window
+        rule to be forgotten.
+        """
+        refusal = self.object_refusal(scope)
+        if refusal:
+            self.notify(f"there is nothing to edit here: {refusal}")
+            return False
+        opener = getattr(self.window(), "edit_object", None)
+        if not callable(opener):
+            self.notify("this window has no entity editor to open")
+            return False
+        opener(scope)
+        return True
+
+    def focus_object(self, scope: Scope) -> bool:
+        """Centre the canvas on the object this row names.
+
+        SPELLED OUT, not reached through `__canvas_focus`, and that is not
+        style. The counter-move this repository writes down for its own
+        signature defect is "grep for a caller from the layer ABOVE the
+        thing you just built" -- and measured here, the getter form left
+        `grep -rn "canvas.focus_object" editor/ui/` returning the canvas's
+        own docstring and NOTHING ELSE, which reads exactly like a
+        capability with no caller. `focus_refusal` has already proved the
+        attribute is there and callable, so the direct spelling is the
+        same call and one a grep can find.
+        """
+        refusal = self.focus_refusal(scope)
+        if refusal:
+            self.notify(f"the canvas did not move: {refusal}", seconds=10)
+            return False
+        if not self.window().canvas.focus_object(scope):
+            self.notify(f"the canvas could not centre on {scope}: it resolves "
+                        f"to nothing there", seconds=10)
+            return False
+        return True
+
+    def copy_object(self, scope: Scope) -> bool:
+        """Snapshot the object onto the clipboard. Changes nothing.
+
+        A snapshot and not a command: nothing about the map moves, so there
+        is nothing to undo and nothing to put in the history.
+        """
+        refusal = self.object_refusal(scope)
+        if refusal:
+            self.notify(f"nothing was copied: {refusal}")
+            return False
+        found = self.__object(scope)
+        clip = ObjectClipping(
+            map_name=scope.require("map"), layer=scope.require("layer"),
+            type=found.type, name=found.name,
+            x=found.x, y=found.y,
+            width=found.width, height=found.height, gid=found.gid,
+            properties=tuple(sorted(found.properties.as_dict().items())),
+            label=self.object_label(found))
+        HierarchyDock._clipboard = clip
+        HierarchyDock._paste_step = 0
+        count = len(clip.properties)
+        self.notify(f"copied {clip.label} and its {count} "
+                    f"propert{'y' if count == 1 else 'ies'} — Paste puts a "
+                    f"new one on any object layer", seconds=8)
+        return True
+
+    def cut_object(self, scope: Scope) -> bool:
+        """Copy it and take it off the map, as ONE transaction.
+
+        ONE `run` call, so ONE Ctrl+Z puts it back -- the same reason
+        `__on_remove` batches a layer with its companion rather than
+        running two commands and leaving the author looking at half a pair.
+
+        THE SNAPSHOT IS TAKEN FIRST and survives a refused removal. A
+        clipboard that emptied itself when the map said no would lose the
+        thing the author was carrying, on the one path where they can least
+        afford it.
+        """
+        if not self.copy_object(scope):
+            return False
+        clip = self._clipboard
+        layer_scope = scope.parent()
+        if not self.window().run([Command("map.object.remove", scope)],
+                                 label=f"cut {clip.label}"):
+            return False
+        # Onto the layer it came off, never the scope that just stopped
+        # resolving: a selection pointing at a removed object is a stale
+        # address every panel downstream has to re-derive nothing from.
+        self.select_scope(layer_scope)
+        self.notify(f"cut {clip.label} — it is on the clipboard, and one "
+                    f"Ctrl+Z puts it back on {layer_scope} with every "
+                    f"property it carried", seconds=10)
+        return True
+
+    def delete_object(self, scope: Scope) -> bool:
+        """Remove the object. `map.object.remove` restores its whole XML."""
+        refusal = self.object_refusal(scope)
+        if refusal:
+            self.notify(f"nothing was deleted: {refusal}")
+            return False
+        label = self.object_label(self.__object(scope))
+        layer_scope = scope.parent()
+        # No confirmation: the inverse restores the whole `<object>`
+        # element, shape children and all, and that reassurance is reported
+        # after the click rather than asked before it.
+        if not self.window().run([Command("map.object.remove", scope)],
+                                 label=f"remove {label}"):
+            return False
+        self.select_scope(layer_scope)
+        self.notify(f"removed {label} — one Ctrl+Z puts it back with every "
+                    f"property it carried", seconds=10)
+        return True
+
+    @staticmethod
+    def paste_position(clip: ObjectClipping, document,
+                       step: int) -> tuple[float, float]:
+        """Where the `step`-th paste of `clip` lands, in world pixels.
+
+        ONE TILE DOWN AND RIGHT PER PASTE, never on the source. A duplicate
+        at the source's own coordinates draws underneath it, so the click
+        that made it is indistinguishable from a click that did nothing --
+        and the second paste has to clear the first for the same reason,
+        which is what `step` counts.
+
+        WRAPPED, NOT CLAMPED, and both alternatives fail the same test.
+        Cascading off the bottom-right corner puts a paste outside the map,
+        which is legal tmx that draws nowhere -- invisible again, by a
+        different route. Clamping to the edge stacks every later paste on
+        one clamped pixel -- invisible again, by the first route. Wrapping
+        keeps every paste inside the map AND keeps consecutive ones apart.
+        """
+        across = max(1, document.width) * document.tile_width
+        down = max(1, document.height) * document.tile_height
+        return ((clip.x + step * document.tile_width) % across,
+                (clip.y + step * document.tile_height) % down)
+
+    def paste_object(self, scope: Scope) -> bool:
+        """Add a copy of the clipping to the object layer this row is on.
+
+        ONE `map.object.add`, which is what makes a paste ONE undo step.
+        The alternative -- add, then set N properties -- cannot be built:
+        every command in a batch is constructed before the first one runs,
+        and the new object's id is not handed out until the add has.
+
+        THE PACK'S STARTING LIST IS REPORTED, NOT FOUGHT. `map.object.add`
+        materialises a genre pack's `object_classes` list onto a new object
+        when the caller supplies no `pyoneer_behaviors`, so a clipping that
+        carried none is born with the pack's. That precedence is the add
+        verb's and this does not argue with it -- an author's own list, an
+        explicitly empty one included, still wins outright -- but it IS a
+        difference between the source and the copy, so the report below
+        names the properties that appeared rather than letting them arrive
+        in silence.
+        """
+        refusal = self.paste_refusal(scope)
+        if refusal:
+            self.notify(f"nothing was pasted: {refusal}", seconds=10)
+            return False
+        clip = self._clipboard
+        map_name = scope.require("map")
+        layer = self.paste_layer(scope)
+        document = self.session.project.map(map_name)
+        step = self._paste_step + 1
+        x, y = self.paste_position(clip, document, step)
+        layer_scope = Scope.of(("map", map_name), ("layer", layer))
+        before = {obj.id for obj in document.object_layer(layer).objects()}
+        if not self.window().run(
+                [Command("map.object.add", layer_scope,
+                         {"type": clip.type, "name": clip.name,
+                          "x": x, "y": y,
+                          "width": clip.width, "height": clip.height,
+                          "gid": clip.gid,
+                          "properties": clip.property_dict()})],
+                label=f"paste {clip.label}"):
+            return False
+        HierarchyDock._paste_step = step
+
+        document = self.session.project.map(map_name)
+        fresh = [obj for obj in document.object_layer(layer).objects()
+                 if obj.id not in before]
+        if not fresh:
+            # Not reachable by clicking -- `run` answered True, so the add
+            # applied -- and reported rather than assumed all the same,
+            # because the alternative is a paste that claims to have worked
+            # and re-selects the row the author was already on.
+            self.notify(f"the paste ran and no new object appeared on "
+                        f"{layer_scope}")
+            return False
+        made = fresh[-1]
+        self.select_scope(layer_scope.child("object", str(made.id)))
+        born = sorted(set(made.properties.as_dict()) - set(clip.property_dict()))
+        extra = (f", and the {self.session.project.genre.id!r} pack's starting "
+                 f"list for {clip.type!r} was written onto it as "
+                 f"{', '.join(born)}" if born else "")
+        self.notify(f"pasted {clip.label} as #{made.id} at ({x:g}, {y:g}) on "
+                    f"{layer!r}{extra} — one Ctrl+Z takes it away", seconds=10)
+        return True
+
     # -- selection ---------------------------------------------------------
+
+    def select_scope(self, scope: Scope) -> None:
+        """Select a row without clicking it -- what a menu entry needs.
+
+        Moves the tree's own cursor as well as the editor's selection, so
+        the row the author acted on is the row that ends up highlighted.
+        The move is made with signals blocked and then announced by hand,
+        rather than letting `currentItemChanged` do it: a scope the tree
+        has no row for (a layer whose object was just cut) would otherwise
+        announce nothing at all.
+        """
+        self.tree.blockSignals(True)
+        self.__reselect(str(scope))
+        self.tree.blockSignals(False)
+        self.__announce(scope)
+
+    def __announce(self, scope: Scope) -> None:
+        """Tell the panel and the editor that this is what is selected.
+
+        ONE spelling, because a click and a menu entry must mean the same
+        thing: the panel's own prompt strip hangs off `_scope`, and every
+        inspector hangs off `window.selection`.
+        """
+        self.set_scope(scope)
+        window = self.window()
+        if hasattr(window, "selection"):
+            window.selection.select(scope)
 
     def __on_current(self, current, _previous) -> None:
         if current is None:
@@ -423,11 +1021,25 @@ class HierarchyDock(ScopedDock):
         raw = current.data(0, Qt.UserRole)
         if not raw:
             return
+        self.__announce(Scope.parse(raw))
+
+    def __on_double(self, item, _column) -> None:
+        """Double-click. AN OBJECT ROW MOVES THE CANVAS ONTO IT.
+
+        Selection is the single click's job and already happened by the
+        time this runs -- Qt presses before it double-clicks -- so this
+        adds the one thing a click cannot: finding the thing on a map
+        bigger than the viewport. A row that is not an object says what
+        the gesture is for rather than doing nothing.
+        """
+        raw = item.data(0, Qt.UserRole)
+        if not raw:
+            return
         scope = Scope.parse(raw)
-        self.set_scope(scope)
-        window = self.window()
-        if hasattr(window, "selection"):
-            window.selection.select(scope)
+        if scope.kind != "object":
+            self.notify("double-click an object to centre the canvas on it")
+            return
+        self.focus_object(scope)
 
     def on_selection_changed(self, scope: Scope) -> None:
         """Follow a selection made elsewhere -- canvas, problems, anywhere.
@@ -436,8 +1048,25 @@ class HierarchyDock(ScopedDock):
         off `_scope`, so without this a note typed in the hierarchy after
         clicking a tile on the canvas landed on the map rather than on the
         layer you were looking at.
+
+        A SCOPE ON ANOTHER MAP IS TWO DIFFERENT EVENTS, and the guard here
+        used to answer both by ignoring them. Since the window grew a map
+        picker, `__switch_map` selects the new map's scope, and a tree that
+        refused it went on listing the map that is no longer on screen --
+        every row an address the canvas will not act on, and every menu on
+        those rows aimed at the wrong document. So a scope naming the map
+        THIS WINDOW IS NOW SHOWING is adopted and the tree is rebuilt for
+        it. Anything else is still refused: the validator walks every map,
+        so double-clicking a problem on a map nobody is looking at must not
+        drag the tree off the one that is.
         """
-        if scope.get("map") != self._scope.get("map"):
+        wanted = scope.get("map")
+        if wanted != self._scope.get("map"):
+            if wanted is None or wanted != getattr(self.window(), "map_name",
+                                                   None):
+                return
+            self.set_scope(scope)
+            self.refresh()
             return
         self.set_scope(scope)
         self.tree.blockSignals(True)

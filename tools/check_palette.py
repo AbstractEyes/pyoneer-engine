@@ -2,8 +2,8 @@
 
 WHAT THIS IS FOR
 ----------------
-Two surfaces the author judges the editor by, and two failure shapes that
-raise nowhere:
+Three surfaces the author judges the editor by, and three failure shapes
+that raise nowhere:
 
   * THE PALETTE. Every tileset the map declares, stacked in one scroll, with
     the selection stored as a tileset NAME plus a rectangle in that
@@ -18,6 +18,14 @@ raise nowhere:
     disagreeing about which pixels a gid names -- measured, they agree only
     at margin 0, spacing 0, and a full-width column count.
 
+  * THE HEADER MENU. Right-clicking a tileset's header strip renames, grows
+    or removes it -- three verbs that were registered, refused with teeth,
+    inverted exactly, and constructed by nothing in the window at all. The
+    failure there is the one this repository keeps repeating: a layer that
+    is complete, checked, and unreachable by the person who asked for it.
+    The hit test is the silent half -- `locate` clamps a header point into a
+    cell, so a menu built on it renames the wrong sheet and looks right.
+
 BOTH HALVES, EVERY TIME
 -----------------------
 The dominant failure in this tree is one half of an invariant, so a
@@ -29,7 +37,10 @@ supposed to draw.
 
 ITS OWN FIXTURE, NEVER data/maps/test.tmx (law 4). Three tilesets over three
 generated sheets, with cells painted in two of them, built in a temporary
-workspace and thrown away.
+workspace and thrown away. The first of them is given HEADROOM -- a hole in the gid
+space above its range -- because growth inside a hole is the only growth that
+moves nothing, and a fixture packed the obvious way could only ever assert the
+refusal.
 
 Skips cleanly when PySide6 is not installed.
 """
@@ -51,14 +62,19 @@ if importlib.util.find_spec("PySide6") is None:
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QRect, Qt                       # noqa: E402
+from PySide6.QtCore import QEvent, QPoint, QRect, Qt               # noqa: E402
 from PySide6.QtGui import QColor, QImage, QMouseEvent              # noqa: E402
 from PySide6.QtWidgets import QApplication                         # noqa: E402
 
 from editor.core.commands import Command                           # noqa: E402
 from editor.core.scope import Scope                                # noqa: E402
 from editor.core.session import Session                            # noqa: E402
-from editor.ui.canvas import _PaletteSurface                       # noqa: E402
+from editor.ui.canvas import (                                    # noqa: E402
+    TilePalette,
+    TilesetFacts,
+    _PaletteSurface,
+)
+import editor.ui.main_window as main_window_module                 # noqa: E402
 from editor.ui.main_window import EditorWindow                     # noqa: E402
 from editor.ui.tileset import TilesetAtlas                         # noqa: E402
 from editor.ui.tileset_dialog import (                             # noqa: E402
@@ -68,6 +84,29 @@ from editor.ui.tileset_dialog import (                             # noqa: E402
 )
 
 REPO = _bootstrap.REPO_ROOT
+
+
+class _FakeLayout:
+    """The window's dock layout store, stubbed for the same two reasons as
+    in `check_editor_ui.py`: this file builds a real `EditorWindow` and
+    closes it, so a real `QSettings` would rewrite the developer's own panel
+    arrangement -- and would read it back on the way in, making every
+    palette assertion below depend on how he last dragged a dock.
+    """
+
+    def __init__(self):
+        self.data = {}
+
+    def value(self, key, default=None):
+        return self.data.get(key, default)
+
+    def setValue(self, key, value):
+        self.data[key] = value
+
+
+LAYOUTS = _FakeLayout()
+main_window_module.layout_store = lambda: LAYOUTS
+
 failures: list[str] = []
 
 
@@ -113,6 +152,12 @@ def paint_grid(path: str, columns: int, rows: int, *,
         raise OSError(f"could not write the fixture sheet {path}")
 
 
+# ALPHA IS BOUGHT HEADROOM, and the numbers below say so out loud: it owns
+# gids 1-16 and the next tileset starts at 33, so sixteen gids in the middle
+# resolve to nothing until something grows into them. That hole is what
+# `map.tileset.grow` spends, and a fixture packed the obvious way -- Beta at
+# 17 -- can only ever assert the refusal. Beta and Spaced stay packed against
+# each other on purpose, so the other half is here too.
 FIXTURE_TMX = """<?xml version="1.0" encoding="UTF-8"?>
 <map version="1.2" tiledversion="1.3.1" orientation="orthogonal" \
 renderorder="right-down" width="4" height="4" tilewidth="16" tileheight="16" \
@@ -121,21 +166,21 @@ infinite="0" nextlayerid="3" nextobjectid="1">
 tilecount="16" columns="4">
   <image source="sheets/alpha.png" width="64" height="64"/>
  </tileset>
- <tileset firstgid="17" name="Beta" tilewidth="16" tileheight="16" \
+ <tileset firstgid="33" name="Beta" tilewidth="16" tileheight="16" \
 tilecount="4" columns="2">
   <image source="sheets/beta.png" width="32" height="32"/>
  </tileset>
- <tileset firstgid="21" name="Spaced" tilewidth="16" tileheight="16" \
+ <tileset firstgid="37" name="Spaced" tilewidth="16" tileheight="16" \
 tilecount="4" columns="2" margin="4" spacing="2">
   <image source="sheets/spaced.png" width="38" height="38"/>
  </tileset>
- <tileset firstgid="25" name="collision" tilewidth="16" tileheight="16" tilecount="17" columns="17">
+ <tileset firstgid="41" name="collision" tilewidth="16" tileheight="16" tilecount="17" columns="17">
   <image source="sheets/collision.png" width="272" height="16"/>
  </tileset>
  <layer id="1" name="Floor" width="4" height="4">
   <data encoding="csv">
-17,18,19,20,
-21,22,0,0,
+33,34,35,36,
+37,38,0,0,
 0,0,0,0,
 0,0,0,0
 </data>
@@ -151,6 +196,9 @@ def build_workspace() -> str:
     os.makedirs(sheets)
     os.makedirs(os.path.join(root, "config"))
     paint_grid(os.path.join(sheets, "alpha.png"), 4, 4, seed=0)
+    # The re-cut sheet growth points at: the SAME WIDTH, two rows taller.
+    # Growth is rows only, so this is the only shape a grow can accept.
+    paint_grid(os.path.join(sheets, "alpha_tall.png"), 4, 6, seed=0)
     paint_grid(os.path.join(sheets, "beta.png"), 2, 2, seed=40)
     paint_grid(os.path.join(sheets, "spaced.png"), 2, 2,
                margin=4, spacing=2, seed=80)
@@ -294,7 +342,7 @@ try:
     # interpunct and a multiplication sign, and a check that cannot PRINT
     # its own failure on a cp1252 console turns a red line into a traceback.
     expect("a full pick counts what it holds",
-           ascii_fold(palette.caption.text()), "2x2 . 4 tiles from gid 17")
+           ascii_fold(palette.caption.text()), "2x2 . 4 tiles from gid 33")
     # A ragged sheet: Spaced holds 4 tiles in a 2x2, so a drag to its last
     # cell is full. Alpha's 16 in a 4x4 likewise. The honest case here is a
     # pick that runs off a SHORT last row, which this fixture makes by
@@ -317,7 +365,7 @@ try:
     window.canvas.set_active_layer("Floor")
     window.run(Command("map.tile.set_many",
                        Scope.of(("map", "fixture"), ("layer", "Floor")),
-                       {"tiles": [[3, 3, 17]]}))
+                       {"tiles": [[3, 3, 33]]}))
     application.processEvents()
     expect("a command rebuilds the palette and the selection survives",
            (palette.selection, palette.stamp().gids), before)
@@ -426,7 +474,7 @@ try:
     view.set_name("Cut")
     expect("the readout names the region, the drop and the gids it will take",
            ascii_fold(view.summary_text()),
-           "x=16 y=16 . 3 x 2 = 5 tiles . gids 42-46 (1 dropped off the end)")
+           "x=16 y=16 . 3 x 2 = 5 tiles . gids 58-62 (1 dropped off the end)")
     expect("...and a partial selection is a crop", view.whole_sheet, False)
 
     crop = view.crop_path()
@@ -444,7 +492,7 @@ try:
                                   "Cut"]))
     added = [ref for ref in document.tilesets() if ref.name == "Cut"][0]
     expect("...at the truncated tile count, over the region's columns",
-           (added.first_gid, added.tile_count, added.columns), (42, 5, 3))
+           (added.first_gid, added.tile_count, added.columns), (58, 5, 3))
 
     # THE PIXELS, not the numbers. The crop has to BE the offset region --
     # and, the other half, must not be the region an ignored offset gives.
@@ -469,10 +517,10 @@ try:
     # cannot see. The truncated end must be unreachable, not merely
     # uncounted.
     fresh = TilesetAtlas(document, tile_width=TILE, tile_height=TILE)
-    expect("the last declared tile resolves", fresh.entry_for(46) is not None,
+    expect("the last declared tile resolves", fresh.entry_for(62) is not None,
            True)
-    expect("...and the truncated one does not", fresh.entry_for(47), None)
-    tile_two = fresh.pixmap(43).toImage().convertToFormat(original.format())
+    expect("...and the truncated one does not", fresh.entry_for(63), None)
+    tile_two = fresh.pixmap(59).toImage().convertToFormat(original.format())
     expect("...and its second tile is the second tile of the REGION",
            tile_two == original.copy(QRect(2 * TILE, TILE, TILE, TILE)), True)
     expect("the palette drew a section for it",
@@ -489,7 +537,7 @@ try:
            (quiet, "that rectangle holds no tiles"))
     pick_range(palette, "Cut", 1, 1, 1, 1)
     expect("...while the real tile beside it does",
-           window.canvas.stamp.gids, (46,))
+           window.canvas.stamp.gids, (62,))
 
     # ----------------------------------------------------------------
     print()
@@ -548,6 +596,299 @@ try:
     expect("closing the importer lets the door open again",
            window.tileset_import, None)
 
+
+    # ----------------------------------------------------------------
+    print()
+    print("a tileset's header is a control: rename, grow, remove")
+    # ----------------------------------------------------------------
+    # `map.tileset.rename`, `.grow` and `.remove` were registered, refused
+    # with teeth, inverted exactly -- and constructed by NOTHING in the
+    # window, so the tileset the author asked to be nameable and growable
+    # was neither from inside the editor. Every assertion below is in both
+    # halves, because a menu offering an edit the map cannot afford is the
+    # same failure as one that does not offer the edit at all.
+
+    asked: list = []            # every form the palette opened
+    answers: dict = {}          # what it is told; empty means "cancelled"
+    opened: list = []           # every menu the popup seam was handed
+
+    def fake_ask(_parent, title, rows, *, ok_label="OK", note=""):
+        asked.append((title, [(f.key, f.value) for f in rows], ok_label))
+        return dict(answers) if answers else None
+
+    # The two seams, replaced on the one widget being driven -- a real
+    # `QuickForm` or a real `QMenu.exec` would block this run forever
+    # (law 13), and a check can only watch a seam it can replace.
+    palette.ask = fake_ask
+    palette.popup_menu = lambda menu, at: opened.append(menu)
+    # EVERY EMISSION, because "it was refused" and "it was refused after the
+    # command existed" are different claims and only one of them is the one
+    # this menu makes. `len(session.history())` cannot tell them apart: a
+    # command the verb rejects leaves the history exactly as short.
+    requested: list = []
+    palette.tileset_requested.connect(
+        lambda name, verb, args: requested.append((name, verb, args)))
+
+    def labels(menu) -> list[str]:
+        return [ascii_fold(action.text()) for action in menu.actions()]
+
+    def right_click(x, y) -> list:
+        opened.clear()
+        palette.open_tileset_menu(QPoint(int(x), int(y)))
+        return list(opened)
+
+    alpha = palette.section("Alpha")
+
+    # THE HIT TEST, and the reason it is not `locate`. `locate` CLAMPS: it
+    # answers with a cell of the nearest section for every point on the
+    # surface, header and gutter alike, which is right for a drag that
+    # strays and catastrophic for a menu -- it would silently offer to
+    # rename a tileset the author was not pointing at.
+    expect("the header band belongs to its own tileset",
+           (palette.header_at(4, alpha.top).name,
+            palette.header_at(4, alpha.top + palette.HEADER - 1).name),
+           ("Alpha", "Alpha"))
+    on_tiles = alpha.grid_top + 2
+    expect("a point on the TILES is a cell of Alpha and NOT a header",
+           (palette.locate(4, on_tiles)[0].name,
+            palette.header_at(4, on_tiles)), ("Alpha", None))
+    in_gap = alpha.bottom + 2
+    expect("...and the gap under a sheet is not a header either",
+           (palette.locate(4, in_gap)[0].name, palette.header_at(4, in_gap)),
+           ("Alpha", None))
+    beta = palette.section("Beta")
+    expect("...and the band below it belongs to the NEXT tileset, not Alpha",
+           palette.header_at(4, beta.top + 2).name, "Beta")
+
+    # THE MENU, through the real right-click path.
+    expect("right-clicking a header opens the three verbs, each saying what "
+           "it costs",
+           labels(right_click(4, alpha.top + 3)[0]),
+           ["Rename...", "Grow... . room for 4 more rows", "Remove"])
+    expect("...and right-clicking the TILES opens nothing at all",
+           right_click(4, on_tiles), [])
+    expect("...nor does the gap between two sheets",
+           right_click(4, in_gap), [])
+
+    # THE FACTS the palette cannot see, from the window that can.
+    alpha_facts = palette.facts("Alpha")
+    expect("the window answers the two questions the atlas cannot",
+           (alpha_facts.headroom, alpha_facts.placed, alpha_facts.blocked_by,
+            alpha_facts.growth_refusal), (16, 0, "Beta at gid 33", ""))
+    beta_facts = palette.facts("Beta")
+    expect("...counting the cells a removal would orphan, by layer",
+           (beta_facts.placed, beta_facts.where, beta_facts.headroom),
+           (4, "Floor x4", 0))
+
+    # ENABLEMENT, both directions, per entry. A control that is present and
+    # refusing has already spent the click by the time the refusal arrives.
+    def menu_for(name):
+        return palette.tileset_menu(palette.section(name))
+
+    alpha_menu, beta_menu = menu_for("Alpha"), menu_for("Beta")
+    spaced_menu = menu_for("Spaced")
+    expect("Remove is live for a sheet nothing paints with",
+           alpha_menu.actions()[2].isEnabled(), True)
+    expect("...and greyed WITH THE COUNT for one the map still uses",
+           (beta_menu.actions()[2].isEnabled(),
+            ascii_fold(beta_menu.actions()[2].text())),
+           (False, "Remove . 4 placed tiles still point into it"))
+    expect("Grow is live where headroom was bought, and says how much",
+           (alpha_menu.actions()[1].isEnabled(),
+            ascii_fold(alpha_menu.actions()[1].text())),
+           (True, "Grow... . room for 4 more rows"))
+    expect("...names the neighbour when there is no room at all",
+           ascii_fold(beta_menu.actions()[1].text()),
+           "Grow... . no room before Spaced at gid 37")
+    expect("...and is greyed for a shape the verb refuses outright",
+           (spaced_menu.actions()[1].isEnabled(),
+            "margin=4 spacing=2" in spaced_menu.actions()[1].text()),
+           (False, True))
+    # The tileset at the TOP of the gid space has no neighbour, so its
+    # headroom is the whole rest of it -- eight figures of rows, which is
+    # not a number anybody decides with. Both halves, since the bounded
+    # case above counts real rows and this one has to say where the bound
+    # really is: the sheet, which the verb owns.
+    palette.tileset_facts = lambda _name: TilesetFacts(headroom=0x1FFFFFFF)
+    expect("...and a tileset with nothing above it prints no nine-digit row "
+           "count",
+           ascii_fold(menu_for("Alpha").actions()[1].text()),
+           "Grow... . room to the top of the gid space")
+    palette.tileset_facts = window.tileset_facts
+
+    # RENAME: the verb runs, the map carries it, one undo takes it back.
+    answers.clear()
+    answers["to"] = "Ground"
+    asked.clear()
+    menu_for("Alpha").actions()[0].trigger()
+    application.processEvents()
+    expect("Rename asks ONE form, prefilled with the name it has",
+           asked, [("Rename Alpha", [("to", "Alpha")], "Rename")])
+    expect("...emits one well-formed rename and runs it through the window",
+           (requested, [c.verb for c in session.history()[-1].commands],
+            session.project.map("fixture").tileset_names()),
+           ([("Alpha", "map.tileset.rename",
+              {"name": "Alpha", "to": "Ground"})],
+            ["map.tileset.rename"],
+            ["Ground", "Beta", "Spaced", "collision"]))
+    expect("...and the palette redraws under the new name",
+           [s.name for s in palette.sections], ["Ground", "Beta", "Spaced"])
+    window.undo()
+    application.processEvents()
+    expect("...and one undo puts the old name back, byte for byte",
+           (session.project.map("fixture").to_bytes() == ORIGINAL,
+            [s.name for s in palette.sections]),
+           (True, ["Alpha", "Beta", "Spaced"]))
+
+    # The other half of asking: a form that says nothing runs nothing.
+    quiet, _ = len(session.history()), requested.clear()
+    answers.clear()
+    menu_for("Alpha").actions()[0].trigger()
+    expect("cancelling the form asks for nothing to be run",
+           (requested, len(session.history())), ([], quiet))
+    answers["to"] = "Alpha"
+    menu_for("Alpha").actions()[0].trigger()
+    expect("...and neither does renaming a tileset to the name it has",
+           (requested, len(session.history())), ([], quiet))
+
+    # GROW: rows only, into the hole Alpha was given.
+    atlas = window.canvas.atlas
+    expect("the reserved gids above Alpha resolve to no tileset yet",
+           (atlas.entry_for(16).name, atlas.entry_for(17)), ("Alpha", None))
+    answers.clear()
+    answers.update({"rows": "2", "image": "sheets/alpha_tall.png"})
+    asked.clear()
+    menu_for("Alpha").actions()[1].trigger()
+    application.processEvents()
+    expect("Grow asks for a row count and the sheet, prefilled with the "
+           "current one",
+           asked, [("Grow Alpha",
+                    [("rows", "1"), ("image", "sheets/alpha.png")], "Grow")])
+    grown = [r for r in session.project.map("fixture").tilesets()
+             if r.name == "Alpha"][0]
+    expect("...and two rows of four became eight more tiles, on the taller "
+           "sheet",
+           (requested, grown.tile_count, grown.image_source),
+           ([("Alpha", "map.tileset.grow",
+              {"name": "Alpha", "tile_count": 24,
+               "image": "sheets/alpha_tall.png"})],
+            24, "sheets/alpha_tall.png"))
+    expect("...which the palette draws as two more rows",
+           (palette.section("Alpha").rows,
+            palette.section("Alpha").entry.tile_count), (6, 24))
+    expect("...and the reserved gids now resolve to Alpha",
+           window.canvas.atlas.entry_for(17).name, "Alpha")
+    window.undo()
+    application.processEvents()
+    expect("...and one undo restores all four values byte for byte",
+           (session.project.map("fixture").to_bytes() == ORIGINAL,
+            window.canvas.atlas.entry_for(17)), (True, None))
+
+    # THE IMAGE IS ONLY SENT WHEN IT CHANGED, the other branch of the same
+    # argument: the verb measures a re-cut sheet from its own PNG header,
+    # and a widget passing dimensions for a file it never opened is a widget
+    # telling the file what size it is. A negative row count truncates, and
+    # this one keeps the sheet it already has.
+    requested.clear()
+    answers.update({"rows": "-1", "image": "sheets/alpha.png"})
+    menu_for("Alpha").actions()[1].trigger()
+    application.processEvents()
+    shrunk = [r for r in session.project.map("fixture").tilesets()
+              if r.name == "Alpha"][0]
+    expect("a negative row count truncates, and names no image at all",
+           (requested, shrunk.tile_count, shrunk.image_source),
+           ([("Alpha", "map.tileset.grow",
+              {"name": "Alpha", "tile_count": 12})], 12, "sheets/alpha.png"))
+    window.undo()
+    application.processEvents()
+    expect("...and undo puts those four values back too",
+           session.project.map("fixture").to_bytes() == ORIGINAL, True)
+
+    # THE REFUSAL HALF, and it happens BEFORE a command exists: the
+    # headroom is quoted in the form, and an over-ask never reaches the
+    # verb -- which would refuse it too, after the author had spent a
+    # dialog on it.
+    quiet, _ = len(session.history()), requested.clear()
+    answers.update({"rows": "5", "image": "sheets/alpha_tall.png"})
+    menu_for("Alpha").actions()[1].trigger()
+    application.processEvents()
+    expect("asking for more rows than the headroom holds never becomes a "
+           "command",
+           (requested, len(session.history()),
+            ascii_fold(palette.caption.text())),
+           ([], quiet, "Alpha has room for 4 more rows (16 tiles) before Beta at "
+                   "gid 33, not 5. Growing past it would overlap a range "
+                   "pytmx resolves two contradictory ways."))
+    asked.clear()
+    palette.request_grow(palette.section("Spaced"))
+    expect("...and a shape the verb will never grow is not even asked about",
+           (asked, requested, len(session.history())), ([], [], quiet))
+    answers.update({"rows": "0", "image": "sheets/alpha.png"})
+    menu_for("Alpha").actions()[1].trigger()
+    expect("...nor is a growth of no rows at all",
+           (requested, len(session.history()), palette.caption.text()),
+           ([], quiet, "0 rows is not a change"))
+
+    # REMOVE: the count first, the command only when there is nothing to
+    # orphan. No confirmation either way -- undo here is exact, and
+    # editor/ui/ask.py reserves a yes/no for what undo cannot reach.
+    asked.clear()
+    palette.request_remove(palette.section("Beta"))
+    expect("removing a tileset the map still paints with is refused HERE, "
+           "with the count and where",
+           (requested, len(session.history()), asked,
+            ascii_fold(palette.caption.text())),
+           ([], quiet, [],
+            "Beta still has 4 placed tiles (Floor x4). Clear them first -- "
+            "an orphaned gid raises nowhere, it just paints the wrong art."))
+    menu_for("Alpha").actions()[2].trigger()
+    application.processEvents()
+    expect("...while removing an unused one emits it and asks nothing",
+           (requested, [c.verb for c in session.history()[-1].commands], asked,
+            [s.name for s in palette.sections]),
+           ([("Alpha", "map.tileset.remove",
+              {"name": "Alpha", "force": False})],
+            ["map.tileset.remove"], [], ["Beta", "Spaced"]))
+    window.undo()
+    application.processEvents()
+    expect("...and one undo restores the element verbatim",
+           (session.project.map("fixture").to_bytes() == ORIGINAL,
+            [s.name for s in palette.sections]),
+           (True, ["Alpha", "Beta", "Spaced"]))
+
+    # AN UNANSWERABLE QUESTION IS NOT A ZERO. Both the palette with no map
+    # behind it and a document that raises grey the entries that needed the
+    # number and carry the reason -- "no headroom, nothing placed" is the
+    # shape of wrong answer that deletes an author's painted cells.
+    orphan = TilePalette()
+    expect("a palette attached to no map guesses nothing",
+           (orphan.tileset_facts, orphan.facts("Alpha").problem,
+            orphan.facts("Alpha").headroom),
+           (None, "this palette is not attached to a map", 0))
+
+    def boom(_name):
+        raise RuntimeError("the map would not open")
+
+    palette.tileset_facts = boom
+    broken = menu_for("Beta")
+    expect("a document that cannot answer greys both entries with its reason",
+           (palette.facts("Beta").problem, broken.actions()[1].isEnabled(),
+            broken.actions()[2].isEnabled()),
+           ("RuntimeError: the map would not open", False, False))
+    requested.clear()
+    palette.request_remove(palette.section("Beta"))
+    expect("...and the handler refuses too, so a trigger cannot get past it",
+           (requested, len(session.history()),
+            ascii_fold(palette.caption.text())),
+           ([], quiet, "Beta: RuntimeError: the map would not open"))
+    palette.tileset_facts = window.tileset_facts
+
+    # Closing a dirty window OFFERS TO SAVE now (`EditorWindow.closeEvent`),
+    # and this file has painted. "No" is what a teardown means: close and
+    # write nothing, exactly as `close()` behaved before the feature landed.
+    # Without this line the fixture would be flushed to disk on the way out
+    # and the check would quietly change what it writes.
+    window.confirm = lambda *a, **k: False
     window.close()
 finally:
     shutil.rmtree(workspace, ignore_errors=True)

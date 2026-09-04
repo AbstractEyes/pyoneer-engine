@@ -5,7 +5,7 @@
 
 > Scopes -- the addressing scheme that ties a panel, a note, and a command
 
-`editor.core.scope` · 307 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.scope` · 308 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -14,49 +14,49 @@
 ## Module constants
 
 - `editor/core/scope.py:50` `SCOPE_KINDS` #TAG:SCOPE_KINDS
-- `editor/core/scope.py:64` `UNNAMED_KINDS` #TAG:UNNAMED_KINDS
-- `editor/core/scope.py:227` `PROJECT` #TAG:PROJECT
-- `editor/core/scope.py:228` `GENRE` #TAG:GENRE
-- `editor/core/scope.py:229` `ASSETS` #TAG:ASSETS
+- `editor/core/scope.py:65` `UNNAMED_KINDS` #TAG:UNNAMED_KINDS
+- `editor/core/scope.py:228` `PROJECT` #TAG:PROJECT
+- `editor/core/scope.py:229` `GENRE` #TAG:GENRE
+- `editor/core/scope.py:230` `ASSETS` #TAG:ASSETS
 
 ## Functions
 
-- `editor/core/scope.py:290` `code_locations(scope: Scope) -> tuple[str, ...]` #TAG:code_locations
+- `editor/core/scope.py:291` `code_locations(scope: Scope) -> tuple[str, ...]` #TAG:code_locations
   - Repo-relative paths a request against `scope` will probably touch.
 
 ## Classes
 
 ### `@dataclass(frozen=True, order=True) class Segment` #TAG:Segment
 
-`editor/core/scope.py:68`–`73`
+`editor/core/scope.py:69`–`74`
 
-- `editor/core/scope.py:72` `__str__(self) -> str` #TAG:Segment.__str__
+- `editor/core/scope.py:73` `__str__(self) -> str` #TAG:Segment.__str__
 
 ### `@dataclass(frozen=True) class Scope` #TAG:Scope
 
-`editor/core/scope.py:77`–`224`
+`editor/core/scope.py:78`–`225`
 
 > An immutable document address.
 
-- `editor/core/scope.py:89` `@classmethod parse(cls, text: str) -> 'Scope'` #TAG:Scope.parse
-- `editor/core/scope.py:100` `@staticmethod __parse_segment(part: str, index: int, whole: str) -> Segment` #TAG:Scope.__parse_segment
-- `editor/core/scope.py:131` `@classmethod of(cls, *pairs: str | tuple[str, str]) -> 'Scope'` #TAG:Scope.of
+- `editor/core/scope.py:90` `@classmethod parse(cls, text: str) -> 'Scope'` #TAG:Scope.parse
+- `editor/core/scope.py:101` `@staticmethod __parse_segment(part: str, index: int, whole: str) -> Segment` #TAG:Scope.__parse_segment
+- `editor/core/scope.py:132` `@classmethod of(cls, *pairs: str | tuple[str, str]) -> 'Scope'` #TAG:Scope.of
   - Build without going through the string form.
-- `editor/core/scope.py:150` `__str__(self) -> str` #TAG:Scope.__str__
-- `editor/core/scope.py:153` `__repr__(self) -> str` #TAG:Scope.__repr__
-- `editor/core/scope.py:156` `__iter__(self) -> Iterator[Segment]` #TAG:Scope.__iter__
-- `editor/core/scope.py:159` `__len__(self) -> int` #TAG:Scope.__len__
-- `editor/core/scope.py:163` `@property kind(self) -> str` #TAG:Scope.kind
+- `editor/core/scope.py:151` `__str__(self) -> str` #TAG:Scope.__str__
+- `editor/core/scope.py:154` `__repr__(self) -> str` #TAG:Scope.__repr__
+- `editor/core/scope.py:157` `__iter__(self) -> Iterator[Segment]` #TAG:Scope.__iter__
+- `editor/core/scope.py:160` `__len__(self) -> int` #TAG:Scope.__len__
+- `editor/core/scope.py:164` `@property kind(self) -> str` #TAG:Scope.kind
   - The kind of the last segment -- what this scope *is*.
-- `editor/core/scope.py:168` `@property name(self) -> str` #TAG:Scope.name
+- `editor/core/scope.py:169` `@property name(self) -> str` #TAG:Scope.name
   - The name of the last segment.
-- `editor/core/scope.py:173` `@property root_kind(self) -> str` #TAG:Scope.root_kind
-- `editor/core/scope.py:176` `get(self, kind: str) -> str | None` #TAG:Scope.get
+- `editor/core/scope.py:174` `@property root_kind(self) -> str` #TAG:Scope.root_kind
+- `editor/core/scope.py:177` `get(self, kind: str) -> str | None` #TAG:Scope.get
   - The name of the first segment of `kind`, or None.
-- `editor/core/scope.py:187` `require(self, kind: str) -> str` #TAG:Scope.require
-- `editor/core/scope.py:195` `parent(self) -> 'Scope | None'` #TAG:Scope.parent
-- `editor/core/scope.py:200` `child(self, kind: str, name: str='') -> 'Scope'` #TAG:Scope.child
-- `editor/core/scope.py:204` `is_under(self, other: 'Scope') -> bool` #TAG:Scope.is_under
+- `editor/core/scope.py:188` `require(self, kind: str) -> str` #TAG:Scope.require
+- `editor/core/scope.py:196` `parent(self) -> 'Scope | None'` #TAG:Scope.parent
+- `editor/core/scope.py:201` `child(self, kind: str, name: str='') -> 'Scope'` #TAG:Scope.child
+- `editor/core/scope.py:205` `is_under(self, other: 'Scope') -> bool` #TAG:Scope.is_under
   - True when `other` is this scope or one of its ancestors.
-- `editor/core/scope.py:209` `matches(self, pattern: str) -> bool` #TAG:Scope.matches
+- `editor/core/scope.py:210` `matches(self, pattern: str) -> bool` #TAG:Scope.matches
   - Match against a pattern where `*` stands in for any one name.

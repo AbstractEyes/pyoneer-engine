@@ -39,19 +39,25 @@ class SidestepDemo(DemoGame):
     MAP_NAME = "demo_sidestep"
 
     COLLISION_OFFSET = (22.0, 63.0)
-    """Feet, not head. The single per-entity value a .tmx cannot say.
+    """The anchor this demo EXPECTS, typed out. It is not applied here.
 
-    `GameEntity.collision_offset` defaults to (0, 0), which is the sprite's
-    TOP-LEFT, because `EntityLayer` blits with `get_rect(topleft=position)`.
-    For the shipped 44x64 `~Garet` frame that anchor is the top of the
-    character's head, so a body gated at (0, 0) stops with its head on the
-    floor and its whole sprite below it. Half the width and one pixel above
-    the bottom edge is feet.
+    Feet, not head. `GameEntity.collision_offset` defaults to (0, 0), which
+    is the sprite's TOP-LEFT, because `EntityLayer` blits with
+    `get_rect(topleft=position)`; for the shipped 44x64 `~Garet` frame that
+    anchor is the top of the character's head, so a body gated at (0, 0)
+    walks 63 pixels down into the floor and stops with its head on the floor
+    line and its whole sprite below it.
 
-    Left in Python because there is no `pyoneer_collision_offset` property
-    and no behavior parameter for it -- see docs/DEMOS.md, "What a demo still
-    has to say in Python". This is the shortest item on that list and the one
-    most worth closing.
+    This demo no longer assigns it. `main.py`'s `feet_anchor` DERIVES the
+    same pair from the animation category -- half the frame wide, one pixel
+    above the bottom edge -- and `spawn_arguments()` hands it to every object
+    the map spawns, which is the route the shipped game uses too.
+
+    The literal survives as the thing that derivation is checked AGAINST:
+    `tools/check_demos.py` asserts the live body's anchor equals this pair,
+    and comparing a derived number to a second derivation of itself is the
+    assertion that cannot fail. So this is a hand-typed expected value, and
+    it goes red if the anchor ever stops meaning feet.
     """
 
 

@@ -12,16 +12,22 @@ inherited unchanged, since a demo wants the arguments `main.py` hands a
 you find yourself copying a method out of `MainGame` into this file, the
 method wanted a hook and the hook is the change.
 
-`DemoGame` supplies the two values a `.tmx` object has no way to say:
+`DemoGame` supplies the ONE value a `.tmx` object has no way to say:
 
   the camera target    derived from the composition -- the entity carrying
                        `player_input` is the one the human drives -- rather
                        than from a flag.
-  the collision anchor `GameEntity.collision_offset`, which has no tmx
-                       property or behavior parameter yet. See docs/DEMOS.md,
-                       "What a demo still has to say in Python".
 
-It does not assign `GameEntity.collision_field`: baking the map's passability
+It no longer supplies the collision anchor. `GameEntity.collision_offset` is
+a constructor keyword now, `main.py`'s `spawn_arguments()` derives it from
+the animation category with `feet_anchor`, and `spawn_arguments` is the one
+hook `DemoGame` inherits UNCHANGED -- so every body a demo map spawns is
+anchored at its feet by the same route that anchors the shipped game's
+player. A demo that reassigned `collision_offset` afterwards would pass on
+its own and hide a broken shared route from every other map-driven game,
+which is exactly what it did while it was doing it.
+
+It does not assign `GameEntity.collision_field` either: baking the map's passability
 and handing it out is the engine's job, done once in
 `LayerRenderer.__bind_map` via `collision_runtime.field_from_map`. A demo
 that gated its own entities privately would hide the gap for every other
@@ -66,16 +72,6 @@ class DemoGame(MainGame):
     MAP_NAME: str = ""
     """Key in `demos.mapgen.SOURCES`. Its .tmx is written on first use."""
 
-    COLLISION_OFFSET: tuple[float, float] | None = None
-    """Where every spawned entity's collision point sits in its sprite.
-
-    None leaves `GameEntity`'s default of (0, 0) -- the sprite's top-left,
-    which for a 44x64 character is the top of its head. `(22.0, 63.0)` is
-    feet: half the sprite wide, one pixel above its bottom edge. Applied per
-    entity in `load_test_objects` because there is no authoring surface for
-    it; if one ever lands, delete this and put the number in the map.
-    """
-
     # ---------------------------------------------------------------- hooks
 
     def load_map(self) -> tuple[GameCamera, GameMap]:
@@ -110,11 +106,13 @@ class DemoGame(MainGame):
         `MainGame.prepare_test_scene` calls this AFTER `bind("MAP", ...)`, so
         `renderer.spawned_entities` is already populated. Returning an empty
         list is the point: every entity in a demo comes from the .tmx.
+
+        It configures NO entity attributes. The collision anchor used to be
+        reassigned here, per record, after the map had already built them;
+        it now arrives through `spawn_arguments()` at construction, so this
+        method only picks the camera's target.
         """
         records = list(self.renderer.spawned_entities)
-        if self.COLLISION_OFFSET is not None:
-            for record in records:
-                record.entity.collision_offset = self.COLLISION_OFFSET
         driven = driven_record(records)
         # Fall back to the first spawned entity so the camera has something to
         # follow on a map with no driven object, and so `main.py`'s arrow-key

@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L0 -->
-<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29 -->
+<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29. The first two KNOWN GAPS bullets were re-measured on 2026-09-03: README's three false gap claims and its stale check count are gone, so that bullet now names only the structural half it still owns, and the BEHAVIORS preamble bullet gained the second lie found in the same preamble that day. Also on 2026-09-03, at the finalize of the repair pass: the `map.tileset.grow`/`.rename` gap is struck through with the grep that closed it, and the fourth ACTIVE WARNING sighting was put into the past tense without being deleted -->
 
 # Pyoneer — read this first
 
@@ -165,6 +165,7 @@ topic, different layers, and different files.
 |---|---|
 | "what exists" · "where does X live" · "is there already a function for this" | [`docs/MAP.md`](docs/MAP.md) — GENERATED tier 1, then one tier-2 file |
 | "what does this behavior do" · "how do I make it move" · "add a behavior" | [`docs/BEHAVIORS.md`](docs/BEHAVIORS.md) — GENERATED; trust its **measured integration table** over any prose, including its own preamble |
+| "what can a script DO" · "what ops exist" · "what may I write in a `do`" · "does that op actually run" | [`docs/EVENTS.md`](docs/EVENTS.md) — GENERATED, and it makes no hand-written claim about the code at all: its runtime and reachability columns are measured on every run, and today five of six reachability rows read `no` |
 | "my entity does not move" · "nothing happens when I press a key" · "it falls forever" · "it raises at load" · "I painted collision and nothing blocks" | [`docs/DIAGNOSE.md`](docs/DIAGNOSE.md) |
 | "what can I place on an object layer" · "what goes in `type=`" · "why does my layer not draw" · "what key is bound to what" | [`docs/PLACEABLE.md`](docs/PLACEABLE.md) — GENERATED |
 | "make me a platformer" · "make me a top-down RPG" | `editor/genres/<id>/RULES.md`, then `docs/BEHAVIORS.md` |
@@ -175,6 +176,7 @@ topic, different layers, and different files.
 | "how do I get from an idea to a running prototype" · "what is the loop here" · "what does one turn of the loop cost" | [`docs/PROTOTYPE.md`](docs/PROTOTYPE.md) — DESIGN → BUILD → PROVE, each step's cost measured |
 | "how do I run the checks" · "I wrote a check" | [`docs/CHECKS.md`](docs/CHECKS.md) — GENERATED — plus law 6 below |
 | "how does the editor think" · "why is every change a command" | [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md) |
+| "what is a scene" · "how do I share a tileset between maps" · "how do I add or remove a tile from a tileset" · "how do I script an event" · "what commands can a script use" · "how does the relay work" · "what do I type into the prompt strip" | [`docs/PLAN_SCENES.md`](docs/PLAN_SCENES.md) — the build spec; unbuilt until its stages say otherwise |
 | "where is the art" · "why does it fail on a fresh clone" | [`docs/ASSETS.md`](docs/ASSETS.md) |
 | "is this already written but unwired" | [`docs/BEHAVIORS.md`](docs/BEHAVIORS.md)'s measured integration column first; [`docs/history/ORPHANS.md`](docs/history/ORPHANS.md) only for the archaeology |
 | "what should I do next" | [`docs/NEXT.md`](docs/NEXT.md) — every entry carries the command that measured it; run it before acting |
@@ -318,8 +320,11 @@ of repetition.
   thing the author had asked for could not be done -- and only the pass after
   that wired `Canvas.bake_tile_mask`. And `#TAG:map.tileset.grow` and
   `#TAG:map.tileset.rename` shipped with exact inverses, teeth on both
-  refusals, and no control anywhere calling either -- the tileset the author
-  asked to be growable and nameable is neither from inside the window. Note
+  refusals, and no control anywhere calling either -- for that whole time the
+  tileset the author asked to be growable and nameable was neither from
+  inside the window. (That one was closed on 2026-09-03 by the palette's
+  header menu; the sighting stays here because the value of this list is the
+  count, not the open items.) Note
   that the middle sighting runs the other way round: this is not "the editor
   lags the engine", it is that NOBODY owns a seam, so each pass ships a layer
   that is complete, checked, and unreachable by the person who asked for it.
@@ -338,18 +343,30 @@ of repetition.
 Things that are *missing*, not broken. Each is a real hole someone will hit.
 Each address below is a tag, so it stays true when the code moves.
 
-- **`README.md` is the front door and three of its headline gap claims are
-  false at HEAD.** It says the engine cannot read a collision mask, that
-  placing an object does not spawn an entity, and that `.blitmap` has no
-  reader; all three shipped. Its three check counts name 29 against a roster
-  that [`docs/CHECKS.md`](docs/CHECKS.md) generates and is now much larger. Its
-  "Known rough edges" section must become generated. **This file's own
-  navigation deliberately does not route through `README.md`.**
+- **`README.md` is the front door and its "Known rough edges" section is still
+  hand-written.** The three false gap claims this bullet used to name are
+  gone: README no longer says the engine cannot read a collision mask, that
+  placing an object does not spawn an entity, or that `.blitmap` has no
+  reader. Its check counts are correct too — two of them now, both agreeing
+  with the roster [`docs/CHECKS.md`](docs/CHECKS.md) generates, which
+  `tools/check_docs.py`'s rule 6 compares on every run. What is left is the
+  structural half, and it is the half that will rot again: that section is
+  prose sitting beside a generated roster, so nothing regenerates it and its
+  next wrong sentence arrives silently, exactly as the last three did. It must
+  become generated. **This file's own navigation deliberately does not route
+  through `README.md`.** Re-measured 2026-09-03 by reading the section and by
+  rule 6.
 - **`docs/BEHAVIORS.md`'s preamble is hand-written prose inside the
   generator**, so it can lie while the file still matches its generator. It
   currently shows the token `tile_collision`, which is not registered and makes
   a map raise at load. Same string in `#TAG:scripts/game/behavior/base.py` and
-  `#TAG:scripts/game/behavior/registry.py`.
+  `#TAG:scripts/game/behavior/registry.py`. That preamble held a **second**
+  lie until 2026-09-03 — it told every reader that nothing in `scripts/` reads
+  `data/project/` and that the engine has no table reader, months after
+  `#TAG:scripts/loaders/table_file.py` shipped — and the generated file matched
+  its generator byte for byte the whole time. Two instances is the measure of
+  how well this shape hides: check the preamble by reading it against the
+  code, because no check here can.
 - **~~No `needs_art` flag on the check roster~~ — paid off, by removing the
   thing it would have described.** Art SHIPS now: six generated sheets under
   `data/art/`, tracked, drawn by `tools/art/` and materialised by
@@ -421,12 +438,16 @@ Each address below is a tag, so it stays true when the code moves.
   cannot carry per-tile masks as authored. This editor never writes the shape;
   a reader can still open a map that does. The two methods that would fix it
   are in `#TAG:editor/ui/tileset.py` and neither touches the format.
-- **`#TAG:map.tileset.grow` and `#TAG:map.tileset.rename` have no caller in the
-  window.** Both are registered, both refuse with teeth, both invert exactly,
-  and neither is reachable from a control -- so a tileset is growable and
-  nameable from a script and from nowhere else. This is the fourth sighting of
-  the ACTIVE WARNING above, and it is ranked in
-  [`docs/NEXT.md`](docs/NEXT.md) with the grep that measures it.
+- **~~`#TAG:map.tileset.grow` and `#TAG:map.tileset.rename` have no caller in
+  the window~~ -- paid off.** Right-clicking a tileset's header strip in the
+  palette opens Rename / Grow / Remove; an entry that cannot act is DISABLED
+  and carries the reason in its own label, and growth is asked in rows and
+  refused against the headroom before a command exists. Measured 2026-09-03:
+  `grep -rn "map.tileset.grow\|map.tileset.rename" editor/ui/ --include=*.py`
+  returns **6** lines where it returned none, and `tools/check_palette.py`
+  drives a real right-click, a real `QAction.trigger()` and a real undo. The
+  sighting itself stays recorded in ACTIVE WARNINGS above, because that list
+  is a record of repetition and closing an instance does not unmake it.
 - **`tools/` is not in the code map**, deliberately — a check module is read
   whole or not at all. So `grep -rn "#TAG:"` answers nothing about the check
   suite; [`docs/CHECKS.md`](docs/CHECKS.md) is the index for that half of the

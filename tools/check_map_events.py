@@ -1,9 +1,13 @@
 """Verify the map-event vocabulary: round trip, validation, filter semantics.
 
 `editor/core/map_events.py` is the AUTHORING half of collision triggers. No
-runtime reads it yet -- there is no collision detection in this engine, and
-entities are not on the event bus -- so nothing about it is proved by running
-the game. It has to be proved here or not at all:
+runtime reads it yet -- nothing under `scripts/` reads `pyoneer_trigger`,
+there is no MAP_TRIGGER_* event type, and entities are not on the event bus
+-- so nothing about it is proved by running the game. (This sentence used to
+say the engine has no collision detection. It has one: the renderer bakes
+`field_from_map` and gates every body with it. The missing half is the
+trigger read and the firing, not the pipeline under them.) It has to be
+proved here or not at all:
 
   * a declaration survives properties -> tmx -> properties unchanged, with
     its TYPES intact, and authoring one is a reversible edit to the file
@@ -14,11 +18,17 @@ the game. It has to be proved here or not at all:
     narrow
   * a region's cells are half-open, a zero-sized object is one cell, and a
     tile object is bottom-anchored
+  * the authoring VERBS call the gate this module already carries, so a
+    property name pytmx cannot survive is refused at the door instead of
+    making the map unloadable at the next boot
 
 Every fixture is built here. Nothing asserts anything about what
 `data/maps/test.tmx` happens to contain -- the author paints in that file.
 
-No Qt, no pygame. Runs on a bare clone with no art.
+No Qt. No pygame either until the last section, which imports the editor's
+command layer to drive the authoring verbs and pulls pygame in through
+`scripts.core.depth`; `QUIET_AT_IMPORT` pins that map_events itself does
+not. Runs on a bare clone with no art.
 
     .venv/Scripts/python.exe tools/check_map_events.py
 """
@@ -27,13 +37,18 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
 import dataclasses
+import json
+import os
+import shutil
 import sys
+import tempfile
 import warnings
 
 from scripts.core.errors import PyoneerContentWarning
 from scripts.loaders.map_document import MapDocument
 
 from editor.core import map_events
+from editor.core.layers import BY_KEY as LAYER_CAPABILITIES
 from editor.core.layers import PREFIX, RESERVED
 from editor.core.map_events import (
     ARGS,
@@ -60,6 +75,15 @@ from editor.core.map_events import (
     validate,
     validate_properties,
 )
+
+#: Which of pygame and Qt the imports ABOVE dragged in. Sampled here rather
+#: than where it is asserted, because the last section of this file imports
+#: `editor.core.session` to drive the authoring verbs and that reaches
+#: `scripts.core.depth`, which imports pygame. The claim being made is about
+#: THIS module -- map_events cannot execute -- and it stays exactly as
+#: falsifiable when it is sampled at the moment it is about.
+QUIET_AT_IMPORT = [name for name in sys.modules
+                   if name.split(".")[0] in ("pygame", "PySide6")]
 
 failures: list[str] = []
 
@@ -477,8 +501,7 @@ expect("an event knows the name it would be dispatched under",
 expect("a region that never fires has no bus name at all",
        MapEvent(blocks=True).event_name, "")
 expect("nothing here imports pygame or Qt -- this module cannot execute",
-       [name for name in sys.modules
-        if name.split(".")[0] in ("pygame", "PySide6")], [])
+       QUIET_AT_IMPORT, [])
 expect("the generated docs cover every property, plus the layer anchor",
        [name for name in list(KNOWN) + [TRIGGER_LAYER]
         if f"`{name}`" not in describe_all()], [])
@@ -489,6 +512,204 @@ expect("a declaration describes itself for a tooltip",
 expect("and says cell when that is what was authored",
        MapEvent(kind="use", payload="chest_01").describe(),
        "use cell fires for anything -> chest_01")
+
+# --------------------------------------------------------------------------
+print()
+print("the authoring verbs refuse a name that would make the map unloadable")
+# --------------------------------------------------------------------------
+# Everything above proves the GATE. This proves the DOOR. Measured before
+# this section existed, `grep -c check_property_name editor/core/verbs.py`
+# returned 0 against 3 in `editor/core/map_events.py`: the gate was written,
+# unit-tested, and called by nothing. So the Inspector's New-property box
+# accepted `visible`, the verb wrote it, `to_bytes()` wrote it into the file,
+# and pytmx raised at the next load naming neither the object nor the
+# property -- law 1's stated cost, three clicks away.
+#
+# Both halves for both doors: a reserved name is refused AND says what to
+# type instead AND changes nothing; a legitimate name still lands and
+# survives a re-read. The second is not decoration -- a gate that also
+# refused `pyoneer_actor` would satisfy every refusal assertion here.
+#
+# Importing the command layer is what costs this file its pygame-free import
+# graph, which is why QUIET_AT_IMPORT is sampled at the top.
+from editor.core.commands import Command                            # noqa: E402
+from editor.core.errors import PyoneerCommandApplyError             # noqa: E402
+from editor.core.scope import Scope                                 # noqa: E402
+from editor.core.session import Session                             # noqa: E402
+
+FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.2" tiledversion="1.3.1" orientation="orthogonal" \
+renderorder="right-down" compressionlevel="-1" width="4" height="2" \
+tilewidth="16" tileheight="16" infinite="0" nextlayerid="3" nextobjectid="2">
+ <layer id="1" name="Floor" width="4" height="2">
+  <data encoding="csv">
+0,0,0,0,
+0,0,0,0
+</data>
+ </layer>
+ <objectgroup id="2" name="Triggers">
+  <object id="1" name="plain" type="GameEntity" x="0" y="0" width="16" \
+height="16"/>
+ </objectgroup>
+</map>
+"""
+
+workspace = tempfile.mkdtemp(prefix="pyoneer_map_events_")
+os.makedirs(os.path.join(workspace, "config"))
+os.makedirs(os.path.join(workspace, "data", "maps"))
+with open(os.path.join(workspace, "data", "maps", "fixture.tmx"), "w",
+          encoding="utf-8", newline="") as handle:
+    handle.write(FIXTURE)
+with open(os.path.join(workspace, "config", "maps.json"), "w",
+          encoding="utf-8") as handle:
+    json.dump({"data": [{"name": "fixture", "identifier": "fixture",
+                         "file": "data/maps/fixture.tmx"}]}, handle)
+
+session = Session.open(workspace, genre_id="topdown_rpg")
+document = session.project.map("fixture")
+OBJECT = Scope.of(("map", "fixture"), ("layer", "Triggers"), ("object", "1"))
+LAYER = Scope.of(("map", "fixture"), ("layer", "Triggers"))
+FLOOR = Scope.of(("map", "fixture"), ("layer", "Floor"))
+
+
+def refusal(verb, scope, args) -> str:
+    """The text ONE command refused with, or "" if it did not refuse."""
+    try:
+        session.run(Command(verb, scope, args))
+    except PyoneerCommandApplyError as exc:
+        return str(exc)
+    return ""
+
+
+def written(object_id: int = 1) -> dict:
+    return document.object_layer("Triggers").find(object_id).properties.as_dict()
+
+
+def reread(object_id: int = 1) -> dict:
+    """What a fresh parse of the bytes this document would SAVE sees.
+
+    Asserting the in-memory dict alone would pass on a verb that accepted a
+    property and never wrote it out.
+    """
+    fresh = MapDocument.from_bytes(document.to_bytes())
+    return fresh.object_layer("Triggers").find(object_id).properties.as_dict()
+
+
+BEFORE = document.to_bytes()
+
+said = refusal("map.object.property.set", OBJECT,
+               {"key": "visible", "value": True})
+expect("map.object.property.set refuses a name pytmx cannot survive",
+       "shadows a pytmx attribute" in said, True)
+expect("and names the offending key", "'visible'" in said, True)
+expect("and the spelling the author should have typed instead",
+       "pyoneer_visible" in said, True)
+expect("and nothing at all was written", written(), {})
+expect("so the file is byte-identical", document.to_bytes(), BEFORE)
+expect("every one of the eleven reserved names is refused, not just the "
+       "obvious ones",
+       [name for name in sorted(RESERVED)
+        if "shadows a pytmx attribute"
+        not in refusal("map.object.property.set", OBJECT,
+                       {"key": name, "value": 1})], [])
+expect("and eleven refusals later the file is still byte-identical",
+       document.to_bytes(), BEFORE)
+
+# The other half. A gate that refused everything would satisfy every line
+# above and make the New-property box useless.
+session.run(Command("map.object.property.set", OBJECT,
+                    {"key": "pyoneer_actor", "value": "hero"}))
+expect("a pyoneer_ name the map-event vocabulary does not know still goes "
+       "through -- the prefix is a namespace, not its private property",
+       written().get("pyoneer_actor"), "hero")
+expect("and survives the round trip out to bytes and back",
+       reread().get("pyoneer_actor"), "hero")
+session.undo()
+expect("undo takes it back off", "pyoneer_actor" in written(), False)
+
+session.run(Command("map.object.property.set", OBJECT,
+                    {"key": "hp", "value": 30}))
+expect("an UNPREFIXED name that shadows nothing is still allowed -- the gate "
+       "refuses fatal names, not unfamiliar ones", written().get("hp"), 30)
+expect("with its int type intact through the file", reread().get("hp"), 30)
+session.undo()
+
+
+def content_warnings(fn) -> list[str]:
+    """Every content warning ONE command raised, past this file's global
+    silence, because here the ABSENCE of one is the assertion."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fn()
+    return [str(entry.message) for entry in caught
+            if issubclass(entry.category, PyoneerContentWarning)]
+
+
+quiet = content_warnings(
+    lambda: session.run(Command("map.object.property.set", OBJECT,
+                                {"key": "pyoneer_param_hp", "value": 5})))
+expect("and authoring a correct name warns about NOTHING -- the gate's "
+       "map-event-only advice would cry wolf on every behavior parameter",
+       quiet, [])
+session.undo()
+expect("the object is back to carrying nothing", written(), {})
+
+# --------------------------------------------------------------------------
+# The second door. `map.object.add` loops a whole dict of caller-supplied
+# names, so guarding only the obvious verb leaves the map exactly as
+# unloadable.
+#
+# Re-snapshotted rather than compared against BEFORE: adding the FIRST
+# property to a self-closing `<object/>` and undoing leaves `<object></object>`
+# behind. Every value round trips and the map loads, but the bytes do not
+# come back, and that is `MapProperties`, not this gate -- pinning BEFORE
+# here would fail for a reason no line of this section is about.
+# --------------------------------------------------------------------------
+INTACT = document.to_bytes()
+
+said = refusal("map.object.add", LAYER,
+               {"type": "GamePlayer", "x": 16.0, "y": 16.0,
+                "properties": {"opacity": 1}})
+expect("map.object.add refuses a fatal name in the properties an object is "
+       "born carrying", "shadows a pytmx attribute" in said, True)
+expect("and names it, with the spelling to use instead",
+       ("'opacity'" in said, "pyoneer_opacity" in said), (True, True))
+expect("and refuses BEFORE creating anything, so there is no half-made "
+       "object left behind",
+       [obj.id for obj in document.object_layer("Triggers").objects()], [1])
+expect("which leaves the file byte-identical", document.to_bytes(), INTACT)
+
+session.run(Command("map.object.add", LAYER,
+                    {"type": "GamePlayer", "x": 16.0, "y": 16.0,
+                     "properties": {"pyoneer_param_hp": 30}}))
+expect("a legitimate one is born carrying it",
+       written(2).get("pyoneer_param_hp"), 30)
+expect("and it is really in the file", reread(2).get("pyoneer_param_hp"), 30)
+session.undo()
+session.run(Command("map.object.add", LAYER,
+                    {"type": "GamePlayer", "x": 16.0, "y": 16.0}))
+expect("and an add declaring no properties at all is unaffected",
+       [obj.id for obj in document.object_layer("Triggers").objects()], [1, 2])
+session.undo()
+
+# --------------------------------------------------------------------------
+# The third door, which is not one. `map.layer.set` composes the property
+# name as PREFIX + key from a closed vocabulary, so it cannot spell a
+# reserved name and carries no guard. That is a claim about the vocabulary,
+# so assert the vocabulary rather than trusting the sentence.
+# --------------------------------------------------------------------------
+expect("a reserved name is not a layer capability either, so map.layer.set "
+       "refuses it outright",
+       refusal("map.layer.set", FLOOR, {"key": "visible", "value": True}) != "",
+       True)
+expect("and no capability that DOES exist composes a reserved name -- which "
+       "is why that path needs no guard",
+       [key for key in LAYER_CAPABILITIES if PREFIX + key in RESERVED], [])
+expect("and every refusal since wrote nothing at all",
+       document.to_bytes(), INTACT)
+
+shutil.rmtree(workspace, ignore_errors=True)
+
 
 print()
 if failures:

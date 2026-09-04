@@ -25,6 +25,7 @@ Everything else is a soft rule and surfaces in Problems.
 """
 from __future__ import annotations
 
+import copy
 import os
 import warnings
 from typing import Any
@@ -36,6 +37,7 @@ from editor.core.errors import (
 )
 from editor.core.project import Column, DataTable, Project
 from editor.core.scope import Scope
+from editor.core import event_script as script_module
 from editor.core import genre as genre_module
 from editor.core import layers as layer_module
 from editor.core import map_events as map_event_module
@@ -55,6 +57,10 @@ from scripts.game.behavior.base import BEHAVIORS
 # question `MapDocument.add_layer` asks before it advises about a depth.
 from scripts.core.depth import resolve_layer_depth
 from scripts.core.errors import PyoneerContentWarning
+# The op registry, for `script.node.add`'s one ambiguity guard and for the
+# `core` loadout's name. The reader in `scripts/loaders/script_file.py` is
+# what actually judges a script; see the Event scripts section below.
+from scripts.game.flow import ops as script_ops
 
 
 def _layer_keys() -> list[str]:
@@ -1111,6 +1117,43 @@ def _tileset_mask_restore(project: Project, cmd: Command) -> Command | None:
 # Objects -- the entity-spawn seam
 # --------------------------------------------------------------------------
 
+def _checked_property_name(name: str, verb: str) -> str:
+    """Refuse a custom-property name that would make the map unloadable.
+
+    Law 1's cost, three clicks from the Inspector's New-property box: pytmx
+    RAISES -- not warns, not skips -- when a custom property shadows one of
+    its own attribute names, and the whole map stops loading, naming neither
+    the object nor the property that did it. `check_property_name` in
+    `editor/core/map_events.py` already knows all eleven such names and
+    already says which prefixed spelling to write instead. It was written for
+    exactly this door and, until this call existed, nothing on the
+    object-property path called it.
+
+    TWO DOORS, because guarding one and not the other leaves the map exactly
+    as unloadable: `map.object.property.set` writes a name the caller typed,
+    and `map.object.add` writes a whole dict of them.
+
+    The LAYER path needs no such call and does not get one: `map.layer.set`
+    composes the property name as `PREFIX + key` from a closed capability
+    vocabulary, so the name it writes is always prefixed and can never be a
+    reserved one. A guard there would be a branch that cannot be taken.
+
+    Only the REFUSAL is universal. `check_property_name` also warns about a
+    `pyoneer_`-prefixed name that is not a map-event field -- true of
+    `pyoneer_behaviors`, `pyoneer_actor` and every `pyoneer_param_*`, all of
+    them legitimate object properties with nothing to do with map events. A
+    warning that fires on correct authoring is a warning nobody reads, so
+    that half is silenced here and only the raise is let through.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", PyoneerContentWarning)
+        try:
+            map_event_module.check_property_name(name)
+        except ValueError as exc:
+            raise PyoneerCommandArgumentError(str(exc), verb=verb) from None
+    return name
+
+
 @command(
     "map.object.add",  # #TAG:map.object.add
     summary="Place an object on an object layer. `type` is the class name "
@@ -1158,7 +1201,7 @@ def _object_add(project: Project, cmd: Command) -> Command:
         width=args["width"] or None,
         height=args["height"] or None,
         gid=args["gid"] or None,
-        properties=_born_with(project, cmd.scope, args),
+        properties=_born_with(project, cmd.scope, args, cmd.verb),
         object_id=args["object_id"] or None,
     )
     # The inverse takes the WHOLE element away, materialised property and
@@ -1169,8 +1212,8 @@ def _object_add(project: Project, cmd: Command) -> Command:
                    cmd.scope.child("object", str(created.id)))
 
 
-def _born_with(project: Project, scope: Scope,
-               args: dict[str, Any]) -> dict[str, Any] | None:
+def _born_with(project: Project, scope: Scope, args: dict[str, Any],
+               verb: str) -> dict[str, Any] | None:
     """The custom properties a newly added object is born carrying.
 
     This is where a genre pack's `layers[].object_classes[].behaviors` stops
@@ -1191,8 +1234,15 @@ def _born_with(project: Project, scope: Scope,
 
     Nothing re-asserts step 2 afterwards, so editing the list on the object is
     the last word: no later command reads the pack.
+
+    THE SECOND DOOR onto a fatal property name. `map.object.property.set` is
+    the obvious way to write one; this dict is the other, so every name in it
+    goes through the same gate before anything is created. The materialised
+    `pyoneer_behaviors` below is prefixed by construction and needs no check.
     """
     properties = dict(args["properties"] or {})
+    for name in properties:
+        _checked_property_name(name, verb)
     if BEHAVIORS in properties:                # #TAG:behaviors_materialised_at_add
         return properties or None
     declared = project.genre.object_class(scope.require("layer"), args["type"])
@@ -1359,6 +1409,7 @@ def _object_unset(project: Project, cmd: Command) -> Command | None:
 def _object_property_set(project: Project, cmd: Command) -> Command | None:
     found = _object(project, cmd.scope)
     key, value = cmd.args["key"], cmd.args["value"]
+    _checked_property_name(key, cmd.verb)
     if not isinstance(value, (int, float, str, bool)):
         raise PyoneerCommandArgumentError(
             f"property {key!r} must be int, float, str or bool, got "
@@ -1452,11 +1503,15 @@ def _action_inverse(scope: Scope, key: str, existing: dict[str, Any]) -> Command
             "fires, which entities may fire it, whether it also blocks "
             "movement, and what it carries. Stored as a pyoneer_ tmx custom "
             "property, so Tiled edits it in the same dialog. NOTHING RUNS "
-            "THIS YET: the engine has no collision detection, no "
-            "MAP_TRIGGER_* event type and no reader for the object layer, so "
-            "a map authored with these plays exactly as it did before. The "
-            "authoring is real, reversible and readable; the firing is not "
-            "built.",
+            "THIS YET: there is no MAP_TRIGGER_* event type, nothing under "
+            "scripts/ reads pyoneer_trigger, and entities are not on the "
+            "event bus, so a map authored with these plays exactly as it did "
+            "before. This sentence is the MIRROR of the panel's own banner "
+            "(`NOT_WIRED` in editor/ui/actions_panel.py) and names the same "
+            "absences it does -- it once named two gaps the engine had "
+            "already closed, and it outlived the fix to the banner it "
+            "copies, so keep the two in step. The authoring is real, "
+            "reversible and readable; the firing is not built.",
     scopes=["map:*/layer:*/object:*"],
     params=[
         Param("key", str, "which field of the declaration",
@@ -1799,3 +1854,522 @@ def _genre_set(project: Project, cmd: Command) -> Command | None:
     pack = genre_module.load(wanted)
     previous = project.set_genre(pack)
     return Command("project.genre.set", cmd.scope, {"genre": previous.id})
+
+
+# --------------------------------------------------------------------------
+# Event scripts
+#
+# The authoring half of `data/project/scripts/`. Fourteen verbs, not one per
+# op: nine ops times four verbs would be thirty-six new permanent names and
+# a parallel registry, which is the shape `docs/PLAN_SCENES.md` 6.4 refuses.
+# One node verb validated against the op registry is the trade
+# `map.layer.set` already makes against `CAPABILITIES`.
+#
+# EVERY PAGE AND EVERY NODE IS ADDRESSED BY ITS STABLE ID, NEVER BY A PATH
+# OR AN INDEX. An insert names an ANCHOR id and a side (`after`), because a
+# relay response is an ordered BATCH: two path-addressed inserts mis-land
+# the second the moment the first shifts an index, silently, with a
+# valid-looking transaction and a clean undo. A wrong id is loud.
+#
+# WHAT REFUSES, AND WHERE. Every one of these verbs runs the whole document
+# through `script_file.parse_script` -- the engine's own reader -- before it
+# returns, and puts the document back untouched if the reader refuses. So a
+# duplicate id, an unknown `do`, an op outside the declared loadouts and a
+# condition carrying two comparators are all refused HERE, at edit time,
+# with the reader's own message. This module adds only the refusals a reader
+# cannot make because it judges a finished document rather than a change to
+# one: an anchor that is not a sibling, an arm a node does not have, a body
+# on a `do` node, and a move into a node's own subtree.
+#
+# THE ONE UNWIRED SEAM. `ScriptLibrary` creates and deletes in memory and
+# writes at `save()`, per `docs/PLAN_SCENES.md` 2.5. `Project.save()` does
+# not call it yet and `Project.dirty` does not count it, because
+# `editor/core/project.py` belongs to another track. Two lines close it:
+#     written.extend(event_script.scripts_of(self).save())   in Project.save
+#     or event_script.scripts_of(self).dirty                 in Project.dirty
+# --------------------------------------------------------------------------
+
+def _script_library(project: Project) -> script_module.ScriptLibrary:
+    return script_module.scripts_of(project)
+
+
+def _script(project: Project, cmd: Command) -> script_module.ScriptDocument:
+    return _script_library(project).document(cmd.scope.require("script"))
+
+
+def _identified(payload: Any, *, what: str, verb: str) -> dict:
+    """A restore payload with a legal `id`, deep-copied so nothing aliases.
+
+    An inverse carries a whole subtree, and a caller that kept a reference
+    to what it handed us would be editing the document from outside the
+    command stream.
+    """
+    if not isinstance(payload, dict):
+        raise PyoneerCommandArgumentError(
+            f"{verb}: a {what} payload is an object, got "
+            f"{type(payload).__name__}", verb=verb)
+    if not isinstance(payload.get("id"), str) or not payload["id"]:
+        raise PyoneerCommandArgumentError(
+            f"{verb}: a {what} payload carries its own stable `id`; this one "
+            f"has {payload.get('id')!r}", verb=verb)
+    return copy.deepcopy(payload)
+
+
+def _new_node(library: script_module.ScriptLibrary, node_id: str, do: str,
+              args: dict, verb: str) -> dict:
+    """The node `script.node.add` is about to insert, or a refusal.
+
+    `do` names an op OR one of the two control shapes. A node is either
+    executable or control and there is no third shape, so one argument
+    reaches both and the vocabulary gains no permanent name for "add an if".
+    """
+    reserved = sorted(k for k in args
+                      if k in ("id", "do", "then", "elif", "else")
+                      or k in script_module.CONTROL_KINDS)
+    if reserved:
+        raise PyoneerCommandArgumentError(
+            f"{verb}: `args` carries {reserved}, which is structure rather "
+            f"than content. `id` and `do` are given as their own arguments, "
+            f"and a body is filled by script.node.add / script.node.remove "
+            f"naming this node as `into`.", verb=verb)
+
+    if do in script_module.CONTROL_KINDS:
+        table = library.registry
+        claimed = script_ops.OP_REGISTRY.get(do) if table is None \
+            else table.get(do)
+        if claimed is not None:
+            raise PyoneerCommandArgumentError(
+                f"{verb}: {do!r} is both a control node shape and an op in "
+                f"the {claimed.loadout!r} loadout; one word cannot mean both "
+                f"and the file format's meaning wins. Rename the op.",
+                verb=verb)
+        stray = sorted(k for k in args if k not in ("when", "note"))
+        if stray:
+            raise PyoneerCommandArgumentError(
+                f"{verb}: a `{do}` node takes `when` and `note`; got "
+                f"{stray}. Its arms are filled by script.node.add, and an "
+                f"`elif` arm is created by script.node.set on the `elif` key.",
+                verb=verb)
+        node: dict[str, Any] = {"id": node_id,
+                                do: copy.deepcopy(args.get("when") or [])}
+        if args.get("note"):
+            node["note"] = args["note"]
+        node["then"] = []
+        return node
+
+    node = {"id": node_id, "do": do}
+    node.update(copy.deepcopy(args))
+    return node
+
+
+@command(
+    "script.create",  # #TAG:script.create
+    summary="Create an event script. The scope names it, and that name is "
+            "also its file stem and what `call` addresses it by.",
+    scopes=["script:*"],
+    params=[
+        Param("title", str, "human label for the screen and the page list",
+              required=False, default=""),
+        Param("loadouts", list, "which op vocabularies this document may "
+                                "use; omitted means just the core handful",
+              required=False, default=None),
+    ],
+    example='{"verb": "script.create", "scope": "script:keeper_gate",'
+            ' "args": {"title": "The keeper at the north gate"}}',
+)
+def _script_create(project: Project, cmd: Command) -> Command:
+    library = _script_library(project)
+    declared = cmd.args["loadouts"]
+    document = script_module.ScriptDocument(
+        id=cmd.scope.require("script"),
+        title=cmd.args["title"],
+        loadouts=list(declared) if declared is not None else [script_ops.CORE])
+    library.create(document)
+    return Command("script.delete", cmd.scope, {"confirm": True})
+
+
+@command(
+    "script.delete",  # #TAG:script.delete
+    summary="Delete an event script. The inverse carries the whole document, "
+            "and the file itself is only removed at save.",
+    scopes=["script:*"],
+    params=[Param("confirm", bool, "must be true; guards against a stray "
+                                   "delete")],
+    destructive=True,
+)
+def _script_delete(project: Project, cmd: Command) -> Command:
+    library = _script_library(project)
+    script_id = cmd.scope.require("script")
+    if not cmd.args["confirm"]:
+        raise PyoneerCommandArgumentError(
+            "script.delete needs confirm=true", verb=cmd.verb)
+    document = library.document(script_id)
+    payload = document.to_json(library.registry)
+    library.delete(script_id)
+    return Command("script.restore", cmd.scope, {"script": payload})
+
+
+@command(
+    "script.restore",  # #TAG:script.restore
+    summary="Recreate an event script from a full document. Exists so "
+            "script.delete has an exact inverse; rarely written by hand.",
+    scopes=["script:*"],
+    params=[Param("script", dict, "the whole document, as script.delete "
+                                  "recorded it")],
+)
+def _script_restore(project: Project, cmd: Command) -> Command:
+    library = _script_library(project)
+    script_id = cmd.scope.require("script")
+    payload = _identified(cmd.args["script"], what="script", verb=cmd.verb)
+    if payload["id"] != script_id:
+        raise PyoneerCommandArgumentError(
+            f"script.restore: the payload declares id {payload['id']!r} and "
+            f"the scope says {script_id!r}; the id, the file stem and the "
+            f"scope are one identifier", verb=cmd.verb)
+    library.create(script_module.ScriptDocument.from_json(payload))
+    return Command("script.delete", cmd.scope, {"confirm": True})
+
+
+@command(
+    "script.set",  # #TAG:script.set
+    summary="Set a document-level key: its title, or the op loadouts it may "
+            "draw on.",
+    scopes=["script:*"],
+    params=[
+        Param("key", str, "which key", choices=script_module.SETTABLE_SCRIPT_KEYS),
+        Param("value", object, "a string for title, a list of loadout names "
+                               "for loadouts"),
+    ],
+    example='{"verb": "script.set", "scope": "script:keeper_gate", "args":'
+            ' {"key": "loadouts", "value": ["core"]}}',
+)
+def _script_set(project: Project, cmd: Command) -> Command | None:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    key, value = cmd.args["key"], cmd.args["value"]
+    if key == "title":
+        if not isinstance(value, str):
+            raise PyoneerCommandArgumentError(
+                f"script.set: title is a string, got "
+                f"{type(value).__name__} ({value!r})", verb=cmd.verb)
+        previous: Any = document.title
+    else:
+        if not isinstance(value, list):
+            raise PyoneerCommandArgumentError(
+                f"script.set: loadouts is a list of loadout names, got "
+                f"{type(value).__name__} ({value!r})", verb=cmd.verb)
+        previous = list(document.loadouts)
+    if previous == value:
+        return None
+    with script_module.edit(document, library):
+        if key == "title":
+            document.title = value
+        else:
+            document.loadouts = list(value)
+    return Command("script.set", cmd.scope, {"key": key, "value": previous})
+
+
+@command(
+    "script.page.add",  # #TAG:script.page.add
+    summary="Add a page. Pages are ordered and the FIRST one whose `when` "
+            "all pass runs, so where it lands is where it fires.",
+    scopes=["script:*"],
+    params=[
+        Param("id", str, "the page's stable id, unique across every page "
+                         "and node in this document"),
+        Param("after", str, "the page it follows; empty puts it FIRST, "
+                            "which is where it will shadow the rest",
+              required=False, default=""),
+        Param("trigger", str, "what starts it",
+              required=False, default="use",
+              choices=script_module.SCRIPT_TRIGGERS),
+        Param("when", list, "conditions, ANDed; empty always passes and is "
+                            "the fallback page", required=False, default=None),
+    ],
+    example='{"verb": "script.page.add", "scope": "script:keeper_gate",'
+            ' "args": {"id": "pg_main", "trigger": "use", "when": []}}',
+)
+def _page_add(project: Project, cmd: Command) -> Command:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    page_id = cmd.args["id"]
+    with script_module.edit(document, library):
+        index = document.index_after(document.pages, cmd.args["after"],
+                                     what="page")
+        document.pages.insert(index, {
+            "id": page_id,
+            "trigger": cmd.args["trigger"],
+            "when": copy.deepcopy(cmd.args["when"] or []),
+            "body": [],
+        })
+    return Command("script.page.remove", cmd.scope, {"page": page_id})
+
+
+@command(
+    "script.page.remove",  # #TAG:script.page.remove
+    summary="Remove a page and everything on it. The inverse carries the "
+            "whole page AND the page it sat after.",
+    scopes=["script:*"],
+    params=[Param("page", str, "the page's id")],
+    destructive=True,
+)
+def _page_remove(project: Project, cmd: Command) -> Command:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    page_id = cmd.args["page"]
+    index = document.page_index(page_id)
+    payload = copy.deepcopy(document.pages[index])
+    after = document.pages[index - 1]["id"] if index else ""
+    with script_module.edit(document, library):
+        del document.pages[index]
+    return Command("script.page.restore", cmd.scope,
+                   {"page": payload, "after": after})
+
+
+@command(
+    "script.page.restore",  # #TAG:script.page.restore
+    summary="Put a page back, with its body, at the position it held. The "
+            "exact inverse of script.page.remove; rarely written by hand.",
+    scopes=["script:*"],
+    params=[
+        Param("page", dict, "the whole page, as script.page.remove recorded it"),
+        Param("after", str, "the page it follows; empty puts it first",
+              required=False, default=""),
+    ],
+)
+def _page_restore(project: Project, cmd: Command) -> Command:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    page = _identified(cmd.args["page"], what="page", verb=cmd.verb)
+    with script_module.edit(document, library):
+        index = document.index_after(document.pages, cmd.args["after"],
+                                     what="page")
+        document.pages.insert(index, page)
+    return Command("script.page.remove", cmd.scope, {"page": page["id"]})
+
+
+@command(
+    "script.page.move",  # #TAG:script.page.move
+    summary="Move a page. Order is evaluation order -- the first passing "
+            "page runs -- so this is a behaviour change, not a tidy-up.",
+    scopes=["script:*"],
+    params=[
+        Param("page", str, "the page's id"),
+        Param("after", str, "the page it should follow; empty means first",
+              required=False, default=""),
+    ],
+)
+def _page_move(project: Project, cmd: Command) -> Command | None:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    page_id, after = cmd.args["page"], cmd.args["after"]
+    index = document.page_index(page_id)
+    previous = document.pages[index - 1]["id"] if index else ""
+    if after == page_id:
+        raise PyoneerCommandArgumentError(
+            f"script.page.move: page {page_id!r} cannot follow itself",
+            verb=cmd.verb)
+    if after == previous:
+        return None
+    with script_module.edit(document, library):
+        remaining = [p for p in document.pages if p["id"] != page_id]
+        target = document.index_after(remaining, after, what="page")
+        moved = document.pages.pop(index)
+        document.pages.insert(target, moved)
+    return Command("script.page.move", cmd.scope,
+                   {"page": page_id, "after": previous})
+
+
+@command(
+    "script.page.set",  # #TAG:script.page.set
+    summary="Set one key on a page -- its trigger, payload, conditions, "
+            "note, once flag or cooldown. Returns nothing when unchanged.",
+    scopes=["script:*"],
+    params=[
+        Param("page", str, "the page's id"),
+        Param("key", str, "which key",
+              choices=script_module.SETTABLE_PAGE_KEYS),
+        Param("value", object, "the new value; a key set to its default is "
+                               "written as no key at all"),
+    ],
+    example='{"verb": "script.page.set", "scope": "script:keeper_gate",'
+            ' "args": {"page": "pg_main", "key": "payload", "value": "keeper"}}',
+)
+def _page_set(project: Project, cmd: Command) -> Command | None:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    page = document.page(cmd.args["page"])
+    key, value = cmd.args["key"], cmd.args["value"]
+    previous = copy.deepcopy(page.get(key, script_module.PAGE_DEFAULTS[key]))
+    if previous == value:
+        return None
+    with script_module.edit(document, library):
+        page[key] = copy.deepcopy(value)
+    return Command("script.page.set", cmd.scope,
+                   {"page": cmd.args["page"], "key": key, "value": previous})
+
+
+@command(
+    "script.node.add",  # #TAG:script.node.add
+    summary="Add a node inside a page or an arm. `do` names an op, or `if` "
+            "or `while` for a control node. Position is an anchor id and a "
+            "side, never an index.",
+    scopes=["script:*"],
+    params=[
+        Param("id", str, "the node's stable id, unique across every page "
+                         "and node in this document"),
+        Param("do", str, "an op name from the document's loadouts, or `if` "
+                         "or `while`"),
+        Param("into", str, "what contains it: a page id, or the id of the "
+                           "`if` / `while` whose arm it joins"),
+        Param("arm", str, "which arm of a control node: then, elif:0, "
+                          "elif:1, ... or else. Empty for a page body.",
+              required=False, default=""),
+        Param("after", str, "the sibling it follows; empty puts it FIRST",
+              required=False, default=""),
+        Param("args", dict, "the op's own arguments, or `when` and `note` "
+                            "for a control node", required=False, default=None),
+    ],
+    example='{"verb": "script.node.add", "scope": "script:keeper_gate",'
+            ' "args": {"id": "n3", "do": "say", "into": "pg_main",'
+            ' "after": "n2", "args": {"who": "Keeper", "text": "Sealed."}}}',
+)
+def _node_add(project: Project, cmd: Command) -> Command:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    node_id = cmd.args["id"]
+    with script_module.edit(document, library):
+        node = _new_node(library, node_id, cmd.args["do"],
+                         dict(cmd.args["args"] or {}), cmd.verb)
+        container = document.container(cmd.args["into"], cmd.args["arm"],
+                                       create=True)
+        index = document.index_after(container, cmd.args["after"],
+                                     what="node")
+        container.insert(index, node)
+    return Command("script.node.remove", cmd.scope, {"node": node_id})
+
+
+@command(
+    "script.node.remove",  # #TAG:script.node.remove
+    summary="Remove a node and everything under it. The inverse carries the "
+            "whole subtree, its container, its arm and its predecessor, so "
+            "undo puts it back in the same elif arm at the same place.",
+    scopes=["script:*"],
+    params=[Param("node", str, "the node's id")],
+    destructive=True,
+)
+def _node_remove(project: Project, cmd: Command) -> Command:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    node_id = cmd.args["node"]
+    site = document.locate(node_id)
+    carried: dict[str, Any] = {}
+    with script_module.edit(document, library):
+        container = document.container(site.into, site.arm)
+        carried["node"] = copy.deepcopy(container[site.index])
+        del container[site.index]
+    return Command("script.node.restore", cmd.scope,
+                   dict(node=carried["node"], **site.as_args()))
+
+
+@command(
+    "script.node.restore",  # #TAG:script.node.restore
+    summary="Put a node and its whole subtree back where it was. The exact "
+            "inverse of script.node.remove; rarely written by hand.",
+    scopes=["script:*"],
+    params=[
+        Param("node", dict, "the whole node, as script.node.remove recorded it"),
+        Param("into", str, "the page id or control node id it goes inside"),
+        Param("arm", str, "then, elif:N, else, or empty for a page body",
+              required=False, default=""),
+        Param("after", str, "the sibling it follows; empty puts it first",
+              required=False, default=""),
+    ],
+)
+def _node_restore(project: Project, cmd: Command) -> Command:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    node = _identified(cmd.args["node"], what="node", verb=cmd.verb)
+    with script_module.edit(document, library):
+        container = document.container(cmd.args["into"], cmd.args["arm"],
+                                       create=True)
+        index = document.index_after(container, cmd.args["after"],
+                                     what="node")
+        container.insert(index, node)
+    return Command("script.node.remove", cmd.scope, {"node": node["id"]})
+
+
+@command(
+    "script.node.set",  # #TAG:script.node.set
+    summary="Set one key on a node: an op argument, a note, a control "
+            "node's conditions, or its elif arms. Returns nothing when "
+            "unchanged.",
+    scopes=["script:*"],
+    params=[
+        Param("node", str, "the node's id"),
+        Param("key", str, "which key -- an argument the op declares, `note`, "
+                          "`if` / `while` for the conditions, or `elif` for "
+                          "the arm list"),
+        Param("value", object, "the new value; a key set to the default its "
+                               "op declares is written as no key at all"),
+    ],
+    example='{"verb": "script.node.set", "scope": "script:keeper_gate",'
+            ' "args": {"node": "n3", "key": "text", "value": "Go on through."}}',
+)
+def _node_set(project: Project, cmd: Command) -> Command | None:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    node = document.node(cmd.args["node"])
+    key, value = cmd.args["key"], cmd.args["value"]
+    previous = script_module.node_value(node, key, library.registry)
+    if previous == value:
+        return None
+    with script_module.edit(document, library):
+        node[key] = copy.deepcopy(value)
+    return Command("script.node.set", cmd.scope,
+                   {"node": cmd.args["node"], "key": key, "value": previous})
+
+
+@command(
+    "script.node.move",  # #TAG:script.node.move
+    summary="Move a node and its subtree to another container or another "
+            "arm. Refused into its own subtree. Returns nothing when the "
+            "node is already there.",
+    scopes=["script:*"],
+    params=[
+        Param("node", str, "the node's id"),
+        Param("into", str, "the page id or control node id it moves inside"),
+        Param("arm", str, "then, elif:N, else, or empty for a page body",
+              required=False, default=""),
+        Param("after", str, "the sibling it should follow; empty means first",
+              required=False, default=""),
+    ],
+    example='{"verb": "script.node.move", "scope": "script:keeper_gate",'
+            ' "args": {"node": "n5", "into": "n4", "arm": "else"}}',
+)
+def _node_move(project: Project, cmd: Command) -> Command | None:
+    library = _script_library(project)
+    document = library.document(cmd.scope.require("script"))
+    node_id = cmd.args["node"]
+    into, arm, after = cmd.args["into"], cmd.args["arm"], cmd.args["after"]
+    site = document.locate(node_id)
+    if after == node_id:
+        raise PyoneerCommandArgumentError(
+            f"script.node.move: node {node_id!r} cannot follow itself",
+            verb=cmd.verb)
+    inside = document.subtree_ids(document.node(node_id))
+    if into in inside:
+        raise PyoneerCommandArgumentError(
+            f"script.node.move: {into!r} is inside {node_id!r}, so moving it "
+            f"there would detach the subtree from the document",
+            verb=cmd.verb, subtree=sorted(inside))
+    if (into, arm, after) == (site.into, site.arm, site.after):
+        return None
+    with script_module.edit(document, library):
+        source = document.container(site.into, site.arm)
+        moved = source.pop(site.index)
+        target = document.container(into, arm, create=True)
+        index = document.index_after(target, after, what="node")
+        target.insert(index, moved)
+    return Command("script.node.move", cmd.scope,
+                   dict(node=node_id, **site.as_args()))

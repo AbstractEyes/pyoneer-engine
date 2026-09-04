@@ -5,7 +5,7 @@
 
 > Render an `Inspection` as an editable form.
 
-`editor.ui.fields` · 312 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.fields` · 370 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -20,7 +20,7 @@
 
 ### `class InspectionView(QScrollArea)` #TAG:InspectionView
 
-`editor/ui/fields.py:47`–`311`
+`editor/ui/fields.py:47`–`369`
 
 > A scrollable, editable rendering of one Inspection.
 
@@ -33,9 +33,11 @@
 - `editor/ui/fields.py:166` `__label_for(self, entry: Field) -> QLabel` #TAG:InspectionView.__label_for
 - `editor/ui/fields.py:179` `__editor_for(self, entry: Field) -> QWidget` #TAG:InspectionView.__editor_for
 - `editor/ui/fields.py:194` `__build_editor(self, entry: Field) -> QWidget` #TAG:InspectionView.__build_editor
-- `editor/ui/fields.py:239` `__with_remove(self, entry: Field, widget: QWidget) -> QWidget` #TAG:InspectionView.__with_remove
-- `editor/ui/fields.py:254` `__commit(self, entry: Field, value: Any) -> None` #TAG:InspectionView.__commit
-- `editor/ui/fields.py:261` `__remove(self, entry: Field) -> None` #TAG:InspectionView.__remove
-- `editor/ui/fields.py:268` `__on_add_property(self) -> None` #TAG:InspectionView.__on_add_property
+- `editor/ui/fields.py:247` `__says_once(self, entry: Field) -> Callable[[str], None]` #TAG:InspectionView.__says_once
+  - A commit for a text-bearing editor that never says the same
+- `editor/ui/fields.py:297` `__with_remove(self, entry: Field, widget: QWidget) -> QWidget` #TAG:InspectionView.__with_remove
+- `editor/ui/fields.py:312` `__commit(self, entry: Field, value: Any) -> None` #TAG:InspectionView.__commit
+- `editor/ui/fields.py:319` `__remove(self, entry: Field) -> None` #TAG:InspectionView.__remove
+- `editor/ui/fields.py:326` `__on_add_property(self) -> None` #TAG:InspectionView.__on_add_property
   - Name and type in ONE dialog.
-- `editor/ui/fields.py:296` `__sources(self, inspection: Inspection) -> None` #TAG:InspectionView.__sources
+- `editor/ui/fields.py:354` `__sources(self, inspection: Inspection) -> None` #TAG:InspectionView.__sources

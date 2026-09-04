@@ -16,6 +16,19 @@ actually break:
     glyph is deliberately blank
   * a rejected edit reaches the user as a message, not a traceback
   * a response comes back through the same door a click does
+  * THE SELECTION NAMES AN OBJECT, NOT AN ID. Ids are recycled -- the
+    document rolls `nextobjectid` back so that add-then-remove is
+    byte-exact -- so a selection re-resolved by id lands on a DIFFERENT
+    object, and Delete removed one the author had never clicked. Both
+    halves: a recycled id selects and deletes NOTHING, and a selection
+    that is still the same object still deletes, still survives a move
+    and still survives painting a tile
+  * Delete refuses on a HIDDEN layer, where nothing is drawn selected and
+    nothing can be clicked -- and still deletes when the layer comes back
+  * the REAL right-click opener is driven, unstubbed, and asserted to
+    return with its menu still on screen: `QMenu.exec` does not return
+    until the menu closes, and a check that only ever drove the stubbed
+    seam could not see that (law 13)
 
 AND FOUR PROPERTIES ABOUT DIALOGS
 ---------------------------------
@@ -63,11 +76,12 @@ if importlib.util.find_spec("PySide6") is None:
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEvent, QPointF, Qt                          # noqa: E402
-from PySide6.QtGui import QAction, QMouseEvent                          # noqa: E402
+from PySide6.QtGui import QAction, QKeyEvent, QMouseEvent                # noqa: E402
 from PySide6.QtWidgets import (                                         # noqa: E402
     QApplication,
     QGraphicsLineItem,
     QMessageBox,
+    QWidget,
 )
 
 from editor.core import genre as genre_module                          # noqa: E402
@@ -86,7 +100,10 @@ from editor.ui.collision_view import (                                  # noqa: 
     MASK_DOMAIN,
     MaskPalette,
 )
+import editor.ui.canvas as canvas_module                              # noqa: E402
+import editor.ui.main_window as main_window_module                      # noqa: E402
 from editor.ui.main_window import (                                      # noqa: E402
+    LAYOUT_KEY,
     TILES_AS_MASK_TARGET,
     TILES_TITLE,
     EditorWindow,
@@ -110,6 +127,10 @@ def expect(label, got, want):
 warned: list[str] = []
 asked: list[str] = []
 informed: list[str] = []
+
+#: Qt wrappers this file must not let go of. See `menu_entry`, which is
+#: where the one measured reason is written down.
+held: list = []
 
 
 def _body(args) -> str:
@@ -137,6 +158,38 @@ def modals() -> list[str]:
 def no_modals() -> None:
     for bucket in (warned, asked, informed):
         bucket.clear()
+
+
+class FakeLayout:
+    """Stands in for the QSettings the window keeps its dock layout in.
+
+    Two reasons, and they pull in opposite directions, which is why the seam
+    exists at all. A real store would be WRITTEN on every window this file
+    closes, editing the developer's own editor. And it would be READ on
+    every window this file opens, so "are the two palettes side by side"
+    would answer with however that developer last dragged a panel -- a check
+    whose verdict depends on the machine is not a check.
+
+    Deliberately keeps the blob as the QByteArray `saveState` returns, the
+    way QSettings does: stringifying it is how a layout round-trips into
+    something `restoreState` politely refuses.
+    """
+
+    def __init__(self):
+        self.data = {}
+
+    def value(self, key, default=None):
+        return self.data.get(key, default)
+
+    def setValue(self, key, value):
+        self.data[key] = value
+
+
+#: Every `EditorWindow` in this file, including the ones built inside a
+#: section, goes to a throwaway store. Installed at module scope because the
+#: restore happens inside `__init__` and there is no later seam onto it.
+LAYOUTS = FakeLayout()
+main_window_module.layout_store = lambda: LAYOUTS
 
 
 class FakeStore:
@@ -193,17 +246,33 @@ expect("changed fired once per real move, never on a refusal",
        len(moves), 4)
 
 
+def mouse_px(window, kind, px, button=Qt.LeftButton, buttons=None,
+             modifiers=Qt.NoModifier):
+    """One mouse event at an exact SCENE PIXEL.
+
+    `mouse` below aims at cell centres, which is right for painting and
+    useless for dragging an object: a whole number of cells of travel
+    lands on a tile boundary whether the canvas snapped it or not, so a
+    cell-addressed drag cannot tell snapped from freeflow apart (law 5).
+    Pixels are the only coordinate that can.
+    """
+    canvas = window.canvas
+    point = QPointF(canvas.mapFromScene(px[0], px[1]))
+    down = buttons if buttons is not None else button
+    event = QMouseEvent(kind, point, button, down, modifiers)
+    {QEvent.Type.MouseButtonPress: canvas.mousePressEvent,
+     QEvent.Type.MouseMove: canvas.mouseMoveEvent,
+     QEvent.Type.MouseButtonRelease: canvas.mouseReleaseEvent,
+     QEvent.Type.MouseButtonDblClick: canvas.mouseDoubleClickEvent}[kind](event)
+
+
 def mouse(window, kind, cell, button=Qt.LeftButton, buttons=None):
     """Drive the canvas the way a real mouse would, in CELL coordinates."""
     canvas = window.canvas
-    scene_x = cell[0] * canvas.tile_width + canvas.tile_width / 2
-    scene_y = cell[1] * canvas.tile_height + canvas.tile_height / 2
-    point = QPointF(canvas.mapFromScene(scene_x, scene_y))
-    held = buttons if buttons is not None else button
-    event = QMouseEvent(kind, point, button, held, Qt.NoModifier)
-    {QEvent.Type.MouseButtonPress: canvas.mousePressEvent,
-     QEvent.Type.MouseMove: canvas.mouseMoveEvent,
-     QEvent.Type.MouseButtonRelease: canvas.mouseReleaseEvent}[kind](event)
+    mouse_px(window, kind,
+             (cell[0] * canvas.tile_width + canvas.tile_width / 2,
+              cell[1] * canvas.tile_height + canvas.tile_height / 2),
+             button, buttons)
 
 
 def drag(window, cells, button=Qt.LeftButton):
@@ -211,6 +280,60 @@ def drag(window, cells, button=Qt.LeftButton):
     for cell in cells[1:]:
         mouse(window, QEvent.Type.MouseMove, cell, Qt.NoButton, button)
     mouse(window, QEvent.Type.MouseButtonRelease, cells[-1], button)
+    application.processEvents()
+
+
+def drag_px(window, start, end, *, modifiers=Qt.NoModifier):
+    """Press, travel, release -- in scene pixels, with live modifiers.
+
+    The press carries NO modifiers even when the drag does, and that is
+    not a convenience: alt+press is the tile picker, so ALT can only ever
+    be taken up once the button is already down. Driving it any other way
+    would be driving a gesture a hand cannot make.
+    """
+    mouse_px(window, QEvent.Type.MouseButtonPress, start, Qt.LeftButton)
+    mouse_px(window, QEvent.Type.MouseMove, end, Qt.NoButton, Qt.LeftButton,
+             modifiers)
+    mouse_px(window, QEvent.Type.MouseButtonRelease, end, Qt.LeftButton, None,
+             modifiers)
+    application.processEvents()
+
+
+def double_click_px(window, px):
+    """The FOUR events Qt really sends for a double-click.
+
+    Press, release, DoubleClick, release. Driving only the third would
+    prove the handler works and miss the whole risk, which is that the
+    first press has already run the single-click path -- on bare ground it
+    has already PLACED an object, and a handler that placed another would
+    litter one duplicate per double-click.
+    """
+    mouse_px(window, QEvent.Type.MouseButtonPress, px)
+    mouse_px(window, QEvent.Type.MouseButtonRelease, px)
+    mouse_px(window, QEvent.Type.MouseButtonDblClick, px)
+    mouse_px(window, QEvent.Type.MouseButtonRelease, px)
+    application.processEvents()
+
+
+def place_object(window, cell):
+    """THE GESTURE THAT PLACES AN OBJECT, now that a single click does not.
+
+    A whole double-click, driven as Qt really delivers one -- press,
+    release, DoubleClick, release -- because that is the only way to put an
+    object on a map by hand any more, and a check that placed by writing
+    `map.object.add` would keep passing after the gesture stopped working.
+
+    The object editor the gesture opens is CLOSED again. It is not what the
+    sections below are measuring, and `refresh_all` rebuilds a visible one
+    on every command that follows -- so leaving it up would put an unrelated
+    form on the path of every assertion after the first placement.
+    """
+    canvas = window.canvas
+    double_click_px(window,
+                    (cell[0] * canvas.tile_width + canvas.tile_width / 2,
+                     cell[1] * canvas.tile_height + canvas.tile_height / 2))
+    if window.object_editor is not None:
+        window.object_editor.close()
     application.processEvents()
 
 
@@ -341,6 +464,140 @@ try:
 
     # ----------------------------------------------------------------
     print()
+    print("the collision swatches are BESIDE the tiles, never behind them")
+    # ----------------------------------------------------------------
+    # The complaint this section pins: collision should be visible on screen
+    # as a palette selector, and it was tabified onto the Tiles dock, so it
+    # was one click away and zero pixels wide. A tab is a control that hides
+    # its own contents.
+    #
+    # TWO INSTRUMENTS, and each is proved to answer BOTH ways in this same
+    # section, because a measurement that only ever returns the wanted answer
+    # is the vacuous half this suite keeps paying for.
+
+    def tabbed_with(dock):
+        """Which docks share a tab bar with this one, by objectName."""
+        return sorted(other.objectName()
+                      for other in window.tabifiedDockWidgets(dock))
+
+    def painted(widget):
+        """Does this widget occupy pixels RIGHT NOW.
+
+        Not `isVisible()`: a dock sitting behind a tab answers True to that,
+        which is exactly the state being ruled out here. `visibleRegion` is
+        the area Qt would repaint, and it is empty for the loser of a tab.
+        """
+        return not widget.visibleRegion().isEmpty()
+
+    expect("the mask palette exists at all", window.mask_dock.objectName(),
+           "Collision")
+    expect("BOTH palettes are painted at once, with no mode change",
+           (painted(window.palette), painted(window.mask_palette)),
+           (True, True))
+    expect("...and that is measured in tiles mode, so nothing raised it",
+           window.canvas.mode, EditMode.TILES)
+    expect("neither palette shares a tab bar with anything",
+           (tabbed_with(window.palette_dock), tabbed_with(window.mask_dock)),
+           ([], []))
+
+    # THE OTHER HALF OF BOTH INSTRUMENTS, on the docks that ARE tabbed on
+    # purpose. Without these two lines "not tabbed" and "painted" could both
+    # be constants and the section above would pass on a window that stacked
+    # every panel into one tab.
+    expect("the instrument SEES a tab bar where one is intended",
+           tabbed_with(window.inspector), ["Actions", "Behaviors"])
+    expect("...and SEES that the loser of that tab paints nothing",
+           (painted(window.inspector), painted(window.behaviors)),
+           (True, False))
+
+    # The precondition for remembering any of it: Qt keys saved dock state by
+    # `objectName`, and an unnamed dock is dropped from the blob in silence.
+    expect("every dock is named, which is what a layout is stored by",
+           [d.objectName() for d in window.docks
+            + (window.palette_dock, window.mask_dock) if not d.objectName()],
+           [])
+
+    # ----------------------------------------------------------------
+    print()
+    print("an arranged layout survives the next launch")
+    # ----------------------------------------------------------------
+    # Part two of the same complaint: splitting the docks is only an opinion
+    # about where they START. The author drags them where he wants them, and
+    # until now the next launch threw that away.
+    #
+    # Driven with a store of its own so the assertions below cannot be
+    # answered by a blob some earlier section left behind.
+    arranged = FakeLayout()
+    main_window_module.layout_store = lambda: arranged
+    try:
+        first = EditorWindow(session)
+        first.settings = _Settings(FakeStore())
+        first.show()
+        application.processEvents()
+        expect("a window with nothing stored splits the two palettes",
+               sorted(o.objectName()
+                      for o in first.tabifiedDockWidgets(first.palette_dock)),
+               [])
+        expect("...and stores nothing before it closes",
+               list(arranged.data), [])
+
+        # THE AUTHOR ARRANGES IT: he tabs the two palettes himself. That is
+        # his to do -- the split is a default, not a rule -- and it is the
+        # arrangement most obviously destroyed by a forgetful window.
+        first.tabifyDockWidget(first.palette_dock, first.mask_dock)
+        first.mask_dock.raise_()
+        application.processEvents()
+        first.confirm = lambda *a, **k: False
+        first.close()
+        application.processEvents()
+        expect("closing writes the arrangement down", list(arranged.data),
+               [LAYOUT_KEY])
+
+        second = EditorWindow(session)
+        second.settings = _Settings(FakeStore())
+        second.show()
+        application.processEvents()
+        expect("THE NEXT LAUNCH BRINGS IT BACK",
+               sorted(o.objectName()
+                      for o in second.tabifiedDockWidgets(second.palette_dock)),
+               ["Collision"])
+        expect("...and says nothing about it, because nothing went wrong",
+               second.problems.notice_keys(), [])
+        second.confirm = lambda *a, **k: False
+        second.close()
+        second.deleteLater()
+        first.deleteLater()
+        application.processEvents()
+
+        # AND THE FAILING HALF. A blob Qt will not read is the one case where
+        # falling back silently would be indistinguishable from the feature
+        # never having been written -- the author arranges a window, it comes
+        # back wrong, and nothing says why.
+        arranged.data[LAYOUT_KEY] = b"this is not a Qt window state"
+        broken = EditorWindow(session)
+        broken.settings = _Settings(FakeStore())
+        broken.show()
+        application.processEvents()
+        expect("a layout that will not restore falls back to the default",
+               sorted(o.objectName()
+                      for o in broken.tabifiedDockWidgets(broken.palette_dock)),
+               [])
+        expect("...and SAYS SO, rather than looking like a fresh machine",
+               broken.problems.notice_keys(), ["layout"])
+        expect("...in the status bar too",
+               "layout could not be restored" in
+               broken.statusBar().currentMessage(), True)
+        expect("...and it opened no dialog to say it", modals(), [])
+        broken.confirm = lambda *a, **k: False
+        broken.close()
+        broken.deleteLater()
+        application.processEvents()
+    finally:
+        main_window_module.layout_store = lambda: LAYOUTS
+    no_modals()
+
+    # ----------------------------------------------------------------
+    print()
     print("navigation is reachable from the menu, not just from the API")
     # ----------------------------------------------------------------
     actions = window.findChildren(QAction)
@@ -394,8 +651,13 @@ try:
     # `companion_pairs`, the same function the fold is derived from, so this
     # still says nothing about which layers the author has painted.
     _companions = {companion for _art, companion in companion_pairs(_doc)}
+    # `/object:` rows are addressable as well and are NOT layers, so they
+    # are excluded by scope shape rather than by counting on the fixture
+    # holding no objects -- which is a claim about the map (law 4), and one
+    # that stopped being true the day someone authored one into it.
     expect("every real layer is addressable, and only those",
-           sum(1 for a in addressable if "/layer:" in a),
+           sum(1 for a in addressable
+               if "/layer:" in a and "/object:" not in a),
            len(_doc.tile_layer_names()) + len(_doc.object_layer_names())
            - len(_companions))
     expect("and a companion has no row at all, not merely no address",
@@ -657,15 +919,24 @@ try:
     print()
     print("objects: place, inspect, edit, delete, undo")
     # ----------------------------------------------------------------
+    # Where the undo stack stood before any of this ran. Everything below
+    # unwinds back to exactly here, and the byte comparison at the end is
+    # what proves it -- counting undos by hand stops being a measurement
+    # the moment a section grows one more command.
+    OBJECT_BASE = len(session.stream.done)
     select_layer(window, "entity")
+    # WHAT THE FIXTURE ALREADY HOLDS, counted rather than assumed. Every
+    # count below is a DELTA against this. "One click leaves one object"
+    # is a claim about the map as much as about the click (law 4), and it
+    # was false the day an object was authored into `test.tmx`.
+    BORN_WITH = len(session.project.map("test").object_layer("entity").objects())
     window.canvas.object_class = "GamePlayer"
-    mouse(window, QEvent.Type.MouseButtonPress, (4, 6))
-    application.processEvents()
+    place_object(window, (4, 6))
     objects = session.project.map("test").object_layer("entity").objects()
-    expect("an object was placed", len(objects), 1)
-    expect("with the chosen class", objects[0].type, "GamePlayer")
+    expect("an object was placed", len(objects), BORN_WITH + 1)
+    expect("with the chosen class", objects[-1].type, "GamePlayer")
 
-    # A CLICK, not a Command written by the check: the whole point of putting
+    # A GESTURE, not a Command written by the check: the whole point of putting
     # materialisation in the verb rather than in the panel is that the author's
     # real path gets it. And the property is invisible on a rectangle, so the
     # status line is asserted too -- an authoring surface where something
@@ -673,15 +944,14 @@ try:
     STARTS_AS = genre_module.load("topdown_rpg").object_class(
         "entity", "GamePlayer").behaviors_text
     expect("clicking an entity layer materialises the pack's behavior list",
-           objects[0].properties.as_dict().get(BEHAVIORS), STARTS_AS)
+           objects[-1].properties.as_dict().get(BEHAVIORS), STARTS_AS)
     expect("and the status bar says so, since a property is invisible",
            STARTS_AS in window.statusBar().currentMessage(), True)
 
     # The other half, through the same click path: a class the pack does not
     # name is placed with nothing, and the status line does not invent a list.
     window.canvas.object_class = "GameEntity"
-    mouse(window, QEvent.Type.MouseButtonPress, (6, 6))
-    application.processEvents()
+    place_object(window, (6, 6))
     plain = session.project.map("test").object_layer("entity").objects()[-1]
     expect("a class the pack does not name is placed with nothing",
            plain.properties.as_dict(), {})
@@ -690,11 +960,17 @@ try:
     window.undo()
     application.processEvents()
     objects = session.project.map("test").object_layer("entity").objects()
-    expect("undoing it leaves the first object alone", len(objects), 1)
+    expect("undoing it leaves the first object alone", len(objects),
+           BORN_WITH + 1)
     window.canvas.object_class = "GamePlayer"
 
+    # THE OBJECT UNDER TEST, by the id the document gave it. Written down
+    # once: every assertion from here to the end of the section names it,
+    # and "object 1" only ever meant "the fixture happened to be empty".
+    TARGET = objects[-1].id
+    TARGET_SCOPE = f"map:test/layer:entity/object:{TARGET}"
     window.selection.select(Scope.of(("map", "test"), ("layer", "entity"),
-                                     ("object", str(objects[0].id))))
+                                     ("object", str(TARGET))))
     application.processEvents()
 
     # The Actions panel has to be IN `window.docks`, or no click can open it
@@ -713,11 +989,12 @@ try:
            NOT_WIRED in [label.text()
                          for label in window.actions.findChildren(QLabel)], True)
     expect("and it followed the selection like the Inspector",
-           str(window.actions.scope), "map:test/layer:entity/object:1")
+           str(window.actions.scope), TARGET_SCOPE)
 
     inspection = window.inspector.view.inspection
     fields = {f.key: f for section in inspection.sections for f in section.fields}
-    expect("the inspector describes it", inspection.heading, "object 1")
+    expect("the inspector describes it", inspection.heading,
+           f"object {TARGET}")
     expect("it offers position as a number", fields["x"].kind, "float")
     expect("class as a constrained choice", fields["type"].kind, "choice")
     expect("rotation is editable now", fields["rotation"].editable, True)
@@ -726,7 +1003,7 @@ try:
     window.run(fields["x"].emit(128.0))
     expect("editing through the inspector moved it",
            session.project.map("test").object_layer("entity")
-           .find(objects[0].id).x, 128.0)
+           .find(TARGET).x, 128.0)
     window.undo()
 
     # Adding a property is ONE form. Two QInputDialogs in a row -- name, then
@@ -743,19 +1020,778 @@ try:
     expect("and it asked nothing else", modals(), [])
     expect("the property landed, typed",
            str(session.project.map("test").object_layer("entity")
-               .find(objects[0].id).properties.as_dict().get("pyoneer_probe")),
+               .find(TARGET).properties.as_dict().get("pyoneer_probe")),
            "0")
     window.inspector.view.ask = ask_module.ask_form
     window.undo()
 
-    mouse(window, QEvent.Type.MouseButtonPress, (4, 6), Qt.RightButton)
+    # ----------------------------------------------------------------
+    print()
+    print("an object is MOVED, PICKED and DELETED by hand -- and a "
+          "right-click no longer destroys one")
+    # ----------------------------------------------------------------
+    # THE DEFECT THIS SECTION REPLACES. Right-click used to route straight
+    # into `__delete_object_under`: one press, on the same button that
+    # erases tiles, and the entity was gone with no menu and no question.
+    # The assertion that stood here read "right-click deleted it" and was
+    # green for the whole life of that behaviour, which is the measure of
+    # how little a passing assertion says about whether the gesture is the
+    # right one.
+    #
+    # THE MENU SEAM. `QMenu.exec` blocks (law 13) -- measured on the way to
+    # writing this: the first run of the changed canvas against the OLD
+    # right-click assertion hung this file for the full 600s timeout with
+    # zero output, which is exactly the failure law 13 was written for. So
+    # `popup_menu` is replaced here the way `TilePalette.popup_menu` is in
+    # `check_palette.py`, and a real right-click is driven through the real
+    # hit test into a real QMenu that is READ instead of shown.
+    entity_scope = Scope.of(("map", "test"), ("layer", "entity"))
+
+    def entity_objects():
+        return session.project.map("test").object_layer("entity").objects()
+
+    def entity_object(object_id):
+        return session.project.map("test").object_layer("entity").find(object_id)
+
+    opened: list = []
+    window.canvas.popup_menu = lambda menu, at: opened.append(menu)
+
+    def right_click_px(px):
+        """A real right-click, and every menu it opened.
+
+        NO processEvents, and the reason changed with the fix: the handler
+        no longer frees the menu on the way out -- `_hold_menu` frees it
+        when it CLOSES, because `popup` hands it back still open -- but a
+        menu built through the stub below never shows and so never hides,
+        and spinning the loop here would still fire the watchdog armed by
+        the section that drives the REAL opener.
+        """
+        opened.clear()
+        mouse_px(window, QEvent.Type.MouseButtonPress, px, Qt.RightButton)
+        return list(opened)
+
+    def labels(menu):
+        return [action.text() for action in menu.actions()]
+
+    edits: list = []
+    window.canvas.edit_object_requested.connect(
+        lambda scope: edits.append(str(scope)))
+
+    one = entity_object(TARGET)
+    ONE_ID = TARGET
+    HOME = (one.x, one.y)
+    TILE = window.canvas.tile_width
+    inside = (HOME[0] + 4, HOME[1] + 4)
+    expect("the object under test is on a tile boundary to begin with",
+           (HOME[0] % TILE, HOME[1] % TILE), (0.0, 0.0))
+
+    # -- RIGHT-CLICK: a menu, and the object survives it ---------------
+    # The count is taken BEFORE the click, or "nothing was written" is
+    # `x == x` and asserts nothing at all (law 5).
+    no_modals()
+    before = len(entity_objects())
+    depth = len(session.stream.done)
+    menus = right_click_px(inside)
+    expect("right-clicking an object opens a menu with the two things "
+           "there are to do",
+           [labels(m) for m in menus], [["Edit…", "Delete"]])
+    expect("...AND THE OBJECT IS STILL THERE, which is the whole point",
+           (len(entity_objects()), entity_object(ONE_ID) is not None),
+           (before, True))
+    # The other half of "no object was removed": the undo stack did not
+    # move either. A removal that was immediately undone would satisfy the
+    # count above and not this.
+    expect("...having written no command and opened no dialog",
+           (len(session.stream.done), modals()), (depth, []))
+
+    # -- RIGHT-CLICK OVER NOTHING: no menu, but a line saying so -------
+    empty_px = (HOME[0] + TILE * 5, HOME[1])
+    expect("right-clicking bare ground opens NOTHING",
+           right_click_px(empty_px), [])
+    expect("...and says what the button would have meant there",
+           "double-click bare ground" in window.statusBar().currentMessage(),
+           True)
+    # The builder REFUSES rather than handing back an empty menu, so the
+    # decision cannot be made twice and answered differently (law 7).
+    refused = None
+    try:
+        window.canvas.object_menu([])
+    except Exception as exc:                                    # noqa: BLE001
+        refused = type(exc).__name__
+    expect("...and the menu builder refuses an empty pick outright",
+           refused, "PyoneerError")
+
+    # -- RIGHT-CLICK ON A TILE LAYER STILL ERASES ----------------------
+    # The branch that was wrong was the OBJECT one. Painting is a different
+    # branch and the author did not ask for it to change, so this is the
+    # half that proves the edit stayed inside its own case.
+    select_layer(window, "Floor")
+    floor = session.project.map("test").tile_layer("Floor")
+    window.canvas.tool = Tool.BRUSH
+    # A gid the cell does not already hold, so the paint is guaranteed to
+    # produce an edit and the two undos below are guaranteed to be this
+    # section's own. A stroke that changes nothing commits nothing.
+    ERASE_CELL = (2, 2)
+    window.canvas.stamp = Stamp.single(
+        77 if floor.get_tile(*ERASE_CELL) != 77 else 98)
+    painted_gid = window.canvas.stamp.gids[0]
+    drag(window, [ERASE_CELL])                   # something to erase
+    expect("a left-click on a tile layer paints",
+           floor.get_tile(*ERASE_CELL), painted_gid)
+    depth = len(session.stream.done)
+    opened.clear()
+    drag(window, [ERASE_CELL], Qt.RightButton)
+    expect("...and a right-click there still ERASES, menu-free",
+           (floor.get_tile(*ERASE_CELL), opened, len(session.stream.done)),
+           (0, [], depth + 1))
+    window.undo()                                # the erase
+    window.undo()                                # the paint
+    select_layer(window, "entity")
+    window.selection.select(entity_scope.child("object", str(ONE_ID)))
     application.processEvents()
-    expect("right-click deleted it",
-           len(session.project.map("test").object_layer("entity").objects()), 0)
+
+    # -- DRAG: snapped by default --------------------------------------
+    # A whole tile plus five pixels, so snapped and freeflow land on
+    # DIFFERENT numbers. A whole number of tiles would land on a boundary
+    # either way and prove nothing about snapping (law 5).
+    OFF = TILE + 5
+    depth = len(session.stream.done)
+    drag_px(window, inside, (inside[0] + OFF, inside[1]))
+    moved = entity_object(ONE_ID)
+    expect("dragging an object moves it, snapped to the tile grid",
+           (moved.x, moved.x % TILE, moved.y), (HOME[0] + TILE, 0.0, HOME[1]))
+    expect("...as ONE transaction, so one Ctrl+Z takes the whole drag back",
+           len(session.stream.done), depth + 1)
     window.undo()
+    application.processEvents()
+    expect("...and it does", (entity_object(ONE_ID).x, entity_object(ONE_ID).y),
+           HOME)
+
+    # -- DRAG: freeflow, and ALT inverts the toggle live ---------------
+    depth = len(session.stream.done)
+    drag_px(window, inside, (inside[0] + OFF, inside[1]),
+            modifiers=Qt.AltModifier)
+    freed = entity_object(ONE_ID)
+    expect("ALT during the drag goes freeflow: it lands OFF the grid",
+           (freed.x, freed.x % TILE), (HOME[0] + OFF, float(OFF % TILE)))
+    expect("...still one transaction", len(session.stream.done), depth + 1)
     window.undo()
+    application.processEvents()
+
+    # The toggle is a plain attribute, so the same gesture with it off has
+    # to land where ALT just did -- and ALT then has to snap. Both halves,
+    # because a canvas that ignored `snap_objects` and always snapped
+    # would pass every assertion above.
+    window.canvas.snap_objects = False
+    drag_px(window, inside, (inside[0] + OFF, inside[1]))
+    expect("with snapping switched off a plain drag is freeflow",
+           entity_object(ONE_ID).x, HOME[0] + OFF)
+    window.undo()
+    drag_px(window, inside, (inside[0] + OFF, inside[1]),
+            modifiers=Qt.AltModifier)
+    expect("...and ALT inverts THAT too, back onto the grid",
+           (entity_object(ONE_ID).x, entity_object(ONE_ID).x % TILE),
+           (HOME[0] + TILE, 0.0))
+    window.undo()
+    application.processEvents()
+    window.canvas.snap_objects = True
+
+    # -- DRAG: nowhere. NO COMMAND. ------------------------------------
+    # An undo step that changes nothing is worse than no undo step: the
+    # first Ctrl+Z after it appears to do nothing at all.
+    depth = len(session.stream.done)
+    drag_px(window, inside, inside)
+    expect("a drag that ends where it started writes NO command",
+           (len(session.stream.done), entity_object(ONE_ID).x), (depth, HOME[0]))
+    # And the same for travel too small to leave the cell -- the snap puts
+    # it back on the boundary it came from, so there is nothing to record.
+    drag_px(window, inside, (inside[0] + 3, inside[1] + 3))
+    expect("...nor does travel the snap swallows",
+           (len(session.stream.done), entity_object(ONE_ID).x), (depth, HOME[0]))
+
+    # -- STACKING: the menu becomes a picker ---------------------------
+    # A SECOND object at the same pixel. Placed through the verb rather
+    # than by clicking, because a click on an occupied cell now grabs what
+    # is there -- which is the behaviour two assertions up.
+    window.run(Command("map.object.add", entity_scope,
+                       {"type": "GameEntity", "name": "Twin",
+                        "x": HOME[0], "y": HOME[1]}))
+    application.processEvents()
+    stacked = entity_objects()
+    expect("two objects now sit on the same cell",
+           len(stacked), BORN_WITH + 2)
+    TWIN_ID = stacked[-1].id
+    hits = window.canvas.objects_under(QPointF(*inside))
+    expect("both are under the cursor, topmost first -- the one added last "
+           "is the one drawn on top",
+           [obj.id for _layer, obj in hits], [TWIN_ID, ONE_ID])
+
+    menus = right_click_px(inside)
+    expect("right-clicking a stack opens a PICKER, one entry per object",
+           [len(labels(m)) for m in menus], [2])
+    expect("...each labelled so it can be told from the other: the tmx "
+           "name when it has one, the id and the type when it does not",
+           labels(menus[0]),
+           [f"Twin  ·  GameEntity {TWIN_ID}  ·  entity",
+            f"GamePlayer {ONE_ID}  ·  entity"])
+
+    # A PICK SELECTS. It does not delete, and it does not edit.
+    picker = window.canvas.object_menu(window.canvas.objects_under(QPointF(*inside)))
+    held.append(picker)
+    held.append(picker.actions())
+    depth = len(session.stream.done)
+    edits.clear()
+    picker.actions()[1].trigger()               # the one UNDERNEATH
+    application.processEvents()
+    expect("picking the buried one SELECTS it",
+           str(window.selection.scope), f"map:test/layer:entity/object:{ONE_ID}")
+    expect("...and changes nothing and opens nothing",
+           (len(session.stream.done), len(entity_objects()), edits, modals()),
+           (depth, BORN_WITH + 2, [], []))
+
+    # THE OTHER HALF: one object is not a picker. Same code, same click,
+    # a different menu -- which is the only way to know the count decides
+    # it rather than the shape being a constant.
+    window.run(Command("map.object.remove", entity_scope.child("object",
+                                                               str(TWIN_ID))))
+    application.processEvents()
+    menus = right_click_px(inside)
+    expect("one object under the cursor produces no picker at all",
+           [labels(m) for m in menus], [["Edit…", "Delete"]])
+
+    # -- THE REAL OPENER, DRIVEN. NOT A STUB. --------------------------
+    # Everything above replaces `popup_menu`, which is right for reading a
+    # menu and proves NOTHING about the call the author's own right-click
+    # makes. That call used to be `QMenu.exec`, which does not return until
+    # the menu closes -- the 40-minute shape law 13 is named after, and a
+    # check that only ever drove the stub could not see it.
+    #
+    # THE WATCHDOG IS WHAT MAKES THIS SAFE TO ASSERT. A zero-timer is armed
+    # first: under `exec` it fires inside that nested loop, closes the menu
+    # and lets the call return, so a regression comes back RED in
+    # milliseconds instead of hanging this file for the full 600s. Under
+    # `popup` nothing spins the loop before the assertion, so the timer
+    # cannot have fired and a VISIBLE menu is proof the call did not block.
+    from PySide6.QtCore import QTimer                            # noqa: E402
+    from PySide6.QtWidgets import QMenu                          # noqa: E402
+
+    def close_any_popup():
+        popup = QApplication.activePopupWidget()
+        if popup is not None:
+            popup.close()
+
+    real_menus: list = []
+
+    def watched_open(menu, at):
+        """Record the menu, then hand it to the REAL opener."""
+        real_menus.append(menu)
+        canvas_module._exec_menu(menu, at)
+
+    window.canvas.popup_menu = watched_open
+    menus_before = len(window.canvas.findChildren(QMenu))
+    depth = len(session.stream.done)
+    QTimer.singleShot(0, close_any_popup)
+    mouse_px(window, QEvent.Type.MouseButtonPress, inside, Qt.RightButton)
+    expect("the REAL right-click opened exactly one menu",
+           [labels(m) for m in real_menus], [["Edit…", "Delete"]])
+    live = real_menus[0]
+    expect("...and RETURNED with it still on screen, so nothing blocked",
+           (live.isVisible(), QApplication.activePopupWidget() is live),
+           (True, True))
+    expect("...having deleted nothing and asked nothing",
+           (len(entity_objects()), len(session.stream.done), modals()),
+           (BORN_WITH + 1, depth, []))
+    # THE OTHER HALF OF THE MENU'S LIFETIME. It must not be freed while it
+    # is up -- that is what a `deleteLater()` under a non-blocking `popup`
+    # would do -- and it must not survive being dismissed either, or every
+    # right-click leaves a QMenu on the canvas for the rest of the session.
+    expect("a menu that is still open is still alive",
+           len(window.canvas.findChildren(QMenu)), menus_before + 1)
+    # AND IT STILL ACTS. An entry wired with `triggered` does not care
+    # whether its menu was `exec`'d or popped, but that is a claim, and
+    # `Edit…` is the one entry that proves it without writing anything.
+    # NO processEvents around it: `triggered` is a direct connection and
+    # arrives synchronously, and spinning the loop here would let the
+    # watchdog close the menu the next two assertions are about.
+    edits.clear()
+    live.actions()[0].trigger()
+    expect("...and an entry on the LIVE menu still does what it says",
+           edits, [f"map:test/layer:entity/object:{ONE_ID}"])
+    live.close()
+    application.processEvents()
+    application.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    application.processEvents()
+    expect("...and closing it frees it, on the same beat Qt hides it",
+           len(window.canvas.findChildren(QMenu)), menus_before)
+    window.canvas.popup_menu = lambda menu, at: opened.append(menu)
+
+    # -- THE MENU'S OWN Edit AND Delete --------------------------------
+    # Built here rather than triggered out of the popped one: a popped
+    # menu is freed when it closes, so an entry triggered after it has
+    # been dismissed is an entry on a freed QMenu. Same split
+    # `check_palette.py` makes for the same reason. The REAL opener is
+    # driven in its own section below, where the menu is still open.
+    single = window.canvas.object_menu(window.canvas.objects_under(QPointF(*inside)))
+    held.append(single)
+    held.append(single.actions())
+    edits.clear()
+    single.actions()[0].trigger()               # Edit…
+    application.processEvents()
+    expect("Edit… asks the window to open the object, by scope",
+           edits, [f"map:test/layer:entity/object:{ONE_ID}"])
+    expect("...and selects it on the way, so the canvas draws what opened",
+           str(window.selection.scope), f"map:test/layer:entity/object:{ONE_ID}")
+
+    depth = len(session.stream.done)
+    single.actions()[1].trigger()               # Delete
+    application.processEvents()
+    expect("Delete on the menu removes it, through map.object.remove",
+           (entity_object(ONE_ID), len(session.stream.done)), (None, depth + 1))
+    expect("...and the selection climbs to the layer rather than pointing "
+           "at an object that is gone",
+           str(window.selection.scope), "map:test/layer:entity")
+    window.undo()
+    application.processEvents()
+    window.selection.select(entity_scope.child("object", str(ONE_ID)))
+    application.processEvents()
+
+    # -- THE DELETE KEY ------------------------------------------------
+    def press_key(key):
+        window.canvas.keyPressEvent(
+            QKeyEvent(QEvent.Type.KeyPress, key, Qt.NoModifier))
+        application.processEvents()
+
+    depth = len(session.stream.done)
+    press_key(Qt.Key_Delete)
+    expect("Delete removes the SELECTED object",
+           (entity_object(ONE_ID), len(session.stream.done)), (None, depth + 1))
+    window.undo()
+    application.processEvents()
+
+    # BOTH HALVES OF THE GUARD, and this is the half that matters: a key
+    # that deletes whatever the selection happens to name is a key that
+    # deletes something the author cannot see selected.
+    window.selection.select(entity_scope)
+    application.processEvents()
+    depth = len(session.stream.done)
+    press_key(Qt.Key_Delete)
+    expect("Delete with nothing selected removes NOTHING",
+           (len(entity_objects()), len(session.stream.done)),
+           (BORN_WITH + 1, depth))
+    expect("...and says so rather than looking like a dead key",
+           "nothing is selected" in window.statusBar().currentMessage(), True)
+
+    # A stale selection is the other way to delete the wrong thing: the
+    # scope survives the object it names. It has to resolve to nothing.
+    window.selection.select(entity_scope.child("object", "9999"))
+    application.processEvents()
+    press_key(Qt.Key_Delete)
+    expect("...and a selection whose object is gone removes nothing either",
+           (len(entity_objects()), len(session.stream.done)),
+           (BORN_WITH + 1, depth))
+
+    # And with a TILE layer active, where no object outline is drawn at all.
+    window.selection.select(entity_scope.child("object", str(ONE_ID)))
+    application.processEvents()
+    window.canvas.active_layer = "Floor"
+    press_key(Qt.Key_Delete)
+    expect("Delete while a TILE layer is active removes nothing",
+           (len(entity_objects()), len(session.stream.done)),
+           (BORN_WITH + 1, depth))
+    expect("...naming the layer that is in the way",
+           "'Floor' is a tile layer" in window.statusBar().currentMessage(),
+           True)
+    window.canvas.active_layer = "entity"
+
+    # -- DELETE ON A HIDDEN LAYER --------------------------------------
+    # The fourth guard, and the one its own docstring described while not
+    # existing. A hidden layer draws no outline (`__draw_objects` skips it)
+    # and cannot be right-clicked (`objects_under` skips it), so this key
+    # was the last path that could still remove an object the author
+    # cannot see. Driven through the REAL Layers-panel signal, not by
+    # writing to `hidden_layers`: the wire is part of the claim.
+    window.selection.select(entity_scope.child("object", str(ONE_ID)))
+    application.processEvents()
+    window.hierarchy.visibility_changed.emit("entity", False)
+    application.processEvents()
+    expect("a hidden layer's object cannot be right-clicked either",
+           window.canvas.objects_under(QPointF(*inside)), [])
+    depth = len(session.stream.done)
+    press_key(Qt.Key_Delete)
+    expect("Delete on a HIDDEN layer removes NOTHING",
+           (len(entity_objects()), len(session.stream.done)),
+           (BORN_WITH + 1, depth))
+    expect("...and says which layer is hidden, the way the other three do",
+           ("'entity' is hidden" in window.statusBar().currentMessage(),
+            modals()), (True, []))
+    # THE OTHER HALF, through the same switch: turn the layer back on and
+    # the very same key on the very same selection deletes. Without this
+    # the guard above would pass on a Delete key that never worked.
+    window.hierarchy.visibility_changed.emit("entity", True)
+    application.processEvents()
+    press_key(Qt.Key_Delete)
+    expect("...and the same key on the same object deletes once it is "
+           "visible again",
+           (entity_object(ONE_ID), len(session.stream.done)),
+           (None, depth + 1))
+    window.undo()
+    application.processEvents()
+
+    # -- A RECYCLED ID IS NOT THE OBJECT THAT WAS SELECTED -------------
+    # THE WORST DEFECT THIS FILE HAS COVERED: Delete removing an object
+    # the author had never clicked, silently.
+    #
+    # `MapDocument._release_object_id` ROLLS `nextobjectid` back when the
+    # id being removed is the one just handed out -- deliberately, because
+    # that is what makes add-then-remove byte-exact. So ids are REUSED,
+    # and a selection re-resolved by id lands on a different object. Five
+    # real gestures, and every one of them is a gesture: place, place,
+    # select, Ctrl+Z, place.
+    from PySide6.QtWidgets import QGraphicsRectItem                # noqa: E402
+
+    def drawn_selected():
+        """WHICH objects the canvas is DRAWING the selected outline around.
+
+        Read off the SCENE, not off the state the drawing is derived from.
+        The defect was that the canvas painted a selection around an object
+        the author never clicked, so the assertion has to look at the
+        picture -- asking the canvas which id it thinks is selected would
+        be asking the accused.
+        """
+        corners = {(round(item.rect().x()), round(item.rect().y()))
+                   for item in window.canvas.scene().items()
+                   if isinstance(item, QGraphicsRectItem)
+                   and item.parentItem() is None
+                   and item.pen().color() == canvas_module._OBJECT_SELECTED}
+        return sorted(obj.id for obj in entity_objects()
+                      if (round(obj.x), round(obj.y)) in corners)
+
+    STALE_BASE = len(session.stream.done)
+    STANDING = [obj.id for obj in entity_objects()]
+    window.canvas.object_class = "GamePlayer"
+
+    def add_at(cell):
+        """Put an object on the map WITHOUT selecting it.
+
+        THE PLACING GESTURE IS A DOUBLE-CLICK NOW, and a double-click
+        selects what it placed and opens its editor -- which is right, and
+        which would make this section untestable: the premise is a
+        selection left pointing at an id that has since been handed to a
+        DIFFERENT object, and a gesture that selects what it just made can
+        never leave one. So these three arrive by command, the way a
+        script or a sibling panel places one, and every assertion below is
+        still driven by a real click or a real key.
+        """
+        window.run(Command("map.object.add", entity_scope,
+                           {"type": "GamePlayer",
+                            "x": float(cell[0] * TILE),
+                            "y": float(cell[1] * window.canvas.tile_height)}))
+        application.processEvents()
+
+    add_at((12, 12))                                               # A
+    add_at((14, 12))                                               # B
+    A_ID, B_ID = [obj.id for obj in entity_objects()[-2:]]
+    B_AT = (entity_object(B_ID).x, entity_object(B_ID).y)
+    window.selection.select(entity_scope.child("object", str(B_ID)))
+    application.processEvents()
+    expect("the author selects B, and B is what is drawn selected",
+           drawn_selected(), [B_ID])
+
+    window.undo()                                   # B is gone
+    application.processEvents()
+    expect("one Ctrl+Z takes B away and nothing is drawn selected",
+           (entity_object(B_ID), drawn_selected()), (None, []))
+
+    add_at((17, 12))                                               # C
+    C_ID = entity_objects()[-1].id
+    C_AT = (entity_object(C_ID).x, entity_object(C_ID).y)
+    expect("THE ID IS HANDED OUT AGAIN: C is a different object in a "
+           "different place, carrying B's id",
+           (C_ID, C_AT == B_AT), (B_ID, False))
+    # THE ASSERTION THE WHOLE SECTION EXISTS FOR.
+    expect("...and the canvas draws NOTHING as selected, because the "
+           "author never clicked C",
+           drawn_selected(), [])
+    depth = len(session.stream.done)
+    press_key(Qt.Key_Delete)
+    expect("...and Delete removes NOTHING",
+           ([obj.id for obj in entity_objects()], len(session.stream.done)),
+           (STANDING + [A_ID, C_ID], depth))
+    expect("...saying nothing is selected, rather than deleting in silence",
+           ("nothing is selected" in window.statusBar().currentMessage(),
+            modals()), (True, []))
+    # And the window is not left pointing at the dead id either: a
+    # `Selection` that still named it would swallow the author's next
+    # click on C, since `select` de-duplicates.
+    expect("...and the selection climbed off the dead id",
+           str(window.selection.scope), "map:test/layer:entity")
+
+    # THE POSITIVE HALF, and it is not optional: a fix that forgets more
+    # than it must is a fix that gets reverted. C is selected by CLICKING
+    # it -- the same gesture, the same id -- and now Delete does remove it.
+    # A WHOLE CLICK -- press AND release. A press on an object opens a
+    # drag, and the drag lives until a release commits it: measured here,
+    # a press with no release left one open, the tile drag three
+    # assertions later released into it instead of into its own stroke,
+    # and the orphaned stroke then committed `map.tile.set_many` against
+    # an OBJECT layer on the next release anywhere. Nothing a hand can do
+    # gets there, because a hand always lets go.
+    mouse(window, QEvent.Type.MouseButtonPress, (17, 12))
+    mouse(window, QEvent.Type.MouseButtonRelease, (17, 12))
+    application.processEvents()
+    expect("clicking C selects C, id and all", drawn_selected(), [C_ID])
+    press_key(Qt.Key_Delete)
+    expect("...and Delete removes THAT, so the guard is not a dead key",
+           ([obj.id for obj in entity_objects()], len(session.stream.done)),
+           (STANDING + [A_ID], depth + 1))
+    window.undo()                                   # C is back
+    application.processEvents()
+
+    # THE SAME DEFECT IN ONE STEP, and this is the half that a rule of
+    # "it was missing at some rebuild" cannot catch. A script, or a panel
+    # that is not this canvas, edits through the SESSION -- so the remove
+    # and the add land between two rebuilds, the freed id is handed
+    # straight back, and there is no moment at which the canvas could have
+    # seen the id resolve to nothing. Only the card can tell the two
+    # objects apart here. Driven with `session.run`, deliberately, because
+    # `window.run` refreshes and would rebuild in between.
+    window.selection.select(entity_scope.child("object", str(C_ID)))
+    application.processEvents()
+    expect("C is selected to begin with", drawn_selected(), [C_ID])
+    session.run(Command("map.object.remove",
+                        entity_scope.child("object", str(C_ID))))
+    session.run(Command("map.object.add", entity_scope,
+                        {"type": "GamePlayer", "name": "Impostor",
+                         "x": 320.0, "y": 320.0}))
+    impostor = entity_objects()[-1]
+    expect("an impostor is handed the selected object's id, with no "
+           "rebuild in between",
+           (impostor.id, impostor.name), (C_ID, "Impostor"))
+    depth = len(session.stream.done)
+    window.canvas.rebuild()
+    application.processEvents()
+    expect("...and the canvas drops the selection instead of adopting it",
+           drawn_selected(), [])
+    expect("...naming the object the id used to mean",
+           (f"object {C_ID} is not" in window.statusBar().currentMessage(),
+            modals()), (True, []))
+    press_key(Qt.Key_Delete)
+    expect("...so Delete removes nothing, impostor included",
+           ([obj.id for obj in entity_objects()], len(session.stream.done)),
+           (STANDING + [A_ID, C_ID], depth))
+    session.undo()
+    session.undo()
+    window.canvas.rebuild()
+    application.processEvents()
+
+    # AND THE TWO WAYS A SELECTION MUST SURVIVE. Only the object ceasing
+    # to be that object may cost the author their selection; a fix that
+    # cleared on every edit would pass everything above and be useless.
+    window.selection.select(entity_scope.child("object", str(A_ID)))
+    application.processEvents()
+    window.run(Command("map.object.move",
+                       entity_scope.child("object", str(A_ID)),
+                       {"x": float(entity_object(A_ID).x + TILE),
+                        "y": float(entity_object(A_ID).y)}))
+    application.processEvents()
+    expect("MOVING the selected object keeps it selected -- it is still "
+           "the same object",
+           drawn_selected(), [A_ID])
+    window.undo()
+    application.processEvents()
+
+    window.canvas.active_layer = "Floor"
+    window.canvas.stamp = Stamp.single(77)
+    window.canvas.tool = Tool.BRUSH
+    drag(window, [(31, 31)])
+    expect("...and PAINTING A TILE does not cost the author their object",
+           drawn_selected(), [A_ID])
+    window.undo()
+    window.canvas.active_layer = "entity"
+    application.processEvents()
+
+    while len(session.stream.done) > STALE_BASE:
+        window.undo()
+    application.processEvents()
+    window.selection.select(entity_scope.child("object", str(ONE_ID)))
+    application.processEvents()
+
+    # -- A SINGLE CLICK NEVER CREATES ----------------------------------
+    # THE AUTHOR'S REPORT: "left click is currently adding an entity to
+    # the map when it needs to be double click". Double-click-to-place was
+    # added and single-click-to-place was never taken out, so bare ground
+    # took an object on every click that meant "look here" -- on a map
+    # being navigated, one per click, and the author need never notice.
+    #
+    # It is also what Qt's event order demands. A double-click arrives as
+    # press, release, DoubleClick, release, so the single-click path runs
+    # FIRST on the way to every double-click: anything irreversible here
+    # happens once per double-click too.
+    expect("the object under test is selected before the click",
+           drawn_selected(), [ONE_ID])
+    edits.clear()
+    count = len(entity_objects())
+    depth = len(session.stream.done)
+    no_modals()
+    mouse_px(window, QEvent.Type.MouseButtonPress, empty_px)
+    mouse_px(window, QEvent.Type.MouseButtonRelease, empty_px)
+    application.processEvents()
+    expect("A SINGLE CLICK ON BARE GROUND CREATES NOTHING",
+           (len(entity_objects()), len(session.stream.done)), (count, depth))
+    expect("...it CLEARS the selection instead -- the deliberate way back "
+           "to nothing-selected, which Delete and the inspector both read",
+           (drawn_selected(), str(window.selection.scope)),
+           ([], "map:test/layer:entity"))
+    expect("...saying what a double-click would have done there",
+           (f"Double-click to place a {window.canvas.object_class}"
+            in window.statusBar().currentMessage(), modals()), (True, []))
+    expect("...and opening no editor for an object it did not make",
+           edits, [])
+
+    # THE OTHER HALF, and it is the half that stops the fix from being
+    # "make left click do nothing": the same button on an OBJECT still
+    # selects it, and still writes nothing.
+    mouse_px(window, QEvent.Type.MouseButtonPress, inside)
+    mouse_px(window, QEvent.Type.MouseButtonRelease, inside)
+    application.processEvents()
+    expect("a single click ON an object still selects it, and still writes "
+           "nothing",
+           (drawn_selected(), len(entity_objects()), len(session.stream.done)),
+           ([ONE_ID], count, depth))
+
+    # -- DOUBLE-CLICK --------------------------------------------------
+    # Over an EXISTING object: nothing is created. Getting this backwards
+    # litters one duplicate per double-click on a crowded map, silently.
+    edits.clear()
+    count = len(entity_objects())
+    depth = len(session.stream.done)
+    double_click_px(window, inside)
+    expect("double-clicking an object creates NOTHING and asks to edit it, "
+           "once",
+           (len(entity_objects()), len(session.stream.done), edits),
+           (count, depth, [f"map:test/layer:entity/object:{ONE_ID}"]))
+
+    # Over BARE GROUND: exactly one object, and one request for it.
+    edits.clear()
+    depth = len(session.stream.done)
+    double_click_px(window, empty_px)
+    application.processEvents()
+    made = entity_objects()
+    expect("double-clicking bare ground places EXACTLY ONE object",
+           (len(made), len(session.stream.done)), (count + 1, depth + 1))
+    expect("...and asks to edit the one it just made, once",
+           edits, [f"map:test/layer:entity/object:{made[-1].id}"])
+    expect("...snapped to the cell, the way a single click already places",
+           (made[-1].x % TILE, made[-1].y % TILE), (0.0, 0.0))
+    expect("...with no dialog anywhere in any of this", modals(), [])
+
+    # -- focus_object: THE HIERARCHY'S DOOR ----------------------------
+    # `self.window().canvas.focus_object(scope)` is what a tree row calls.
+    # It is asserted here, in the canvas's own file, because the canvas
+    # owns both halves of the contract: it CENTRES, and it selects through
+    # THE SAME PATH A CLICK USES -- two ways of setting a selection is how
+    # the canvas comes to draw one object highlighted while the inspector
+    # fills in a form for another.
+    def visible():
+        """What the viewport is showing, in scene coordinates."""
+        return window.canvas.mapToScene(
+            window.canvas.viewport().rect()).boundingRect()
+
+    def shows(point):
+        return visible().contains(QPointF(*point))
+
+    target = entity_object(ONE_ID)
+    centre = (target.x + (target.width or TILE) / 2,
+              target.y + (target.height or window.canvas.tile_height) / 2)
+    # Zoomed in and scrolled away, deliberately: on a map that fits in the
+    # viewport whole, "the object is on screen" is true before the call and
+    # is not an assertion at all (law 5).
+    window.canvas.resetTransform()
+    window.canvas.scale(8, 8)
+    window.canvas.centerOn(window.canvas.scene().sceneRect().bottomRight())
+    window.selection.select(entity_scope)
+    application.processEvents()
+    expect("the object is off screen and unselected before the call -- or "
+           "nothing below could fail",
+           (shows(centre), drawn_selected()), (False, []))
+
+    answered = window.canvas.focus_object(
+        entity_scope.child("object", str(ONE_ID)))
+    application.processEvents()
+    expect("focus_object brings the object into view and answers True",
+           (answered, shows(centre)), (True, True))
+    expect("...and selects it through the same path a click uses, so the "
+           "card and the window agree",
+           (drawn_selected(), str(window.selection.scope)),
+           ([ONE_ID], f"map:test/layer:entity/object:{ONE_ID}"))
+
+    # A STALE ROW, made the way an author makes one: place an object, then
+    # Ctrl+Z. The hierarchy can still be holding that address for a frame,
+    # and a row that lost its race is not a contract violation -- so this
+    # answers False and does not raise.
+    standing = len(entity_objects())
+    place_object(window, (2, 9))
+    ghost = entity_objects()[-1].id
+    expect("the row is made by really placing an object -- the cell has to "
+           "have been bare, or `ghost` names somebody else",
+           len(entity_objects()), standing + 1)
+    window.undo()
+    application.processEvents()
+    expect("...and one Ctrl+Z is what makes the row stale",
+           (entity_object(ghost), len(entity_objects())), (None, standing))
+    window.selection.select(entity_scope.child("object", str(ONE_ID)))
+    application.processEvents()
+    def standing_still():
+        """Everything the refusal must leave exactly as it found it.
+
+        Measured with NO spin of the event loop inside the measurement:
+        `focus_object` is synchronous -- its emit reaches the window and
+        comes back through `set_selection` before it returns -- so a
+        `processEvents` between the two readings would only let unrelated
+        queued work land in the middle of the comparison.
+
+        AND WITHOUT `drawn_selected`, which cannot be asked twice.
+        Measured, three reads apart with nothing in between: the first
+        `scene().items()` returns 213 items including both object
+        rectangles, and the second returns 211 with NO `QGraphicsRectItem`
+        at all -- enumerating the scene from Python is what frees them.
+        Every other use in this file gets away with it by asking once per
+        rebuild. So the canvas is asked for its own answer here, through
+        `selected_object`, which re-resolves the card against the document
+        and never touches the scene; the PICTURE is asserted on the
+        success path above, where the read is the first after a rebuild.
+        """
+        layer_name, obj = window.canvas.selected_object()
+        return (str(window.selection.scope), layer_name,
+                None if obj is None else obj.id,
+                len(session.stream.done), visible())
+
+    was = standing_still()
+    raised = None
+    try:
+        stale = window.canvas.focus_object(
+            entity_scope.child("object", str(ghost)))
+    except Exception as exc:                                    # noqa: BLE001
+        stale, raised = None, f"{type(exc).__name__}: {exc}"
+    now = standing_still()
+    expect("focus_object answers False for an id the layer no longer has, "
+           "and does not raise", (stale, raised), (False, None))
+    expect("...having moved nothing: no scroll, no selection, no command",
+           now, was)
+    expect("...and a scope that is not an object at all is the same answer, "
+           "with the view still where it was",
+           (window.canvas.focus_object(entity_scope), standing_still()),
+           (False, was))
+    window.canvas.resetTransform()
+    application.processEvents()
+
+    # ----------------------------------------------------------------
+    while len(session.stream.done) > OBJECT_BASE:
+        window.undo()
+    application.processEvents()
     expect("and everything unwound byte-identically",
            session.project.map("test").to_bytes() == ORIGINAL, True)
+    window.canvas.popup_menu = canvas_module._exec_menu
 
     # ----------------------------------------------------------------
     print()
@@ -901,7 +1937,11 @@ try:
             window.hierarchy.confirm is ask_module.confirm,
             window.hierarchy.ask is ask_module.ask_form,
             window.inspector.view.ask is ask_module.ask_form,
-            window.ask is ask_module.ask_form], [True] * 5)
+            window.ask is ask_module.ask_form,
+            # The window's own confirm, which `closeEvent` is the heaviest
+            # caller of: a stub left on this seam in the shipped tree is a
+            # close that answers its own question and loses the session.
+            window.confirm is ask_module.confirm], [True] * 6)
 
     window.hierarchy.strip.field.setText("a note that has gone nowhere yet")
     window.hierarchy.strip.stage()
@@ -923,24 +1963,64 @@ try:
     # The standing structural proof, and the thing that stops it growing
     # back: a check can only watch a seam it can replace, and every hard
     # `QMessageBox.x(...)` in a panel is a dialog no check can see.
-    def modal_calls(relative: str) -> list[str]:
-        # BOTH ways to block, not just the obvious one. Watching only
-        # `QMessageBox.x(...)` is blind to `dialog.exec()`, so a panel could
-        # grow a fully blocking QDialog and the guard that exists to stop
-        # exactly this pattern returning would not see it.
-        with open(os.path.join(REPO, relative), encoding="utf-8") as handle:
-            text = handle.read()
+    def modal_calls_in(text: str) -> list[str]:
+        """Every blocking call this source text makes.
+
+        BOTH ways to block, not just the obvious one. Watching only
+        `QMessageBox.x(...)` is blind to `dialog.exec()`, so a panel could
+        grow a fully blocking QDialog and the guard that exists to stop
+        exactly this pattern returning would not see it.
+
+        AND THE ARGUMENTS ARE PART OF THE CALL. This predicate demanded
+        EMPTY parentheses until the canvas grew `menu.exec(at)` -- the one
+        spelling of `exec` a QMenu actually takes -- which it read as no
+        call at all. Measured, before it was widened:
+
+            'menu.exec(at)'  -> []      'box.exec(self)' -> []
+            'dialog.exec()'  -> ['exec:dialog']
+
+        A blocking call planted in a censused panel passed the census. The
+        decoy below is the standing proof that it cannot again.
+        """
         return (re.findall(r"QMessageBox\.(\w+)\(", text)
-                + [f"exec:{name}" for name in re.findall(r"(\w+)\.exec_?\(\)", text)])
+                + [f"exec:{name}"
+                   for name in re.findall(r"(\w+)\.exec_?\(", text)])
+
+    def modal_calls(relative: str) -> list[str]:
+        with open(os.path.join(REPO, relative), encoding="utf-8") as handle:
+            return modal_calls_in(handle.read())
+
+    # THE DECOY. Asserting the census comes back EMPTY over the tree proves
+    # nothing about the predicate -- an instrument that always answers "no"
+    # answers "no" for a panel full of modals too, which is exactly how the
+    # planted call got through. So the predicate is fed blocking calls it
+    # has to see, in a scratch string owned by this file, and one line that
+    # must NOT trip it: an `.exec(` with no receiver is prose about the
+    # rule, and `editor/ui/object_editor.py` carries one.
+    DECOY = ("menu.exec(at)\n"
+             "box.exec(self)\n"
+             "dialog.exec()\n"
+             "old.exec_()\n"
+             "QMessageBox.warning(self, 'x', 'y')\n"
+             "# this check fails on any `.exec()` it finds here\n")
+    expect("the census SEES a blocking call that carries arguments",
+           modal_calls_in(DECOY),
+           ["warning", "exec:menu", "exec:box", "exec:dialog", "exec:old"])
+    expect("...and does not invent one out of prose about the rule",
+           modal_calls_in("# fails on any `.exec()` it finds here\n"), [])
 
     # A module may open a modal ONLY if it exposes a seam a check can
     # replace -- that is the whole property, and it is why the exclusion
     # below is a single name rather than a convenience. `ask.py` is the one
     # DIALOG module: opening one is its job, and it is asserted replaceable
     # just below, so excluding it is earned rather than assumed.
-    # `main_window.py` keeps the genuine stops. `canvas.py` belongs to the
-    # collision path, where `check_collision_mount.py` asserts the same
-    # property from the far side.
+    # `main_window.py` keeps the genuine stops.
+    #
+    # `canvas.py` is NOT exempt any more either. It was excused to
+    # `check_collision_mount.py`, which stubs `QMessageBox` and has never
+    # looked at `exec` at all -- and while it was excused the canvas grew
+    # `menu.exec(at)` on the right-click path, which is a blocking call in
+    # the file the census was told not to read. It reads it now.
     #
     # `tileset_dialog.py` is NOT exempt any more, and that is the point: the
     # tile importer used to be exempt on the strength of a replaceable
@@ -951,7 +2031,9 @@ try:
     panels = sorted(
         name for name in os.listdir(os.path.join(REPO, "editor", "ui"))
         if name.endswith(".py")
-        and name not in DIALOG_MODULES + ("main_window.py", "canvas.py"))
+        and name not in DIALOG_MODULES + ("main_window.py", ))
+    expect("the canvas is one of the panels the census reads",
+           "canvas.py" in panels, True)
     expect("no panel opens one of its own",
            {name: modal_calls(f"editor/ui/{name}") for name in panels
             if modal_calls(f"editor/ui/{name}")}, {})
@@ -1343,9 +2425,15 @@ try:
     from editor.core.settings import SETTINGS, EditorSettings      # noqa: E402
 
     store = EditorSettings(FakeStore())
+    # DERIVED from each setting's own declared type, not a list written
+    # out here. A hardcoded row per setting says nothing about coercion
+    # and everything about how recently someone added a preference: this
+    # assertion went red for a bool that was added correctly. What it is
+    # actually for is that the STORE hands back the type the declaration
+    # promises, through a backend that returns everything as text.
     expect("defaults come back typed",
            [type(store.get(s.key)).__name__ for s in SETTINGS],
-           ["str", "str", "bool", "int", "int", "bool"])
+           [s.type for s in SETTINGS])
     store.set("show_grid", False)
     expect("a bool survives a text backend", store.get("show_grid"), False)
     store.set("show_grid", True)
@@ -1469,6 +2557,14 @@ try:
            booted.canvas.collision_subcell, 4)
     expect("...and the stored grid spacing beside it, which nothing covered "
            "either", booted.canvas.grid_step, 8)
+    # Closing a dirty window now OFFERS TO SAVE (`EditorWindow.closeEvent`),
+    # so a teardown that did not answer would write this fixture out from
+    # under every assertion after it -- including the byte-identical
+    # comparisons against ORIGINAL. "No" is the answer a teardown wants: it
+    # closes and writes nothing, which is what `close()` did before the
+    # feature existed. The same three words appear at every teardown close
+    # in this file for the same reason.
+    booted.confirm = lambda *a, **k: False
     booted.close()
     booted.deleteLater()
     application.processEvents()
@@ -1814,7 +2910,489 @@ try:
            (masked.canvas.tile_masks(),
             masked_session.project.map("masked").to_bytes() == MASKED_ORIGINAL),
            ({}, True))
+    masked.confirm = lambda *a, **k: False      # teardown: close, write nothing
     masked.close()
+
+    # ----------------------------------------------------------------
+    print()
+    print("closing the window cannot throw the session away in silence")
+    # ----------------------------------------------------------------
+    # THE MEASUREMENT THIS SECTION EXISTS FOR: two verbs out of thirty-six
+    # write at command time, so every tile paint, layer, object edit and
+    # passability cell lives in an open MapDocument until something calls
+    # save. Before `EditorWindow.closeEvent`, `window.close()` returned True,
+    # opened nothing, left the session dirty and left the .tmx byte-identical
+    # on disk -- the whole edit gone, with no way for the author to notice.
+    #
+    # ITS OWN PROJECT, because these assertions SAVE. Writing the shared
+    # fixture out would break every byte-identical comparison against
+    # ORIGINAL that runs after it, and a check that writes something it did
+    # not create is the shape law 4 is about.
+    #
+    # All four outcomes, and the fourth is the one nobody writes: a
+    # closeEvent that swallows a FAILED save is worse than no closeEvent at
+    # all, because it reports the work safe on the way to discarding it.
+    closing_root = os.path.join(workspace, "closing")
+    os.makedirs(os.path.join(closing_root, "config"))
+    os.makedirs(os.path.join(closing_root, "data", "maps"))
+    closing_tmx = os.path.join(closing_root, "data", "maps", "closing.tmx")
+    with open(closing_tmx, "w", encoding="utf-8", newline="") as handle:
+        handle.write(MASKED_TMX)
+    with open(os.path.join(closing_root, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": [{"name": "closing", "identifier": "closing",
+                             "file": "data/maps/closing.tmx"}]}, handle)
+    closing_session = Session.open(closing_root, genre_id="topdown_rpg")
+    CLOSING_ORIGINAL = closing_session.project.map("closing").to_bytes()
+
+    closing = EditorWindow(closing_session)
+    closing.settings = _Settings(FakeStore())
+    closing.show()
+    application.processEvents()
+    no_modals()
+
+    FLOOR = Scope.parse("map:closing/layer:Floor")
+
+    def on_disk() -> bytes:
+        with open(closing_tmx, "rb") as handle:
+            return handle.read()
+
+    at_ask: list[bytes] = []
+
+    def answering(reply):
+        """Stand in for the confirm seam AND record the disk as it was asked.
+
+        The body is deliberately not compared -- it names the dirty
+        documents, and pinning that text here would make a wording change
+        look like a lost session. WHEN it opened is the load-bearing part:
+        the disk must still hold the old bytes at the moment the question is
+        put, or the window saved before it asked and the answer was theatre.
+        """
+        def stub(*_a, **_k):
+            at_ask.append(on_disk())
+            return reply
+        return stub
+
+    def paint(x, y, gid):
+        applied = closing.run(Command("map.tile.set", FLOOR,
+                                      {"x": x, "y": y, "gid": gid}))
+        if not applied:
+            failures.append("closing fixture would not take an edit")
+        return applied
+
+    # ONE: nothing to lose, so nothing is asked. A prompt on a close that
+    # cannot protect anything is what teaches a hand to dismiss the prompt,
+    # and then the one that matters is dismissed too.
+    closing.confirm = answering(True)
+    expect("the fixture starts clean", closing_session.dirty, False)
+    # `len(at_ask)` and never `at_ask` itself: the recorder holds whole .tmx
+    # files, and a failure that prints one is a failure nobody reads.
+    expect("a CLEAN window closes with no question at all",
+           (closing.close(), len(at_ask), closing.isVisible()),
+           (True, 0, False))
+    expect("...and no dialog of any kind", modals(), [])
+
+    # TWO: dirty, answered yes. The bytes must reach disk BEFORE it closes.
+    closing.show()
+    application.processEvents()
+    paint(1, 1, 3)
+    expect("one edit makes it dirty and leaves the disk alone",
+           (closing_session.dirty, on_disk() == CLOSING_ORIGINAL), (True, True))
+    edited = closing_session.project.map("closing").to_bytes()
+    expect("...and the edit really is a change to the bytes",
+           edited == CLOSING_ORIGINAL, False)
+    at_ask.clear()
+    closing.confirm = answering(True)
+    accepted = closing.close()
+    expect("a DIRTY window asks exactly once before closing", len(at_ask), 1)
+    expect("...and had saved nothing yet when it asked",
+           at_ask[0] == CLOSING_ORIGINAL, True)
+    expect("...saying yes writes the edit, then closes",
+           (accepted, on_disk() == edited, closing.isVisible(),
+            closing_session.dirty), (True, True, False, False))
+    expect("...through save(), not a dialog of its own", modals(), [])
+
+    # THE OTHER HALF OF ONE, and not a repeat of it: clean is RECOMPUTED at
+    # every close, not a state the window was born in. A closeEvent that
+    # asked once and then remembered would pass ONE and fail here.
+    closing.show()
+    application.processEvents()
+    at_ask.clear()
+    closing.confirm = answering(True)
+    expect("a window made clean BY that save asks nothing on the next close",
+           (closing.close(), len(at_ask)), (True, 0))
+
+    # THREE: dirty, answered no. It closes, and writes NOTHING.
+    closing.show()
+    application.processEvents()
+    paint(2, 1, 4)
+    saved_bytes = on_disk()
+    expect("a second edit is dirty again", closing_session.dirty, True)
+    at_ask.clear()
+    closing.confirm = answering(False)
+    refused = closing.close()
+    expect("saying no CLOSES -- a refusal is an answer, not a failure",
+           (refused, closing.isVisible(), len(at_ask)), (True, False, 1))
+    expect("...and nothing at all reached disk",
+           (on_disk() == saved_bytes, closing_session.dirty), (True, True))
+    expect("...still with no dialog beyond the question", modals(), [])
+
+    # FOUR: the menu entry is the SAME door. `&Quit` is bound to
+    # `self.close`, which posts the QCloseEvent `closeEvent` answers -- so
+    # the menu, the title-bar button and the window manager cannot disagree.
+    # A `QApplication.quit()` here would look identical from the outside
+    # until the day it silently took the session with it, which is why this
+    # is asserted through the real QAction rather than by reading the source.
+    def menu_entry(window, menu_text, entry_text):
+        """One menu entry, by the text a hand reads off the screen.
+
+        EVERY WRAPPER IT MAKES IS KEPT, and that is not tidiness. Measured
+        here: `QAction.menu()` hands out a SECOND shiboken wrapper for a
+        QMenu, and releasing that duplicate invalidates the Python wrappers
+        of the menu's CHILDREN. A window holding a submenu of its own --
+        `EditorWindow.maps_menu` does -- then answers "Internal C++ object
+        (QMenu) already deleted" the next time it touches it, from inside
+        `refresh_all`, for a menu Qt has not deleted at all. The walk looks
+        read-only and is not, so the temporaries live as long as this file.
+        """
+        held.append(window.menuBar().actions())
+        for top in held[-1]:
+            if top.text() != menu_text:
+                continue
+            menu = top.menu()
+            if menu is None:
+                continue
+            held.append(menu)
+            held.append(menu.actions())
+            for entry in held[-1]:
+                if entry.text() == entry_text:
+                    return entry
+        return None
+
+    quit_entry = menu_entry(closing, "&File", "&Quit")
+    expect("File carries a Quit entry to drive", quit_entry is not None, True)
+    closing.show()
+    application.processEvents()
+    at_ask.clear()
+    closing.confirm = answering(False)
+    quit_entry.trigger()
+    application.processEvents()
+    expect("File > Quit goes THROUGH closeEvent, not around it",
+           (len(at_ask), closing.isVisible()), (1, False))
+    expect("...and honours the same answer", on_disk() == saved_bytes, True)
+
+    # FIVE: THE HALF NOBODY WRITES. The author asked to save, the save
+    # failed, `save` already showed its own stop and returned None -- so
+    # closing anyway would eat the work AND the warning. This is the one
+    # outcome where the window must refuse to close.
+    closing.show()
+    application.processEvents()
+
+    def explode_save():
+        raise OSError("the disk said no")
+
+    closing_session.save = explode_save
+    no_modals()
+    at_ask.clear()
+    closing.confirm = answering(True)
+    vetoed = closing.close()
+    expect("a save that FAILS leaves the window OPEN",
+           (vetoed, closing.isVisible()), (False, True))
+    expect("...having asked, and having tried", len(at_ask), 1)
+    expect("...with the failure on screen rather than swallowed",
+           [line for line in warned if "the disk said no" in line],
+           ["the disk said no"])
+    expect("...and the work still unsaved rather than reported saved",
+           (closing_session.dirty, on_disk() == saved_bytes), (True, True))
+    del closing_session.save
+    no_modals()
+
+    closing.confirm = lambda *a, **k: False     # teardown: close, write nothing
+    closing.close()
+    closing.deleteLater()
+    application.processEvents()
+
+    # ----------------------------------------------------------------
+    print()
+    print("the window can reach every declared map, not just the first one")
+    # ----------------------------------------------------------------
+    # THE MEASUREMENT THIS SECTION EXISTS FOR: every layer under the window
+    # has been multi-map since it was written -- `Project.map` opens and
+    # caches any declared name, `Session.known_scopes` walks all of them
+    # "for pickers and validation" -- while the window itself did
+    # `map_names()[0]` and offered no control at all. A project could
+    # declare ten maps and the editor would open the alphabetically first
+    # one for ever.
+    #
+    # A TWO-MAP FIXTURE, because one map proves nothing here: with a single
+    # declaration "the picker opened the right map" and "the picker is a
+    # constant" are the same measurement (law 5). Its own project, too --
+    # these assertions paint, and the shared fixture is compared against
+    # ORIGINAL by sections that run after this one.
+    picker_root = os.path.join(workspace, "picker")
+    os.makedirs(os.path.join(picker_root, "config"))
+    os.makedirs(os.path.join(picker_root, "data", "maps"))
+    for map_name in ("alpha", "beta"):
+        with open(os.path.join(picker_root, "data", "maps", f"{map_name}.tmx"),
+                  "w", encoding="utf-8", newline="") as handle:
+            handle.write(MASKED_TMX)
+    with open(os.path.join(picker_root, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        # DECLARED OUT OF ORDER on purpose: `map_names()` sorts, and a
+        # picker that offered them in declaration order would put a
+        # different map under the same click on the author's next project.
+        json.dump({"data": [{"name": n, "identifier": n,
+                             "file": f"data/maps/{n}.tmx"}
+                            for n in ("beta", "alpha")]}, handle)
+    picker_session = Session.open(picker_root, genre_id="topdown_rpg")
+
+    picker = EditorWindow(picker_session)
+    picker.settings = _Settings(FakeStore())
+    picker.show()
+    application.processEvents()
+    no_modals()
+
+    def ticked(window):
+        return [name for name, action in window.map_actions.items()
+                if action.isChecked()]
+
+    expect("two declared maps give two entries, in name order",
+           list(picker.map_actions), ["alpha", "beta"])
+    expect("...every one of them checkable",
+           [a.isCheckable() for a in picker.map_actions.values()], [True, True])
+    expect("...with EXACTLY ONE ticked, and it is the map on screen",
+           (ticked(picker), picker.map_name), (["alpha"], "alpha"))
+    expect("...and the title bar says which map, since it is now a choice",
+           "map:alpha" in picker.windowTitle(), True)
+
+    # REACHABILITY. The point of this pass is a control, so every assertion
+    # below is driven through the QAction a hand actually clicks -- a dict
+    # of actions the author cannot find is the shape this repository has
+    # now shipped four times.
+    maps_entry = menu_entry(picker, "&File", "&Maps")
+    expect("File carries a Maps submenu",
+           maps_entry is not None and maps_entry.menu() is not None, True)
+    submenu = {a.text(): a for a in maps_entry.menu().actions()}
+    expect("...listing both declared maps", sorted(submenu), ["alpha", "beta"])
+
+    # ONE CANVAS PER STREAM. `MapCanvas.__init__` hands the command stream a
+    # bound method, which a Qt delete does not take back -- so a window that
+    # swaps canvases would keep every one it ever built. Proved in BOTH
+    # directions on a spare canvas before it is used to judge the switch,
+    # because "the count did not grow" is worthless if the count never moves.
+    from editor.ui.canvas import MapCanvas as _MapCanvas                # noqa: E402
+    subscribed = lambda: len(picker_session.stream.listeners)
+    base_listeners = subscribed()
+    spare = _MapCanvas(picker_session, "beta")
+    expect("building a canvas subscribes it to the command stream",
+           subscribed(), base_listeners + 1)
+    expect("...a fresh canvas comes up in TILES mode", spare.mode, EditMode.TILES)
+    spare.detach()
+    expect("...detach takes exactly that subscription back",
+           subscribed(), base_listeners)
+    spare.detach()
+    expect("...and says nothing the second time, so a caller need not count",
+           subscribed(), base_listeners)
+    spare.deleteLater()
+    application.processEvents()
+
+    # THE STATE A SWITCH MUST CARRY. The toolbar does not change, so a
+    # canvas that came up in TILES under a mode button reading COLLISION is
+    # a control lying about what the next click does.
+    picker.modes.actions[EditMode.COLLISION].trigger()
+    application.processEvents()
+    expect("the window is in collision mode before the switch",
+           picker.canvas.mode, EditMode.COLLISION)
+
+    # AND AN UNSAVED EDIT, on the map being LEFT. Nothing on this path
+    # closes a document -- `Project.map` caches for the life of the project
+    # and `save` writes every dirty one -- so the whole claim is that the
+    # edit is still there afterwards, and that the window did not stop to
+    # ask about work it was never going to lose.
+    picker.run(Command("map.tile.set", Scope.parse("map:alpha/layer:Floor"),
+                       {"x": 0, "y": 0, "gid": 3}))
+    edited_alpha = picker_session.project.map("alpha").to_bytes()
+    expect("the edit made the session dirty on alpha",
+           (picker_session.dirty, picker_session.project.dirty_maps()),
+           (True, ["alpha"]))
+
+    asked_on_switch = []
+    picker.confirm = lambda *a, **k: asked_on_switch.append(a) or True
+    outgoing = picker.canvas
+    listeners_before = subscribed()
+    no_modals()
+
+    submenu["beta"].trigger()
+
+    # BEFORE processEvents, deliberately: `deleteLater` is what frees the
+    # outgoing canvas, and after the event loop runs there is no Python
+    # object left to ask where it was parented.
+    expect("LAW 12: the outgoing canvas is re-parented to the window",
+           outgoing.parent() is picker, True)
+    expect("...so it is NOT promoted to a top-level window",
+           (outgoing.isWindow(), outgoing in application.topLevelWidgets()),
+           (False, False))
+    expect("...and it is hidden rather than left painting over the new one",
+           outgoing.isVisible(), False)
+    # THE OTHER HALF OF BOTH INSTRUMENTS, on a widget orphaned on purpose.
+    # Without it `isWindow()` and the top-level roster could each be a
+    # constant and the two lines above would pass on the very bug they are
+    # written against -- ~20 orphan windows per undo, which is what law 12
+    # cost when it was paid the first time.
+    orphan = QWidget(picker)
+    was_child = (orphan.isWindow(), orphan in application.topLevelWidgets())
+    orphan.setParent(None)
+    expect("...and both instruments SEE the parentless state they rule out",
+           (was_child, orphan.isWindow(),
+            orphan in application.topLevelWidgets()),
+           ((False, False), True, True))
+    orphan.deleteLater()
+
+    application.processEvents()
+
+    expect("the click switched the map", picker.map_name, "beta")
+    expect("...onto a NEW canvas, over the other map's own document",
+           (picker.canvas is not outgoing, picker.canvas.map_name,
+            picker.canvas.document is picker_session.project.map("beta")),
+           (True, "beta", True))
+    expect("...mounted as the central widget, not merely built",
+           picker.centralWidget() is picker.canvas, True)
+    expect("...carrying the mode the toolbar still shows",
+           picker.canvas.mode, EditMode.COLLISION)
+    expect("...with exactly one entry ticked, and it is the new map",
+           ticked(picker), ["beta"])
+    expect("...and the title bar following it",
+           ("map:beta" in picker.windowTitle(),
+            "map:alpha" in picker.windowTitle()), (True, False))
+    expect("...and the swapped-out canvas no longer on the stream",
+           subscribed(), listeners_before)
+
+    # NOTHING IS LOST, WHICH IS WHY NOTHING IS ASKED. A prompt that cannot
+    # possibly protect any work is the shape `closeEvent` rules against in
+    # its own docstring, and the honest way to assert it is to prove the
+    # work survived rather than to prove a box appeared.
+    expect("switching with UNSAVED work asks the author nothing",
+           (len(asked_on_switch), modals()), (0, []))
+    expect("...because the edit is still there, byte for byte, still dirty",
+           (picker_session.dirty, picker_session.project.dirty_maps(),
+            picker_session.project.map("alpha").to_bytes() == edited_alpha),
+           (True, ["alpha"], True))
+
+    # THE ALL-LAYERS TOGGLE REACHES THE CANVAS THAT IS ON SCREEN NOW. It was
+    # wired to a bound method of the canvas that existed when the toolbar
+    # was built, which after a switch is a deleted map's canvas -- the
+    # button lights and nothing resolves.
+    picker.modes.all_layers.setChecked(True)
+    application.processEvents()
+    expect("the All-layers toggle reaches the canvas the switch mounted",
+           picker.canvas.all_layers, True)
+    picker.modes.all_layers.setChecked(False)
+    application.processEvents()
+    expect("...in both directions", picker.canvas.all_layers, False)
+
+    # NAVIGATION FOLLOWS THE NEW CURSOR. `&Back` and `Select the parent`
+    # held bound methods of the Selection object built in `__init__`; a
+    # switch roots a fresh one, and a menu still driving the old object
+    # navigates a selection nothing is listening to.
+    select_layer(picker, "Floor")
+    expect("a layer on the NEW map can be selected",
+           str(picker.selection.scope), "map:beta/layer:Floor")
+    menu_entry(picker, "&Edit", "&Back").trigger()
+    application.processEvents()
+    expect("...and File-menu Back walks the cursor the switch created",
+           str(picker.selection.scope), "map:beta")
+
+    # UNDO CROSSES MAPS, AND SAYS SO. The stack is the project's and every
+    # inverse carries its own scope, so Ctrl+Z here takes back the edit on
+    # alpha -- correctly, invisibly, and indistinguishably from "undo did
+    # nothing" unless the window says where it landed.
+    picker.undo()
+    application.processEvents()
+    expect("undo took the off-screen edit back",
+           picker_session.project.dirty_maps(), [])
+    expect("...and SAID it landed on a map that is not on screen",
+           ("map:alpha" in picker.statusBar().currentMessage(),
+            "not the map on screen" in picker.statusBar().currentMessage()),
+           (True, True))
+
+    # THE OTHER HALF: an undo on the map the author is looking at must NOT
+    # announce anything, or the notice is noise on every Ctrl+Z.
+    picker.run(Command("map.tile.set", Scope.parse("map:beta/layer:Floor"),
+                       {"x": 1, "y": 1, "gid": 4}))
+    picker.undo()
+    application.processEvents()
+    expect("an undo on the map ON SCREEN says nothing about maps",
+           "not the map on screen" in picker.statusBar().currentMessage(), False)
+
+    # THE SAME SEAM DOES FIRE WHERE WORK REALLY CAN BE LOST. Without this
+    # line "switching asked nothing" is satisfied by a confirm seam that was
+    # never reachable at all.
+    asked_on_switch.clear()
+    picker.confirm = lambda *a, **k: asked_on_switch.append(a) or False
+    picker.run(Command("map.tile.set", Scope.parse("map:beta/layer:Floor"),
+                       {"x": 2, "y": 1, "gid": 4}))
+    picker.close()
+    application.processEvents()
+    expect("...while a DIRTY close still asks, through that very seam",
+           len(asked_on_switch), 1)
+    picker.deleteLater()
+    application.processEvents()
+    no_modals()
+
+    # ----------------------------------------------------------------
+    print()
+    print("a map that will not open changes nothing at all")
+    # ----------------------------------------------------------------
+    # LAW 7 on the one path where the plausible default is "carry on and
+    # see": the window must open the document BEFORE it tears the old
+    # canvas down, or a bad declaration leaves it with no central widget and
+    # a menu ticking a map it never opened.
+    broken_root = os.path.join(workspace, "broken_map")
+    os.makedirs(os.path.join(broken_root, "config"))
+    os.makedirs(os.path.join(broken_root, "data", "maps"))
+    with open(os.path.join(broken_root, "data", "maps", "real.tmx"), "w",
+              encoding="utf-8", newline="") as handle:
+        handle.write(MASKED_TMX)
+    with open(os.path.join(broken_root, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        # `zmissing` sorts last, so the window still OPENS on `real`; the
+        # declaration points at a file nobody wrote.
+        json.dump({"data": [{"name": "real", "identifier": "real",
+                             "file": "data/maps/real.tmx"},
+                            {"name": "zmissing", "identifier": "zmissing",
+                             "file": "data/maps/zmissing.tmx"}]}, handle)
+    broken_session = Session.open(broken_root, genre_id="topdown_rpg")
+    breaker = EditorWindow(broken_session)
+    breaker.settings = _Settings(FakeStore())
+    breaker.show()
+    application.processEvents()
+    no_modals()
+
+    expect("it opened the map that exists", breaker.map_name, "real")
+    held = breaker.canvas
+    breaker.map_actions["zmissing"].trigger()
+    application.processEvents()
+    expect("a map that will not open leaves the window exactly as it was",
+           (breaker.map_name, breaker.canvas is held,
+            breaker.centralWidget() is held), ("real", True, True))
+    expect("...and puts the tick back on the map that IS open",
+           ticked(breaker), ["real"])
+    expect("...having said so where it can be read afterwards",
+           breaker.problems.notice_keys(), ["switch_map"])
+    expect("...and in the status bar", "zmissing" in
+           breaker.statusBar().currentMessage(), True)
+    expect("...without a dialog", modals(), [])
+
+    # AND THE OTHER HALF, on the same window: the map that CAN open still
+    # switches, and the refusal retires rather than staying on the panel.
+    breaker.map_actions["real"].trigger()
+    expect("clicking the open map again is not a switch",
+           (breaker.canvas is held, ticked(breaker)), (True, ["real"]))
+    breaker.confirm = lambda *a, **k: False
+    breaker.close()
+    breaker.deleteLater()
+    application.processEvents()
+    no_modals()
 
     # ----------------------------------------------------------------
     print()
@@ -1834,6 +3412,7 @@ try:
     finally:
         window.problems.refresh = original
 
+    window.confirm = lambda *a, **k: False      # teardown: close, write nothing
     window.close()
 
 finally:

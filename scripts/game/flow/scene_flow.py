@@ -34,6 +34,14 @@ THE RESTORE IS EXACT
 flow that was already unsteerable is still unsteerable afterwards, so a flow
 cannot silently animate the scenery it borrowed.
 
+That record-then-write-then-put-back-exactly is `AgencyHold`, at MODULE
+SCOPE in this file rather than inside `SceneFlow`, because the script
+interpreter (`scripts/game/flow/interpreter.py`) needs the identical thing
+for its `hold` and `release` ops. It is one class used twice, not two
+implementations that agree today: a second copy of "record before writing,
+restore the saved value, skip a body with no `BodyState`" is the shape that
+cost this repository 425 duplicated lines the last time it shipped.
+
 HOW A FIRING REACHES IT
 -----------------------
 `SceneFlow.on_action(entity, fired)` is shaped as an `ActionRouter` handler,
@@ -59,7 +67,7 @@ WHAT IS NOT HERE
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Optional, Sequence, Tuple
+from typing import (Any, Dict, Iterable, List, Optional, Sequence, Tuple)
 
 from scripts.core.errors import PyoneerConfigError
 from scripts.game.behavior.movement import MS_PER_DELTA
@@ -78,6 +86,124 @@ Spelled, not imported, because `scripts/` may never import `editor/`.
 `tools/check_flow.py` may import both sides, and asserts this string equals
 `map_events.USE` on every run.
 """
+
+
+AGENCY_AXES: Tuple[str, ...] = ("steerable", "enabled_inputs", "simulated")
+"""The three `BodyState` axes a hold may take, in the order it takes them.
+
+Spelled once and imported by both callers, because a fourth axis added to
+`BodyState` that only one of them learned about would be a hold that
+half-restores.
+"""
+
+
+class AgencyHold:
+    """Agency taken from a set of bodies, and the exact way back.
+
+    Record BEFORE writing, per body and per axis; put back the SAVED value,
+    never `True`. A body carrying no `BodyState` is skipped rather than
+    refused -- scenery in a `bodies` list is ordinary.
+
+    `take()` may be called more than once. The record for an axis is written
+    only the FIRST time that axis is taken from that body, so a second hold
+    that clears another axis cannot overwrite the first hold's snapshot with
+    a value the first hold already changed. That is the same hazard
+    `SceneFlow.begin` refuses a re-begin for, solved here in the layer that
+    owns the record.
+    """
+
+    def __init__(self, bodies: Iterable[Any] = ()):
+        self.bodies: Tuple[Any, ...] = tuple(bodies)
+        self._records: List[Tuple[Any, BodyState, Dict[str, bool]]] = []
+
+    @property
+    def held_bodies(self) -> Tuple[Any, ...]:
+        """The bodies this hold is currently holding, in `bodies` order.
+
+        Empty before `take()` and after `give_back()`, and it omits bodies
+        carrying no `BodyState`. Read off the record rather than by zipping
+        `self.bodies`, since a skipped body would shift that zip by one and
+        name the WRONG entity.
+        """
+        return tuple(body for body, _, _ in self._records)
+
+    @property
+    def holding(self) -> bool:
+        """Whether anything is outstanding. False for a hold over scenery."""
+        return bool(self._records)
+
+    @property
+    def held_axes(self) -> Tuple[Tuple[Any, Tuple[Tuple[str, bool], ...]], ...]:
+        """(body, ((axis, the value that will be put back), ...)) per body.
+
+        Inspection only, and it is what makes "the restore is exact" a thing a
+        check can read rather than infer from behaviour.
+        """
+        return tuple((body, tuple(sorted(saved.items())))
+                     for body, _, saved in self._records)
+
+    def take(self, *,
+             steerable: Optional[bool] = None,
+             enabled_inputs: Optional[bool] = None,
+             simulated: Optional[bool] = None) -> Tuple[Any, ...]:
+        """Record and then write each named axis. `None` means "leave alone".
+
+        Returns the bodies it touched. An axis left `None` is neither saved
+        nor written, which is what makes the default cutscene hold -- stop the
+        body walking, leave `enabled_inputs` so it can still press continue --
+        expressible without a second class.
+        """
+        wanted: Dict[str, Optional[bool]] = {
+            "steerable": steerable,
+            "enabled_inputs": enabled_inputs,
+            "simulated": simulated,
+        }
+        touched: List[Any] = []
+        for body in self.bodies:
+            state = state_of(body)
+            if state is None:
+                continue
+            saved = self._record_for(body, state)
+            for axis in AGENCY_AXES:
+                value = wanted[axis]
+                if value is None:
+                    continue
+                if axis not in saved:
+                    saved[axis] = bool(getattr(state, axis))
+                setattr(state, axis, bool(value))
+            touched.append(body)
+        return tuple(touched)
+
+    def give_back(self) -> Tuple[Any, ...]:
+        """Put back what was taken, value by value. Never `True`.
+
+        Returns the bodies it restored, and empties the record, so calling it
+        twice restores nothing the second time rather than re-asserting a
+        value the game has since changed on purpose.
+        """
+        restored = self.held_bodies
+        for _body, state, saved in self._records:
+            for axis, value in saved.items():
+                setattr(state, axis, value)
+        self._records = []
+        return restored
+
+    def _record_for(self, body: Any, state: BodyState) -> Dict[str, bool]:
+        """This body's saved-axis dict, created on first sight.
+
+        Identity, not equality: two distinct entities that compare equal are
+        two bodies, and `GameEntity` does not define `__eq__` anyway.
+        """
+        for candidate, _state, saved in self._records:
+            if candidate is body:
+                return saved
+        saved = {}
+        self._records.append((body, state, saved))
+        return saved
+
+    def __repr__(self) -> str:  # pragma: no cover - diagnostic only
+        return "<AgencyHold %d body(s), holding %d>" % (len(self.bodies),
+                                                        len(self._records))
 
 
 @dataclass(frozen=True)
@@ -176,7 +302,8 @@ class SceneFlow:
                     "stand-in shaped like it would diverge silently."
                     % (name, step))
         self.name = name
-        self.bodies: Tuple[Any, ...] = tuple(bodies)
+        self._hold = AgencyHold(bodies)
+        self.bodies: Tuple[Any, ...] = self._hold.bodies
         self._axes: Tuple[Tuple[str, Optional[bool]], ...] = (
             ("steerable", steerable),
             ("enabled_inputs", enabled_inputs),
@@ -186,8 +313,6 @@ class SceneFlow:
         self._running: bool = False
         self._done: bool = False
         self._elapsed_ms: float = 0.0
-        self._borrowed: List[Tuple[Any, BodyState,
-                                   Tuple[Tuple[str, bool], ...]]] = []
 
     # -- inspection --------------------------------------------------------
 
@@ -226,12 +351,11 @@ class SceneFlow:
         """The bodies whose agency this flow is currently holding.
 
         Empty when it is not running, and it omits bodies carrying no
-        `BodyState` -- scenery is skipped rather than refused.
-
-        Read off the borrow record rather than by zipping `self.bodies`, since
-        a skipped body would shift that zip by one and name the WRONG entity.
+        `BodyState` -- scenery is skipped rather than refused. The record
+        lives on the shared `AgencyHold`, which is also what the script
+        interpreter's `hold` op writes through.
         """
-        return tuple(body for body, _, _ in self._borrowed)
+        return self._hold.held_bodies
 
     # -- the run -----------------------------------------------------------
 
@@ -329,30 +453,16 @@ class SceneFlow:
         self._elapsed_ms = 0.0
 
     def _borrow(self) -> None:
-        """Record each body's current agency, then apply this flow's.
+        """Take the agency, through the shared `AgencyHold`.
 
-        Records BEFORE writing, per body, and stores only the axes this flow
-        touches: an axis left `None` is neither saved nor written.
+        The three axis keywords are this flow's, and `None` still means "leave
+        this axis alone" -- the hold neither saves nor writes such an axis.
         """
-        self._borrowed = []
-        for body in self.bodies:
-            state = state_of(body)
-            if state is None:
-                continue
-            saved: List[Tuple[str, bool]] = []
-            for axis, wanted in self._axes:
-                if wanted is None:
-                    continue
-                saved.append((axis, bool(getattr(state, axis))))
-                setattr(state, axis, bool(wanted))
-            self._borrowed.append((body, state, tuple(saved)))
+        self._hold.take(**dict(self._axes))
 
     def _restore(self) -> None:
-        """Put back what was taken, value by value. Never `True`."""
-        for _body, state, saved in self._borrowed:
-            for axis, value in saved:
-                setattr(state, axis, value)
-        self._borrowed = []
+        """Give back exactly what was taken. Never `True`."""
+        self._hold.give_back()
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostic only
         where = ("%d/%d %s" % (self._index + 1, len(self.steps),
@@ -361,4 +471,5 @@ class SceneFlow:
         return "<SceneFlow %s %s>" % (self.name, where)
 
 
-__all__ = ["ADVANCE_ACTION", "ADVANCE_TRIGGER_KIND", "FlowStep", "SceneFlow"]
+__all__ = ["ADVANCE_ACTION", "ADVANCE_TRIGGER_KIND", "AGENCY_AXES",
+           "AgencyHold", "FlowStep", "SceneFlow"]

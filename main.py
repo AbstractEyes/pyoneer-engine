@@ -14,8 +14,11 @@ from scripts.game.game_map import GameMap
 from scripts.game.game_camera import GameCamera
 from scripts.game.entity.game_player import GamePlayer
 
+from config.managers.animation_data import DataAnimationCategory
 from config.managers.core_asset_manager import CoreAssetManager
+from scripts.core.errors import PyoneerConfigError
 from scripts.core.input import InputActionManager
+from scripts.game.entity.game_animation import GameAnimationHandler
 from scripts.core.scene.scene_manager import SceneManager
 from scripts.core.component import GameComponent
 from scripts.core.ui.widget.containers.window import GameWindow
@@ -56,6 +59,44 @@ from scripts.game.demo_window import DemoWindow
 PLAYER_BEHAVIORS = format_list(("player_input", "topdown_move",
                                 "animation_drive"))
 SCENERY_BEHAVIORS = format_list(("topdown_move", "animation_drive"))
+
+
+def feet_anchor(animation_config: DataAnimationCategory) -> tuple[float, float]:
+    """Where the collision point sits inside a body drawn with this sheet.
+
+    `transform.position` is the sprite's TOP-LEFT, because `EntityLayer`
+    blits with `get_rect(topleft=position)`. So `GameEntity`'s own default of
+    (0, 0) tests the top-left pixel -- the top of a character's HEAD -- and a
+    body gated there is allowed to walk a whole sprite height into a floor
+    before the gate sees anything: measured, 63.9990234375 pixels down into a
+    floor at y=64 for the shipped 44x64 frame. Centre-bottom is the honest
+    anchor for a body standing on a map.
+
+    DERIVED, never typed. It reads the sequence
+    `GameAnimationHandler.DEFAULT_ANIMATION`, which is the one the handler
+    starts unconditionally at construction, so this is the size of the frame
+    the entity actually shows on the frame it spawns -- and re-cutting the
+    sheet at a different frame size moves the anchor with it.
+
+    RAISES when the category cannot answer, rather than returning (0, 0): the
+    head anchor is precisely what a broken derivation looks like from the
+    outside, so a fallback would be indistinguishable from this working.
+    """
+    wanted = GameAnimationHandler.DEFAULT_ANIMATION
+    sequences = getattr(animation_config, 'sequences', None) or {}
+    sequence = sequences.get(wanted)
+    frames = getattr(sequence, 'frames', None) if sequence is not None else None
+    if not frames:
+        raise PyoneerConfigError(
+            "cannot derive a collision anchor: the animation category %r has "
+            "no %r frames to measure. config/animations.json declares the "
+            "sequence GameAnimationHandler starts at construction; without it "
+            "there is no frame size, and guessing one would silently anchor "
+            "every body at its head."
+            % (getattr(animation_config, 'name', animation_config), wanted),
+        )
+    first = frames[0]
+    return (first.width / 2.0, float(first.height - 1))
 
 
 # houses the global game state
@@ -143,12 +184,22 @@ class MainGame:
         way -- which is the subclass shape this system exists to end, and it
         would collide with an authored list, since attaching a duplicate token
         raises. The map is the whole truth for what an entity does.
+
+        `collision_offset` IS among them, and for the opposite reason: it is
+        not a statement about what an entity does, it is the pixel inside the
+        sprite that the map's passability is tested at, and it is decided by
+        the SHEET rather than by the object. Every body drawn from this
+        category has the same feet, so one derived number for the class is
+        the correct scope, and `feet_anchor` raises rather than guessing when
+        the category cannot be measured.
         """
+        animation_config = self.assets.animations.get('entity')
         return {
             "GamePlayer": {
                 "input_": self.input,
                 "movement_config": self.assets.config.get('entity').get('default'),
-                "animation_config": self.assets.animations.get('entity'),
+                "animation_config": animation_config,
+                "collision_offset": feet_anchor(animation_config),
             },
         }
 
@@ -169,10 +220,19 @@ class MainGame:
         # rather than by a special case. `can_move` below is still set, and is
         # still read -- by `player_input` -- so a cutscene can freeze a player
         # without unpicking its composition.
+        #
+        # These six are built HERE rather than spawned from an object layer,
+        # so `spawn_defaults` never reaches them -- which is exactly how the
+        # collision anchor could look landed and do nothing on the map the
+        # author opens. They take the same dict, by reading it, so there is
+        # one derivation and a keyword added to it cannot reach one route and
+        # miss the other.
+        anchor = self.spawn_arguments()["GamePlayer"]["collision_offset"]
         for i in range(0, 5):
             bindable_objects.append( (40, GamePlayer(input_=None,
                                                 movement_config=self.assets.config.get('entity').get('default'),
                                                 animation_config=self.assets.animations.get('entity'),
+                                                collision_offset=anchor,
                                                 behaviors=SCENERY_BEHAVIORS)) )
             bindable_objects[i][1].moveto((200 + i * 5, 200 + i * 5))
             bindable_objects[i][1].state.can_move = False
@@ -180,6 +240,7 @@ class MainGame:
         player = GamePlayer(input_=self.input,
                             movement_config=self.assets.config.get('entity').get('default'),
                             animation_config=self.assets.animations.get('entity'),
+                            collision_offset=anchor,
                             behaviors=PLAYER_BEHAVIORS)
         player.moveto((200, 200))
         player.state.can_move = True

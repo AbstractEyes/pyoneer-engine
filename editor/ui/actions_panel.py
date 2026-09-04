@@ -8,12 +8,25 @@ inherits undo, rollback, the history panel and the generated `COMMANDS.md`.
 THE BANNER IS THE POINT
 -----------------------
 The engine cannot execute one of these: no `MAP_TRIGGER_*` event type
-exists, nothing under `scripts/` reads `pyoneer_trigger`, and the renderer
-skips `<objectgroup>` entirely. A map authored here plays exactly as it did
-before. A feature that LOOKS complete and does nothing is the failure this
-project exists to avoid, so the panel carries `NOT_WIRED` above every field,
-in the widget tree rather than in a docstring or a tooltip -- whoever reads
-a docstring is not whoever is about to wonder why the door does nothing.
+exists, nothing under `scripts/` reads `pyoneer_trigger`, and an entity is
+CALLED rather than dispatched to, so there is no bus seat to deliver one
+to. A map authored here plays exactly as it did before. A feature that LOOKS
+complete and does nothing is the failure this project exists to avoid, so
+the panel carries `NOT_WIRED` above every field, in the widget tree rather
+than in a docstring or a tooltip -- whoever reads a docstring is not whoever
+is about to wonder why the door does nothing.
+
+A BANNER THAT OVERSTATES IS ALSO A FALSE BANNER
+-----------------------------------------------
+This one used to say the engine has no collision detection and that the
+renderer skips object layers entirely. Both shipped:
+`scripts/core/renderer.py` bakes `field_from_map` into `collision_field` and
+calls `spawn_objects`, so the objects on an object layer DO become entities
+and a body IS gated by the baked field. An overstated gap costs what an
+understated one costs -- it sends a reader to build something that is
+already there -- so the clauses were narrowed rather than the banner
+deleted, and `tools/check_actions_panel.py` now pins their ABSENCE as well
+as the presence of what is really missing.
 
 WHY THE DESCRIPTION IS DATA
 ---------------------------
@@ -51,21 +64,30 @@ from editor.ui.fields import InspectionView
 #: `tools/check_actions_panel.py` asserts this string is in a visible label
 #: -- moving it into a docstring or a tooltip fails the check.
 NOT_WIRED = (
-    "Nothing here runs yet. The engine has no collision detection, entities "
-    "are not on the event bus, there is no MAP_TRIGGER_* event type, and the "
-    "renderer skips object layers entirely — so a map authored with these "
-    "triggers plays exactly as it did before."
+    "Nothing here runs yet. There is no MAP_TRIGGER_* event type, nothing "
+    "under scripts/ reads pyoneer_trigger, and entities are not on the event "
+    "bus — so a map authored with these triggers plays exactly as it did "
+    "before."
 )
 
 #: The rest of it, on hover. Kept off the face of the panel because the
-#: sentence above is the one that has to be read every time.
+#: sentence above is the one that has to be read every time — and because
+#: the second paragraph here is the correction of a banner that was WIDER
+#: than the gap, which is the mistake this file was repaired for.
 NOT_WIRED_DETAIL = (
     "What IS real: Tiled reads and edits these properties in its own dialog, "
     "every edit here is a command with an exact inverse, and the file is "
     "under the byte-exactness contract. editor/core/map_events.py documents "
     "the seam a runtime would read them through — load, index, per-frame "
     "cell compare, filter, dispatch — so the executing half can be built "
-    "against this without renegotiating anything."
+    "against this without renegotiating anything.\n\n"
+    "Also real, and this banner used to deny both: the engine DOES detect "
+    "collision and the renderer DOES read object layers. "
+    "scripts/core/renderer.py bakes field_from_map into collision_field and "
+    "calls spawn_objects, so a placed object becomes an entity and a body is "
+    "gated by the baked field. What is missing is narrower than it looks — "
+    "the reading of pyoneer_trigger and the firing, not the pipeline under "
+    "them."
 )
 
 _BANNER_STYLE = ("background: rgba(255, 206, 74, 38); "

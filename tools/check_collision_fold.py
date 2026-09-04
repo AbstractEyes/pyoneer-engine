@@ -37,6 +37,17 @@ What it proves, and the half each assertion would be missing without:
      and the map DISPLAY changes because of it. The overlay's own pixels are
      read, not the list behind them: three assertions about a mask list
      stayed green through a pass that cut the wire drawing it.
+  6. AND DELETING AN ART LAYER TAKES ITS COMPANION, IN ONE TRANSACTION.
+     The fold is what makes this necessary: a companion has no row, so the
+     minus button cannot reach it, and an art layer removed on its own left
+     a stranded companion that then UNFOLDS -- the visible collision
+     tilemap this whole file exists to abolish, produced by the one
+     operation an author performs on a painted layer. Three halves, because
+     two of them are the ones a pass would forget: ONE Ctrl+Z brings both
+     back byte-for-byte (two transactions would restore half a pair), a
+     companion SHARED with a second art layer is left alone (taking it from
+     a living layer is worse than a stray), and afterwards NO formerly
+     folded companion is a row.
 
 Against its OWN fixture (law 4), never `data/maps/test.tmx`: the fixture is
 shaped like the author's canvas -- two art layers, two companions, one of
@@ -87,7 +98,7 @@ from editor.ui.collision_view import (                                  # noqa: 
     MASK_DOMAIN,
     MaskPalette,
 )
-from editor.ui.hierarchy import HierarchyDock                           # noqa: E402
+from editor.ui.hierarchy import _MASK_MARK, HierarchyDock              # noqa: E402
 from scripts.core.collision_runtime import (                            # noqa: E402
     collision_layers,
     field_from_map,
@@ -166,7 +177,7 @@ tilecount="17" columns="17">
  <layer id="1" name="Paralax" width="{w}" height="{h}">
   <properties>
    <property name="pyoneer_parallax_x" type="float" value="{parallax}"/>
-   <property name="pyoneer_passability" value="ParalaxCollision"/>
+   <property name="pyoneer_passability" value="{paralax_declares}"/>
   </properties>
   <data encoding="csv">
 {empty}
@@ -206,8 +217,9 @@ tilecount="17" columns="17">
 
 
 def fixture(*, declares: str = "FloorCollision",
-            floor_masks: dict | None = None) -> str:
-    """The map, with two knobs and no others.
+            floor_masks: dict | None = None,
+            paralax_declares: str = "ParalaxCollision") -> str:
+    """The map, with three knobs and no others.
 
     `declares` repoints Floor's `pyoneer_passability`. Naming a layer the
     map does not have is the DANGLING case -- an author renames a companion
@@ -217,10 +229,16 @@ def fixture(*, declares: str = "FloorCollision",
 
     `floor_masks` empties the companion, which is what makes "the field is
     unchanged" an assertion rather than a tautology.
+
+    `paralax_declares` points a SECOND art layer at a companion, which is
+    the only way to build the map where removing one art layer must not
+    take the companion with it. It is legal content: nothing in the format
+    says a companion belongs to one layer.
     """
     return _TEMPLATE.format(
         w=WIDTH, h=HEIGHT, first=FIRST_GID, parallax=PARALLAX_X,
-        declares=declares, empty=csv({}), floor_art=csv(FLOOR_ART),
+        declares=declares, paralax_declares=paralax_declares,
+        empty=csv({}), floor_art=csv(FLOOR_ART),
         paralax_masks=csv({cell: FIRST_GID + mask
                            for cell, mask in PARALAX_MASKS.items()}),
         floor_masks=csv({cell: FIRST_GID + mask for cell, mask in
@@ -316,8 +334,30 @@ def row_named(hierarchy, name: str):
     return found[0] if found else NO_ROW
 
 
+def select_layer(hierarchy, name: str) -> None:
+    """Put the panel where clicking that layer's row puts it.
+
+    `set_scope` on its own is not it: the minus button's enable lives in
+    `refresh`, which is what the window calls after any selection, so
+    asserting on a button that was never synced would be asserting on the
+    state it was constructed in.
+    """
+    hierarchy.set_scope(Scope.parse(f"map:fixture/layer:{name}"))
+    hierarchy.refresh()
+    application.processEvents()
+
+
+#: What `mask_count` answers for a companion the map no longer holds. A
+#: number rather than the raise `tile_layer` would give, for `NO_ROW`'s
+#: reason: a mutation that removes too much has to fail an ASSERTION, not
+#: crash the run and hide every assertion after it.
+NO_LAYER = -1
+
+
 def mask_count(document, companion: str) -> int:
     """Cells of `companion` the engine would read as an opinion."""
+    if companion not in document.tile_layer_names():
+        return NO_LAYER
     first_gid = collision_first_gid(document)
     return sum(1 for gid in document.tile_layer(companion).gids()
                if gid and gid_to_opinion(gid, first_gid) != NO_DATA)
@@ -641,6 +681,135 @@ try:
     expect("still no dialog anywhere", modals, [])
 
     window.close()
+
+    # ----------------------------------------------------------------
+    print()
+    print("REMOVING AN ART LAYER TAKES ITS COMPANION, IN ONE TRANSACTION")
+    # ----------------------------------------------------------------
+    # A fresh workspace: everything above wrote commands into `session`, and
+    # "one Ctrl+Z empties the history" is only an assertion on a map nothing
+    # has edited yet.
+    _w4, _p4, cut = open_workspace(fixture())
+    cut_window = Harness(cut, "fixture")
+    cut_window.show()
+    cut_window.hierarchy.refresh()
+    application.processEvents()
+    cut_tree = cut_window.hierarchy
+    CUT_ORIGINAL = cut.project.map("fixture").to_bytes()
+    CUT_NAMES = list(cut.project.map("fixture").tile_layer_names())
+    CUT_PAIRS = companion_pairs(cut.project.map("fixture"))
+
+    expect("before the click FloorCollision is folded, so it has no row",
+           row_named(cut_tree, "FloorCollision"), NO_ROW)
+
+    select_layer(cut_tree, "Floor")
+    cut_window.notices.clear()
+    expect("the minus button is enabled for an art layer",
+           cut_tree.remove_layer.isEnabled(), True)
+    # THROUGH THE BUTTON, not through the handler: `QAbstractButton.click`
+    # returns immediately on a disabled button, so this drives the enable
+    # and the wire in one call and cannot pass on a control nobody can press.
+    cut_tree.remove_layer.click()
+    application.processEvents()
+
+    cut_document = cut.project.map("fixture")
+    expect("the art layer and its companion both left",
+           ("Floor" in cut_document.tile_layer_names(),
+            "FloorCollision" in cut_document.tile_layer_names()),
+           (False, False))
+    expect("...in ONE transaction of exactly two removes",
+           (len(cut.history()),
+            [command.verb for command in cut.history()[-1].commands]),
+           (1, ["map.layer.remove", "map.layer.remove"]))
+    expect("...naming the selected layer and then its companion",
+           [command.scope.require("layer")
+            for command in cut.history()[-1].commands],
+           ["Floor", "FloorCollision"])
+    expect("...and the click SAID the companion went too",
+           any("FloorCollision" in line for line in cut_window.notices), True)
+
+    # THE NEGATIVE THAT MOTIVATES THE ITEM. A companion the fold used to
+    # hide is stranded by removing its art layer alone: `companion_pairs`
+    # stops pairing it, so it unfolds into the tree as a `pyoneer_renders`
+    # false row -- the separate collision tilemap the author said must not
+    # exist, arrived at by deleting a layer.
+    expect("NO formerly folded companion is a visible row afterwards",
+           [name for _art, name in CUT_PAIRS
+            if row_named(cut_tree, name) != NO_ROW], [])
+    # THE OTHER HALF OF THE FOLD: the untouched pair is still a pair, so
+    # this did not pass by emptying the tree.
+    expect("...because the OTHER pair is untouched and still folded",
+           ("Paralax" in cut_document.tile_layer_names(),
+            "ParalaxCollision" in cut_document.tile_layer_names(),
+            row_named(cut_tree, "ParalaxCollision")), (True, True, NO_ROW))
+    expect("and a layer nobody paired is still there to remove by hand",
+           row_named(cut_tree, "GhostCollision") != NO_ROW, True)
+
+    # ONE Ctrl+Z. Two `run` calls would leave a second transaction on the
+    # stack and hand the author half a deleted pair, so `can_undo` after one
+    # undo is the assertion that this was a single transaction.
+    cut.undo()
+    cut_window.canvas.rebuild()
+    cut_tree.refresh()
+    application.processEvents()
+    restored = cut.project.map("fixture")
+    expect("ONE undo brings both back, and empties the stack",
+           (restored.tile_layer_names(), cut.stream.can_undo),
+           (CUT_NAMES, False))
+    expect("...byte-for-byte, whitespace included",
+           restored.to_bytes() == CUT_ORIGINAL, True)
+    expect("...and the companion folds away again",
+           row_named(cut_tree, "FloorCollision"), NO_ROW)
+    # Compared as a BOOLEAN, not printed: this console is cp1252 and the
+    # badge glyph is U+25A8, so putting it in a `got=` would crash the run
+    # inside `expect` and take every assertion after it down with it.
+    expect("...with Floor wearing every one of its masks again",
+           (row_named(cut_tree, "Floor")[0].endswith(
+               f"{_MASK_MARK}{len(FLOOR_MASKS)}"),
+            mask_count(restored, "FloorCollision")),
+           (True, len(FLOOR_MASKS)))
+    cut_window.close()
+
+    # ----------------------------------------------------------------
+    print()
+    print("A SHARED COMPANION IS LEFT ALONE -- the half that must not fire")
+    # ----------------------------------------------------------------
+    # Two art layers, one companion. Taking it away from a layer that is
+    # still standing is a worse outcome than leaving a stray, because the
+    # stray is visible and the disarmed layer is not.
+    _w5, _p5, shared = open_workspace(fixture(paralax_declares="FloorCollision"))
+    shared_window = Harness(shared, "fixture")
+    shared_window.show()
+    shared_window.hierarchy.refresh()
+    application.processEvents()
+    shared_tree = shared_window.hierarchy
+    expect("the fixture really does share one companion between two layers",
+           companion_pairs(shared.project.map("fixture")),
+           [("Floor", "FloorCollision"), ("Paralax", "FloorCollision")])
+
+    select_layer(shared_tree, "Floor")
+    shared_window.notices.clear()
+    shared_tree.remove_layer.click()
+    application.processEvents()
+
+    left = shared.project.map("fixture")
+    expect("the shared companion stayed, and only Floor was removed",
+           ("Floor" in left.tile_layer_names(),
+            "FloorCollision" in left.tile_layer_names(),
+            [command.scope.require("layer")
+             for command in shared.history()[-1].commands]),
+           (False, True, ["Floor"]))
+    expect("...with its masks still in the file, every one of them",
+           mask_count(left, "FloorCollision"), len(FLOOR_MASKS))
+    expect("...still folded, because Paralax still points at it",
+           (row_named(shared_tree, "FloorCollision"),
+            "FloorCollision" in row_named(shared_tree, "Paralax")[2]),
+           (NO_ROW, True))
+    expect("...and the click did not claim to have removed it",
+           any("FloorCollision" in line for line in shared_window.notices),
+           False)
+    expect("no dialog opened on either removal", modals, [])
+    shared_window.close()
 
 finally:
     for directory in workspaces:

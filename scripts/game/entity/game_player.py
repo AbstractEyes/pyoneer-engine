@@ -67,7 +67,8 @@ class GamePlayer(GameAnimatedEntity):
                  movement_config=None,
                  world_transform=Transform(),
                  animation_config: DataAnimationCategory | None = None,
-                 behaviors: str | Mapping[str, Any] | None = None):
+                 behaviors: str | Mapping[str, Any] | None = None,
+                 collision_offset: tuple[float, float] = (0.0, 0.0)):
         """`behaviors` is the same declaration an `<object>` carries, or None.
 
         Accepts either the raw `pyoneer_behaviors` string
@@ -82,10 +83,20 @@ class GamePlayer(GameAnimatedEntity):
         `world_transform` reaches `GameEntity` as its `transform` keyword,
         which is accepted and silently DISCARDED -- position still has to be
         set with `moveto()` afterwards.
+
+        `collision_offset` is NOT discarded. It is the one argument a
+        `<object type="GamePlayer">` cannot carry and that changes where the
+        map is allowed to stop this body, so it rides the same route as
+        `movement_config` and `animation_config` -- `main.py`'s
+        `spawn_arguments()`, which is `LayerRenderer.spawn_defaults` -- and
+        the default here is deliberately the same head anchor `GameEntity`
+        declares, so a caller that says nothing gets the documented default
+        rather than a second, differing one.
         """
         super().__init__(transform=world_transform,
                          movement_config=movement_config,
-                         animation_config=animation_config)
+                         animation_config=animation_config,
+                         collision_offset=collision_offset)
         self.action_manager: InputActionManager = input_
         self.state: BodyState = BodyState()
         self.state.input_bound = input_ is not None

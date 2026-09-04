@@ -28,6 +28,20 @@ intersect, attaching the second RAISES -- two behaviors both writing
 `transform.position` with one silently winning is indistinguishable from a
 physics bug.
 
+`order` is therefore a POSITION IN THE FRAME and not an identifier, which is
+what `ORDER_RULE` says in the one sentence the editor's tooltip and
+`BEHAVIORS.md` both print. A reader who takes it for an id reads 10, 15, 20
+as three names rather than as three moments.
+
+CATEGORY IS DERIVED, NEVER DECLARED
+-----------------------------------
+`BehaviorSpec.category` is the module the behavior is declared in and nothing
+else. There is no token-to-category table anywhere, because a hand-kept one
+is a second home for a fact this package already stores -- `registry.py` puts
+each spec BESIDE its class, one module per family -- and it would rot the
+first time somebody registered a behavior without editing it. The three
+candidate derivations are weighed in `BehaviorSpec.category`'s own docstring.
+
 WHAT A BEHAVIOR MUST NOT ASSUME
 -------------------------------
   * `event.data["delta"]` is milliseconds divided by 60, NOT seconds  #TAG:delta_is_ms_over_60
@@ -143,6 +157,46 @@ a recommended behavior that silently does nothing produces no crash to reveal
 the mistake.
 """
 
+ORDER_RULE: str = (
+    "`order` is a RUN POSITION, not an id. Every behavior on one entity is "
+    "called once per frame, lowest order first, so a behavior at 10 has "
+    "already written this frame's intent before one at 20 reads it. Two "
+    "behaviors that share an order share a STEP: they run in the sequence "
+    "they are listed on the object, and if they also declare that they write "
+    "the same attribute the engine REFUSES the pair when the second one "
+    "attaches, rather than let one of them silently win."
+)
+"""The one sentence that explains `BehaviorSpec.order`, written once.
+
+Printed by `describe_all` into `BEHAVIORS.md` and put into the tooltip of
+every row of the editor's Behaviors panel. It lives here rather than in
+either of them because a rule explained in two places is explained
+differently in two places by the end of the year, and this one is subtle
+enough that half of it (the tie) is what people get wrong.
+"""
+
+
+def category_label(name: str) -> str:
+    """A category's display name, derived from the category itself.
+
+    `movement` -> `Movement`, `scene_flow` -> `Scene Flow`. Derived rather
+    than looked up: a table mapping a module to a pretty name is the same
+    hand-kept second home that `BehaviorSpec.category` exists to refuse, and
+    a missing entry would put a whole family under a blank header until
+    somebody noticed.
+
+    Raises rather than returning an empty header, which is what a module
+    named `_` would otherwise produce.
+    """
+    words = name.replace("_", " ").split()
+    if not words:
+        raise PyoneerConfigError(
+            "behavior category %r has nothing to show as a heading; a "
+            "category is the module the behavior's class is declared in, so "
+            "this one is declared in a module with no readable name"
+            % (name,))
+    return " ".join(word[:1].upper() + word[1:] for word in words)
+
 
 # ---------------------------------------------------------------------------
 # Declarations
@@ -250,6 +304,19 @@ class BehaviorSpec:
             raise PyoneerConfigError(
                 "behavior %r declares a factory that is not callable (%r)"
                 % (self.name, self.factory))
+        # `category` is derived from the factory's module, so a factory whose
+        # module cannot produce a readable heading is refused HERE, where the
+        # behavior is declared, rather than swept into a catch-all bucket at
+        # display time. That bucket is how a category scheme starts lying:
+        # every uncategorisable thing lands in it and nobody ever looks.
+        module = getattr(self.factory, "__module__", "") or ""
+        if not module.rsplit(".", 1)[-1].replace("_", " ").split():
+            raise PyoneerConfigError(
+                "behavior %r declares a factory whose module is %r, so it has "
+                "no category to be filed under. A category IS the module the "
+                "class is declared in, and there is deliberately no catch-all "
+                "bucket for one that has none. Register a class or a function "
+                "declared in a named module." % (self.name, module))
         if isinstance(self.order, bool) or not isinstance(self.order, int):
             raise PyoneerConfigError(
                 "behavior %r declares order=%r; order sorts the per-frame run "
@@ -289,6 +356,51 @@ class BehaviorSpec:
             return ()
         return tuple(name for name in ("attach", "update", "detach")
                      if getattr(target, name) is not getattr(EntityBehavior, name))
+
+    @property
+    def declared_in(self) -> str:
+        """The dotted module this behavior's class or function is written in.
+
+        Read off the factory, never declared, for the same reason `hooks` is:
+        a declaration that repeats where the code already is is a declaration
+        that can disagree with it.
+        """
+        return self.factory.__module__
+
+    @property
+    def category(self) -> str:
+        """Which family this behavior belongs to. DERIVED, never declared.
+
+        The last segment of `declared_in` -- `movement` for anything written
+        in `scripts.game.behavior.movement`. Three derivations were available
+        and this is the only honest one:
+
+          the module   one authored signal, and already how this package is
+                       organised: `registry.py` keeps each spec BESIDE its
+                       class so a parameter and the constructor keyword it
+                       fills read in one screen. A behavior cannot be written
+                       without landing in a module, so this cannot be
+                       forgotten and costs nothing to maintain.
+          `writes`     what a behavior is FOR, and tempting. But
+                       `action_relay` writes nothing at all and
+                       `topdown_move` writes three different attributes, so
+                       the partition is neither total nor single-valued --
+                       and the requirement is exactly ONE category each.
+          order bands  needs a hand-written table of band edges, which is the
+                       second home this property exists to refuse, and it
+                       would have to be re-cut the first time somebody picked
+                       35.
+
+        A declared `category` field was the fallback and is not needed. It
+        would have had to be REQUIRED with no default (law 7: no catch-all
+        "other" bucket), and a required field restating the module the file
+        is already in is a field people copy-paste wrong.
+
+        The value is a display grouping and never reaches a file, so unlike a
+        token it is not a file-format string: renaming the module renames the
+        category and breaks nothing an author authored.
+        """
+        return self.declared_in.rsplit(".", 1)[-1]
 
     def param(self, key: str) -> BehaviorParam | None:
         """The declared parameter for `key`, or None."""

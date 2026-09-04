@@ -11,15 +11,23 @@ actually holds:
     afterwards, which is the strongest statement available
   * undo of every verb restores the exact prior state
   * the generated command documentation covers every registered verb
+  * the Database's schema controls emit a verb the stream ACCEPTS, and
+    refuse the answers it would not -- the fix the Problems dock prints is
+    only a fix if something in the window can run it
   * `scripts/` does not import `editor/`
 
-No pygame, no Qt. Runs on a bare clone with no art.
+No pygame. The last section drives ONE Qt widget offscreen, because a verb
+with no caller is the defect this tree keeps paying for and a headless
+assertion about the verb alone cannot see it. That section skips cleanly
+when PySide6 is not installed; everything above it runs on a bare clone
+with no art.
 """
 from __future__ import annotations
 
 import _bootstrap  # noqa: F401
 
 import atexit
+import importlib.util
 import json
 import os
 import shutil
@@ -28,12 +36,13 @@ import tempfile
 import warnings
 
 from editor.core import genre as genre_module
-from editor.core.commands import Command, all_verbs, describe_all, verb_names
+from editor.core.commands import Command, all_verbs, describe_all, verb, verb_names
 from editor.core.errors import (
     PyoneerCommandApplyError,
     PyoneerCommandArgumentError,
     PyoneerCommandScopeError,
     PyoneerCommandUnknownError,
+    PyoneerEditorError,
     PyoneerResponseParseError,
     PyoneerRuleViolationError,
 )
@@ -1278,7 +1287,20 @@ height="16" rotation="37.5" visible="0"/>
     # block asserted `len(problems) > 0` on a project that was in fact
     # valid, and passed vacuously in reverse -- it failed, which is the only
     # reason it got fixed. Break something specific and name it.
-    expect("a valid project reports nothing", session.problems(), [])
+    #
+    # `Session.problems` is the genre's rules PLUS the collision model's own
+    # dead-mask rule, and this block is about the genre half. The fixture map
+    # is a byte copy of the author's `test.tmx`, whose parallaxed `Paralax`
+    # layer really does carry masks that gate nothing, so the collision half
+    # is not empty here -- and law 4 forbids a check pinning whether it is.
+    # So split the list AT ITS PRODUCER rather than filtering it by message
+    # text: `project.problems()` is exactly the genre half, and the
+    # carry-through assertion below -- made where that half is non-empty, so
+    # it cannot pass vacuously -- proves `Session` still hands it back first
+    # and unchanged. A genre problem therefore cannot hide in the part this
+    # block has stopped looking at.
+    expect("a valid project reports no genre problem",
+           list(session.project.problems()), [])
 
     session.run([
         Command("map.object.add", ENTITY,
@@ -1288,7 +1310,12 @@ height="16" rotation="37.5" visible="0"/>
         Command("map.object.add", ENTITY,
                 {"type": "Wumpus", "x": 64.0, "y": 0.0}),
     ])
+    genre_problems = list(session.project.problems())
     problems = session.problems()
+    expect("the genre's own list arrives first, and unchanged",
+           problems[:len(genre_problems)], genre_problems)
+    expect("...and there really was something in it to carry",
+           len(genre_problems) > 0, True)
     expect("two players trip the unique-type rule",
            any("at most one" in p.message for p in problems), True)
     expect("an undeclared object class is flagged",
@@ -1298,13 +1325,213 @@ height="16" rotation="37.5" visible="0"/>
     expect("the violations point at where they are",
            all(p.scope.get("map") == "test" for p in problems), True)
     session.undo()
-    expect("fixing it clears them", session.problems(), [])
+    expect("fixing it clears the genre problems",
+           list(session.project.problems()), [])
 
+    # Switching genre is the one move that can invalidate a table that was
+    # perfectly valid a second ago, and this block used to switch and never
+    # LOOK -- the assertion pair below is the whole reason the switch is
+    # interesting. `move_speed` is required by the platformer pack and the
+    # topdown_rpg actors table spells its movement column `speed`.
     session.run(Command("project.genre.set", Scope.of("project"),
                         {"genre": "platformer"}))
     expect("the genre switched", session.project.genre.id, "platformer")
+    expect("the new pack wants a column this table has not got",
+           any("move_speed" in p.message for p in session.problems()), True)
+    expect("and the fix it prints is a verb, spelled exactly",
+           [p.fix for p in session.problems() if "move_speed" in p.message],
+           ["table.column.add move_speed"])
     session.undo()
     expect("and switched back", session.project.genre.id, "topdown_rpg")
+    expect("the missing-column violation went back with it",
+           any("move_speed" in p.message for p in session.problems()), False)
+
+    # ---------------------------------------------------------------
+    print()
+    print("the fix the Problems dock prints is a control, not just a string")
+    # ---------------------------------------------------------------
+    # `editor/core/genre.py` names `table.column.add <name>` as the fix and
+    # `editor/ui/docks.py` prints it verbatim on screen -- and the verb had
+    # no caller anywhere in the window. Since `table.row.add` and
+    # `table.row.set` both (correctly) refuse an unknown column, that left
+    # NO way at all to create a stat the pack had not declared, which
+    # silently disarms every `source="actors"` behaviour parameter that
+    # wanted one. So this drives the control the way a click does, through
+    # the same signal `MainWindow` connects.
+    if importlib.util.find_spec("PySide6") is None:
+        print("  SKIP PySide6 is not installed "
+              "(pip install -r editor/requirements.txt)")
+    else:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication                  # noqa: E402
+        from editor.ui.database import TablePage, column_default    # noqa: E402
+
+        application = QApplication.instance() or QApplication([])
+        page = TablePage(session, "actors")
+        page.refresh()
+
+        emitted: list = []
+        rejections: list = []
+        statuses: list = []
+        asked: list = []
+
+        def apply(command):
+            """Exactly what `MainWindow.run` does with the same signal: one
+            door, and a refusal is a report rather than a traceback thrown
+            out of a Qt slot."""
+            emitted.append(command)
+            try:
+                session.run(command)
+            except PyoneerEditorError as exc:
+                rejections.append(str(exc))
+
+        page.command_requested.connect(apply)
+        page.status_requested.connect(statuses.append)
+
+        def forget():
+            """Nothing carried from one gesture into the next."""
+            emitted.clear()
+            rejections.clear()
+            statuses.clear()
+
+        def answering(**values):
+            """Replace the dialog seam. Records the rows it was shown, so
+            the form itself is assertable and no window ever opens."""
+            def stub(_parent, _title, rows, **_kwargs):
+                asked.append(list(rows))
+                return dict(values)
+            return stub
+
+        before = session.project.table("actors").to_json()
+
+        print()
+        print("adding one: the emitted command, and what the stream did with it")
+        page.ask = answering(name="stamina", type="int", default="5",
+                             doc="how much running is left")
+        page._TablePage__on_add_column()
+        expect("the control emitted exactly one command", len(emitted), 1)
+        expect("and it is the verb the dock prints",
+               emitted[-1].verb, "table.column.add")
+        expect("scoped to its own table", str(emitted[-1].scope), "table:actors")
+        expect("carrying the four arguments the verb declares",
+               sorted(emitted[-1].args), ["default", "doc", "name", "type"])
+        type_row = next(f for f in asked[-1] if f.key == "type")
+        expect("the type row offers exactly the verb's own choices",
+               tuple(type_row.choices),
+               tuple(verb("table.column.add").param("type").choices))
+        expect("the stream refused nothing", rejections, [])
+        expect("the column landed with the declared type",
+               session.project.table("actors").field("stamina").type, "int")
+        expect("and its doc came with it",
+               session.project.table("actors").field("stamina").doc, "how much running is left")
+        expect("every existing row took the default",
+               session.project.table("actors").rows["hero"]["stamina"], 5)
+        # The seam hands back strings for everything and `default` is typed
+        # `object`, so "5" in an int column would sail through the verb, the
+        # file and the loader -- and surface as arithmetic on a str in a
+        # behavior, months later.
+        expect("as an int, not as the text that was typed",
+               type(session.project.table("actors").rows["hero"]["stamina"]).__name__,
+               "int")
+        session.undo()
+        expect("undo took the column and its values back out, exactly",
+               session.project.table("actors").to_json(), before)
+
+        print()
+        print("...and the answers it must NOT accept")
+        forget()
+        page.ask = answering(name="hp", type="str", default="lots",
+                             doc="collides with the genre's own column")
+        page._TablePage__on_add_column()
+        expect("a colliding name is still emitted -- the model is the authority",
+               len(emitted), 1)
+        expect("and the stream refuses it, naming the table and the column",
+               [r for r in rejections if "'hp'" in r and "actors" in r] != [],
+               True)
+        expect("the existing column was not overwritten",
+               session.project.table("actors").field("hp").type, "int")
+        expect("and nothing at all changed",
+               session.project.table("actors").to_json(), before)
+
+        forget()
+        page.ask = answering(name="speed_mod", type="float", default="fast",
+                             doc="how much faster")
+        page._TablePage__on_add_column()
+        expect("a default that does not read emits NOTHING", emitted, [])
+        expect("and says why, naming what was typed and the type it wanted",
+               bool(statuses) and "'fast'" in statuses[0]
+               and "float" in statuses[0], True)
+        expect("so the column was never created",
+               session.project.table("actors").field("speed_mod"), None)
+
+        expect("'true' reads as a bool", column_default("true", "bool"), True)
+        expect("and '0' as False", column_default("0", "bool"), False)
+        expect("a str column keeps the text",
+               column_default(" fast ", "str"), "fast")
+        expect_raises("'maybe' is not a bool", ValueError,
+                      lambda: column_default("maybe", "bool"))
+        expect_raises("and 5.5 is not an int -- it is not truncated either",
+                      ValueError, lambda: column_default("5.5", "int"))
+
+        print()
+        print("removing one has the same teeth, and an honest status line")
+        forget()
+        page.ask = answering(name="stamina", type="int", default="5",
+                             doc="how much running is left")
+        page._TablePage__on_add_column()
+        session.run(Command("table.row.set", HERO, {"column": "stamina", "value": 17}))
+        statuses.clear()
+        page.ask = answering(name="stamina")
+        page._TablePage__on_remove_column()
+        expect("the picker offers every column, genre-required ones included",
+               "hp" in tuple(asked[-1][0].choices), True)
+        expect("the column went",
+               session.project.table("actors").field("stamina"), None)
+        expect("and the status names the way back",
+               bool(statuses) and "Ctrl+Z" in statuses[0], True)
+        session.undo()
+        expect("which is true: the column AND its value came back",
+               session.project.table("actors").rows["hero"]["stamina"], 17)
+
+        forget()
+        page.ask = answering(name="hp")
+        page._TablePage__on_remove_column()
+        expect("a genre-required column is refused",
+               [r for r in rejections if "requires column" in r] != [], True)
+        expect("it survived",
+               session.project.table("actors").field("hp") is not None, True)
+        # The half that is easy to miss: a control that prints "removed --
+        # Ctrl+Z brings it back" on a removal that never happened teaches the
+        # author to trust a message that is not measuring anything.
+        expect("and NOTHING claimed it had been removed", statuses, [])
+
+        print()
+        print("a control that cannot act looks like it cannot act")
+        blank = TablePage(session, "equipment")
+        blank.refresh()
+        expect("the equipment table does not exist yet", blank.exists, False)
+        expect("so Add column is dead",
+               blank.add_column_button.isEnabled(), False)
+        expect("and says why",
+               "create the equipment table first"
+               in blank.add_column_button.toolTip(), True)
+        expect("Remove column too", blank.remove_column_button.isEnabled(), False)
+        page.refresh()
+        expect("while the built table's Add column is live",
+               page.add_column_button.isEnabled(), True)
+        expect("and its Remove column is, because it has columns",
+               page.remove_column_button.isEnabled(), True)
+
+        session.undo()          # the stamina value
+        session.undo()          # and the column the control added
+        expect("the section left the table exactly as it found it",
+               session.project.table("actors").to_json(), before)
+        # Owned, hidden, then deferred -- law 12. setParent(None) here would
+        # promote both pages to top-level windows.
+        for widget in (page, blank):
+            widget.hide()
+            widget.deleteLater()
+        application.processEvents()
 
 finally:
     shutil.rmtree(workspace, ignore_errors=True)

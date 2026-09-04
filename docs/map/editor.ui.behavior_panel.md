@@ -3,28 +3,44 @@
 
 # `editor/ui/behavior_panel.py` — tier 2 #TAG:editor/ui/behavior_panel.py
 
-> The composition of the selected object, as a checklist rather than a string.
+> The composition of the selected object, as a grouped checklist and a sequence.
 
-`editor.ui.behavior_panel` · 129 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.behavior_panel` · 328 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    editor.core.behavior_view editor.ui.docks editor.ui.fields
+    editor.core.behavior_view editor.core.inspect editor.ui.docks editor.ui.fields scripts.game.behavior.registry
 
 ## Module constants
 
-- `editor/ui/behavior_panel.py:60` `IS_WIRED` #TAG:IS_WIRED
+- `editor/ui/behavior_panel.py:106` `IS_WIRED` #TAG:IS_WIRED
+- `editor/ui/behavior_panel.py:121` `CHECKLIST` #TAG:CHECKLIST
+- `editor/ui/behavior_panel.py:127` `RUN_SECTION` #TAG:RUN_SECTION
+- `editor/ui/behavior_panel.py:133` `STRAY_SECTION` #TAG:STRAY_SECTION
+
+## Functions
+
+- `editor/ui/behavior_panel.py:146` `ordinal(number: int) -> str` #TAG:ordinal
+  - `1` -> `1st`. Used for the run sequence, so it reads as a position.
+- `editor/ui/behavior_panel.py:153` `category_title(name: str) -> str` #TAG:category_title
+  - The section heading one category gets. Derived, never listed.
+- `editor/ui/behavior_panel.py:158` `group_by_category(inspection: Inspection, tokens: Sequence[str], registry: Mapping[str, BehaviorSpec] | None=None) -> Inspection` #TAG:group_by_category
+  - Rearrange one description: the run sequence first, then the families.
+- `editor/ui/behavior_panel.py:215` `_stepped(row: Field, spec: BehaviorSpec, table: Mapping[str, BehaviorSpec]) -> Field` #TAG:_stepped
+  - One checklist row, told which step of the frame it runs in.
+- `editor/ui/behavior_panel.py:233` `_sequence(ticked: Sequence[str], authored: Sequence[str], table: Mapping[str, BehaviorSpec]) -> Section` #TAG:_sequence
+  - The ticked behaviors, numbered in the order the frame will call them.
 
 ## Classes
 
 ### `class BehaviorDock(ScopedDock)` #TAG:BehaviorDock
 
-`editor/ui/behavior_panel.py:75`–`128`
+`editor/ui/behavior_panel.py:266`–`327`
 
 > Which behaviors the selected object composes, and what they read.
 
-- `editor/ui/behavior_panel.py:80` `build_content(self) -> QWidget` #TAG:BehaviorDock.build_content
-- `editor/ui/behavior_panel.py:108` `refresh(self) -> None` #TAG:BehaviorDock.refresh
-- `editor/ui/behavior_panel.py:116` `report(self, message: str) -> None` #TAG:BehaviorDock.report
+- `editor/ui/behavior_panel.py:271` `build_content(self) -> QWidget` #TAG:BehaviorDock.build_content
+- `editor/ui/behavior_panel.py:299` `refresh(self) -> None` #TAG:BehaviorDock.refresh
+- `editor/ui/behavior_panel.py:315` `report(self, message: str) -> None` #TAG:BehaviorDock.report
   - Show why an edit produced no command, or clear it.
-- `editor/ui/behavior_panel.py:123` `__on_command(self, command: Any) -> None` #TAG:BehaviorDock.__on_command
+- `editor/ui/behavior_panel.py:322` `__on_command(self, command: Any) -> None` #TAG:BehaviorDock.__on_command

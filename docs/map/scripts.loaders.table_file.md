@@ -21,7 +21,7 @@
 
 - `scripts/loaders/table_file.py:81` `default_tables_dir() -> str` #TAG:default_tables_dir
   - `data/project/tables` under the repo root, absolute.
-- `scripts/loaders/table_file.py:174` `_bad(path: str, message: str, **context: Any) -> PyoneerConfigError` #TAG:_bad
+- `scripts/loaders/table_file.py:174` `_bad(path: str, message: str, **context: Any) -> PyoneerConfigError` #TAG:table_file._bad
 - `scripts/loaders/table_file.py:179` `load_table(path: str) -> ProjectTable` #TAG:load_table
   - Read one table file, or raise saying which file and what is wrong.
 - `scripts/loaders/table_file.py:243` `load_tables(directory: str | None=None) -> ProjectTables` #TAG:load_tables

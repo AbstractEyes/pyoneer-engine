@@ -39,9 +39,6 @@ htmlcov/
 # ---------------------------------------------------------------------------
 # Pyoneer generated output
 # ---------------------------------------------------------------------------
-# scripts/tests/*.py write rendered surfaces here; regenerated on every run.
-scripts/tests/output/
-
 # Runtime artifacts
 *.log
 *.prof

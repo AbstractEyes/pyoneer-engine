@@ -11,6 +11,60 @@ Taken from Tiled and Aseprite:
     ctrl + wheel     zoom under the cursor
     alt + click      pick the tile under the cursor into the brush
 
+ON AN OBJECT LAYER THE SAME BUTTONS MEAN SOMETHING ELSE
+-------------------------------------------------------
+There are no tiles to paint there, so the object gestures take over -- and
+ONLY there. Every branch below is reached after the tile branch has already
+declined, so a right-drag over a tile layer still erases exactly as it did.
+
+    left drag        move the object under the cursor; one drag, one undo
+    left click       select it (a drag that goes nowhere writes nothing);
+                     on BARE GROUND it clears the selection and creates
+                     nothing at all
+    double click     open the object editor; on bare ground, place one first
+    right click      a menu -- Edit / Delete over one object, a LIST to pick
+                     from when several are stacked, nothing at all over bare
+                     ground except a line saying so
+    Delete           remove the SELECTED object
+
+A SINGLE CLICK NEVER CREATES
+----------------------------
+It did, on bare ground, and the author's report is why this paragraph
+exists: "left click is currently adding an entity to the map when it needs
+to be double click". Double-click-to-place was ADDED and
+single-click-to-place was never REMOVED, so merely navigating an object
+layer littered it with entities nobody asked for -- an object placed by a
+click that meant "look here" is one the author never looks at again.
+
+QT'S EVENT ORDER IS WHY IT HAS TO STAY OUT. A double-click arrives as
+press, release, DoubleClick, release: the single-click path runs FIRST, on
+the way to every double-click there will ever be. So whatever a single
+click does must be harmless to do immediately before a double-click --
+which rules out creating, and rules out anything else expensive or
+irreversible. Clearing the selection is the one answer that is both useful
+and free to repeat: it is the standard gesture for "point at nothing", and
+it is the only deliberate way back to the nothing-selected state.
+
+Creation therefore lives in exactly one place -- `__place_object`, reached
+only from `__open_object_editor`, reached only from a DoubleClick.
+#TAG:single_click_never_creates
+
+RIGHT-CLICK USED TO DELETE, WITH NO MENU AND NO QUESTION.
+One press, on the button a hand uses to erase tiles, and the entity was
+gone. It was undoable and it was still wrong: the gesture that means
+"tell me about this" everywhere else in the editor was the destructive one
+here, and the author asked for it to stop. Delete now costs a menu pick or
+a selection plus a key.
+
+SNAPPED BY DEFAULT, FREEFLOW ON PURPOSE
+---------------------------------------
+`snap_objects` is a plain attribute, set from outside exactly as
+`grid_step` and `collision_subcell` are -- the persistent home of a view
+preference is `editor.core.settings`, which this widget does not import.
+Holding ALT during the drag inverts whatever it says, so the exception
+costs no trip to a menu. The inversion is read at every MOVE and again at
+RELEASE rather than at press, because alt+press is already the tile picker.
+
 ONE STROKE, ONE TRANSACTION
 ---------------------------
 Press-drag-release accumulates in an `editor.core.paint.Stroke` and commits
@@ -48,6 +102,22 @@ one undo takes the layer, its declaration and its tiles back out in reverse.
 
 The mask TILESET, and the PNG it names, are provisioned by that same stroke
 and never by a dialog -- see `CollisionTilesetOffer` and `write_mask_sheet`.
+
+A TILESET'S HEADER IS A CONTROL, NOT A CAPTION
+----------------------------------------------
+Right-clicking the header strip above a sheet opens Rename / Grow / Remove,
+which are `map.tileset.rename`, `map.tileset.grow` and `map.tileset.remove`
+-- three verbs that existed, refused with teeth, inverted exactly, and had
+no caller anywhere in the window. The palette asks the decision through the
+`ask` seam and EMITS `tileset_requested`; the window turns it into one
+`self.run(Command(...))`, so undo and the history list come free.
+
+An entry that cannot act is disabled and says why in its own label, and an
+entry that can act still names what it will cost -- how much headroom the
+tileset has, how many placed tiles a removal would orphan. Both numbers come
+from the MAP, which this widget cannot see, so `EditorWindow` installs
+`tileset_facts` as a seam and it is asked when the menu opens rather than on
+every repaint: two of its answers walk every cell of every tile layer.
 """
 from __future__ import annotations
 
@@ -65,6 +135,7 @@ from PySide6.QtWidgets import (
     QGraphicsSimpleTextItem,
     QGraphicsView,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -96,6 +167,7 @@ from editor.core.collision import (
     opinion_to_gid,
 )
 from editor.core.commands import Command
+from editor.core.inspect import Field
 from editor.core.layers import BLOCK_ALL, describe_mask, read_profile
 from editor.core.paint import (
     Bounds,
@@ -108,6 +180,7 @@ from editor.core.paint import (
     grid_lines,
 )
 from editor.core.scope import Scope
+from editor.ui.ask import ask_form
 from editor.ui.collision_view import (
     LEVEL_NONE,
     MASK_DOMAIN,
@@ -279,6 +352,106 @@ def _EMPTY_READER(_x: int, _y: int) -> int:                       # noqa: N802
     return 0
 
 
+@dataclass
+class ObjectDrag:
+    """One press-drag-release that is moving an object.
+
+    ADDRESSED BY ID, never by holding the `MapObject`. A press emits
+    `selected`, the window answers it with `refresh_all`, and `rebuild`
+    calls `scene.clear()` -- so anything this held onto across the drag
+    would be a wrapper around an element the next transaction could have
+    replaced. An id is re-resolved through the document at commit, and a
+    drag whose object is gone by then simply finds nothing.
+
+    `moved` is what separates a CLICK from a DRAG that returned home. Both
+    end where they started and neither writes a command; only the second
+    one has anything to say about it.
+    """
+
+    layer: str
+    object_id: int
+    #: Where the object was when the press landed. The commit compares
+    #: against this rather than re-reading, so a drag is one before/after
+    #: pair even if something else touched the map mid-gesture.
+    start_x: float
+    start_y: float
+    #: Where inside the object the cursor grabbed it. Without this an
+    #: object jumps its own top-left corner under the cursor on the first
+    #: pixel of travel.
+    grab_dx: float
+    grab_dy: float
+    width: float
+    height: float
+    moved: bool = False
+
+    def what(self) -> str:
+        return f"object {self.object_id}"
+
+
+@dataclass
+class SelectedObject:
+    """WHICH object the selection named, taken at the moment it was made.
+
+    AN ID IS NOT AN IDENTITY HERE, and that is a measured fact rather than
+    a worry. `MapDocument._release_object_id` ROLLS `nextobjectid` back
+    when the id being removed is the one just handed out -- deliberately,
+    because that is what makes add-then-remove byte-exact -- so ids are
+    REUSED, and a selection re-resolved by id alone lands on a DIFFERENT
+    object. Measured, in five real gestures: place two objects, select the
+    second, Ctrl+Z, place a third. The third is handed the second's id,
+    the canvas drew it selected, and Delete removed an object the author
+    had never clicked, silently. #TAG:an_id_is_not_an_identity
+
+    SO THE ELEMENT IS THE IDENTITY. `MapObject` is a wrapper around a live
+    `<object>` element, and the element survives every edit that keeps the
+    object -- a move, a rename, a property write, and the undo of any of
+    them -- while `add_object` and `restore_object` both build a NEW one.
+    That is the exact line this record has to draw, and it is why the card
+    beside it is not a second opinion:
+
+      * comparing POSITION would drop the selection every time the author
+        nudged the selected object, which forgets more than it must;
+      * comparing TYPE and NAME would not catch the reproduction at all --
+        place a GamePlayer, undo, place another, and the type matches and
+        both names are empty. Only the position differs.
+
+    The card is what the canvas SAYS when the answer is no, so a dropped
+    selection names the thing it dropped instead of vanishing quietly. It
+    is refreshed whenever the element confirms the object is still the
+    same one, so the sentence describes the object as it is now.
+
+    Note the deliberate contrast with `ObjectDrag` just above, which holds
+    an id and never a wrapper: a drag wants whatever answers to that id at
+    commit, and this wants to know when that is somebody else.
+    """
+
+    layer: str
+    object_id: int
+    #: The live `<object>` element. Held STRONGLY on purpose: a removed
+    #: element that stayed reachable is what makes `is` a sound test --
+    #: a freed one could have its address handed to the element that
+    #: replaced it.
+    element: Any
+    x: float
+    y: float
+    type: str
+    name: str
+
+    def describe(self) -> str:
+        """The object as the author last saw it, for a status line."""
+        what = self.name or self.type or "object"
+        return f"{what} {self.object_id} at ({self.x:.0f}, {self.y:.0f})"
+
+    def still(self, found) -> bool:
+        """Is `found` the very object this record was taken from?"""
+        return found.element is self.element
+
+    def refresh(self, found) -> None:
+        """Follow a legitimate edit of the same object."""
+        self.x, self.y = found.x, found.y
+        self.type, self.name = found.type, found.name
+
+
 @dataclass(frozen=True)
 class PaintUnit:
     """What ONE addressable cell is, right now, and where the number came
@@ -316,6 +489,13 @@ class MapCanvas(QGraphicsView):
     picked_gid = Signal(int)
     picked_mask = Signal(int)          # alt/picker in collision mode
     selected = Signal(object)          # a Scope
+    #: OPEN THIS OBJECT FOR EDITING -- a double-click, or `Edit…` on the
+    #: object menu. The canvas knows which object was pointed at and
+    #: nothing else; the window owns what "edit" opens. Typed `Scope`
+    #: rather than `object` because this wire is new and there is no
+    #: back-compatible caller to be lenient for: a connect that hands back
+    #: the wrong shape should fail at the emit, not three frames later.
+    edit_object_requested = Signal(Scope)
 
     def __init__(self, session, map_name: str, parent: QWidget | None = None):
         super().__init__(parent)
@@ -330,6 +510,27 @@ class MapCanvas(QGraphicsView):
         self.object_class = "GameEntity"
         self.hidden_layers: set[str] = set()
         self.selected_scope: Scope | None = None
+        #: WHAT THAT SCOPE NAMED WHEN IT ARRIVED, or None when it names no
+        #: object this canvas is willing to vouch for. The scope is the
+        #: window's business and follows it exactly; this is the canvas's
+        #: own answer to "and is that still the same object", which an id
+        #: cannot give because ids are recycled -- see `SelectedObject`.
+        #: EVERYTHING that draws, deletes or reports the selected object
+        #: reads THIS and never the scope's id.
+        self.__selected: SelectedObject | None = None
+        #: Does dragging an object land it on the tile grid? DEFAULT TRUE,
+        #: because placing already snaps -- `__click_object` creates at
+        #: `column * tile_width` -- and a move that did not would put an
+        #: object one pixel off a grid every other object in the map sits
+        #: on, which is invisible until something lines up against it.
+        #:
+        #: A plain attribute, set from outside exactly as `grid_step` and
+        #: `collision_subcell` are: the persistent home of a view
+        #: preference is `editor.core.settings`, and this widget does not
+        #: import it. ALT during the drag inverts it live -- see
+        #: `__snapping`, which is where the one reason it cannot be read at
+        #: press is written down.
+        self.snap_objects = True
         self.show_grid = True
         #: How many paint cells apart the grid lines are drawn. A view
         #: preference, so it comes from `editor.core.settings` -- the one
@@ -374,8 +575,21 @@ class MapCanvas(QGraphicsView):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
 
+        #: THE MENU SEAM, and the only reason it is an attribute. A check
+        #: must never block on a modal (law 13) and `QMenu.exec` is one --
+        #: which is why `_exec_menu` calls `popup` instead, and why a check
+        #: replaces this to READ the menu a real right-click built rather
+        #: than watch it flash past. Shared verbatim with `TilePalette`,
+        #: which needs it for the same reason.
+        self.popup_menu = _exec_menu
+
         self.atlas: TilesetAtlas | None = None
         self.__stroke: Stroke | None = None
+        #: The object being dragged, or None. Lives beside `__stroke` and
+        #: is dropped on the same beats: the two are the same shape of
+        #: gesture over different material, and neither may survive into a
+        #: mode where its commit would mean something else.
+        self.__object_drag: ObjectDrag | None = None
         self.__terrain: _TerrainStroke | None = None
         self.__erasing = False
         self.__ghost: QGraphicsItemGroup | None = None
@@ -403,6 +617,27 @@ class MapCanvas(QGraphicsView):
         # disagree with the map after the first Ctrl+Z.
         self.session.stream.subscribe(self.__on_transaction)
         self.rebuild()
+
+    def detach(self) -> None:
+        """Stop hearing about transactions, before this canvas is dropped.
+
+        `__init__` hands the command stream a BOUND METHOD of this object,
+        and that is the one reference a Qt delete does not take back: the
+        stream keeps the bound method, the bound method keeps this canvas,
+        and every listener on that list is called for every command for the
+        rest of the session. So a window that swaps canvases -- one per map
+        switch -- keeps every canvas it ever built, re-announces each
+        command to all of them, and marks the overlay of a map nobody is
+        looking at stale, on a list that only ever grows.
+
+        IDEMPOTENT, and deliberately: a caller that has to remember whether
+        it already detached is a caller that will get it wrong on the path
+        that matters. Removing what is not there is fine; leaving what IS
+        there is the bug, which is why this loops rather than assuming one.
+        """
+        listeners = self.session.stream.listeners
+        while self.__on_transaction in listeners:
+            listeners.remove(self.__on_transaction)
 
     # -- document ----------------------------------------------------------
 
@@ -927,6 +1162,14 @@ class MapCanvas(QGraphicsView):
             scene.addText(f"map unreadable: {exc}")
             return
 
+        # BEFORE a single object is drawn from this document, and against
+        # the document just read: is the selection still what it was? Said
+        # out loud at the very END of this method, where the scene is
+        # whole -- the sentence travels down instead of the emit travelling
+        # up, because telling the window here would re-enter `rebuild`
+        # halfway through building the scene it is standing in.
+        lost = self.__revalidate_selection(document)
+
         self.atlas = TilesetAtlas(document,
                                   tile_width=document.tile_width,
                                   tile_height=document.tile_height)
@@ -966,11 +1209,27 @@ class MapCanvas(QGraphicsView):
                 f"no tileset art for {', '.join(self.atlas.missing)} — "
                 f"drawing colour swatches (docs/ASSETS.md)")
 
+        if lost:
+            # The window is told FIRST and the sentence said second, so the
+            # sentence survives the rebuild that answering this emit runs.
+            # Told at all because `Selection.select` de-duplicates: a window
+            # left pointing at the dead id would swallow the author's next
+            # click on the object that inherited it, and its inspector would
+            # be filling in a form for an object nothing here is selecting.
+            if self.selected_scope is not None:
+                parent = self.selected_scope.parent()
+                if parent is not None:
+                    self.selected_scope = parent
+                    self.selected.emit(parent)
+            self.status.emit(lost)
+
     def __draw_objects(self, scene, layer, z: float, layer_name: str) -> None:
+        # THE CARD, never the scope's id: an id that has been recycled
+        # still resolves, and drawing the highlight from it is how an
+        # author ends up looking at an object they never clicked.
         selected_id = None
-        if self.selected_scope is not None and self.selected_scope.kind == "object" \
-                and self.selected_scope.get("layer") == layer_name:
-            selected_id = int(self.selected_scope.require("object"))
+        if self.__selected is not None and self.__selected.layer == layer_name:
+            selected_id = self.__selected.object_id
         for obj in layer.objects():
             width = obj.width or self.tile_width
             height = obj.height or self.tile_height
@@ -1041,8 +1300,124 @@ class MapCanvas(QGraphicsView):
         self.rebuild()
 
     def set_selection(self, scope: Scope) -> None:
+        """Point at what the window is pointing at, and note WHAT that is.
+
+        The card is taken only when the scope CHANGES. A repeat of the
+        same scope is what `refresh_all` sends after every single command,
+        and re-identifying there is exactly the defect: the canvas would
+        adopt whatever now answers to that id -- including the object a
+        recycled id has just been handed to.
+        """
+        if scope != self.selected_scope:
+            self.__selected = self.__identify(scope)
         self.selected_scope = scope
         self.rebuild()
+
+    def focus_object(self, scope) -> bool:
+        """Centre the view on one object and select it. THE HIERARCHY'S DOOR.
+
+        `self.window().canvas.focus_object(scope)` is what a tree row calls
+        when the author picks an object out of the hierarchy: the row knows
+        an address and nothing else, and where that address sits on screen
+        is the canvas's business.
+
+        SELECTED THROUGH THE SAME PATH A CLICK USES -- the `selected`
+        signal, carrying `object_scope`'s one spelling -- and never by
+        writing the card here. Two ways of setting a selection is the
+        defect this contract exists to avoid: the canvas would draw one
+        object highlighted while the window's inspector filled in a form
+        for another, and neither surface could tell which of them was
+        wrong. Going out and coming back costs one rebuild and buys a card
+        built by exactly the code a click builds it with.
+
+        RETURNS FALSE, and does not raise, when the scope names nothing
+        this canvas can show. A tree row is drawn from a document the
+        author can undo out from under it, so a row naming an id that is
+        gone is a normal race and not a contract violation -- and nothing
+        is centred or selected in that case, because a view that scrolled
+        somewhere for a missing object would be saying the object is
+        there.
+        """
+        layer_name, found = self.__resolve_object(scope)
+        if found is None:
+            return False
+        width = found.width or self.tile_width
+        height = found.height or self.tile_height
+        # The object's CENTRE, not its corner: centring the corner puts
+        # half of a large object off the edge it was scrolled to.
+        self.centerOn(found.x + width / 2.0, found.y + height / 2.0)
+        self.selected.emit(self.object_scope(layer_name, found.id))
+        return True
+
+    def __identify(self, scope) -> SelectedObject | None:
+        """The card for an object scope, or None when it names none HERE."""
+        layer_name, found = self.__resolve_object(scope)
+        if found is None:
+            return None
+        return SelectedObject(layer=layer_name, object_id=found.id,
+                              element=found.element, x=found.x, y=found.y,
+                              type=found.type, name=found.name)
+
+    def __resolve_object(self, scope) -> tuple[str | None, Any]:
+        """(layer, object) for a scope naming an object on THIS map.
+
+        (None, None) for: no scope, a scope that is not an object, an
+        object on another map, a layer this map does not have, an
+        unreadable object segment, and an id the layer does not hold.
+
+        THE ONE PLACE a scope becomes an object on this class. The card
+        `set_selection` takes and the object `focus_object` scrolls to are
+        resolved by this same rule, so a scope one of them refuses cannot
+        be a scope the other quietly accepts.
+        """
+        if scope is None or scope.kind != "object":
+            return None, None
+        if scope.get("map") != self.map_name:
+            return None, None
+        layer_name = scope.get("layer")
+        document = self.document
+        if layer_name is None or layer_name not in document.object_layer_names():
+            return None, None
+        try:
+            object_id = int(scope.require("object"))
+        except (ValueError, TypeError):
+            return None, None
+        return layer_name, document.object_layer(layer_name).find(object_id)
+
+    def __revalidate_selection(self, document) -> str:
+        """Is the selected object still the one that was selected?
+
+        CALLED FROM `rebuild`, which is what follows every document change
+        this canvas is told about -- so an undo, a redo and a sibling
+        panel's edit all arrive here, and none of them has to remember to.
+
+        Returns the sentence to say when the answer is no, or "" when
+        there is nothing to say. It DROPS the card rather than the scope's
+        contents: the scope is the window's, and `rebuild` hands the
+        window a new one afterwards, once the scene is whole again.
+
+        Deliberately NOT "clear the selection whenever the document
+        changes". Painting a tile must not cost the author the object they
+        had selected; only the object ceasing to be that object may.
+        """
+        record = self.__selected
+        if record is None:
+            return ""
+        found = None
+        if record.layer in document.object_layer_names():
+            found = document.object_layer(record.layer).find(record.object_id)
+        if found is None:
+            self.__selected = None
+            return (f"{record.describe()} is gone — nothing is selected now")
+        if not record.still(found):
+            # THE DANGEROUS ONE. The id resolves, so every by-id path
+            # would carry on happily; it just resolves to somebody else.
+            self.__selected = None
+            return (f"object {record.object_id} is not {record.describe()} "
+                    f"any more — nothing is selected now")
+        # The same object, wherever it has been moved or renamed to.
+        record.refresh(found)
+        return ""
 
     # -- the collision overlay ---------------------------------------------
 
@@ -1066,6 +1441,10 @@ class MapCanvas(QGraphicsView):
         self.__pending_tileset = None
         self.__wrote_sheet = False
         self.__terrain = None
+        # Same reason, one layer over: collision mode has no object
+        # gestures at all, so a drag begun in tile mode would commit a
+        # `map.object.move` the author can no longer see the ghost of.
+        self.__object_drag = None
         self.__clear_ghost()
         self.__collision_stale = True
         self.rebuild()
@@ -1522,6 +1901,15 @@ class MapCanvas(QGraphicsView):
         if event.key() == Qt.Key_Space:
             self.__space = True
             self.setCursor(Qt.OpenHandCursor)
+        if event.key() == Qt.Key_Delete:
+            # Delete ONLY. Backspace is deliberately not bound: it is the
+            # key a hand reaches for while typing, this view takes focus
+            # from a click on the map, and a mis-aimed Backspace that
+            # removes an entity is exactly the accident right-click has
+            # just stopped causing.
+            self.delete_selected_object()
+            event.accept()
+            return
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event) -> None:
@@ -1616,15 +2004,40 @@ class MapCanvas(QGraphicsView):
             event.accept()
             return
 
+        # BELOW HERE THERE IS NO TILE LAYER TO PAINT, so the buttons mean
+        # what they mean on an object layer. Everything above has already
+        # declined, which is what keeps right-drag-erases intact.
         if event.button() == Qt.LeftButton:
             self.__click_object(point, column, row)
             event.accept()
             return
         if event.button() == Qt.RightButton:
-            self.__delete_object_under(point)
+            self.__open_object_menu(
+                point, self.mapToGlobal(event.position().toPoint()))
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        """Open the object editor. Only ever on an object layer.
+
+        A tile layer keeps every double-click it ever had: the second
+        press of a fast double paint has to keep painting, so this defers
+        to the base class the moment there is a tile layer or a mask under
+        the cursor.
+        """
+        if event.button() != Qt.LeftButton or self.mode is EditMode.COLLISION \
+                or self.__active_tile_layer() is not None:
+            super().mouseDoubleClickEvent(event)
+            return
+        point = self.mapToScene(event.position().toPoint())
+        column, row = self.cell_at(point.x(), point.y())
+        # A drag opened by the first press of this double-click is over
+        # and must not commit on the release that follows.
+        self.__object_drag = None
+        self.__clear_ghost()
+        self.__open_object_editor(point, column, row)
+        event.accept()
 
     def mouseMoveEvent(self, event) -> None:
         position = event.position().toPoint()
@@ -1638,6 +2051,11 @@ class MapCanvas(QGraphicsView):
                 self.horizontalScrollBar().value() - delta.x())
             self.verticalScrollBar().setValue(
                 self.verticalScrollBar().value() - delta.y())
+            event.accept()
+            return
+
+        if self.__object_drag is not None:
+            self.__drag_object_to(point, snap=self.__snapping(event))
             event.accept()
             return
 
@@ -1691,6 +2109,13 @@ class MapCanvas(QGraphicsView):
             self.__pan_from = None
             self.setCursor(Qt.OpenHandCursor if self.__space else Qt.ArrowCursor)
             self.unsetCursor()
+            event.accept()
+            return
+
+        if self.__object_drag is not None:
+            self.__commit_object_drag(
+                self.mapToScene(event.position().toPoint()),
+                snap=self.__snapping(event))
             event.accept()
             return
 
@@ -2068,9 +2493,34 @@ class MapCanvas(QGraphicsView):
         self.picked_gid.emit(gid)
         self.status.emit(f"picked gid {gid}")
 
-    def __object_under(self, point):
+    def objects_under(self, point) -> list[tuple[str, Any]]:
+        """EVERY object the point lands in, TOPMOST FIRST.
+
+        Topmost is a claim about the picture, so it is answered from the
+        same two numbers the picture is drawn from. `__draw_objects` gives
+        every object of a layer `depth_of(layer) + 0.5`, so the layer with
+        the greatest depth is in front; within one layer every rectangle
+        shares a z and Qt paints them in the order they were added, so the
+        LAST object of a group is the one on top. Hence: sort the layers by
+        depth, descending, over a list already reversed -- `sorted` is
+        stable, so layers that tie on depth keep reversed document order,
+        which is the same tiebreak Qt applies to equal z.
+
+        The alternative -- nearest to the cursor, or smallest first -- was
+        rejected because it answers a question nobody asked: a click picks
+        what a hand sees, and what a hand sees is what is drawn last.
+
+        Hidden layers are skipped. Picking an object the author has
+        switched off is picking something that is not on the screen.
+
+        `__object_under` is this function's first element, so the incumbent
+        single-hit behaviour is by construction the head of this list.
+        """
         document = self.document
-        for name in reversed(document.object_layer_names()):
+        found: list[tuple[str, Any]] = []
+        names = sorted(reversed(document.object_layer_names()),
+                       key=self.__depth_of, reverse=True)
+        for name in names:
             if name in self.hidden_layers:
                 continue
             for obj in reversed(document.object_layer(name).objects()):
@@ -2078,44 +2528,447 @@ class MapCanvas(QGraphicsView):
                 height = obj.height or self.tile_height
                 if (obj.x <= point.x() < obj.x + width
                         and obj.y <= point.y() < obj.y + height):
-                    return name, obj
-        return None, None
+                    found.append((name, obj))
+        return found
+
+    def __object_under(self, point):
+        hits = self.objects_under(point)
+        return hits[0] if hits else (None, None)
+
+    def object_label(self, layer_name: str, obj) -> str:
+        """How one object says which one it is, in a menu.
+
+        Its tmx `name` when it has one, because that is the string the
+        author typed and the only one they will recognise. When it has
+        none there is nothing to shorten, so the id and the type are given
+        WHOLE rather than invented into a friendly-looking label -- an
+        object called "GamePlayer" that is one of four GamePlayers is a
+        list you cannot pick from.
+        """
+        what = obj.type or "object"
+        if obj.name:
+            return f"{obj.name}  ·  {what} {obj.id}  ·  {layer_name}"
+        return f"{what} {obj.id}  ·  {layer_name}"
+
+    def object_scope(self, layer_name: str, object_id) -> Scope:
+        """The address of one object on THIS map. The one spelling."""
+        return Scope.of(("map", self.map_name), ("layer", layer_name),
+                        ("object", str(object_id)))
+
+    # -- the object menu ---------------------------------------------------
+
+    def object_menu(self, hits: list[tuple[str, Any]]) -> QMenu:
+        """The right-click menu for what is under the cursor.
+
+        Built apart from being shown, for `TilePalette.tileset_menu`'s two
+        reasons: a check can trigger an entry without touching a modal
+        (law 13), and a menu that is only ever `exec`'d is a menu no
+        assertion can read.
+
+        TWO SHAPES, AND THE COUNT DECIDES WHICH. Over ONE object the menu
+        acts on it -- Edit and Delete, the two things there are to do. Over
+        SEVERAL it is a PICKER and nothing else: one entry per object, each
+        selecting it, because "which of these did you mean" has to be
+        answered before "what should I do with it" can be. Deleting the
+        topmost of a stack from a menu that never said which one was
+        topmost is the shape this is against.
+
+        A picker entry emits `selected` and writes nothing at all. The
+        author then has Delete on the keyboard and a double-click for the
+        editor, both of which act on the selection they just made.
+        """
+        if not hits:
+            # RAISED, not answered with an empty menu (law 7). "Nothing is
+            # here" is a decision `__open_object_menu` makes before this is
+            # called, and a menu with no entries in it is a control that
+            # tells the author they missed without telling them what they
+            # missed.
+            raise PyoneerError("there is no object here to open a menu for")
+        menu = QMenu(self)
+        menu.setToolTipsVisible(True)
+        if len(hits) > 1:
+            for layer_name, obj in hits:
+                entry = menu.addAction(self.object_label(layer_name, obj))
+                entry.setToolTip(
+                    "select this one. Delete removes what is selected, and "
+                    "a double-click opens it")
+                entry.triggered.connect(
+                    lambda _checked=False, layer=layer_name, oid=obj.id:
+                    self.selected.emit(self.object_scope(layer, oid)))
+            return menu
+
+        layer_name, obj = hits[0]
+        edit = menu.addAction("Edit…")
+        edit.setToolTip("open this object's editor")
+        edit.triggered.connect(
+            lambda _checked=False, layer=layer_name, oid=obj.id:
+            self.request_object_edit(layer, oid))
+        delete = menu.addAction("Delete")
+        delete.setToolTip("remove it from the map. One Ctrl+Z puts it back, "
+                          "with every property it carried")
+        delete.triggered.connect(
+            lambda _checked=False, layer=layer_name, oid=obj.id:
+            self.remove_object(layer, oid))
+        return menu
+
+    def __open_object_menu(self, point, at) -> None:
+        """A right-click on an object layer. THE GESTURE THAT USED TO DELETE.
+
+        Over bare ground it opens NOTHING -- an empty menu is a control
+        that says the author missed without saying what they missed --
+        and puts what the button means on the status bar instead.
+        """
+        hits = self.objects_under(point)
+        if not hits:
+            self.status.emit(
+                "no object here — right-click one for Edit and Delete, "
+                "double-click bare ground to place one")
+            return
+        menu = self.object_menu(hits)
+        # Parented to this view, so it was never a top-level orphan (law
+        # 12) -- but it would outlive the click until the next collection,
+        # and it must not be freed while it is still on screen: `popup`
+        # returns immediately. See `_hold_menu`.
+        _hold_menu(menu)
+        self.popup_menu(menu, at)
+
+    # -- selecting, editing, removing --------------------------------------
+
+    def request_object_edit(self, layer_name: str, object_id) -> None:
+        """Ask the window to open one object. Selects it on the way.
+
+        Two signals and not one, because they are two different claims:
+        `selected` is where the editor is LOOKING, which the canvas draws
+        itself, and `edit_object_requested` is a door being opened, which
+        it cannot. Emitting only the second would open an editor for an
+        object the canvas is still drawing unselected.
+        """
+        scope = self.object_scope(layer_name, object_id)
+        self.selected.emit(scope)
+        self.edit_object_requested.emit(scope)
+
+    def selected_object(self):
+        """(layer, object) for the selection, when it still names the one
+        that was selected.
+
+        RE-RESOLVED THROUGH THE DOCUMENT every single time -- a cached
+        `MapObject` would, after one undo of a removal, be a wrapper around
+        an element the document has replaced -- but re-resolved BY CARD and
+        never by the scope's id alone. An id that is gone is handed out
+        again: `MapDocument._release_object_id` rolls `nextobjectid` back,
+        so the next object placed can be handed the dead id, and answering
+        with THAT is how Delete removed something the author had never
+        clicked. `SelectedObject` is where the whole measurement lives.
+
+        (None, None) for: no selection, a selection that is not an object,
+        an object on another map, a layer this map does not have, an id
+        that is gone, and -- the one this exists for -- an id that now
+        names a different object.
+        """
+        record = self.__selected
+        if record is None:
+            return None, None
+        document = self.document
+        if record.layer not in document.object_layer_names():
+            return None, None
+        found = document.object_layer(record.layer).find(record.object_id)
+        if found is None or not record.still(found):
+            return None, None
+        return record.layer, found
+
+    def remove_object(self, layer_name: str, object_id) -> bool:
+        """`map.object.remove`, and then move the selection to the parent.
+
+        The selection has to climb: the scope it held names an object that
+        is no longer in the file, and a window still pointed at it shows an
+        inspector for nothing and an outline around empty ground. The
+        layer is the honest place to land -- it is where the object was,
+        and it is what the author will place the next one on.
+        """
+        scope = self.object_scope(layer_name, object_id)
+        if not self.window().run(Command("map.object.remove", scope)):
+            return False
+        self.selected.emit(Scope.of(("map", self.map_name),
+                                    ("layer", layer_name)))
+        return True
+
+    def delete_selected_object(self) -> bool:
+        """What the Delete key does. Every refusal is said out loud.
+
+        FOUR GUARDS, and each one exists because the alternative deletes
+        something the author cannot see selected:
+
+        * COLLISION mode paints masks and draws no object outlines at all,
+          so a Delete there would remove an entity the author had no way
+          of knowing was still selected.
+        * an active TILE layer means the canvas is showing tiles and the
+          hierarchy is pointed at a tile layer; the object outline the
+          selection refers to is not what the author is working on.
+        * nothing selected, or a selection whose id now names a different
+          object, removes nothing -- and says so, rather than looking like
+          a dead key.
+        * a HIDDEN layer draws no outline either. `__draw_objects` skips it
+          and `objects_under` skips it, so the author cannot see the
+          object, cannot click it and cannot right-click it -- and this
+          key was the one path left that could still remove it. Measured
+          through the real Layers-panel switch: it deleted.
+        """
+        if self.mode is EditMode.COLLISION:
+            self.status.emit("Delete removes an object, and collision mode "
+                             "paints masks — switch to Tiles first")
+            return False
+        if self.__active_tile_layer() is not None:
+            self.status.emit(f"Delete removes an object, and {self.active_layer!r} "
+                             f"is a tile layer — select the object first")
+            return False
+        layer_name, obj = self.selected_object()
+        if obj is None:
+            self.status.emit("nothing is selected — click an object first, "
+                             "then press Delete")
+            return False
+        if layer_name in self.hidden_layers:
+            self.status.emit(f"Delete removes an object, and {layer_name!r} is "
+                             f"hidden — switch the layer back on in Layers "
+                             f"first")
+            return False
+        return self.remove_object(layer_name, obj.id)
+
+    # -- dragging an object ------------------------------------------------
+
+    def __snapping(self, event) -> bool:
+        """Does THIS event's position land on the grid?
+
+        `snap_objects` inverted by ALT. Read from the event rather than
+        from press state on purpose: alt+press is already the tile picker,
+        so alt can only ever be taken up mid-drag, and a modifier sampled
+        once at press would make the override unusable by the hand it
+        exists for.
+        """
+        alt = bool(event.modifiers() & Qt.AltModifier)
+        return bool(self.snap_objects) != alt
+
+    def __drag_target(self, drag: ObjectDrag, point, *,
+                      snap: bool) -> tuple[float, float]:
+        """Where the dragged object's top-left would land.
+
+        Snapping FLOORS to the tile grid rather than rounding to the
+        nearest boundary, so that it agrees with `__click_object`, which
+        places at `column * tile_width` for the cell the cursor is in.
+        Two ways to put an object on a map that disagreed about which
+        cell a pixel belongs to would be a half-tile jump on the first
+        drag of every object ever placed.
+        """
+        x = point.x() - drag.grab_dx
+        y = point.y() - drag.grab_dy
+        if not snap:
+            return float(x), float(y)
+        tile_w, tile_h = self.tile_width, self.tile_height
+        return float(x // tile_w * tile_w), float(y // tile_h * tile_h)
+
+    def __begin_object_drag(self, layer_name: str, obj, point) -> None:
+        drag = ObjectDrag(
+            layer=layer_name, object_id=obj.id,
+            start_x=obj.x, start_y=obj.y,
+            grab_dx=point.x() - obj.x, grab_dy=point.y() - obj.y,
+            width=obj.width or self.tile_width,
+            height=obj.height or self.tile_height)
+        self.__object_drag = drag
+        # A press selects, exactly as it did before there were drags: the
+        # gesture that moves a thing and the gesture that points at it are
+        # the same gesture until the mouse travels.
+        self.selected.emit(self.object_scope(layer_name, obj.id))
+
+    def __drag_object_to(self, point, *, snap: bool) -> None:
+        drag = self.__object_drag
+        if drag is None:
+            return
+        drag.moved = True
+        x, y = self.__drag_target(drag, point, snap=snap)
+        self.__draw_object_ghost(drag, x, y)
+        self.status.emit(
+            f"{drag.what()} → ({x:.0f}, {y:.0f})   "
+            f"{'snapped to the tile grid' if snap else 'freeflow'}"
+            f"   (hold Alt to "
+            f"{'go free' if self.snap_objects else 'snap'})")
+
+    def __draw_object_ghost(self, drag: ObjectDrag, x: float, y: float) -> None:
+        """Where the object WOULD land, drawn and not written.
+
+        The document is untouched until the button comes up -- the same
+        rule a tile stroke follows, and the reason a drag is one undo step
+        rather than one per mouse move.
+        """
+        self.__clear_ghost()
+        group = QGraphicsItemGroup()
+        group.setZValue(_GHOST_Z)
+        group.setOpacity(0.7)
+        rect = QGraphicsRectItem(QRectF(x, y, drag.width, drag.height))
+        rect.setPen(QPen(_OBJECT_SELECTED, 2.0))
+        rect.setBrush(QBrush(QColor(_OBJECT_SELECTED.red(),
+                                    _OBJECT_SELECTED.green(),
+                                    _OBJECT_SELECTED.blue(), 70)))
+        group.addToGroup(rect)
+        self.scene().addItem(group)
+        self.__ghost = group
+
+    def __commit_object_drag(self, point, *, snap: bool) -> None:
+        """ONE `map.object.move`, or nothing at all.
+
+        A drag that ends where it started emits NO command. An undo step
+        that changes nothing is worse than no undo step: it makes Ctrl+Z
+        look broken, because the first press appears to do nothing at all.
+        `map.object.move` would itself return a None inverse for an
+        unchanged position -- but `CommandStream.apply` still pushes that
+        transaction onto the undo stack, so the guard has to be here,
+        before the command exists.
+        """
+        drag, self.__object_drag = self.__object_drag, None
+        self.__clear_ghost()
+        if drag is None:
+            return
+        x, y = self.__drag_target(drag, point, snap=snap)
+        if x == drag.start_x and y == drag.start_y:
+            # Silent for a plain CLICK, which is this same code path with
+            # no travel in it and has already said what it did by
+            # selecting. A drag that went somewhere and came back is a
+            # different event and gets told it changed nothing.
+            if drag.moved:
+                self.status.emit(f"{drag.what()} stayed at "
+                                 f"({x:.0f}, {y:.0f}) — nothing changed")
+            return
+        self.window().run(
+            Command("map.object.move",
+                    self.object_scope(drag.layer, drag.object_id),
+                    {"x": x, "y": y}),
+            label=f"move {drag.what()} to ({x:.0f}, {y:.0f})")
 
     def __click_object(self, point, column: int, row: int) -> None:
+        """A left press on an object layer: grab one, or point at nothing.
+
+        IT DOES NOT CREATE, and the whole reason is written out under
+        A SINGLE CLICK NEVER CREATES in this module's docstring: this runs
+        FIRST on the way to every double-click Qt will ever deliver, so
+        anything expensive or irreversible here happens once per
+        double-click as well.
+
+        On bare ground it CLEARS the selection instead, by pointing the
+        window at the layer -- the same climb `remove_object` makes when
+        the object it named stops existing. That is the standard meaning of
+        a click on empty space, and it is the author's only deliberate way
+        back to "nothing is selected", which the Delete key and the
+        inspector both read.
+
+        `column` and `row` are still taken, and deliberately unused: they
+        are the cell a create WOULD have landed in, and the signature is
+        shared with `__open_object_editor` so that the two branches of one
+        gesture cannot drift apart about which cell a pixel belongs to.
+        """
         layer_name, obj = self.__object_under(point)
         if obj is not None:
-            self.selected.emit(Scope.of(("map", self.map_name),
-                                        ("layer", layer_name),
-                                        ("object", str(obj.id))))
+            self.__begin_object_drag(layer_name, obj, point)
             return
         document = self.document
         if self.active_layer in document.object_layer_names():
-            scope = Scope.of(("map", self.map_name), ("layer", self.active_layer))
-            self.window().run(Command("map.object.add", scope, {
-                "type": self.object_class,
-                "x": float(column * self.tile_width),
-                "y": float(row * self.tile_height),
-            }))
-            # A genre default materialised onto the new object is otherwise
-            # INVISIBLE: the property is on the object and the author is
-            # looking at a rectangle. So the list is said out loud, once.
-            placed = self.document.object_layer(self.active_layer).objects()
-            tokens = (placed[-1].properties.as_dict().get(BEHAVIORS, "")
-                      if placed else "")
-            self.status.emit(f"placed {self.object_class}"
-                             + (f" with {tokens}" if tokens else ""))
+            # The LAYER, not None: a scope is how every panel in this
+            # editor is aimed, and there is no "nowhere" to aim them at.
+            # `Selection.select` de-duplicates, so clicking bare ground
+            # twice costs one rebuild and not two.
+            self.selected.emit(Scope.of(("map", self.map_name),
+                                        ("layer", self.active_layer)))
+            self.status.emit(
+                f"nothing here — selection cleared. Double-click to "
+                f"place a {self.object_class}, or click an object to "
+                f"select it")
             return
         self.status.emit("select a layer to paint on, or an object to select")
 
-    def __delete_object_under(self, point) -> None:
+    def __place_object(self, column: int, row: int) -> int | None:
+        """Put one object on the active object layer. THE ONLY CREATE PATH.
+
+        Returns the new object's id, or None having said why in one line --
+        which is what `__open_object_editor` needs, because opening an
+        editor for "the last object in the layer" after a REFUSED add opens
+        somebody else's object, silently, and looks exactly like it worked.
+
+        IT SAYS NOTHING ON SUCCESS. The caller does, once the editor is
+        open, because a status line is only ever the LAST one emitted:
+        `request_object_edit` selects, the window answers with
+        `refresh_all`, and `rebuild` has its own line to say on a machine
+        with no tileset art. Measured -- the placement sentence was landing
+        under "no tileset art for ... drawing colour swatches", which is
+        true, unasked for, and not what the author just did.
+
+        Snapped to the cell: `column * tile_width`, which is where
+        `__drag_target`'s floor comes from. Two ways of putting an object on
+        a map that disagreed about which cell a pixel belongs to would be a
+        half-tile jump on the first drag of every object ever placed.
+        """
+        document = self.document
+        if self.active_layer not in document.object_layer_names():
+            self.status.emit("select an object layer to place an object on")
+            return None
+        scope = Scope.of(("map", self.map_name), ("layer", self.active_layer))
+        if not self.window().run(Command("map.object.add", scope, {
+            "type": self.object_class,
+            "x": float(column * self.tile_width),
+            "y": float(row * self.tile_height),
+        })):
+            # `run` has already reported the rejection where it can be read.
+            return None
+        # `add_object` APPENDS, so the new object is the last one -- and the
+        # document is re-read rather than reusing the one above, because a
+        # command ran in between.
+        placed = self.document.object_layer(self.active_layer).objects()
+        if not placed:
+            return None
+        return placed[-1].id
+
+    def __say_placed(self, object_id: int) -> None:
+        """One line for one placement, said where it can still be read.
+
+        A genre default materialised onto the new object is otherwise
+        INVISIBLE: the property is on the object and the author is looking
+        at a rectangle. So the list is said out loud, once -- and read back
+        off the object rather than off the pack, because what the file got
+        is the only thing worth reporting.
+        """
+        found = self.document.object_layer(self.active_layer).find(object_id)
+        tokens = found.properties.as_dict().get(BEHAVIORS, "") if found else ""
+        self.status.emit(f"placed {self.object_class}"
+                         + (f" with {tokens}" if tokens else ""))
+
+    def __open_object_editor(self, point, column: int, row: int) -> None:
+        """A double-click: open the object here, placing one if there is none.
+
+        THE ORDER IS THE WHOLE THING. Ask what is under the cursor FIRST,
+        and only create when the answer is nothing -- reversed, a
+        double-click on a crowded map places a duplicate on top of every
+        object it opens, silently, one per gesture.
+
+        Qt's real sequence for a double-click is press, release,
+        DoubleClick, release, and the first press has already run
+        `__click_object` -- which now selects or CLEARS and never creates,
+        for the reason this module's docstring gives under A SINGLE CLICK
+        NEVER CREATES. So this is the ONLY creating branch there is, it
+        runs once per gesture, and the count is the whole assertion: one
+        double-click on bare ground leaves exactly one new object, never
+        two.
+        """
         layer_name, obj = self.__object_under(point)
-        if obj is None:
-            self.status.emit("no object under the cursor")
+        if obj is not None:
+            self.request_object_edit(layer_name, obj.id)
             return
-        self.window().run(Command(
-            "map.object.remove",
-            Scope.of(("map", self.map_name), ("layer", layer_name),
-                     ("object", str(obj.id)))))
+        object_id = self.__place_object(column, row)
+        if object_id is None:
+            # Refused, and `__place_object` has already said why. No
+            # editor: one opened over a placement that did not happen is
+            # an editor aimed at somebody else's object.
+            return
+        self.request_object_edit(self.active_layer, object_id)
+        # LAST, and that is the whole reason it is not inside
+        # `__place_object`: the line above rebuilds this canvas, and a
+        # rebuild has its own things to say.
+        self.__say_placed(object_id)
 
 
 class _TerrainStroke:
@@ -2216,6 +3069,81 @@ class PaletteSection:
                       self.cell, self.cell)
 
 
+@dataclass(frozen=True)
+class TilesetFacts:
+    """What the MAP knows about one tileset. See `TilePalette.tileset_facts`.
+
+    The palette reads the ATLAS, which is a snapshot of the attributes one
+    `<tileset>` declares. Two things it cannot see decide whether an edit is
+    offered at all: the gid space ABOVE the range, and the cells painted
+    INTO it. `EditorWindow.tileset_facts` answers both from the document.
+
+    `problem` carries the reason when it could not answer -- an unknown
+    extent, a map that will not open -- and every entry that depends on the
+    numbers is greyed with it. A zero standing in for an unknown reads as
+    "no headroom, nothing placed", which is the shape of answer that gets an
+    author's painted cells deleted.
+    """
+
+    #: Tiles this tileset could still claim before it collided with the range
+    #: above it. `MapDocument.tileset_headroom` computes it.
+    headroom: int = 0
+    #: Cells and tile objects currently pointing into its range.
+    placed: int = 0
+    #: Where those are, as "Floor x12, Props x1" -- a count with no address
+    #: cannot be acted on.
+    where: str = ""
+    #: What ends the headroom, as "Beta at gid 33", or "" at the top of the
+    #: gid space.
+    blocked_by: str = ""
+    #: Why this SHAPE of tileset cannot grow at all (external, margin or
+    #: spacing, a collection of images), or "" when it can.
+    growth_refusal: str = ""
+    #: Why none of it could be answered, or "".
+    problem: str = ""
+
+
+def _exec_menu(menu: QMenu, at) -> None:
+    """Pop `menu` at a global point. THE SEAM, and the only reason it exists.
+
+    `popup`, NEVER `exec`. `QMenu.exec` spins its own event loop and does
+    not return until the menu closes, which is a modal by every definition
+    law 13 cares about: a check that drove a real right-click through this
+    would sit there with zero output until the 600s timeout, exactly as
+    `check_collision_mount` once did for 40+ minutes. `popup` shows the
+    same menu and returns immediately, so the gesture is drivable and the
+    only thing lost is a return value neither caller reads -- both wire
+    their entries up with `triggered`.
+
+    Held as an instance attribute like `ask` -- on `TilePalette` for a
+    tileset's header and on `MapCanvas` for an object -- so a check can
+    ALSO replace it and read the menu a real right-click built. Both
+    halves matter: the seam lets a check see the menu, and `popup` is
+    what keeps the unreplaced, shipping path from blocking.
+
+    ONE function for both, because there is one property being protected.
+    A second spelling is a second menu nothing is watching, which is how
+    the modal that hung this suite for 40+ minutes got in.
+    """
+    menu.popup(at)
+
+
+def _hold_menu(menu: QMenu) -> None:
+    """Free a popped-up menu when it closes, and not one moment sooner.
+
+    `popup` returns with the menu still on screen, so the `deleteLater`
+    that used to sit under an `exec` would now free a menu the author is
+    reading. Deferring it to `aboutToHide` frees it on the same beat
+    Qt stops showing it -- via `deleteLater`, never synchronously, since
+    the signal that closed it is on the stack at that moment (law 12).
+
+    A menu whose `popup_menu` seam was replaced by a check never shows and
+    so never hides: it stays parented to the widget that built it, which
+    is where it was already, and dies with it.
+    """
+    menu.aboutToHide.connect(menu.deleteLater)
+
+
 class TilePalette(QWidget):
     """Every tileset the map declares, stacked in one scrolling column.
 
@@ -2235,10 +3163,22 @@ class TilePalette(QWidget):
     selection keyed on position would either vanish on the first stroke or,
     worse, slide onto a different sheet's tiles when a tileset above it is
     removed.
+
+    THE HEADER IS WHERE A TILESET IS EDITED. Right-clicking it opens the
+    three verbs that address a whole sheet -- rename, grow, remove -- and
+    each one is asked for through `ask`, refused HERE when it cannot be
+    afforded, and emitted as `tileset_requested` for the window to run. The
+    hit test is deliberately not `locate`, which clamps a header point into
+    the first row of tiles and would silently name the wrong tileset.
     """
 
     stamp_picked = Signal(object)      # a Stamp
     add_tiles_requested = Signal()
+    #: (tileset name, verb, args) -- one whole-tileset edit, already decided
+    #: and already argued, for `EditorWindow.tileset_command` to run. The
+    #: palette never touches the session: a widget that ran its own commands
+    #: would be a second mutation point, and undo has exactly one.
+    tileset_requested = Signal(str, str, dict)
 
     #: The header strip's height, and the gap under each section.
     HEADER = 18
@@ -2262,6 +3202,16 @@ class TilePalette(QWidget):
         #: ids, or None. See the class docstring.
         self.selection: tuple[str, int, int, int, int] | None = None
         self.__anchor: tuple[str, int, int] | None = None
+        #: The dialog seam and the popup seam, same shape and same reason as
+        #: `EditorWindow.ask`: a check replaces them on the one widget it is
+        #: driving and asserts, per gesture, both that the real question is
+        #: asked and that the routine path asks nothing at all.
+        self.ask = ask_form
+        self.popup_menu = _exec_menu
+        #: `(name) -> TilesetFacts`, installed by `EditorWindow`. None until
+        #: it is -- a palette with no map behind it greys its header menu
+        #: with that as the reason rather than inventing two numbers.
+        self.tileset_facts = None
 
         self.add_button = QPushButton("+  Add tiles…")
         self.add_button.setToolTip(
@@ -2271,13 +3221,22 @@ class TilePalette(QWidget):
         self.surface = _PaletteSurface(self)
         self.surface.setToolTip(
             "drag to pick a multi-tile stamp · ctrl+wheel zooms · "
-            "alt+click on the map picks the tile under the cursor")
+            "alt+click on the map picks the tile under the cursor · "
+            "right-click a tileset's header to rename, grow or remove it")
+        # ON THE SURFACE, because that is the widget the click lands on and
+        # its coordinates are the ones the sections are laid out in.
+        self.surface.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.surface.customContextMenuRequested.connect(self.open_tileset_menu)
         self.scroll = QScrollArea()
         self.scroll.setWidget(self.surface)
         self.scroll.setWidgetResizable(False)
 
         self.caption = QLabel("")
         self.caption.setStyleSheet("color: palette(mid); font-size: 11px;")
+        # A refusal comes down this channel (see `request_remove`), and a
+        # refusal is a sentence, not a gid. Clipped to one line it would say
+        # the opposite of what it means half the time.
+        self.caption.setWordWrap(True)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -2384,6 +3343,25 @@ class TilePalette(QWidget):
                          section.rows - 1))
         return column, row
 
+    def header_at(self, x: float, y: float) -> PaletteSection | None:
+        """Surface point -> the section whose HEADER STRIP is under it.
+
+        NOT `locate`, and that is the whole point of it existing. `locate`
+        clamps: a point in a header comes back as row 0 of that section, and
+        a point in the gap under a sheet comes back as the LAST row of the
+        section above -- both correct for a drag that strays and both wrong
+        for a menu, which would then rename a tileset the author was not
+        pointing at.
+
+        `x` is not read because the strip is drawn across the full width of
+        the surface (`_PaletteSurface.__draw_header`), including the gutter
+        beside a sheet narrower than the widest one.
+        """
+        for section in self.sections:
+            if section.top <= y < section.top + self.HEADER:
+                return section
+        return None
+
     def gid_at(self, section: PaletteSection, column: int, row: int) -> int | None:
         index = row * section.columns + column
         if not (0 <= column < section.columns
@@ -2401,6 +3379,235 @@ class TilePalette(QWidget):
         if section is None:
             return None
         return section.rect(column, row).center()
+
+    # -- the header menu ---------------------------------------------------
+
+    def facts(self, name: str) -> TilesetFacts:
+        """`TilesetFacts` for one tileset. Never raises.
+
+        The seam is a call into the document and a document can refuse to
+        answer -- an external tileset declares no extent in this file, a map
+        may not open at all. That refusal is carried back as `problem` and
+        shown on the entries that need the numbers, because this runs inside
+        a Qt handler: an exception raised here reaches the event loop, takes
+        the gesture with it, and tells the author nothing.
+        """
+        if self.tileset_facts is None:
+            return TilesetFacts(problem="this palette is not attached to a map")
+        try:
+            return self.tileset_facts(name)
+        except Exception as exc:                                # noqa: BLE001
+            return TilesetFacts(problem=f"{type(exc).__name__}: {exc}")
+
+    def open_tileset_menu(self, point) -> None:
+        """A right-click on the surface: the header menu, or nothing at all.
+
+        Nothing at all is the common case -- most of the surface is tiles,
+        where a right-click means "erase" on the map and must not mean
+        "rename this sheet" here.
+        """
+        section = self.header_at(point.x(), point.y())
+        if section is None:
+            return
+        menu = self.tileset_menu(section)
+        # Parented, so it was never a top-level orphan -- but it would
+        # outlive the click until the next collection, and this tree counts
+        # widgets to catch exactly that. Freed when it CLOSES, because
+        # `popup` hands the menu back still open. See `_hold_menu`.
+        _hold_menu(menu)
+        self.popup_menu(menu, self.surface.mapToGlobal(point))
+
+    def tileset_menu(self, section: PaletteSection) -> QMenu:
+        """The header menu for one tileset, built and not yet shown.
+
+        Built apart from being shown for two reasons: a check can trigger an
+        entry without touching a modal (law 13), and every entry's
+        ENABLEMENT is a fact about the map that has to be read before the
+        menu appears. A control that is present and refusing has already
+        spent the click by the time the refusal arrives, so an entry that
+        cannot act is disabled and carries the reason in its own label --
+        where it is read on the way to the click rather than after it.
+        """
+        facts = self.facts(section.name)
+        columns = max(1, section.entry.columns)
+        menu = QMenu(self.surface)
+        menu.setToolTipsVisible(True)
+
+        rename = menu.addAction("Rename…")
+        rename.setToolTip(
+            "the key every tileset verb addresses this sheet by, and the "
+            "name its .blitmask carries in its own header")
+        rename.triggered.connect(lambda: self.request_rename(section))
+
+        grow = menu.addAction("Grow…")
+        grow.triggered.connect(lambda: self.request_grow(section))
+        stopped = facts.problem or facts.growth_refusal
+        if stopped:
+            grow.setEnabled(False)
+            grow.setText(f"Grow…  ·  {stopped}")
+            grow.setToolTip(stopped)
+        else:
+            rows = facts.headroom // columns
+            if not facts.blocked_by:
+                # Nothing above it, so the headroom is the rest of the gid
+                # space -- eight figures of rows, which is not a number
+                # anybody is deciding with. The real limit on this one is
+                # the sheet it is pointed at, and the verb owns that.
+                room = "room to the top of the gid space"
+            elif rows:
+                room = f"room for {rows} more row{'' if rows == 1 else 's'}"
+            else:
+                room = f"no room before {facts.blocked_by}"
+            grow.setText(f"Grow…  ·  {room}")
+            grow.setToolTip(
+                f"{facts.headroom} more tiles fit before "
+                f"{facts.blocked_by or 'the top of the gid space'}. Rows are "
+                "the only safe axis: a wider sheet renumbers every tile "
+                "after the first row and repaints the map with nothing "
+                "raised.")
+
+        remove = menu.addAction("Remove")
+        remove.triggered.connect(lambda: self.request_remove(section))
+        if facts.problem:
+            remove.setEnabled(False)
+            remove.setText(f"Remove  ·  {facts.problem}")
+            remove.setToolTip(facts.problem)
+        elif facts.placed:
+            remove.setEnabled(False)
+            remove.setText(
+                f"Remove  ·  {facts.placed} placed tile"
+                f"{' still points' if facts.placed == 1 else 's still point'}"
+                " into it")
+            remove.setToolTip(
+                f"{facts.where}. Clear them first: an orphaned gid raises "
+                "nowhere, it resolves to whatever tileset sits below and "
+                "paints the wrong art.")
+        else:
+            remove.setToolTip(
+                "nothing points into its range. Undo puts it back verbatim, "
+                "every <tile> child with it.")
+        return menu
+
+    def request_rename(self, section: PaletteSection) -> None:
+        """Ask for a new name and emit the rename. See `tileset_requested`."""
+        answer = self.ask(
+            self, f"Rename {section.name}",
+            [Field("to", "Name", "str", section.name,
+                   doc="Unique within the map. No gid moves -- a name is not "
+                       "part of the numbering -- but every tileset verb "
+                       "addresses this sheet by it, and its .blitmask names "
+                       "it in a header the engine refuses to contradict.")],
+            ok_label="Rename")
+        if answer is None:
+            return
+        wanted = str(answer["to"]).strip()
+        if not wanted or wanted == section.name:
+            # Not a refusal: it is the author leaving the name alone. The
+            # verb answers a no-op rename with no inverse, so running it
+            # would put a step in the undo list that undoes nothing.
+            return
+        self.tileset_requested.emit(
+            section.name, "map.tileset.rename",
+            {"name": section.name, "to": wanted})
+
+    def request_grow(self, section: PaletteSection) -> None:
+        """Ask for a row count and emit the growth, or refuse it here.
+
+        REFUSED HERE when it cannot be afforded. `map.tileset.grow` refuses
+        the same case with a much better sentence, and by then the author
+        has spent a dialog on it -- so the headroom is quoted in the form
+        BEFORE they type, and an over-ask never becomes a command at all.
+        """
+        entry, name = section.entry, section.name
+        facts = self.facts(name)
+        stopped = facts.problem or facts.growth_refusal
+        if stopped:
+            self.caption.setText(f"{name}: {stopped}")
+            return
+        columns = max(1, entry.columns)
+        free = facts.headroom // columns
+        room = (f"There is room for {facts.headroom} more "
+                f"({free} row{'' if free == 1 else 's'}) before "
+                f"{facts.blocked_by}." if facts.blocked_by else
+                "Nothing sits above its range, so the only limit is the "
+                "sheet it is pointed at.")
+        note = (
+            f"{name} owns {entry.tile_count} tiles in {columns} columns. "
+            f"{room}\n"
+            "Rows are the only safe axis: a taller sheet at the same width "
+            "adds ids after the last one and moves nothing, while a wider "
+            "one renumbers every tile after the first row.")
+        answer = self.ask(
+            self, f"Grow {name}",
+            [Field("rows", "Rows to add", "str", "1",
+                   doc="How many rows of tiles to add. Negative truncates "
+                       "from the end, which is refused while anything still "
+                       "points into the rows it would drop."),
+             Field("image", "Sheet", "str", entry.source,
+                   doc="The re-cut sheet's path AS WRITTEN INTO THE .tmx, "
+                       "relative to the map. Leave it alone to keep the "
+                       "current image, which can only grow into rows it "
+                       "already has.")],
+            ok_label="Grow", note=note)
+        if answer is None:
+            return
+        raw = str(answer["rows"]).strip()
+        try:
+            rows = int(raw)
+        except ValueError:
+            self.caption.setText(f"{raw!r} is not a number of rows")
+            return
+        if rows == 0:
+            self.caption.setText("0 rows is not a change")
+            return
+        if rows * columns > facts.headroom:
+            self.caption.setText(
+                f"{name} has room for {free} more row"
+                f"{'' if free == 1 else 's'} ({facts.headroom} tiles) before "
+                f"{facts.blocked_by or 'the top of the gid space'}, not "
+                f"{rows}. Growing past it would overlap a range pytmx "
+                "resolves two contradictory ways.")
+            return
+        count = entry.tile_count + rows * columns
+        if count <= 0:
+            self.caption.setText(
+                f"{name} owns {entry.tile_count} tiles, so {rows} rows would "
+                "leave it none. Remove it instead, which checks first that "
+                "nothing still points into its range.")
+            return
+        args = {"name": name, "tile_count": count}
+        image = str(answer["image"]).strip()
+        if image and image != entry.source:
+            # Only when it CHANGED. The verb measures a new sheet from its
+            # own PNG header; passing dimensions from here would be this
+            # widget telling the file what size it is.
+            args["image"] = image
+        self.tileset_requested.emit(name, "map.tileset.grow", args)
+
+    def request_remove(self, section: PaletteSection) -> None:
+        """Emit the removal, or say what is still painted with it.
+
+        NO CONFIRMATION. Undo here is exact and byte-for-byte -- the inverse
+        restores the element verbatim, every `<tile>` child with it -- and
+        `editor/ui/ask.py` reserves a yes/no for what undo cannot reach.
+        What DOES have to be said first is the count: the verb refuses while
+        gids still point into the range, and a refusal the author could have
+        read before clicking is a click taken from them.
+        """
+        name = section.name
+        facts = self.facts(name)
+        if facts.problem:
+            self.caption.setText(f"{name}: {facts.problem}")
+            return
+        if facts.placed:
+            self.caption.setText(
+                f"{name} still has {facts.placed} placed tile"
+                f"{'' if facts.placed == 1 else 's'} ({facts.where}). Clear "
+                "them first -- an orphaned gid raises nowhere, it just "
+                "paints the wrong art.")
+            return
+        self.tileset_requested.emit(name, "map.tileset.remove",
+                                    {"name": name, "force": False})
 
     # -- selection ---------------------------------------------------------
 

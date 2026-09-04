@@ -251,6 +251,19 @@ try:
     documentation = describe_all()
     expect("the generated docs say the engine cannot run one",
            "NOTHING RUNS THIS YET" in documentation, True)
+    # The verb summary is a SECOND copy of the panel's banner, and it rotted
+    # in exactly the same way and outlived the fix to the first one: it was
+    # still telling every reader of docs/COMMANDS.md that the engine has no
+    # collision detection and no object-layer reader, months after both
+    # shipped. Pin the same two absences here that NOT_WIRED pins below, so
+    # the mirror cannot drift away from the face of the panel again.
+    expect("...and the summary does not claim a gap the engine has closed",
+           [phrase for phrase in
+            ("no collision detection", "no reader for the object layer")
+            if phrase in documentation], [])
+    expect("...naming instead what really is unread",
+           "pyoneer_trigger" in documentation
+           and "MAP_TRIGGER_*" in documentation, True)
     expect("removing a field is marked destructive",
            registered["map.object.action.unset"].destructive, True)
 
@@ -466,10 +479,41 @@ try:
     shown = [label.text() for label in dock.findChildren(QLabel)]
     expect("the warning is in a visible label, not a docstring",
            NOT_WIRED in shown, True)
-    expect("and it names what is missing rather than hedging",
-           all(phrase in NOT_WIRED for phrase in
-               ("no collision detection", "event bus", "MAP_TRIGGER_",
-                "skips object layers")), True)
+    # BOTH halves of the banner's contract, because a banner has two ways to
+    # be wrong and only one of them used to be checked.
+    #
+    # Half one, which was always here: it must NAME what is missing. A banner
+    # that hedges ("some of this may not work yet") is a banner nobody can act
+    # on. The three phrases below are the gap as it stands at HEAD.
+    expect("it names what is missing rather than hedging",
+           [phrase for phrase in
+            ("MAP_TRIGGER_", "pyoneer_trigger", "event bus")
+            if phrase not in NOT_WIRED], [])
+    # Half two, which is new and is why this pin was edited: it must not claim
+    # a gap the engine has already closed. Both of these were on the face of
+    # the panel while the renderer was already doing them, and an OVERSTATED
+    # gap costs exactly what an understated one costs -- it sends a reader off
+    # to build something that is there. The absence is pinned so re-adding
+    # either phrase goes red instead of reading as extra honesty.
+    expect("...and does not claim a gap the engine has already closed",
+           [phrase for phrase in
+            ("no collision detection", "skips object layers")
+            if phrase in NOT_WIRED], [])
+    # ...and the absence above is only meaningful while those two really ARE
+    # closed, so assert the closing rather than trusting the day it was
+    # measured. Read as text rather than imported: `scripts/core/renderer.py`
+    # drags pygame in, and this check must still SKIP cleanly on a machine
+    # that has the editor's requirements and not the engine's.
+    with open(os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "scripts", "core", "renderer.py"),
+            encoding="utf-8") as handle:
+        renderer_source = handle.read()
+    expect("the renderer really does bake a collision field "
+           "(LayerRenderer.__bind_map)",
+           "field_from_map(tmx_data)" in renderer_source, True)
+    expect("...and really does spawn an object layer's objects "
+           "(LayerRenderer.__prepare_entity_layers)",
+           "spawn_objects(tmx_data" in renderer_source, True)
 
     expect("an object with no declaration cannot be un-declared",
            dock.remove.isEnabled(), False)

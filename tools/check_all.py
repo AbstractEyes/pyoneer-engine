@@ -56,10 +56,21 @@ CHECKS = [
     ("lifecycle", "a body declares itself gone, and is really unbound, undrawn "
                   "and forgotten"),
     ("flow", "action routing, the step sequencer, and the agency it gives back"),
+    ("ops", "the event-script vocabulary: every gate the reader closes, "
+            "and the step machine that runs what it lets through"),
+    ("event_docs", "EVENTS.md is generated, and every runtime and "
+                   "reachability row in it was measured, not claimed"),
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
     ("window_events", "os window events translate, route, and still fan out"),
     ("editor", "scopes, command stream, exact undo, genre rules, requests"),
+    ("relay", "one scope's vocabulary and no more: the slice is exactly what "
+              "the address accepts, the unscoped rendering is unchanged, a "
+              "scoped bundle is a quarter the size, and a scope no verb "
+              "accepts is refused by name"),
+    ("script_verbs", "the script.* verbs: exact inverses through nested elif "
+                     "arms, id-only addressing, and every refusal the reader "
+                     "would make at load"),
     ("paint", "strokes, stamps, flood fill, one drag is one transaction"),
     ("autotile", "corner masks, terrain recovery, diagonal policy"),
     ("collision", "three-level resolution, .blitmask round trip, mask encoding"),
@@ -86,6 +97,16 @@ CHECKS = [
     ("actions_panel", "trigger authoring, action verbs, exact inverses"),
     ("behavior_ui", "behavior checklist from the registry, refusals at "
                     "authoring time, exact undo"),
+    ("object_editor", "the entity editing screen: one window re-aimed, the "
+                      "field still in flight committed on the way out, and "
+                      "the snap preference reaching the canvas"),
+    ("script_editor", "the event screen: the picker IS the registry, a pick "
+                      "opens the op's own derived form, and a branching "
+                      "script built by hand alone really runs"),
+    ("hierarchy", "the tree behaves like a tree: a double-click centres the "
+                  "canvas on an object, a right-click menu greys what it "
+                  "cannot do and says why in its own label, and cut/copy/"
+                  "paste is one command and one undo"),
     ("editor_ui", "panels build, canvas edits are commands, a palette click "
                   "in collision mode masks the tile, responses apply"),
     ("palette", "every tileset stacked in one scroll, a stamp clamped to the "

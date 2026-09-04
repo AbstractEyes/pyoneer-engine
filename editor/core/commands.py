@@ -240,6 +240,25 @@ def all_verbs() -> list[Verb]:
     return [_REGISTRY[k] for k in sorted(_REGISTRY)]
 
 
+def verbs_accepting(scopes: Sequence[Scope]) -> list[Verb]:
+    """Every verb that would let at least one of `scopes` through.
+
+    THE SAME TEST `Verb.validate` RUNS, deliberately reusing
+    `Scope.matches` against the verb's own `scopes` patterns rather than
+    re-deriving "what is a layer verb" from the name. A filter that agreed
+    with the validator by coincidence would ship a vocabulary whose verbs
+    are refused on arrival -- the exact failure a generated interface doc
+    exists to make impossible.
+
+    An empty `scopes` selects NOTHING, not everything: this answers "which
+    verbs accept these addresses", and the answer for no addresses is none.
+    Callers that mean "the whole registry" call `all_verbs`.
+    """
+    return [spec for spec in all_verbs()
+            if any(scope.matches(pattern)
+                   for scope in scopes for pattern in spec.scopes)]
+
+
 def verb_names() -> list[str]:
     return sorted(_REGISTRY)
 
@@ -420,14 +439,30 @@ def _auto_label(batch: list[Command]) -> str:
 # Generated documentation
 # --------------------------------------------------------------------------
 
-def describe_all(*, title: str = "Command vocabulary") -> str:
-    """Render the whole registry as markdown.
+def describe_all(*, title: str = "Command vocabulary",
+                 scopes: Sequence[Scope] = ()) -> str:
+    """Render the registry as markdown -- all of it, or one scope's slice.
 
     This is what goes into every request bundle. It is generated from the
     registry rather than written by hand precisely because a hand-written
     interface doc is the thing most likely to drift out from under an AI
     that trusts it.
+
+    `scopes` narrows the output to the verbs those addresses accept, through
+    `verbs_accepting` -- the same `Scope.matches` test `Verb.validate` runs.
+    A request about one tile layer needs 8 of the 37 verbs, and shipping the
+    other 29 costs about 5,000 tokens of vocabulary the responder cannot
+    legally use on that address.
+
+    **EMPTY `scopes` IS BYTE-IDENTICAL TO THE UNSCOPED OUTPUT**, and that is
+    load-bearing rather than tidy: `tools/check_docs.py` regenerates
+    `docs/COMMANDS.md` from this function and compares it byte for byte, so
+    any difference on the default path turns the suite red for a change that
+    only meant to add a filter. `tools/check_relay.py` asserts the identity
+    against a copy taken before the keyword existed.
     """
+    wanted = tuple(scopes)
+    selected = verbs_accepting(wanted) if wanted else all_verbs()
     out: list[str] = [
         f"# {title}",
         "",
@@ -446,10 +481,21 @@ def describe_all(*, title: str = "Command vocabulary") -> str:
         "- Types are checked and never coerced. `\"5\"` is not `5`.",
         "- A response is one transaction. One bad line rolls back the rest.",
         "",
-        f"{len(_REGISTRY)} verbs:",
+        f"{len(selected)} verbs:",
         "",
     ]
-    for spec in all_verbs():
+    if wanted:
+        # Only ever appended on the scoped path, so the default rendering
+        # stays byte-identical to what `docs/COMMANDS.md` was generated from.
+        out[-2:-2] = [
+            "Scoped to " + ", ".join(f"`{s}`" for s in wanted) + ". These are",
+            "the only verbs that address it -- every other verb in this",
+            "editor is refused on this scope, so a response that reaches for",
+            "one is rejected whole. If what you need cannot be said with",
+            "these, say so in the reply rather than improvising a verb.",
+            "",
+        ]
+    for spec in selected:
         out.append(f"### `{spec.name}`")
         out.append("")
         out.append(spec.summary + ("  **Destructive.**" if spec.destructive else ""))

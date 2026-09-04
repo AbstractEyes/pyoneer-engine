@@ -17,7 +17,7 @@ have been written, passed, and never run by the suite. A check that
 did not run has proved nothing, which is why an absent optional
 dependency reports `SKIP` and never `PASS`.
 
-51 checks:
+58 checks:
 
 | check | roster line | module says |
 |---|---|---|
@@ -49,10 +49,14 @@ dependency reports `SKIP` and never `PASS`.
 | `action` | discrete verbs, cooldowns, the per-entity record, no bus | Verify the action component system: the edge, the clock, and the record. |
 | `lifecycle` | a body declares itself gone, and is really unbound, undrawn and forgotten | Verify entity control: a body declares itself gone, and is really removed. |
 | `flow` | action routing, the step sequencer, and the agency it gives back | Verify scene and GUI flow: where a firing goes, and what step we are on. |
+| `ops` | the event-script vocabulary: every gate the reader closes, and the step machine that runs what it lets through | Verify the event-script vocabulary: what it refuses, and what it runs. |
+| `event_docs` | EVENTS.md is generated, and every runtime and reachability row in it was measured, not claimed | Generate `docs/EVENTS.md`, and prove it cannot describe an op that does not run. |
 | `window` | drag, close, focus, visibility matrix | Verify GameWindow drag, close and focus behaviour with synthetic input.""" |
 | `window_close` | visibility cascade, F1 toggle, typing suppresses movement | Close/reopen, visibility cascade, and text-capture gating. |
 | `window_events` | os window events translate, route, and still fan out | Verify that OS window events translate, route, and still fan out. |
 | `editor` | scopes, command stream, exact undo, genre rules, requests | Verify the editor's headless core. |
+| `relay` | one scope's vocabulary and no more: the slice is exactly what the address accepts, the unscoped rendering is unchanged, a scoped bundle is a quarter the size, and a scope no verb accepts is refused by name | Verify the scoped relay -- the piecemeal door between the author and an AI. |
+| `script_verbs` | the script.* verbs: exact inverses through nested elif arms, id-only addressing, and every refusal the reader would make at load | Verify the `script.*` verbs: what they write, what they refuse, what undo |
 | `paint` | strokes, stamps, flood fill, one drag is one transaction | Verify the tile-painting logic. |
 | `autotile` | corner masks, terrain recovery, diagonal policy | Verify directional fill (autotile). |
 | `collision` | three-level resolution, .blitmask round trip, mask encoding | Verify the collision data model and the .blitmask format. |
@@ -64,6 +68,9 @@ dependency reports `SKIP` and never `PASS`.
 | `collision_field` | map load bakes passability and every body is handed it | Prove the map's passability actually reaches the bodies that move on it. |
 | `actions_panel` | trigger authoring, action verbs, exact inverses | Assert the authoring surfaces for map events and the collision tileset. |
 | `behavior_ui` | behavior checklist from the registry, refusals at authoring time, exact undo | The editor's behavior surface: the checklist, the refusals, the undo. |
+| `object_editor` | the entity editing screen: one window re-aimed, the field still in flight committed on the way out, and the snap preference reaching the canvas | The entity editing screen: what it shows, what it emits, what it saves. |
+| `script_editor` | the event screen: the picker IS the registry, a pick opens the op's own derived form, and a branching script built by hand alone really runs | The event screen: what it offers, what it inserts, and what it can build. |
+| `hierarchy` | the tree behaves like a tree: a double-click centres the canvas on an object, a right-click menu greys what it cannot do and says why in its own label, and cut/copy/paste is one command and one undo | The hierarchy tree as a CONTROL: double-click, right-click, cut/copy/paste. |
 | `editor_ui` | panels build, canvas edits are commands, a palette click in collision mode masks the tile, responses apply | Drive the editor's Qt window offscreen and assert it holds together. |
 | `palette` | every tileset stacked in one scroll, a stamp clamped to the sheet it started in, a selection addressed by name so no command can move it, and an import that crops the region it was shown into a grid the engine cuts the same way | The stacked tile palette, and importing a tileset by selecting a region. |
 | `demos` | three prototype games boot headless and answer injected input | Boot every demo headless, drive it with injected input, and assert what it |

@@ -5,7 +5,7 @@
 
 > Triggers on the selected object -- and, on screen, the fact that none run.
 
-`editor.ui.actions_panel` · 362 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.actions_panel` · 384 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,35 +13,35 @@
 
 ## Module constants
 
-- `editor/ui/actions_panel.py:53` `NOT_WIRED` #TAG:NOT_WIRED
-- `editor/ui/actions_panel.py:62` `NOT_WIRED_DETAIL` #TAG:NOT_WIRED_DETAIL
+- `editor/ui/actions_panel.py:66` `NOT_WIRED` #TAG:NOT_WIRED
+- `editor/ui/actions_panel.py:77` `NOT_WIRED_DETAIL` #TAG:NOT_WIRED_DETAIL
 
 ## Functions
 
-- `editor/ui/actions_panel.py:83` `declared_keys(obj: Any) -> tuple[str, ...]` #TAG:declared_keys
+- `editor/ui/actions_panel.py:105` `declared_keys(obj: Any) -> tuple[str, ...]` #TAG:declared_keys
   - Which map-event fields this object actually authors, in FIELDS order.
-- `editor/ui/actions_panel.py:97` `removal_commands(scope: Scope, keys: Iterable[str]) -> list[Command]` #TAG:removal_commands
+- `editor/ui/actions_panel.py:119` `removal_commands(scope: Scope, keys: Iterable[str]) -> list[Command]` #TAG:removal_commands
   - One `map.object.action.unset` per declared field.
-- `editor/ui/actions_panel.py:116` `describe_actions(session, scope: Scope) -> Inspection` #TAG:describe_actions
+- `editor/ui/actions_panel.py:138` `describe_actions(session, scope: Scope) -> Inspection` #TAG:describe_actions
   - What this panel shows for one scope. Never raises.
-- `editor/ui/actions_panel.py:132` `_describe(session, scope: Scope, layer: Any, obj: Any) -> Inspection` #TAG:actions_panel._describe
-- `editor/ui/actions_panel.py:174` `_region_section(document, obj: Any, event: map_events.MapEvent) -> Section` #TAG:_region_section
+- `editor/ui/actions_panel.py:154` `_describe(session, scope: Scope, layer: Any, obj: Any) -> Inspection` #TAG:actions_panel._describe
+- `editor/ui/actions_panel.py:196` `_region_section(document, obj: Any, event: map_events.MapEvent) -> Section` #TAG:_region_section
   - Where this trigger is, read-only, with the traps named.
-- `editor/ui/actions_panel.py:210` `_anchor_section(scope: Scope, layer_name: str, anchor: str) -> Section` #TAG:_anchor_section
+- `editor/ui/actions_panel.py:232` `_anchor_section(scope: Scope, layer_name: str, anchor: str) -> Section` #TAG:_anchor_section
   - `pyoneer_trigger_layer`, which lives on the objectgroup, not the object.
 
 ## Classes
 
 ### `class ActionsDock(ScopedDock)` #TAG:ActionsDock
 
-`editor/ui/actions_panel.py:250`–`361`
+`editor/ui/actions_panel.py:272`–`383`
 
 > The trigger declaration on the selected object, editable.
 
-- `editor/ui/actions_panel.py:255` `build_content(self) -> QWidget` #TAG:ActionsDock.build_content
-- `editor/ui/actions_panel.py:297` `refresh(self) -> None` #TAG:ActionsDock.refresh
-- `editor/ui/actions_panel.py:328` `__on_command(self, command) -> None` #TAG:ActionsDock.__on_command
-- `editor/ui/actions_panel.py:334` `__on_add_trigger(self) -> None` #TAG:ActionsDock.__on_add_trigger
-- `editor/ui/actions_panel.py:338` `__on_add_blocks(self) -> None` #TAG:ActionsDock.__on_add_blocks
-- `editor/ui/actions_panel.py:342` `__on_remove(self) -> None` #TAG:ActionsDock.__on_remove
+- `editor/ui/actions_panel.py:277` `build_content(self) -> QWidget` #TAG:ActionsDock.build_content
+- `editor/ui/actions_panel.py:319` `refresh(self) -> None` #TAG:ActionsDock.refresh
+- `editor/ui/actions_panel.py:350` `__on_command(self, command) -> None` #TAG:ActionsDock.__on_command
+- `editor/ui/actions_panel.py:356` `__on_add_trigger(self) -> None` #TAG:ActionsDock.__on_add_trigger
+- `editor/ui/actions_panel.py:360` `__on_add_blocks(self) -> None` #TAG:ActionsDock.__on_add_blocks
+- `editor/ui/actions_panel.py:364` `__on_remove(self) -> None` #TAG:ActionsDock.__on_remove
   - Act, and put the reassurance where it can be read afterwards.

@@ -5,7 +5,7 @@
 
 > The prompt strip -- a comment box at the bottom of every panel.
 
-`editor.ui.prompt` · 105 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.prompt` · 202 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,12 +15,18 @@
 
 ### `class PromptStrip(QWidget)` #TAG:PromptStrip
 
-`editor/ui/prompt.py:29`–`102`
+`editor/ui/prompt.py:44`–`199`
 
 > One line of input, bound to whatever scope its panel is showing.
 
-- `editor/ui/prompt.py:34` `__init__(self, session, scope: Scope, parent: QWidget | None=None)` #TAG:PromptStrip.__init__
-- `editor/ui/prompt.py:73` `scope(self) -> Scope` #TAG:PromptStrip.scope
-- `editor/ui/prompt.py:76` `set_scope(self, scope: Scope) -> None` #TAG:PromptStrip.set_scope
-- `editor/ui/prompt.py:84` `stage(self) -> None` #TAG:PromptStrip.stage
-- `editor/ui/prompt.py:93` `refresh(self) -> None` #TAG:PromptStrip.refresh
+- `editor/ui/prompt.py:50` `__init__(self, session, scope: Scope, parent: QWidget | None=None)` #TAG:PromptStrip.__init__
+- `editor/ui/prompt.py:111` `scope(self) -> Scope` #TAG:PromptStrip.scope
+- `editor/ui/prompt.py:114` `set_scope(self, scope: Scope) -> None` #TAG:PromptStrip.set_scope
+- `editor/ui/prompt.py:122` `stage(self) -> None` #TAG:PromptStrip.stage
+- `editor/ui/prompt.py:133` `ask(self) -> str | None` #TAG:PromptStrip.ask
+  - Ship THIS note as its own scoped bundle, now. Returns its path.
+- `editor/ui/prompt.py:165` `__shown(self, path: str) -> str` #TAG:PromptStrip.__shown
+  - The bundle path as the author would type it, when that is
+- `editor/ui/prompt.py:176` `notify(self, message: str, *, seconds: float=8.0) -> None` #TAG:PromptStrip.notify
+  - Report to the window's status bar, and always remember it.
+- `editor/ui/prompt.py:190` `refresh(self) -> None` #TAG:PromptStrip.refresh

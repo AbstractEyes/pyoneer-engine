@@ -5,7 +5,7 @@
 
 > The command stream -- the editor's only way to change anything.
 
-`editor.core.commands` · 478 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.commands` · 524 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -18,11 +18,13 @@
   - Register a verb.
 - `editor/core/commands.py:232` `verb(name: str) -> Verb` #TAG:verb
 - `editor/core/commands.py:239` `all_verbs() -> list[Verb]` #TAG:all_verbs
-- `editor/core/commands.py:243` `verb_names() -> list[str]` #TAG:verb_names
-- `editor/core/commands.py:406` `@command('noop', summary='Does nothing. The inverse of a command that changed nothing.', scopes=['project']) _noop(project: Any, cmd: Command) -> None` #TAG:_noop
-- `editor/core/commands.py:410` `_auto_label(batch: list[Command]) -> str` #TAG:_auto_label
-- `editor/core/commands.py:423` `describe_all(*, title: str='Command vocabulary') -> str` #TAG:commands.describe_all
-  - Render the whole registry as markdown.
+- `editor/core/commands.py:243` `verbs_accepting(scopes: Sequence[Scope]) -> list[Verb]` #TAG:verbs_accepting
+  - Every verb that would let at least one of `scopes` through.
+- `editor/core/commands.py:262` `verb_names() -> list[str]` #TAG:verb_names
+- `editor/core/commands.py:425` `@command('noop', summary='Does nothing. The inverse of a command that changed nothing.', scopes=['project']) _noop(project: Any, cmd: Command) -> None` #TAG:_noop
+- `editor/core/commands.py:429` `_auto_label(batch: list[Command]) -> str` #TAG:_auto_label
+- `editor/core/commands.py:442` `describe_all(*, title: str='Command vocabulary', scopes: Sequence[Scope]=()) -> str` #TAG:commands.describe_all
+  - Render the registry as markdown -- all of it, or one scope's slice.
 
 ## Classes
 
@@ -55,31 +57,31 @@
 
 ### `@dataclass class Transaction` #TAG:Transaction
 
-`editor/core/commands.py:252`–`265`
+`editor/core/commands.py:271`–`284`
 
 > A group of commands applied together, undone together.
 
-- `editor/core/commands.py:260` `__str__(self) -> str` #TAG:Transaction.__str__
-- `editor/core/commands.py:264` `summary_lines(self) -> list[str]` #TAG:Transaction.summary_lines
+- `editor/core/commands.py:279` `__str__(self) -> str` #TAG:Transaction.__str__
+- `editor/core/commands.py:283` `summary_lines(self) -> list[str]` #TAG:Transaction.summary_lines
 
 ### `class CommandStream` #TAG:CommandStream
 
-`editor/core/commands.py:268`–`397`
+`editor/core/commands.py:287`–`416`
 
 > Applies commands to a project and remembers how to take them back.
 
-- `editor/core/commands.py:276` `__init__(self, project: Any)` #TAG:CommandStream.__init__
-- `editor/core/commands.py:284` `subscribe(self, fn: Callable[[Transaction, str], None]) -> None` #TAG:CommandStream.subscribe
+- `editor/core/commands.py:295` `__init__(self, project: Any)` #TAG:CommandStream.__init__
+- `editor/core/commands.py:303` `subscribe(self, fn: Callable[[Transaction, str], None]) -> None` #TAG:CommandStream.subscribe
   - `fn(transaction, action)` where action is apply|undo|redo.
-- `editor/core/commands.py:288` `__announce(self, transaction: Transaction, action: str) -> None` #TAG:CommandStream.__announce
-- `editor/core/commands.py:294` `apply(self, commands: Command | Iterable[Command], *, label: str | None=None, source: str='editor') -> Transaction` #TAG:CommandStream.apply
+- `editor/core/commands.py:307` `__announce(self, transaction: Transaction, action: str) -> None` #TAG:CommandStream.__announce
+- `editor/core/commands.py:313` `apply(self, commands: Command | Iterable[Command], *, label: str | None=None, source: str='editor') -> Transaction` #TAG:CommandStream.apply
   - Apply one or more commands atomically.
-- `editor/core/commands.py:325` `__wrap(self, exc: Exception, cmd: Command, index: int, total: int, rolled: bool) -> PyoneerCommandApplyError` #TAG:CommandStream.__wrap
-- `editor/core/commands.py:338` `__rollback(self, transaction: Transaction) -> bool` #TAG:CommandStream.__rollback
-- `editor/core/commands.py:352` `@property can_undo(self) -> bool` #TAG:CommandStream.can_undo
-- `editor/core/commands.py:356` `@property can_redo(self) -> bool` #TAG:CommandStream.can_redo
-- `editor/core/commands.py:359` `undo(self) -> Transaction | None` #TAG:CommandStream.undo
-- `editor/core/commands.py:372` `redo(self) -> Transaction | None` #TAG:CommandStream.redo
-- `editor/core/commands.py:388` `history(self) -> list[Transaction]` #TAG:CommandStream.history
-- `editor/core/commands.py:391` `to_jsonl(self) -> str` #TAG:CommandStream.to_jsonl
+- `editor/core/commands.py:344` `__wrap(self, exc: Exception, cmd: Command, index: int, total: int, rolled: bool) -> PyoneerCommandApplyError` #TAG:CommandStream.__wrap
+- `editor/core/commands.py:357` `__rollback(self, transaction: Transaction) -> bool` #TAG:CommandStream.__rollback
+- `editor/core/commands.py:371` `@property can_undo(self) -> bool` #TAG:CommandStream.can_undo
+- `editor/core/commands.py:375` `@property can_redo(self) -> bool` #TAG:CommandStream.can_redo
+- `editor/core/commands.py:378` `undo(self) -> Transaction | None` #TAG:CommandStream.undo
+- `editor/core/commands.py:391` `redo(self) -> Transaction | None` #TAG:CommandStream.redo
+- `editor/core/commands.py:407` `history(self) -> list[Transaction]` #TAG:CommandStream.history
+- `editor/core/commands.py:410` `to_jsonl(self) -> str` #TAG:CommandStream.to_jsonl
   - Every applied command, in order, as a replayable script.

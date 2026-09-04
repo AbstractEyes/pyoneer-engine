@@ -32,7 +32,7 @@ across 201 files — `tools/` 38,102, `scripts/` 20,068, `editor/` 17,348.
 | | |
 |---|---|
 | Runs | yes — headless or windowed, on pygame 2.6 / Python 3.11 |
-| Tested | 51 check tools plus a frame-level regression harness |
+| Tested | 54 check tools plus a frame-level regression harness |
 | Stable API | **no.** Names are still moving. See [Known rough edges](#known-rough-edges) |
 | Docs | [`docs/`](docs/), reconciled against the code and layered: generated files regenerate from the registry that executes them, hand-written ones carry a dated stamp, and finished plans move to [`docs/history/`](docs/history/) with an exemption banner |
 
@@ -325,7 +325,7 @@ Design and reasoning: [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md).
 .venv/Scripts/python.exe tools/check_all.py
 ```
 
-51 checks plus a frame-level drift comparison, one exit code. They are not unit
+54 checks plus a frame-level drift comparison, one exit code. They are not unit
 tests; each one boots or drives real engine code and asserts measured
 behaviour — token counts, dispatch counts, frame hashes, pixel equality.
 
@@ -400,11 +400,6 @@ the editor deleted.
 Stated plainly, because most of them are recorded with measurements in
 [`docs/`](docs/):
 
-- **Growing and renaming a tileset are script-only.** `map.tileset.grow` and
-  `map.tileset.rename` are registered verbs with exact inverses and refusals
-  that have teeth, and no control in the window calls either — so the tileset
-  the editor can grow, it can only grow from a response bundle or a Python
-  driver. `docs/NEXT.md` carries the grep that measures it.
 - **A collection-of-images tileset draws wrong in the editor.** A `<tileset>`
   built from `<tile><image/></tile>` children reads correctly in `MapDocument`
   and renders correctly through pytmx; the editor's atlas draws procedural

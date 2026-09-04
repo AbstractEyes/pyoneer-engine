@@ -58,6 +58,7 @@ SCOPE_KINDS: tuple[str, ...] = (
     "field",     # a column inside a table
     "assets",    # the art/audio pool; terminal
     "code",      # source the request may touch; terminal, name is a label
+    "script",    # an event script under data/project/scripts/, by its id
 )
 
 # Kinds that take no name (`project`, not `project:something`).

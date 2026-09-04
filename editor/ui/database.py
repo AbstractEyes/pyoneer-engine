@@ -32,16 +32,60 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from editor.core.commands import Command
+from editor.core.commands import Command, verb
 from editor.core.inspect import Field, describe
 from editor.core.scope import Scope
 from editor.ui.ask import ask_form
 from editor.ui.fields import InspectionView
 from editor.ui.prompt import PromptStrip
 
+_TRUE = ("true", "1", "yes", "on")
+_FALSE = ("false", "0", "no", "off")
+
+
+def column_default(text: str, type_name: str) -> object:
+    """Read a typed default out of a text box, or refuse to guess.
+
+    The form seam hands back a string for every row, and
+    `table.column.add` declares `default` as `object` -- so nothing between
+    the box and the file would notice `"7"` sitting in an int column. Every
+    row created afterwards takes a str where the schema says int, and the
+    first thing to notice is arithmetic inside a behavior, months later.
+
+    So this refuses instead. Raising `ValueError` rather than returning a
+    plausible zero is the point: the caller turns it into a message that
+    names what was typed.
+    """
+    text = str(text).strip()
+    if type_name == "str":
+        return text
+    if type_name == "bool":
+        if text.lower() in _TRUE:
+            return True
+        if text.lower() in _FALSE:
+            return False
+        raise ValueError(
+            f"a bool column's default is true or false, not {text!r}")
+    if type_name in ("int", "float"):
+        try:
+            return int(text) if type_name == "int" else float(text)
+        except ValueError:
+            raise ValueError(
+                f"{text!r} is not a valid {type_name}, so it cannot be the "
+                f"default of a {type_name} column") from None
+    raise ValueError(f"unknown column type {type_name!r}")
+
 
 class TablePage(QWidget):
-    """One table: its rows on the left, the selected row's fields on the right."""
+    """One table: its rows on the left, the selected row's fields on the right.
+
+    Two runs of buttons, and the split is deliberate: the left run edits
+    ROWS in the selected table, the right run edits the table's own SHAPE.
+    Growing the schema is a normal editing act here -- the file is the
+    schema authority, not the genre pack -- and the Problems dock prints
+    `table.column.add <name>` as the fix for a missing genre column, which
+    is only a fix if something in the window can run it.
+    """
 
     command_requested = Signal(object)
     reveal_requested = Signal(str)
@@ -73,6 +117,20 @@ class TablePage(QWidget):
                        self.remove_button):
             buttons.addWidget(button)
         buttons.addStretch(1)
+
+        # Across the stretch, because these two act on the TABLE and the
+        # three above act on the selected row. `table.column.add` is what
+        # the Problems dock prints as the fix for a missing genre column
+        # and it had no caller in the window at all, so the one stat the
+        # pack did not declare could not be created from the GUI -- both
+        # `table.row.add` and `table.row.set` refuse an unknown column,
+        # correctly, and that left no way in.
+        self.add_column_button = QPushButton("Add column…")
+        self.add_column_button.clicked.connect(self.__on_add_column)
+        self.remove_column_button = QPushButton("Remove column…")
+        self.remove_column_button.clicked.connect(self.__on_remove_column)
+        for button in (self.add_column_button, self.remove_column_button):
+            buttons.addWidget(button)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
@@ -131,13 +189,32 @@ class TablePage(QWidget):
             "add a row" if exists else
             f"create the {self.table_name} table first")
 
-        for button, verb in ((self.duplicate_button, "copy"),
+        # `word`, not `verb`: `verb` is the registry lookup this module now
+        # imports, and a loop variable of that name makes it unreachable
+        # from anywhere in this method.
+        for button, word in ((self.duplicate_button, "copy"),
                              (self.remove_button, "delete")):
             button.setEnabled(selected)
             button.setToolTip(
-                f"{verb} the selected row" if selected else
-                (f"select a row to {verb} it" if exists
+                f"{word} the selected row" if selected else
+                (f"select a row to {word} it" if exists
                  else f"create the {self.table_name} table first"))
+
+        self.add_column_button.setEnabled(exists)
+        self.add_column_button.setToolTip(
+            "add a column; every existing row takes its default" if exists
+            else f"create the {self.table_name} table first")
+
+        # A table with no columns is reachable -- `table.create` with an
+        # explicit empty `columns` makes one -- and a Remove that can only
+        # open an empty picker is a dead click.
+        columned = exists and bool(
+            self.session.project.table(self.table_name).columns)
+        self.remove_column_button.setEnabled(columned)
+        self.remove_column_button.setToolTip(
+            "remove a column and every value in it" if columned else
+            (f"the {self.table_name} table has no columns yet" if exists
+             else f"create the {self.table_name} table first"))
 
     def refresh(self) -> None:
         if not self.exists:
@@ -254,6 +331,93 @@ class TablePage(QWidget):
             Scope.of(("table", self.table_name), ("row", doomed))))
         self.status_requested.emit(
             f"deleted {doomed!r} from {self.table_name} — Ctrl+Z brings it back")
+
+    # -- schema ------------------------------------------------------------
+
+    #: A column name is a file-format string too, and a louder one than a
+    #: row id: a behaviour parameter declaring source="actors" reads the
+    #: column BY THIS NAME, and a rename does not raise -- the parameter
+    #: quietly takes its declared default instead.
+    _COLUMN_DOC = ("snake_case, stable. A behaviour parameter with "
+                   "source=\"actors\" reads the column by this name; rename "
+                   "it later and that parameter silently takes its default.")
+
+    def __on_add_column(self) -> None:
+        """The fix the Problems dock prints, as something you can click.
+
+        A genre column the project has not got is reported as
+        `table.column.add <name>`, verbatim, on screen. The verb existed,
+        the dock spelled it out, and nothing in the window could run it --
+        so a stat the pack did not declare could not be created here at
+        all, because `table.row.add` and `table.row.set` both refuse an
+        unknown column, correctly, and that was the only other way in.
+        """
+        if not self.exists:
+            return
+        # From the registry, not retyped: a control that offers a type the
+        # verb would reject is a refusal the author cannot understand.
+        types = tuple(verb("table.column.add").param("type").choices)
+        answer = self.ask(
+            self, f"New {self.table_name} column",
+            [Field("name", "Column name", "str", "", doc=self._COLUMN_DOC),
+             Field("type", "Holds", "choice", types[0], choices=types,
+                   doc="Every value in the column is checked against this, "
+                       "the default below included."),
+             Field("default", "Value for existing rows", "str", "0",
+                   doc="Read in the column's own type: a number for int or "
+                       "float, true/false for bool, the text itself for "
+                       "str. Something that does not read is refused, not "
+                       "stored as text."),
+             Field("doc", "What it means", "str", "",
+                   doc="One line. It is what the next author -- or the "
+                       "next model -- has to go on.")],
+            ok_label="Add the column")
+        if answer is None or not answer["name"]:
+            return
+        try:
+            default = column_default(answer["default"], answer["type"])
+        except ValueError as exc:
+            # A report, not a dialog, and not a shrug either: the other
+            # branch stores "fast" in a float column because it was typed
+            # into a text box, and nothing downstream ever notices.
+            self.status_requested.emit(str(exc))
+            return
+        self.command_requested.emit(Command(
+            "table.column.add", Scope.of(("table", self.table_name)),
+            {"name": answer["name"], "type": answer["type"],
+             "doc": answer["doc"], "default": default}))
+
+    def __on_remove_column(self) -> None:
+        if not self.exists:
+            return
+        names = tuple(column.name for column
+                      in self.session.project.table(self.table_name).columns)
+        if not names:
+            return
+        answer = self.ask(
+            self, f"Remove a {self.table_name} column",
+            [Field("name", "Column", "choice", names[0], choices=names,
+                   doc="Every value in it goes too, and comes back exactly "
+                       "on Ctrl+Z -- which is why this asks WHICH one "
+                       "rather than whether you are sure.")],
+            ok_label="Remove the column")
+        if answer is None or not answer["name"]:
+            return
+        # Genre-required columns are offered, and refused by the verb --
+        # which names the genre and says what would break. A picker that
+        # quietly omitted `hp` would leave the author hunting for it.
+        self.command_requested.emit(Command(
+            "table.column.remove",
+            Scope.of(("table", self.table_name), ("field", answer["name"]))))
+        # Measured, not hoped. The signal is a direct connection, so the
+        # command stream has already run or already refused by the time the
+        # emit returns; promising a way back from a removal that never
+        # happened is worse than saying nothing.
+        if self.exists and self.session.project.table(
+                self.table_name).field(answer["name"]) is None:
+            self.status_requested.emit(
+                f"removed column {answer['name']!r} from {self.table_name} "
+                f"— Ctrl+Z brings it and every value back")
 
 
 class DatabaseWindow(QMainWindow):

@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; the behavioural claims are re-measured by tools/check_demos.py and tools/check_prototype.py on every run, and the assertion counts and timings below were measured at the commit that added the story demo -->
+<!-- pyoneer-stamp: hand-written; the behavioural claims are re-measured by tools/check_demos.py and tools/check_prototype.py on every run, and the assertion counts and timings below were measured at the commit that added the story demo. Items 1 and 3 of 'What a demo still has to say in Python' were re-measured on 2026-09-03: the collision anchor is now derived by main.py's feet_anchor and no demo reassigns it, and load_tables() reaches a demo through MainGame, so both items name a smaller and different gap than they used to -->
 
 # Demos -- four prototype games, and what each one proves
 
@@ -277,14 +277,21 @@ an arrow key and a demo that left it `None` would crash inside the frame loop.
 
 These are the real gaps, in the order they cost the most:
 
-1. **`collision_offset` has no authoring surface.** `GameEntity
+1. **`collision_offset` has no authoring surface in the MAP.** `GameEntity
    .collision_offset` defaults to `(0.0, 0.0)`, which is the sprite's
    *top-left* -- for the shipped 44x64 frame, the top of the character's
-   head. A side-on body wants feet, so `SidestepDemo` sets `(22.0, 63.0)` as
-   a class attribute and `DemoGame.load_test_objects` applies it to every
-   spawned entity. There is no `pyoneer_collision_offset` property and no
-   behavior parameter. This is the shortest item on this list and the one
-   most worth closing: it is per-ENTITY data living in per-GAME code.
+   head. A side-on body wants feet, and the demos no longer arrange that
+   privately: `collision_offset` is a constructor keyword on `GameEntity`,
+   `GameAnimatedEntity` and `GamePlayer`, and `main.py`'s `feet_anchor()`
+   DERIVES the centre-bottom anchor from the animation category and declares
+   it in `spawn_arguments()`, which `DemoGame` inherits unchanged. So a demo
+   body is anchored at its feet by the same route the shipped game uses.
+   `SidestepDemo.COLLISION_OFFSET` survives as the hand-typed pair
+   `tools/check_demos.py` measures that derivation AGAINST; nothing applies
+   it. What is still missing is the *authoring* half: there is no
+   `pyoneer_collision_offset` property and no behavior parameter, so a map
+   cannot say that one body is anchored differently from another -- the
+   anchor is derived per animation category, not authored per entity.
 2. **A genre pack supplies the behavior list only through the EDITOR.**
    `editor/genres/*/genre.json` declares
    `layers[].object_classes[].behaviors`, and `map.object.add` materialises
@@ -292,11 +299,17 @@ These are the real gaps, in the order they cost the most:
    and the engine never reads a pack. `demos/mapgen.py` builds its maps in
    Python rather than through the editor's command stream, so it still writes
    the strings itself; every object in these maps spells its list out.
-3. **Nothing reads `data/project/tables/actors.json`.** Every
-   `source="actors"` parameter on `platformer_move` therefore resolves from
-   the object property or the declared default, which is why the side-on
-   demo tunes gravity and jump velocity with `pyoneer_param_*` on the object
-   rather than with an actor row.
+3. **No demo object names an actor row.** The engine reads the tables --
+   `scripts/loaders/table_file.py`'s `load_tables()` is called in
+   `MainGame`, which `DemoGame` inherits, so `LayerRenderer.tables` is
+   populated for a demo exactly as it is for the shipped game. What no demo
+   map writes is `pyoneer_actor` on an object, and without it there is no
+   row to resolve against. Every `source="actors"` parameter on
+   `platformer_move` therefore still falls to the object property or the
+   declared default -- which is why the side-on demo tunes gravity and jump
+   velocity with `pyoneer_param_*` on the object rather than with an actor
+   row. The gap is the map's, not the engine's; it was the engine's until
+   `#TAG:actor_row` shipped.
 4. **A narrative script is per-GAME data living in per-GAME code.** The story
    demo's beats -- the step name, the line shown, the hold -- are a `SCRIPT`
    class attribute, because a `.tmx` object has no property for "what this

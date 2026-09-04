@@ -3,7 +3,7 @@
 
 # `scripts/game/entity/game_entity.py` — tier 2 #TAG:scripts/game/entity/game_entity.py
 
-`scripts.game.entity.game_entity` · 271 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.entity.game_entity` · 297 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -20,37 +20,37 @@
 
 ### `class GameEntity(GameEntitySimple, ABC)` #TAG:GameEntity
 
-`scripts/game/entity/game_entity.py:44`–`236`
+`scripts/game/entity/game_entity.py:44`–`255`
 
-- `scripts/game/entity/game_entity.py:46` `__init__(self, movement_config: dict[str, any]=None, image_path: str='', transform: Transform=Transform())` #TAG:GameEntity.__init__
-- `scripts/game/entity/game_entity.py:94` `@staticmethod __movement_values(movement_config: dict[str, any] | None) -> dict[str, any]` #TAG:GameEntity.__movement_values
+- `scripts/game/entity/game_entity.py:46` `__init__(self, movement_config: dict[str, any]=None, image_path: str='', transform: Transform=Transform(), collision_offset: tuple[float, float]=(0.0, 0.0))` #TAG:GameEntity.__init__
+- `scripts/game/entity/game_entity.py:113` `@staticmethod __movement_values(movement_config: dict[str, any] | None) -> dict[str, any]` #TAG:GameEntity.__movement_values
   - Accept either the entity block or the movement block itself.
-- `scripts/game/entity/game_entity.py:109` `@property started(self) -> bool` #TAG:GameEntity.started
-- `scripts/game/entity/game_entity.py:113` `@property stopped(self) -> bool` #TAG:GameEntity.stopped
-- `scripts/game/entity/game_entity.py:116` `start(self)` #TAG:GameEntity.start
-- `scripts/game/entity/game_entity.py:119` `stop(self)` #TAG:GameEntity.stop
-- `scripts/game/entity/game_entity.py:122` `core_lifecycle_prepare_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:GameEntity.core_lifecycle_prepare_pre
-- `scripts/game/entity/game_entity.py:125` `core_lifecycle_prepare(self, event: Optional[PyoneerEvent]=None) -> Surface` #TAG:GameEntity.core_lifecycle_prepare
-- `scripts/game/entity/game_entity.py:128` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:GameEntity.core_frame_update
-- `scripts/game/entity/game_entity.py:138` `core_lifecycle_dispose(self, event: Optional[PyoneerEvent]=None)` #TAG:GameEntity.core_lifecycle_dispose
-- `scripts/game/entity/game_entity.py:141` `rotate(self, angle: float)` #TAG:GameEntity.rotate
-- `scripts/game/entity/game_entity.py:144` `collision_point(self) -> tuple[float, float]` #TAG:GameEntity.collision_point
+- `scripts/game/entity/game_entity.py:128` `@property started(self) -> bool` #TAG:GameEntity.started
+- `scripts/game/entity/game_entity.py:132` `@property stopped(self) -> bool` #TAG:GameEntity.stopped
+- `scripts/game/entity/game_entity.py:135` `start(self)` #TAG:GameEntity.start
+- `scripts/game/entity/game_entity.py:138` `stop(self)` #TAG:GameEntity.stop
+- `scripts/game/entity/game_entity.py:141` `core_lifecycle_prepare_pre(self, event: Optional[PyoneerEvent]=None)` #TAG:GameEntity.core_lifecycle_prepare_pre
+- `scripts/game/entity/game_entity.py:144` `core_lifecycle_prepare(self, event: Optional[PyoneerEvent]=None) -> Surface` #TAG:GameEntity.core_lifecycle_prepare
+- `scripts/game/entity/game_entity.py:147` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:GameEntity.core_frame_update
+- `scripts/game/entity/game_entity.py:157` `core_lifecycle_dispose(self, event: Optional[PyoneerEvent]=None)` #TAG:GameEntity.core_lifecycle_dispose
+- `scripts/game/entity/game_entity.py:160` `rotate(self, angle: float)` #TAG:GameEntity.rotate
+- `scripts/game/entity/game_entity.py:163` `collision_point(self) -> tuple[float, float]` #TAG:GameEntity.collision_point
   - The single pixel this entity's movement is tested at.
-- `scripts/game/entity/game_entity.py:157` `@property grounded(self) -> bool` #TAG:GameEntity.grounded
+- `scripts/game/entity/game_entity.py:176` `@property grounded(self) -> bool` #TAG:GameEntity.grounded
   - Whether something is holding this body up. `state.support`.
-- `scripts/game/entity/game_entity.py:174` `@grounded.setter grounded(self, value: bool) -> None` #TAG:GameEntity.grounded.setter
-- `scripts/game/entity/game_entity.py:180` `@property coyote_left(self) -> float` #TAG:GameEntity.coyote_left
+- `scripts/game/entity/game_entity.py:193` `@grounded.setter grounded(self, value: bool) -> None` #TAG:GameEntity.grounded.setter
+- `scripts/game/entity/game_entity.py:199` `@property coyote_left(self) -> float` #TAG:GameEntity.coyote_left
   - Milliseconds of remaining support grace. `state.support_grace`.
-- `scripts/game/entity/game_entity.py:190` `@coyote_left.setter coyote_left(self, value: float) -> None` #TAG:GameEntity.coyote_left.setter
-- `scripts/game/entity/game_entity.py:193` `allowed_move(self, wanted: Vector2, direction: str) -> Vector2` #TAG:GameEntity.allowed_move
+- `scripts/game/entity/game_entity.py:209` `@coyote_left.setter coyote_left(self, value: float) -> None` #TAG:GameEntity.coyote_left.setter
+- `scripts/game/entity/game_entity.py:212` `allowed_move(self, wanted: Vector2, direction: str) -> Vector2` #TAG:GameEntity.allowed_move
   - `wanted` as far as the map allows, which is `wanted` when ungated.
-- `scripts/game/entity/game_entity.py:221` `move_direction(self, delta: float, direction: str, sprint: bool=False)` #TAG:GameEntity.move_direction
+- `scripts/game/entity/game_entity.py:240` `move_direction(self, delta: float, direction: str, sprint: bool=False)` #TAG:GameEntity.move_direction
 
 ### `class GameAnimatedEntity(GameEntity)` #TAG:GameAnimatedEntity
 
-`scripts/game/entity/game_entity.py:240`–`271`
+`scripts/game/entity/game_entity.py:259`–`297`
 
-- `scripts/game/entity/game_entity.py:242` `__init__(self, movement_config: DataEntityMovement=None, animation_config: DataAnimationCategory=None, transform: Transform=Transform())` #TAG:GameAnimatedEntity.__init__
-- `scripts/game/entity/game_entity.py:255` `@property image(self) -> Surface | None` #TAG:GameAnimatedEntity.image
+- `scripts/game/entity/game_entity.py:261` `__init__(self, movement_config: DataEntityMovement=None, animation_config: DataAnimationCategory=None, transform: Transform=Transform(), collision_offset: tuple[float, float]=(0.0, 0.0))` #TAG:GameAnimatedEntity.__init__
+- `scripts/game/entity/game_entity.py:281` `@property image(self) -> Surface | None` #TAG:GameAnimatedEntity.image
   - Current animation frame, falling back to the static image.
-- `scripts/game/entity/game_entity.py:268` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:GameAnimatedEntity.core_frame_update
+- `scripts/game/entity/game_entity.py:294` `core_frame_update(self, event: Optional[PyoneerEvent]=None)` #TAG:GameAnimatedEntity.core_frame_update

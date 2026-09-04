@@ -46,7 +46,8 @@ class GameEntity(GameEntitySimple, ABC):
     def __init__(self,
                  movement_config: dict[str, any] = None,
                  image_path: str = "",
-                 transform: Transform = Transform()):
+                 transform: Transform = Transform(),
+                 collision_offset: tuple[float, float] = (0.0, 0.0)):
         super().__init__(image_path=image_path, transform=transform)
         movement = self.__movement_values(movement_config)
         self.move_speed = movement.get('move_speed', 16)
@@ -66,18 +67,36 @@ class GameEntity(GameEntitySimple, ABC):
         without anyone remembering to do it.
         """
 
-        self.collision_offset: tuple[float, float] = (0.0, 0.0)
+        try:
+            anchor_x, anchor_y = collision_offset
+            anchor = (float(anchor_x), float(anchor_y))
+        except (TypeError, ValueError) as exc:
+            # Raise rather than fall back to (0, 0): the head anchor is what
+            # a wrong value looks like from the outside, so a fallback here
+            # would be indistinguishable from this argument working.
+            raise ValueError(
+                "%s was given collision_offset=%r; it is the (x, y) pixel "
+                "offset of the collision point inside the sprite, so it has "
+                "to be two numbers." % (type(self).__name__, collision_offset)
+            ) from exc
+
+        self.collision_offset: tuple[float, float] = anchor
         """Where this entity's collision point sits inside its sprite.
 
         `transform.position` is the sprite's TOP-LEFT -- `EntityLayer`
         blits with `get_rect(topleft=position)` -- so (0, 0) tests the
-        top-left pixel, and the top-left of a 32px-tall character is its
-        head. A game that wants feet sets this to roughly (width/2,
-        height - 1) per entity.
+        top-left pixel, and the top-left of a 64px-tall character is its
+        head, which is allowed to move 63 pixels INTO a floor before the
+        gate sees anything. A body standing on a map wants centre-bottom:
+        half the frame wide, one pixel above its bottom edge.
 
-        Not derived from the sprite: it may be None at construction, and a
-        default that read the image would move an entity's collision point the
-        day its spritesheet gained a row.
+        A CONSTRUCTOR KEYWORD, defaulting to the head anchor, because this
+        class cannot derive the number: `GameEntity.__init__` runs before
+        `GameAnimatedEntity` cuts a single frame, so there is no sprite here
+        to measure. The caller that HAS the frame size derives it --
+        `main.py`'s `feet_anchor` reads the animation category and hands the
+        result to every `GamePlayer`, hand-built and map-spawned alike,
+        through `spawn_arguments`.
         """
 
         self.behaviors: EntityBehaviors = EntityBehaviors(self)
@@ -242,10 +261,17 @@ class GameAnimatedEntity(GameEntity):
     def __init__(self,
                  movement_config: DataEntityMovement = None,
                  animation_config: DataAnimationCategory = None,
-                 transform: Transform = Transform()):
+                 transform: Transform = Transform(),
+                 collision_offset: tuple[float, float] = (0.0, 0.0)):
+        # `collision_offset` is forwarded, not re-derived from
+        # `animation_config`: the frame size is only ONE of the things that
+        # decides an anchor -- a scaled sprite or a body drawn taller than it
+        # stands wants a different one -- and a class that quietly measured
+        # its own sheet would overrule the caller that knows.
         super().__init__(
             movement_config=movement_config,
-            transform=transform)
+            transform=transform,
+            collision_offset=collision_offset)
         self.animation_data = animation_config
         self.animation: GameAnimationHandler = GameAnimationHandler(self.animation_data)
         self.__started: bool = False

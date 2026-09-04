@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every claim below was measured against the working tree on 2026-08-29 -- the gid arithmetic and the growth refusals by tools/check_tileset.py and tools/check_tileset_verbs.py, the palette and the import view by tools/check_palette.py, the fold and the no-opinion chip by tools/check_collision_fold.py. The one unmeasured claim carries [UNVERIFIED] and says why. -->
+<!-- pyoneer-stamp: hand-written; every claim below was measured against the working tree on 2026-08-29 -- the gid arithmetic and the growth refusals by tools/check_tileset.py and tools/check_tileset_verbs.py, the palette and the import view by tools/check_palette.py, the fold and the no-opinion chip by tools/check_collision_fold.py. The one unmeasured claim carries [UNVERIFIED] and says why. On 2026-09-03 two entries under Known holes were corrected: the tile-count divergence had named `tileset_geometry` as the wrong reader (it is pytmx, and the axis is margin, not spacing), and the grow/rename pointer had named NEXT.md by ORDINAL and had slid onto the wrong entry -- both now cite by title. On 2026-09-03 the grow/rename hole was closed and that entry is struck through here with the grep that measures the closing. -->
 
 # Tilesets — the sheet, the palette, and what makes a tile solid
 
@@ -405,15 +405,31 @@ of them is a warning.
   `#TAG:TilesetAtlas` builds no per-tile image map from `<tile><image>`. The
   editor and the engine therefore disagree about what that tileset looks like,
   with no warning. It is a secondary shape this editor never writes.
-- **`#TAG:tileset_geometry` counts tiles the way Tiled does only at margin 0.**
-  Measured: `tileset_geometry(40, 40, 16, 16, 4, 4)` is 2×2, Tiled's own rule
-  gives 1×1. The editor can no longer *write* a margin, so it cannot reach this
-  itself; a Tiled-authored spaced sheet still gets a tile count the two
-  disagree about. `#TAG:TilesetAtlas` now cuts the right pixels for such a
-  sheet — the count is the part still wrong.
-- **No editor control calls `map.tileset.grow` or `map.tileset.rename`.** Both
-  verbs exist with exact inverses and neither is reachable from the window.
-  [`NEXT.md`](NEXT.md) item 6 carries the grep that measures it.
+- **pytmx counts a MARGINED sheet's tiles differently from the other two
+  readers.** `#TAG:tileset_geometry` is not the wrong half: it reduces
+  algebraically to Tiled's own `columnCountForWidth`,
+  `(W - margin + spacing) // (tile + spacing)`, and a sweep of 16,335 shapes
+  finds zero disagreements between them. pytmx's count is
+  margin-INDEPENDENT — it walks
+  `range(margin, dim + margin - tiledim + 1, tiledim + spacing)`, where the two
+  `margin` terms cancel — so at `margin > 0` it claims rows the other two say
+  are not there, and at `margin 0` all three agree at every spacing. The editor
+  can no longer *write* a margin, so it cannot reach this itself; a
+  Tiled-authored margined sheet still gets a tile count pytmx disagrees about.
+  `#TAG:TilesetAtlas` cuts the right pixels for such a sheet — the count pytmx
+  derives is the part still wrong. [`NEXT.md`](NEXT.md)'s *"The editor and the
+  engine disagree about a tileset's pixels in two places"* carries the sweep
+  that measures it.
+- **~~No editor control calls `map.tileset.grow` or `map.tileset.rename`~~ —
+  paid off.** Right-clicking a tileset's header strip in the palette opens a
+  menu of Rename / Grow / Remove; each entry that cannot act is disabled and
+  carries the reason in its own label ("Grow… · no room before Spaced at gid
+  37"). Growth is asked in ROWS and turned into a tile count here, so an
+  over-ask is refused before a command exists rather than as a verb refusal.
+  Measured 2026-09-03:
+  `grep -rn "map.tileset.grow\|map.tileset.rename" editor/ui/ --include=*.py`
+  returns 6 lines where it returned none, and `tools/check_palette.py` drives
+  a real right-click, a real `QAction.trigger()` and a real undo.
 - **A whole-map gid remap is not a verb.** Growth past a neighbour is refused
   and the refusal prices the alternative; nothing performs it. Headroom is the
   path that means nobody needs it.

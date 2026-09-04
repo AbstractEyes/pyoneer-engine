@@ -20,11 +20,20 @@ without anyone noticing:
     `validate_list` and REFUSED by `attach`, and both halves of that are
     asserted.
 
+  * IT COULD KEEP ITS OWN CATEGORIES. Section 15 covers the grouping and the
+    run sequence, and it is written against the same failure one level up: a
+    token-to-category mapping agrees with the tree on the day it is typed. So
+    the category assertions register a behavior whose class claims a module
+    that does not exist and require it to get its own heading in the panel
+    AND in `BEHAVIORS.md` with nothing edited to let it. A check that listed
+    today's four categories would pass just as happily for a hand-kept table.
+
 Every gate is asserted in both directions, because testing one half of an
 invariant is the dominant failure this repo has found in its own checks: a
 conflict is refused AND a compatible token is accepted; an out-of-genre token
 is named AND still offered; the parameters of a ticked behavior are offered
-AND withdrawn when it is unticked.
+AND withdrawn when it is unticked; a tie in the run order is NAMED as a tie
+AND an untied sequence says nothing about one.
 
 Against its OWN fixture, never `data/maps/test.tmx` (law 4).
 
@@ -34,6 +43,7 @@ from __future__ import annotations
 
 import _bootstrap  # noqa: F401
 
+import functools
 import importlib.util
 import json
 import os
@@ -68,13 +78,21 @@ from editor.core.commands import Command                                # noqa: 
 from editor.core.inspect import describe                                # noqa: E402
 from editor.core.scope import Scope                                     # noqa: E402
 from editor.core.session import Session                                 # noqa: E402
-from editor.ui.behavior_panel import IS_WIRED, BehaviorDock             # noqa: E402
+from editor.ui.behavior_panel import (CHECKLIST, IS_WIRED,              # noqa: E402
+                                      RUN_SECTION, STRAY_SECTION,
+                                      BehaviorDock, category_title,
+                                      group_by_category, ordinal)
 from editor.ui.fields import InspectionView                             # noqa: E402
 from editor.ui.inspector import InspectorDock                           # noqa: E402
 
-from scripts.game.behavior.base import (BEHAVIORS, PARAM_PREFIX,        # noqa: E402
-                                        BehaviorSpec, EntityBehavior)
+from scripts.core.errors import PyoneerConfigError                      # noqa: E402
+from scripts.game.behavior.base import (BEHAVIORS, ORDER_RULE,          # noqa: E402
+                                        PARAM_PREFIX, BehaviorSpec,
+                                        EntityBehavior, EntityBehaviors,
+                                        category_label)
 from scripts.game.behavior.registry import (BEHAVIOR_REGISTRY,          # noqa: E402
+                                            categories, describe_all,
+                                            order_steps, run_order, step_of,
                                             validate_list)
 from scripts.game.behavior.state import BodyState                       # noqa: E402
 
@@ -212,6 +230,89 @@ def declared_axes(*tokens) -> list[str]:
     return sorted({w[len("state."):] for token in tokens
                    for w in BEHAVIOR_REGISTRY[token].writes
                    if w.startswith("state.")})
+
+
+class Inert(EntityBehavior):
+    """A stand-in carrying a REAL spec, so attaching it runs the engine's rules."""
+
+    def update(self, entity, event) -> None:                    # pragma: no cover
+        """Never called: nothing here drives a frame."""
+
+
+class StealthStub(EntityBehavior):
+    """A factory pretending to be declared in a module this repo has not got.
+
+    `__module__` is the whole experiment. `BehaviorSpec.category` derives
+    from it and from nothing else, and no file anywhere maps a token to a
+    category -- so a heading that appears for this class appeared by
+    derivation, which is the one thing a hand-kept mapping could never do.
+    """
+
+    __module__ = "scripts.game.behavior.stealth"
+
+    def update(self, entity, event) -> None:                    # pragma: no cover
+        """Never called."""
+
+
+class MovementStub(EntityBehavior):
+    """The other half: declared in a module that already has a category."""
+
+    __module__ = "scripts.game.behavior.movement"
+
+    def update(self, entity, event) -> None:                    # pragma: no cover
+        """Never called."""
+
+
+class NamelessStub(EntityBehavior):
+    """Declared in a module whose name shows nothing, so it has NO category."""
+
+    __module__ = "_"
+
+    def update(self, entity, event) -> None:                    # pragma: no cover
+        """Never called."""
+
+
+class Anonymous:
+    """A callable object whose class hides its module entirely.
+
+    The other branch of the same refusal: `functools.partial` and every
+    ordinary instance still answer `__module__` through their type, so this
+    is what an actually module-less factory has to look like.
+    """
+
+    __module__ = ""
+
+    def __call__(self, *a, **k):                                # pragma: no cover
+        """Never called."""
+
+
+def engine_order(tokens, table=None) -> tuple:
+    """What `EntityBehaviors` REALLY runs, obtained by attaching behaviors.
+
+    The panel draws its sequence from `run_order`, which applies the engine's
+    sort key to a list of TOKENS rather than to attached instances. That is a
+    restatement, and a restatement is a second home for a rule, so the
+    assertions compare it against this -- the real class, really attached.
+    """
+    composed = EntityBehaviors(type("entity", (object,), {})())
+    for token in tokens:
+        behavior = Inert()
+        behavior.spec = (BEHAVIOR_REGISTRY if table is None else table)[token]
+        composed.attach(behavior)
+    return composed.names
+
+
+def refusal_of(call) -> str:
+    """The message `call` raises, or "" when it raises nothing.
+
+    Both are useful: a refusal check needs the text, and the other half of
+    every refusal needs the empty string.
+    """
+    try:
+        call()
+    except PyoneerConfigError as error:
+        return str(error)
+    return ""
 
 
 workspace = tempfile.mkdtemp(prefix="pyoneer_behavior_ui_")
@@ -832,7 +933,318 @@ try:
 
     # ------------------------------------------------------------------
     print()
-    print("15. the tmx-exactness limit of the property verbs, named")
+    print("15. the run order reads as a SEQUENCE, and categories are DERIVED")
+    # ------------------------------------------------------------------
+    # Two complaints in one sentence from the author: the bare `order`
+    # integer reads as an id, and the flags need categories. The category
+    # half is asserted the only way that means anything -- by inventing a
+    # behavior declared in a module that does not exist and requiring it to
+    # appear under its own heading with NOTHING edited to let it. A check
+    # that only listed today's four categories would pass just as happily for
+    # a hand-kept table, which is the failure this whole design refuses.
+
+    def arranged(object_id, **kwargs):
+        scope = scope_for(object_id)
+        return group_by_category(
+            look(scope, **kwargs),
+            read_tokens(document.object_layer("entity").find(object_id)),
+            kwargs.get("registry"))
+
+    def titles(inspection):
+        return [section.title for section in inspection.sections]
+
+    def rows_under(inspection, title):
+        return [f.key for s in inspection.sections if s.title == title
+                for f in s.fields]
+
+    hero_raw = look(HERO)
+    hero_view = arranged(1)
+
+    placed = [spec.name for _, specs in categories() for spec in specs]
+    expect("every registered behavior lands in a category",
+           sorted(placed), sorted(BEHAVIOR_REGISTRY))
+    expect("in exactly one -- none is filed twice",
+           len(placed), len(set(placed)))
+    expect("and no category is empty",
+           [name for name, specs in categories() if not specs], [])
+    group_orders = [min(s.order for s in specs) for _, specs in categories()]
+    expect("the groups themselves come in run order, lowest first",
+           group_orders, sorted(group_orders))
+
+    # THE ONE THE DERIVATION RESTS ON. `StealthStub` differs from every other
+    # fixture class in this file in exactly one attribute -- the module it
+    # says it is declared in.
+    invented = dict(BEHAVIOR_REGISTRY)
+    invented["sneak"] = BehaviorSpec(name="sneak", summary="Fixture only.",
+                                     factory=StealthStub, order=30)
+    invented["glide"] = BehaviorSpec(name="glide", summary="Fixture only.",
+                                     factory=MovementStub, order=31)
+    grouped = dict(categories(invented))
+    expect("a behavior declared in an unheard-of module makes its own category",
+           [s.name for s in grouped.get("stealth", ())], ["sneak"])
+    expect("while one declared in an existing module joins that category",
+           "glide" in [s.name for s in grouped["movement"]], True)
+    expect("so exactly one category appeared, not two",
+           sorted(grouped), sorted(set(dict(categories())) | {"stealth"}))
+
+    shared_class = sorted(t for t, s in BEHAVIOR_REGISTRY.items()
+                          if s.factory is
+                          BEHAVIOR_REGISTRY["attack_action"].factory)
+    expect("every token sharing one factory class shares one category",
+           len({BEHAVIOR_REGISTRY[t].category for t in shared_class}), 1)
+    expect("and that is more than one token, so it is not vacuous",
+           len(shared_class) > 1, True)
+
+    # Law 7's half: no catch-all bucket, so a factory that cannot be filed is
+    # refused where it is DECLARED rather than swept into one at display time.
+    unfileable = refusal_of(lambda: BehaviorSpec(
+        name="unfileable", summary="", factory=NamelessStub))
+    expect("a factory whose module shows no name is refused at declaration",
+           "no category to be filed under" in unfileable, True)
+    expect("naming the behavior that could not be filed",
+           "unfileable" in unfileable, True)
+    expect("and saying there is no catch-all bucket for it",
+           "no catch-all bucket" in unfileable, True)
+    expect("a factory with no module at all is refused the same way",
+           "no category to be filed under" in refusal_of(
+               lambda: BehaviorSpec(name="anonymous", summary="",
+                                    factory=Anonymous())), True)
+    # A `functools.partial` is NOT that case and must not be refused: it
+    # answers `__module__` through its type, so it has a category like
+    # anything else. Asserting it separates "cannot be filed" from "I guessed
+    # wrong about which callables carry a module", which the first draft did.
+    expect("while a partial, which does answer __module__, is accepted",
+           refusal_of(lambda: BehaviorSpec(
+               name="partial_ok", summary="",
+               factory=functools.partial(Stub))), "")
+    expect("and so is an ordinary class factory",
+           refusal_of(lambda: BehaviorSpec(name="fileable", summary="",
+                                           factory=Stub)), "")
+    expect("a category with no name to show is refused, not left blank",
+           "no readable name" in refusal_of(lambda: category_label("_")), True)
+    expect("and an ordinary one is titled, underscores and all",
+           (category_label("movement"), category_label("scene_flow")),
+           ("Movement", "Scene Flow"))
+
+    # -- the sequence is the ENGINE's sequence -------------------------
+    for label, listed in (
+            ("listed out of order",
+             ("animation_drive", "player_input", "topdown_move")),
+            ("a tie as listed",
+             ("attack_action", "interact_action", "pause_action")),
+            ("the same tie reversed",
+             ("pause_action", "interact_action", "attack_action"))):
+        expect(f"run_order is what the engine really runs ({label})",
+               [s.name for s in run_order(listed)], list(engine_order(listed)))
+    expect("and the two tie orders differ, so that was not one case twice",
+           engine_order(("attack_action", "interact_action"))
+           != engine_order(("interact_action", "attack_action")), True)
+    expect("a low order runs first however the object lists it",
+           [s.name for s in run_order(("animation_drive", "player_input"))],
+           ["player_input", "animation_drive"])
+
+    steps = order_steps()
+    expect("the frame's steps are the distinct orders, low first",
+           list(steps), sorted({s.order for s in BEHAVIOR_REGISTRY.values()}))
+    expect("two behaviors at one order share a step",
+           step_of(BEHAVIOR_REGISTRY["attack_action"]),
+           step_of(BEHAVIOR_REGISTRY["interact_action"]))
+    expect("two at different orders do not",
+           step_of(BEHAVIOR_REGISTRY["player_input"])
+           == step_of(BEHAVIOR_REGISTRY["topdown_move"]), False)
+    expect("a spec outside the sequence gets no step, and says so",
+           "not in the sequence" in refusal_of(lambda: step_of(BehaviorSpec(
+               name="outsider", summary="", factory=Stub, order=1234))), True)
+
+    # -- the panel: grouped, lossless, and still refusing --------------
+    raw_rows = [f.key for f in section_of(hero_raw, CHECKLIST).fields]
+    view_rows = [f.key for s in hero_view.sections
+                 if s.title.startswith(CHECKLIST) for f in s.fields]
+    expect("grouping loses no checklist row",
+           sorted(view_rows), sorted(raw_rows))
+    expect("and duplicates none into two groups",
+           len(view_rows), len(set(view_rows)))
+    expect("one heading per category, in the order the registry groups them",
+           [t for t in titles(hero_view) if t.startswith(CHECKLIST + " ·")],
+           [category_title(name) for name, _ in categories()])
+    expect("and the flat 'Behaviors' heading is gone",
+           CHECKLIST in titles(hero_view), False)
+    expect("every other section crosses over unchanged, in order",
+           [t for t in titles(hero_view)
+            if not t.startswith(CHECKLIST) and t != RUN_SECTION],
+           [t for t in titles(hero_raw) if t != CHECKLIST])
+
+    mover = BEHAVIOR_REGISTRY["topdown_move"]
+    expect("a row sits under the heading its own module derives",
+           "topdown_move" in rows_under(hero_view,
+                                        category_title(mover.category)), True)
+    expect("and under no other heading",
+           [t for t in titles(hero_view)
+            if t.startswith(CHECKLIST + " ·")
+            and t != category_title(mover.category)
+            and "topdown_move" in rows_under(hero_view, t)], [])
+
+    invented_view = arranged(1, registry=invented)
+    expect("the panel gives the unheard-of module its own heading",
+           category_title("stealth") in titles(invented_view), True)
+    expect("carrying exactly that behavior",
+           rows_under(invented_view, category_title("stealth")), ["sneak"])
+    expect("and naming the module it was derived from, in the heading's note",
+           "scripts.game.behavior.stealth" in [
+               s.note for s in invented_view.sections
+               if s.title == category_title("stealth")][0], True)
+    expect("while the real registry grows no such heading (the other half)",
+           category_title("stealth") in titles(hero_view), False)
+
+    # -- the order number now reads as a position ----------------------
+    category_titles = [category_title(name) for name, _ in categories()]
+    checklist_rows = [f for s in hero_view.sections
+                      if s.title in category_titles for f in s.fields]
+
+    def step_text(token):
+        return fields_of(hero_view)[token].label.split("   ·   ")[0]
+
+    expect("every row says which step of the frame it runs in",
+           [f.label.startswith("step %d of %d   ·   "
+                               % step_of(BEHAVIOR_REGISTRY[f.key]))
+            for f in checklist_rows], [True] * len(BEHAVIOR_REGISTRY))
+    expect("two behaviors at one order show the SAME step, never 2 and 3",
+           step_text("attack_action"), step_text("interact_action"))
+    expect("two at different orders show different ones",
+           step_text("player_input") == step_text("topdown_move"), False)
+    expect("every row's tooltip carries the run-order rule",
+           [ORDER_RULE in f.doc for f in checklist_rows],
+           [True] * len(BEHAVIOR_REGISTRY))
+    expect("which the ungrouped description did not, so the panel added it",
+           ORDER_RULE in fields_of(hero_raw)["topdown_move"].doc, False)
+    expect("and the rule says order is a position and a tie is the list's",
+           all(phrase in ORDER_RULE for phrase in
+               ("RUN POSITION", "not an id", "share a STEP", "REFUSES")), True)
+
+    run = section_of(hero_view, RUN_SECTION)
+    expect("the sequence is the first thing on a clean object",
+           titles(hero_view)[0], RUN_SECTION)
+    expect("numbering the ticked behaviors in the order the frame calls them",
+           [f.label for f in run.fields],
+           ["1st   ·   player_input", "2nd   ·   topdown_move"])
+    expect("each carrying its declared order beside it",
+           [f.value for f in run.fields], ["order 10", "order 20"])
+    expect("read-only, because a sequence is not something to tick",
+           [f.editable for f in run.fields], [False, False])
+
+    session.run(fields_of(look(HERO))["animation_drive"].emit(True))
+    expect("so player_input before topdown_move before animation_drive reads "
+           "off the panel at a glance",
+           [f.label for f in section_of(arranged(1), RUN_SECTION).fields],
+           ["1st   ·   player_input", "2nd   ·   topdown_move",
+            "3rd   ·   animation_drive"])
+    session.undo()
+
+    acts_run = section_of(arranged(6), RUN_SECTION)
+    expect("a tie says the object's list decided it, not the number",
+           [("tied with" in f.value) for f in acts_run.fields], [True, True])
+    expect("while an untied sequence says no such thing",
+           any("tied with" in f.value for f in run.fields), False)
+    expect("the tie runs in the order the object lists it",
+           [f.key for f in acts_run.fields],
+           ["run:attack_action", "run:interact_action"])
+    session.run(Command("map.object.property.set", ACTS,
+                        {"key": BEHAVIORS,
+                         "value": "interact_action,attack_action"}))
+    expect("and reversing the object's list reverses the sequence",
+           [f.key for f in section_of(arranged(6), RUN_SECTION).fields],
+           ["run:interact_action", "run:attack_action"])
+    session.undo()
+    expect("undo puts it back",
+           [f.key for f in section_of(arranged(6), RUN_SECTION).fields],
+           ["run:attack_action", "run:interact_action"])
+
+    bare_run = section_of(arranged(2), RUN_SECTION)
+    expect("an object composing nothing is called inert and gets no rows",
+           ("inert" in bare_run.note, [f.key for f in bare_run.fields]),
+           (True, []))
+    typo_view = arranged(4)
+    expect("a token the registry lacks gets its own group, not an invented one",
+           rows_under(typo_view, STRAY_SECTION), ["topdown_mvoe"])
+    expect("and stays editable, so the object is still repairable here",
+           fields_of(typo_view)["topdown_mvoe"].editable, True)
+    expect("the sequence names it rather than numbering it as if it ran",
+           ("topdown_mvoe" in section_of(typo_view, RUN_SECTION).note,
+            [f.key for f in section_of(typo_view, RUN_SECTION).fields]),
+           (True, ["run:animation_drive"]))
+
+    blocked = fields_of(hero_view)["platformer_move"]
+    expect("a refused tick is still refused, and still greyed, after grouping",
+           (blocked.blocked_reason, blocked.editable),
+           (fields_of(hero_raw)["platformer_move"].blocked_reason, False))
+    expect("still naming both sides",
+           all(word in blocked.blocked_reason
+               for word in ("topdown_move", "platformer_move", "conflict")),
+           True)
+    allowed = fields_of(hero_view)["animation_drive"]
+    expect("while a legal tick still emits the command it did ungrouped",
+           allowed.emit(True),
+           fields_of(hero_raw)["animation_drive"].emit(True))
+    expect("and is still editable", allowed.editable, True)
+
+    # -- the parameters still sit under the behavior that reads them ---
+    session.run(fields_of(look(HERO))["animation_drive"].emit(True))
+    params_view = arranged(1)
+    offered = [f.key for f in section_of(params_view, "Parameters").fields
+               if not f.key.startswith(PARAM_PREFIX)]
+    owned: list[str] = []
+    for token in read_tokens(document.object_layer("entity").find(1)):
+        for key in BEHAVIOR_REGISTRY[token].param_keys:
+            if key not in owned:
+                owned.append(key)
+    expect("a parameter still follows the behavior that reads it, in the "
+           "object's own order", offered, owned)
+    expect("which is not merely alphabetical, so that means something",
+           owned == sorted(owned), False)
+    expect("and the section still sits below every behavior group",
+           titles(params_view).index("Parameters")
+           > max(index for index, title in enumerate(titles(params_view))
+                 if title.startswith(CHECKLIST)), True)
+    session.undo()
+
+    # -- and all of it is on screen, not merely in the description ------
+    dock.set_scope(HERO)
+    dock.refresh()
+    application.processEvents()
+    shown = [label.text() for label in dock.findChildren(QLabel)]
+    expect("every category heading is on screen",
+           [category_title(name).upper() in shown for name, _ in categories()],
+           [True] * len(categories()))
+    expect("the sequence heading too", RUN_SECTION.upper() in shown, True)
+    # `in`, not a slice: `deleteLater()` is deferred by design (law 12), so a
+    # retired body's labels are still children for a while and an exact list
+    # would be asserting how promptly Qt frees them.
+    expect("with the ticked behaviors numbered in it",
+           ["%s   ·   player_input" % ordinal(1) in shown,
+            "%s   ·   topdown_move" % ordinal(2) in shown], [True, True])
+    expect("and the flat heading is gone from the window too",
+           CHECKLIST.upper() in shown, False)
+
+    # The generated document groups by the same derivation, from the same
+    # helpers, so the panel and BEHAVIORS.md cannot file one behavior two
+    # different ways.
+    doc = describe_all()
+    expect("the generated document explains order from the same sentence",
+           ORDER_RULE in doc, True)
+    expect("and names every category it groups by",
+           [category_label(name) in doc for name, _ in categories()],
+           [True] * len(categories()))
+    expect("a behavior in a new module is documented under a new category "
+           "with no edit there either",
+           (category_label("stealth") in describe_all(invented),
+            category_label("stealth") in doc), (True, False))
+
+    expect("the map is still byte-identical after all of that",
+           document.to_bytes() == ORIGINAL, True)
+
+    # ------------------------------------------------------------------
+    print()
+    print("16. the tmx-exactness limit of the property verbs, named")
     # ------------------------------------------------------------------
     # Last, because these are the two paths that do NOT come back
     # byte-identical, and every assertion above compares against ORIGINAL.

@@ -16,6 +16,9 @@ of this module is that a human can tell seventeen masks apart at 16px, and
   * the resolve treats an empty cell and a star as abstention, which is the
     bug that silently erased a region of blocked water in the prototype
   * a mode switch does not rebind a single tool key
+  * a mask painted on a layer the engine THROWS AWAY is reported as a
+    problem -- and a faulted layer carrying no masks is reported as nothing,
+    which is the half that keeps the dock worth reading
 
 Builds every fixture in this file. Nothing here reads data/maps/test.tmx:
 the author paints in it, so a check that asserted what it contains would be
@@ -29,8 +32,11 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401
 
 import importlib.util
+import json
 import os
+import shutil
 import sys
+import tempfile
 import time
 
 if importlib.util.find_spec("PySide6") is None:
@@ -63,7 +69,10 @@ from editor.ui import collision_view as view                           # noqa: E
 from editor.core.collision import (                                    # noqa: E402
     companion_reader,
 )
+from editor.core.session import Session                                # noqa: E402
 from scripts.core.collision_runtime import document_gid_reader         # noqa: E402
+from scripts.core.collision_runtime import world_coordinate_fault      # noqa: E402
+from scripts.core.layer_profile import MOTION, PARALLAX_X, PARALLAX_Y  # noqa: E402
 from editor.ui.collision_view import (                                 # noqa: E402
     LEVEL_COMPANION,
     LEVEL_NAMES,
@@ -903,6 +912,232 @@ expect("...which is the fixture being strict, not lenient: a direct read "
        "past the edge really does raise",
        answers(view.CollisionLayer(companion=lambda x, y: _Cells().get_tile(x, y)),
                4, 0), "AssertionError")
+
+# --------------------------------------------------------------------------
+# The Problems dock says a mask reaches no field
+# --------------------------------------------------------------------------
+# The overlay above draws every mask the author paints. It draws them just as
+# willingly on a layer the engine throws away: `collision_layers` drops any
+# layer `world_coordinate_fault` refuses, so a parallaxed layer's masks are
+# painted, saved, reloaded, redrawn -- and gate nothing. On the author's own
+# map that is 40 of 83 painted cells, and the only place the editor said so
+# was a tooltip on one row of the hierarchy.
+#
+# `Session.problems` reports it now. Both halves are driven here, and the
+# second half is the one that matters: a parallaxed layer whose companion is
+# EMPTY must report NOTHING. A dock that fires on every parallax layer in the
+# project is a dock the author learns to ignore, which costs more than the
+# silence it replaced.
+#
+# Against a fixture built in this file (law 4). `data/maps/test.tmx` is where
+# the author paints; asserting "40" against it would be red by lunchtime.
+
+MAP_W, MAP_H = 6, 4
+COLLISION_FIRST_GID = 257
+ART_GID = 41                       # a tile from the ART tileset, not the masks
+
+_FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.2" tiledversion="1.3.1" orientation="orthogonal" \
+renderorder="right-down" compressionlevel="-1" width="{w}" height="{h}" \
+tilewidth="16" tileheight="16" infinite="0" nextlayerid="8" nextobjectid="1">
+ <tileset firstgid="1" name="Art" tilewidth="16" tileheight="16" \
+tilecount="256" columns="16">
+  <image source="art.png" width="256" height="256"/>
+ </tileset>
+ <tileset firstgid="{first}" name="collision" tilewidth="16" tileheight="16" \
+tilecount="17" columns="17">
+  <image source="collision.png" width="272" height="16"/>
+ </tileset>
+ <layer id="1" name="Paralax" width="{w}" height="{h}">
+  <properties>
+   <property name="pyoneer_parallax_x" type="float" value="1.4"/>
+   <property name="pyoneer_passability" value="ParalaxCollision"/>
+  </properties>
+  <data encoding="csv">
+{empty}
+</data>
+ </layer>
+ <layer id="2" name="ParalaxCollision" width="{w}" height="{h}">
+  <properties>
+   <property name="pyoneer_renders" type="bool" value="false"/>
+  </properties>
+  <data encoding="csv">
+{paralax_masks}
+</data>
+ </layer>
+ <layer id="3" name="Drift" width="{w}" height="{h}">
+  <properties>
+   <property name="pyoneer_motion" value="{motion}"/>
+   <property name="pyoneer_passability" value="DriftCollision"/>
+  </properties>
+  <data encoding="csv">
+{empty}
+</data>
+ </layer>
+ <layer id="4" name="DriftCollision" width="{w}" height="{h}">
+  <properties>
+   <property name="pyoneer_renders" type="bool" value="false"/>
+  </properties>
+  <data encoding="csv">
+{drift_masks}
+</data>
+ </layer>
+ <layer id="5" name="Floor" width="{w}" height="{h}">
+  <properties>
+   <property name="pyoneer_passability" value="FloorCollision"/>
+  </properties>
+  <data encoding="csv">
+{empty}
+</data>
+ </layer>
+ <layer id="6" name="FloorCollision" width="{w}" height="{h}">
+  <properties>
+   <property name="pyoneer_renders" type="bool" value="false"/>
+  </properties>
+  <data encoding="csv">
+{floor_masks}
+</data>
+ </layer>
+</map>
+"""
+
+#: Floor is STATIC and holds the MOST masks in the fixture. A report keyed on
+#: "this companion has cells in it" rather than on the engine's own refusal
+#: would make Floor the loudest row in the dock.
+FLOOR_MASKS = {(0, 0): BLOCK_ALL, (1, 0): BLOCK_ALL, (2, 0): BLOCK_ALL,
+               (3, 0): BLOCK_ALL, (4, 0): STAR}
+PARALAX_MASKS = {(1, 1): BLOCK_ALL, (2, 1): BLOCK_LEFT, (4, 2): STAR}
+DRIFT_MASKS = {(5, 3): BLOCK_ALL}
+
+
+def _csv(cells: dict) -> str:
+    return ",\n".join(",".join(str(cells.get((x, y), 0))
+                               for x in range(MAP_W))
+                      for y in range(MAP_H))
+
+
+def _mask_csv(cells: dict) -> str:
+    return _csv({cell: COLLISION_FIRST_GID + mask
+                 for cell, mask in cells.items()})
+
+
+workspaces: list[str] = []
+
+
+def open_fixture(*, paralax=PARALAX_MASKS, drift=DRIFT_MASKS,
+                 floor=FLOOR_MASKS, paralax_raw=None, motion="dynamic"):
+    """A throwaway project holding one map, and a session over it.
+
+    `paralax_raw` writes GIDS rather than masks into Paralax's companion, so
+    a cell can be painted with art the collision tileset does not own -- the
+    case `gid_to_opinion` reads as NO_DATA, and therefore the case where a
+    companion is visibly non-empty and the engine still has no wall.
+    """
+    workspace = tempfile.mkdtemp(prefix="pyoneer_collision_view_")
+    workspaces.append(workspace)
+    os.makedirs(os.path.join(workspace, "config"))
+    os.makedirs(os.path.join(workspace, "data", "maps"))
+    text = _FIXTURE.format(
+        w=MAP_W, h=MAP_H, first=COLLISION_FIRST_GID, motion=motion,
+        empty=_csv({}),
+        paralax_masks=(_csv(paralax_raw) if paralax_raw is not None
+                       else _mask_csv(paralax)),
+        drift_masks=_mask_csv(drift), floor_masks=_mask_csv(floor))
+    with open(os.path.join(workspace, "data", "maps", "fixture.tmx"), "w",
+              encoding="utf-8", newline="") as handle:
+        handle.write(text)
+    with open(os.path.join(workspace, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": [{"name": "fixture", "identifier": "fixture",
+                             "file": "data/maps/fixture.tmx"}]}, handle)
+    return Session.open(workspace, genre_id="topdown_rpg")
+
+
+def dead_mask_reports(session) -> list[str]:
+    """Every violation this pass added, as `scope :: message :: fix`.
+
+    Selected by the sentence they carry rather than by position: the genre
+    validator's own soft rules share the list and their count is not this
+    file's business.
+    """
+    return [f"{v.scope} :: {v.message} :: {v.fix}"
+            for v in session.problems()
+            if "no collision field" in v.message]
+
+
+def scopes_reported(session) -> list[str]:
+    """The scope of every dead-mask report, SORTED.
+
+    Sorted rather than in `companion_pairs` order: that order is depth, it is
+    asserted where it is decided, and a report list that changed meaning
+    because a fixture layer was renamed would be this file failing for
+    somebody else's reason.
+    """
+    return sorted(row.split(" :: ")[0] for row in dead_mask_reports(session))
+
+
+painted = open_fixture()
+expect("a faulted layer with painted masks is a problem, and the static "
+       "layer holding MORE masks is not",
+       scopes_reported(painted),
+       ["map:fixture/layer:Drift", "map:fixture/layer:Paralax"])
+
+by_scope = {row.split(" :: ")[0]: row for row in dead_mask_reports(painted)}
+parallax_report = by_scope["map:fixture/layer:Paralax"]
+motion_report = by_scope["map:fixture/layer:Drift"]
+expect("...counting the cells that DECODE, not the cells that are set",
+       "3 masks painted in 'ParalaxCollision'" in parallax_report, True)
+expect("...carrying world_coordinate_fault's own sentence, unparaphrased",
+       world_coordinate_fault(painted.project.map("fixture"), "Paralax")
+       in parallax_report, True)
+expect("...and a fix naming the properties an author has to go and edit",
+       (PARALLAX_X in parallax_report, PARALLAX_Y in parallax_report,
+        MOTION in parallax_report), (True, True, True))
+expect("...as a soft violation: the map still loads and still runs",
+       [v.severity for v in painted.problems()
+        if "no collision field" in v.message], ["soft", "soft"])
+expect("the motion fault is reported in its own spelling too",
+       MOTION + "=dynamic" in motion_report, True)
+expect("...and one mask reads '1 mask ... reaches', not '1 masks ... reach'",
+       ("1 mask painted in 'DriftCollision' reaches no collision field"
+        in motion_report,
+        "3 masks painted in 'ParalaxCollision' reach no collision field"
+        in parallax_report),
+       (True, True))
+
+# The other half. Everything that makes Paralax faulted is still true here;
+# only the masks are gone.
+empty = open_fixture(paralax={}, drift={})
+expect("a faulted layer whose companion is EMPTY is not a problem",
+       scopes_reported(empty), [])
+expect("...which is the fixture still being faulted, not being fixed",
+       (world_coordinate_fault(empty.project.map("fixture"), "Paralax")
+        is not None,
+        world_coordinate_fault(empty.project.map("fixture"), "Drift")
+        is not None),
+       (True, True))
+
+# Painted, not empty, and still worth nothing: a cell holding a tile from the
+# ART tileset decodes to NO_DATA, so the engine has no wall there either and
+# neither should the dock.
+undecodable = open_fixture(drift={},
+                           paralax_raw={(1, 1): ART_GID, (2, 1): ART_GID})
+expect("a companion painted with art rather than masks is not a problem",
+       scopes_reported(undecodable), [])
+expect("...which is that companion really holding two painted cells",
+       len([gid for gid in undecodable.project.map("fixture")
+            .tile_layer("ParalaxCollision").gids() if gid]), 2)
+
+# And the half that proves the report is keyed on the FAULT: the same masks,
+# on a layer that stays put, are silent.
+static = open_fixture(paralax={}, motion="static")
+expect("the same DriftCollision masks are silent once Drift is static",
+       (scopes_reported(static),
+        world_coordinate_fault(static.project.map("fixture"), "Drift")),
+       ([], None))
+
+for _workspace in workspaces:
+    shutil.rmtree(_workspace, ignore_errors=True)
 
 print()
 if failures:

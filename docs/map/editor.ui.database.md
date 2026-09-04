@@ -5,41 +5,49 @@
 
 > The Database window -- actors, items, equipment, weapons, levels.
 
-`editor.ui.database` · 341 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.database` · 505 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
     editor.core.commands editor.core.inspect editor.core.scope editor.ui.ask editor.ui.fields editor.ui.prompt
 
+## Functions
+
+- `editor/ui/database.py:46` `column_default(text: str, type_name: str) -> object` #TAG:column_default
+  - Read a typed default out of a text box, or refuse to guess.
+
 ## Classes
 
 ### `class TablePage(QWidget)` #TAG:TablePage
 
-`editor/ui/database.py:43`–`256`
+`editor/ui/database.py:79`–`420`
 
 > One table: its rows on the left, the selected row's fields on the right.
 
-- `editor/ui/database.py:51` `__init__(self, session, table_name: str, parent: QWidget | None=None)` #TAG:TablePage.__init__
-- `editor/ui/database.py:121` `@property exists(self) -> bool` #TAG:TablePage.exists
-- `editor/ui/database.py:124` `__sync_buttons(self) -> None` #TAG:TablePage.__sync_buttons
+- `editor/ui/database.py:95` `__init__(self, session, table_name: str, parent: QWidget | None=None)` #TAG:TablePage.__init__
+- `editor/ui/database.py:179` `@property exists(self) -> bool` #TAG:TablePage.exists
+- `editor/ui/database.py:182` `__sync_buttons(self) -> None` #TAG:TablePage.__sync_buttons
   - Enable only what can actually happen, and say why when it cannot.
-- `editor/ui/database.py:142` `refresh(self) -> None` #TAG:TablePage.refresh
-- `editor/ui/database.py:185` `__show_current(self) -> None` #TAG:TablePage.__show_current
-- `editor/ui/database.py:197` `__on_select(self, current, _previous) -> None` #TAG:TablePage.__on_select
-- `editor/ui/database.py:204` `__on_create(self) -> None` #TAG:TablePage.__on_create
-- `editor/ui/database.py:213` `__on_add(self) -> None` #TAG:TablePage.__on_add
-- `editor/ui/database.py:226` `__on_duplicate(self) -> None` #TAG:TablePage.__on_duplicate
-- `editor/ui/database.py:243` `__on_remove(self) -> None` #TAG:TablePage.__on_remove
+- `editor/ui/database.py:219` `refresh(self) -> None` #TAG:TablePage.refresh
+- `editor/ui/database.py:262` `__show_current(self) -> None` #TAG:TablePage.__show_current
+- `editor/ui/database.py:274` `__on_select(self, current, _previous) -> None` #TAG:TablePage.__on_select
+- `editor/ui/database.py:281` `__on_create(self) -> None` #TAG:TablePage.__on_create
+- `editor/ui/database.py:290` `__on_add(self) -> None` #TAG:TablePage.__on_add
+- `editor/ui/database.py:303` `__on_duplicate(self) -> None` #TAG:TablePage.__on_duplicate
+- `editor/ui/database.py:320` `__on_remove(self) -> None` #TAG:TablePage.__on_remove
+- `editor/ui/database.py:345` `__on_add_column(self) -> None` #TAG:TablePage.__on_add_column
+  - The fix the Problems dock prints, as something you can click.
+- `editor/ui/database.py:390` `__on_remove_column(self) -> None` #TAG:TablePage.__on_remove_column
 
 ### `class DatabaseWindow(QMainWindow)` #TAG:DatabaseWindow
 
-`editor/ui/database.py:259`–`340`
+`editor/ui/database.py:423`–`504`
 
 > Every data table the genre knows about, one tab each.
 
-- `editor/ui/database.py:265` `__init__(self, session, parent: QWidget | None=None)` #TAG:DatabaseWindow.__init__
-- `editor/ui/database.py:292` `__forward(self, name: str) -> None` #TAG:DatabaseWindow.__forward
-- `editor/ui/database.py:297` `__on_status(self, message: str) -> None` #TAG:DatabaseWindow.__on_status
-- `editor/ui/database.py:300` `rebuild(self) -> None` #TAG:DatabaseWindow.rebuild
+- `editor/ui/database.py:429` `__init__(self, session, parent: QWidget | None=None)` #TAG:DatabaseWindow.__init__
+- `editor/ui/database.py:456` `__forward(self, name: str) -> None` #TAG:DatabaseWindow.__forward
+- `editor/ui/database.py:461` `__on_status(self, message: str) -> None` #TAG:DatabaseWindow.__on_status
+- `editor/ui/database.py:464` `rebuild(self) -> None` #TAG:DatabaseWindow.rebuild
   - Tabs come from the GENRE, so switching genre reshapes the window.
-- `editor/ui/database.py:337` `refresh(self) -> None` #TAG:DatabaseWindow.refresh
+- `editor/ui/database.py:501` `refresh(self) -> None` #TAG:DatabaseWindow.refresh

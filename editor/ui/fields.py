@@ -16,7 +16,7 @@ keeps editing an object that an undo has already deleted.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -206,10 +206,13 @@ class InspectionView(QScrollArea):
                 options.insert(0, str(entry.value))
             combo.addItems(options)
             combo.setCurrentText(str(entry.value))
-            combo.activated.connect(
-                lambda _i, f=entry, c=combo: self.__commit(f, c.currentText()))
+            # BOTH signals, because neither is the commit on its own -- the
+            # measured table is in `__says_once`, which is what makes both
+            # of them safe to connect.  #TAG:one_gesture_one_command
+            says = self.__says_once(entry)
+            combo.activated.connect(lambda _i, c=combo: says(c.currentText()))
             combo.lineEdit().editingFinished.connect(
-                lambda f=entry, c=combo: self.__commit(f, c.currentText()))
+                lambda c=combo: says(c.currentText()))
             return combo
 
         if entry.kind == "int":
@@ -232,9 +235,64 @@ class InspectionView(QScrollArea):
             return spin
 
         line = QLineEdit(str(entry.value if entry.value is not None else ""))
-        line.editingFinished.connect(
-            lambda f=entry, w=line: self.__commit(f, w.text()))
+        # Same gate as the combo, for the second half of the same fault: a
+        # commit rebuilds the form, and retiring the old body clears the focus
+        # inside it, so the widget that just spoke emits `editingFinished`
+        # again from inside the emit it caused. Measured in the real Inspector
+        # dock: renaming an object pushed TWO `map.object.set` transactions.
+        says = self.__says_once(entry)
+        line.editingFinished.connect(lambda w=line: says(w.text()))
         return line
+
+    def __says_once(self, entry: Field) -> Callable[[str], None]:
+        """A commit for a text-bearing editor that never says the same
+        thing twice.
+
+        AN EDITABLE `QComboBox` HAS NO SINGLE COMMIT SIGNAL. Measured on this
+        Qt, per gesture, as (activated, editingFinished) emissions:
+
+            pick from the drop-down with the mouse      (1, 1)
+            pick with the keyboard (Down)               (1, 0)
+            type a value and press Enter                (2, 2)
+            type a NEW value and click away             (0, 1)
+            type an EXISTING value and click away       (1, 1)
+
+        So connecting one of them is not an option. Dropping `activated`
+        loses the drop-down pick outright: the `editingFinished` in that row
+        fires when the popup takes the focus, BEFORE the pick, and carries
+        the OLD text -- nothing at all is emitted afterwards. Dropping
+        `editingFinished` loses a typed value that names nothing in the list
+        the moment the author clicks away instead of pressing Enter, which
+        is the silent-data-loss shape: no command, no error, and the form
+        redraws from the document as though they had never typed.
+
+        Connecting both is what shipped, and one gesture then emitted up to
+        FOUR identical commands -- `QComboBox` re-emits `activated` from the
+        very `editingFinished` this view also listens to. Every command
+        after the first is an EMPTY transaction, because the document
+        already holds the value, so one Ctrl+Z appeared to do nothing and
+        the author learned not to trust undo.
+
+        The de-duplication therefore lives HERE, on the widget that speaks:
+        `said` is what this widget has already committed, and a repeat of it
+        is not a second edit. It must not move downstream -- a verb that
+        tolerates a no-op, or a stream that drops empty transactions, would
+        hide this for every future caller too, and an empty transaction
+        reaching the stream at all is the fault.
+        """
+        said = str(entry.value if entry.value is not None else "")
+
+        def commit(text: str) -> None:
+            nonlocal said
+            if text == said:
+                return
+            # BEFORE the emit, never after. Emitting rebuilds the form
+            # synchronously, and that rebuild is what makes this same widget
+            # speak again -- back into this closure, from inside this call.
+            said = text
+            self.__commit(entry, text)
+
+        return commit
 
     def __with_remove(self, entry: Field, widget: QWidget) -> QWidget:
         holder = QWidget()

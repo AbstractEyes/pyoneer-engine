@@ -140,6 +140,7 @@ BOOT = "CLAUDE.md"
 # fact-checked and still routed.
 FOREIGN_GENERATED = {
     "docs/BEHAVIORS.md": "tools/check_behavior_docs.py --write",
+    "docs/EVENTS.md": "tools/check_event_docs.py --write",
     "docs/MAP.md": "tools/gen_map.py --write",
 }
 
@@ -169,9 +170,15 @@ LINE_ANCHOR_DEBT: dict[str, int] = {}
 PINNED_STALE = [
     ("docs/BEHAVIORS.md", "topdown_move,tile_collision",
      "`tile_collision` is not a registered token and makes a map raise at "
-     "load. It lives in the generator's hand-written preamble: "
-     "scripts/game/behavior/registry.py:366, and is repeated at "
-     "scripts/game/behavior/base.py:102 and registry.py:145."),
+     "load. TWO prose sites, both addressed by tag: the `_PREAMBLE` literal "
+     "in #TAG:scripts/game/behavior/registry.py, and the `BEHAVIORS` "
+     "docstring at #TAG:BEHAVIORS. Confirm with `grep -rn tile_collision "
+     "scripts/game/behavior/ --include=*.py` -- drop the --include and a "
+     "stale __pycache__ hit makes it look like three. This line is printed "
+     "on every GREEN run, so it is read more often than any other sentence "
+     "here; the three line numbers it used to carry named three places that "
+     "did not contain the string, which is precisely what law 14 says a "
+     "line number does."),
 ]
 
 
@@ -563,16 +570,46 @@ CHECK_RX = re.compile(r"\bcheck_([a-z0-9_]+)\b")
 # exempting the map by filename keeps the rule general: a hand-written document
 # may also cite `check_property_name` and be right.
 TAGS = gen_map.tag_index()
-unknown_named = []
+# A PLAN may name a check its own build order creates. That is not the same as
+# naming one that does not exist: the plan has to DECLARE it, in a
+# ```planned-checks fence, so the exemption is enumerated rather than inferred
+# from tone. The second assertion below is what keeps the list from rotting --
+# a declared name that has since reached the roster is red, so the stage that
+# lands a check must delete its line.
+PLANNED_RX = re.compile(r"```planned-checks\n(.*?)```", re.S)
+
+
+def planned_checks(text):                                 # #TAG:planned_checks
+    """The check names a document declares its own stages will create."""
+    found = set()
+    for body in PLANNED_RX.findall(text):
+        for line in body.splitlines():
+            name = line.strip()
+            if name.startswith("check_"):
+                found.add(name[len("check_"):])
+    return found
+
+
+unknown_named, planned_but_shipped = [], []
 for rel in LIVE:
-    for name in sorted(set(CHECK_RX.findall(read(rel)))):
+    text = read(rel)
+    planned = planned_checks(text)
+    for name in sorted(planned & set(ROSTER_NAMES)):
+        planned_but_shipped.append(f"{rel} still plans check_{name}, "
+                                   f"which is now on the roster")
+    for name in sorted(set(CHECK_RX.findall(text))):
         if name in ROSTER_NAMES or name in ("all", "docs"):
             continue
         if any(tag.rsplit(".", 1)[-1] == "check_" + name for tag in TAGS):
             continue
+        if name in planned:
+            continue
         unknown_named.append(f"{rel}: check_{name}")
 expect_empty("every check a LIVE document names is in the roster "
-             "(or is a function the code map knows)", unknown_named)
+             "(or is a function the code map knows, or the document declares "
+             "it as planned)", unknown_named)
+expect_empty("no document plans a check that already shipped",
+             planned_but_shipped)
 
 
 # ---------------------------------------------------------------------------

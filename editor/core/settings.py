@@ -53,6 +53,17 @@ SETTINGS: tuple[Setting, ...] = (
                      ("2", "Every 2 cells"),
                      ("4", "Every 4 cells"),
                      ("8", "Every 8 cells"))),
+    Setting("snap_objects", "Snap objects to the grid", "bool", True,
+            "Whether placing or dragging an object on an object layer lands "
+            "it on a cell boundary. ON by default because a tile-sized body "
+            "half a pixel off its cell is invisible on screen and wrong "
+            "everywhere it matters -- the spawn's cell, the collision cell "
+            "it stands in, and the .tmx diff, which grows a line per object "
+            "for a drag nobody meant. Turn it off for the objects that are "
+            "not tile-shaped: a trigger region, a spawn point, a light. It "
+            "is read by `EditorWindow.__new_canvas` and written onto "
+            "`MapCanvas.snap_objects`, the same way the grid preferences "
+            "are, so it follows the map the window switches to."),
     Setting("collision_subcell", "New collision layers are", "int", 1,
             "How finely a passability layer CREATED by the next collision "
             "stroke divides one map tile, per axis. It is the resolution the "

@@ -16,7 +16,7 @@ Rules that are enforced, not suggested:
 - Types are checked and never coerced. `"5"` is not `5`.
 - A response is one transaction. One bad line rolls back the rest.
 
-37 verbs:
+51 verbs:
 
 ### `map.layer.add`
 
@@ -98,7 +98,7 @@ Write one map-event property back VERBATIM, without validating the value. The ex
 
 ### `map.object.action.set`
 
-Declare one field of an object's map-event trigger -- when it fires, which entities may fire it, whether it also blocks movement, and what it carries. Stored as a pyoneer_ tmx custom property, so Tiled edits it in the same dialog. NOTHING RUNS THIS YET: the engine has no collision detection, no MAP_TRIGGER_* event type and no reader for the object layer, so a map authored with these plays exactly as it did before. The authoring is real, reversible and readable; the firing is not built.
+Declare one field of an object's map-event trigger -- when it fires, which entities may fire it, whether it also blocks movement, and what it carries. Stored as a pyoneer_ tmx custom property, so Tiled edits it in the same dialog. NOTHING RUNS THIS YET: there is no MAP_TRIGGER_* event type, nothing under scripts/ reads pyoneer_trigger, and entities are not on the event bus, so a map authored with these plays exactly as it did before. This sentence is the MIRROR of the panel's own banner (`NOT_WIRED` in editor/ui/actions_panel.py) and names the same absences it does -- it once named two gaps the engine had already closed, and it outlived the fix to the banner it copies, so keep the two in step. The authoring is real, reversible and readable; the firing is not built.
 
 *Scopes:* `map:*/layer:*/object:*`
 
@@ -412,6 +412,196 @@ Switch the project's genre pack. Changes which layers and tables are expected an
 
 ```json
 {"verb": "project.genre.set", "scope": "project", "args": {"genre": "platformer"}}
+```
+
+### `script.create`
+
+Create an event script. The scope names it, and that name is also its file stem and what `call` addresses it by.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `title` | str | no (default `''`) | human label for the screen and the page list |
+| `loadouts` | list | no (default `None`) | which op vocabularies this document may use; omitted means just the core handful |
+
+```json
+{"verb": "script.create", "scope": "script:keeper_gate", "args": {"title": "The keeper at the north gate"}}
+```
+
+### `script.delete`
+
+Delete an event script. The inverse carries the whole document, and the file itself is only removed at save.  **Destructive.**
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `confirm` | bool | yes | must be true; guards against a stray delete |
+
+### `script.node.add`
+
+Add a node inside a page or an arm. `do` names an op, or `if` or `while` for a control node. Position is an anchor id and a side, never an index.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `id` | str | yes | the node's stable id, unique across every page and node in this document |
+| `do` | str | yes | an op name from the document's loadouts, or `if` or `while` |
+| `into` | str | yes | what contains it: a page id, or the id of the `if` / `while` whose arm it joins |
+| `arm` | str | no (default `''`) | which arm of a control node: then, elif:0, elif:1, ... or else. Empty for a page body. |
+| `after` | str | no (default `''`) | the sibling it follows; empty puts it FIRST |
+| `args` | dict | no (default `None`) | the op's own arguments, or `when` and `note` for a control node |
+
+```json
+{"verb": "script.node.add", "scope": "script:keeper_gate", "args": {"id": "n3", "do": "say", "into": "pg_main", "after": "n2", "args": {"who": "Keeper", "text": "Sealed."}}}
+```
+
+### `script.node.move`
+
+Move a node and its subtree to another container or another arm. Refused into its own subtree. Returns nothing when the node is already there.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `node` | str | yes | the node's id |
+| `into` | str | yes | the page id or control node id it moves inside |
+| `arm` | str | no (default `''`) | then, elif:N, else, or empty for a page body |
+| `after` | str | no (default `''`) | the sibling it should follow; empty means first |
+
+```json
+{"verb": "script.node.move", "scope": "script:keeper_gate", "args": {"node": "n5", "into": "n4", "arm": "else"}}
+```
+
+### `script.node.remove`
+
+Remove a node and everything under it. The inverse carries the whole subtree, its container, its arm and its predecessor, so undo puts it back in the same elif arm at the same place.  **Destructive.**
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `node` | str | yes | the node's id |
+
+### `script.node.restore`
+
+Put a node and its whole subtree back where it was. The exact inverse of script.node.remove; rarely written by hand.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `node` | dict | yes | the whole node, as script.node.remove recorded it |
+| `into` | str | yes | the page id or control node id it goes inside |
+| `arm` | str | no (default `''`) | then, elif:N, else, or empty for a page body |
+| `after` | str | no (default `''`) | the sibling it follows; empty puts it first |
+
+### `script.node.set`
+
+Set one key on a node: an op argument, a note, a control node's conditions, or its elif arms. Returns nothing when unchanged.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `node` | str | yes | the node's id |
+| `key` | str | yes | which key -- an argument the op declares, `note`, `if` / `while` for the conditions, or `elif` for the arm list |
+| `value` | any | yes | the new value; a key set to the default its op declares is written as no key at all |
+
+```json
+{"verb": "script.node.set", "scope": "script:keeper_gate", "args": {"node": "n3", "key": "text", "value": "Go on through."}}
+```
+
+### `script.page.add`
+
+Add a page. Pages are ordered and the FIRST one whose `when` all pass runs, so where it lands is where it fires.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `id` | str | yes | the page's stable id, unique across every page and node in this document |
+| `after` | str | no (default `''`) | the page it follows; empty puts it FIRST, which is where it will shadow the rest |
+| `trigger` | str | no (default `'use'`) | what starts it One of ['use', 'enter', 'exit', 'stay', 'auto']. |
+| `when` | list | no (default `None`) | conditions, ANDed; empty always passes and is the fallback page |
+
+```json
+{"verb": "script.page.add", "scope": "script:keeper_gate", "args": {"id": "pg_main", "trigger": "use", "when": []}}
+```
+
+### `script.page.move`
+
+Move a page. Order is evaluation order -- the first passing page runs -- so this is a behaviour change, not a tidy-up.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `page` | str | yes | the page's id |
+| `after` | str | no (default `''`) | the page it should follow; empty means first |
+
+### `script.page.remove`
+
+Remove a page and everything on it. The inverse carries the whole page AND the page it sat after.  **Destructive.**
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `page` | str | yes | the page's id |
+
+### `script.page.restore`
+
+Put a page back, with its body, at the position it held. The exact inverse of script.page.remove; rarely written by hand.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `page` | dict | yes | the whole page, as script.page.remove recorded it |
+| `after` | str | no (default `''`) | the page it follows; empty puts it first |
+
+### `script.page.set`
+
+Set one key on a page -- its trigger, payload, conditions, note, once flag or cooldown. Returns nothing when unchanged.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `page` | str | yes | the page's id |
+| `key` | str | yes | which key One of ['cooldown_ms', 'note', 'once', 'payload', 'trigger', 'when']. |
+| `value` | any | yes | the new value; a key set to its default is written as no key at all |
+
+```json
+{"verb": "script.page.set", "scope": "script:keeper_gate", "args": {"page": "pg_main", "key": "payload", "value": "keeper"}}
+```
+
+### `script.restore`
+
+Recreate an event script from a full document. Exists so script.delete has an exact inverse; rarely written by hand.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `script` | dict | yes | the whole document, as script.delete recorded it |
+
+### `script.set`
+
+Set a document-level key: its title, or the op loadouts it may draw on.
+
+*Scopes:* `script:*`
+
+| arg | type | required | meaning |
+|---|---|---|---|
+| `key` | str | yes | which key One of ['loadouts', 'title']. |
+| `value` | any | yes | a string for title, a list of loadout names for loadouts |
+
+```json
+{"verb": "script.set", "scope": "script:keeper_gate", "args": {"key": "loadouts", "value": ["core"]}}
 ```
 
 ### `table.column.add`

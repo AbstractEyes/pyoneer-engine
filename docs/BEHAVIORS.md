@@ -45,9 +45,20 @@ Most specific first, the same shape as `resolve_depth`:
     2. the `<key>` column of the actors row named by `pyoneer_actor`
     3. the parameter's declared default
 
-Step 2 needs a row, and **nothing in `scripts/` reads `data/project/`** -- the
-engine has no table reader yet. Until one exists, every parameter resolves
-from step 1 or step 3, and a `required` parameter with neither raises.
+Step 2 needs a row, and **the engine reads one.**
+`scripts/loaders/table_file.py` loads `data/project/tables/*.json`, `actor_row`
+turns an object's `pyoneer_actor` into that row, and both spawn routes -- the map
+spawn and `SceneManager.spawn` -- hand it in. `LayerRenderer.tables` is the
+one slot it lives in, assigned in `main.py` beside `spawn_defaults`.
+
+Missing stays free, and only missing: no `tables/` directory, no `pyoneer_actor` on
+the object, or a row that omits the column all fall through to step 3.
+Everything else RAISES -- an unreadable or self-contradictory table file, and
+a `pyoneer_actor` naming a row that is not there, which raises naming the object.
+A parameter that quietly took its default because the row id was misspelled
+would look exactly like a parameter nobody authored, which is the shape this
+whole chain exists to refuse. A `required` parameter with nothing at any of
+the three levels raises too.
 
 ## The per-frame call chain
 
@@ -123,7 +134,13 @@ design.
 ## Reading the tables below
 
     order      lower runs first within a frame; a tie is legal only when the
-               two behaviors write nothing in common
+               two behaviors write nothing in common. It is a position, not
+               an id -- see "Run order" above
+    frame step which of the frame's ordered steps it runs in, and how many
+               there are. Two behaviors at one order share one step
+    category   the module the behavior is declared in, derived from the class
+               and declared nowhere, so a new behavior needs no entry in any
+               table to appear under the right heading
     writes     which entity attributes it mutates -- this is what makes a
                collision between two composed behaviors visible in advance
     requires   what must be present on the entity for it to do anything;
@@ -153,19 +170,41 @@ design.
 | `state.support` | Whether something is holding the body up. CLOSED: `grounded`, `airborne`. Written by `platformer_move`; `entity.grounded` is an alias over it. |
 | `state.support_grace` | Milliseconds a body that has left its support is still treated as supported -- the coyote clock. `entity.coyote_left` is an alias over it. |
 
+## Run order
+
+`order` is a RUN POSITION, not an id. Every behavior on one entity is called once per frame, lowest order first, so a behavior at 10 has already written this frame's intent before one at 20 reads it. Two behaviors that share an order share a STEP: they run in the sequence they are listed on the object, and if they also declare that they write the same attribute the engine REFUSES the pair when the second one attaches, rather than let one of them silently win.
+
+This registry's frame has 6 steps, and every behavior at one step runs before every behavior at the next:
+
+1. **order 10** -- `player_input`
+2. **order 15** -- `attack_action`, `interact_action`, `pause_action` (one step, so the object's own list decides which of these goes first)
+3. **order 20** -- `platformer_move`, `topdown_move` (one step, so the object's own list decides which of these goes first)
+4. **order 80** -- `animation_drive`
+5. **order 90** -- `action_relay`
+6. **order 95** -- `lifecycle_mark`
+
+## The categories
+
+A behavior's category is the module it is declared in, and nothing else. There is no token-to-category table in this repository, so a behavior registered tomorrow appears under its own module here and in the editor's Behaviors panel -- which groups its checklist by exactly this -- with no edit to either. A category interleaves with the run order above rather than replacing it.
+
+- **Input** -- `scripts.game.behavior.input` -- 1 behavior
+- **Action** -- `scripts.game.behavior.action` -- 4 behaviors
+- **Movement** -- `scripts.game.behavior.movement` -- 3 behaviors
+- **Lifecycle** -- `scripts.game.behavior.lifecycle` -- 1 behavior
+
 ## The registry
 
-| token | order | status | writes | summary |
-| --- | --- | --- | --- | --- |
-| `player_input` | 10 | live | `intent`, `state.sprinting` | Polls the bound input manager and publishes a MoveIntent. The entity carrying this one is the entity the human drives. |
-| `attack_action` | 15 | live | `action_intent.attack_action` | Fires on the rising edge of the 'attack' verb, with a cooldown. Records an ActionFired; reaches no event bus. |
-| `interact_action` | 15 | live | `action_intent.interact_action` | Fires on the rising edge of the 'action' verb -- talk, use, open. The explicit interaction a `use` map trigger is waiting for. |
-| `pause_action` | 15 | live | `action_intent.pause_action` | Fires on the rising edge of the 'pause' verb. The entity-side half of a pause; what it MEANS is the sink's business. |
-| `platformer_move` | 20 | live | `transform.position`, `velocity`, `state.support`, `state.support_grace`, `state.phase`, `state.facing` | A side-on body: gravity, terminal velocity, air control and a jump with coyote time. Reads the actors table's own columns. |
-| `topdown_move` | 20 | live | `transform.position`, `state.phase`, `state.facing` | Eight-direction axis-aligned movement, each held verb gated separately. The demo's controller. |
-| `animation_drive` | 80 | live | `animation` | Names the animation from the movement state, on the frame it changes. The sequence naming is parameters, not code. |
-| `action_relay` | 90 | live | -- | Calls entity.action_sink(entity, fired) for every action that fired this frame. The only behavior that reaches outward, and it calls rather than dispatches. SceneManager assigns the sink: it is the scene's ActionRouter (scripts/game/flow/router.py). |
-| `lifecycle_mark` | 95 | live | `state.life` | Declares this body GONE -- when a named action fires, or after a declared lifetime. It marks and never removes; SceneManager.reap() is what takes a marked body out of the scene and the renderer. |
+| token | order | frame step | category | status | writes | summary |
+| --- | --- | --- | --- | --- | --- | --- |
+| `player_input` | 10 | 1 of 6 | Input | live | `intent`, `state.sprinting` | Polls the bound input manager and publishes a MoveIntent. The entity carrying this one is the entity the human drives. |
+| `attack_action` | 15 | 2 of 6 | Action | live | `action_intent.attack_action` | Fires on the rising edge of the 'attack' verb, with a cooldown. Records an ActionFired; reaches no event bus. |
+| `interact_action` | 15 | 2 of 6 | Action | live | `action_intent.interact_action` | Fires on the rising edge of the 'action' verb -- talk, use, open. The explicit interaction a `use` map trigger is waiting for. |
+| `pause_action` | 15 | 2 of 6 | Action | live | `action_intent.pause_action` | Fires on the rising edge of the 'pause' verb. The entity-side half of a pause; what it MEANS is the sink's business. |
+| `platformer_move` | 20 | 3 of 6 | Movement | live | `transform.position`, `velocity`, `state.support`, `state.support_grace`, `state.phase`, `state.facing` | A side-on body: gravity, terminal velocity, air control and a jump with coyote time. Reads the actors table's own columns. |
+| `topdown_move` | 20 | 3 of 6 | Movement | live | `transform.position`, `state.phase`, `state.facing` | Eight-direction axis-aligned movement, each held verb gated separately. The demo's controller. |
+| `animation_drive` | 80 | 4 of 6 | Movement | live | `animation` | Names the animation from the movement state, on the frame it changes. The sequence naming is parameters, not code. |
+| `action_relay` | 90 | 5 of 6 | Action | live | -- | Calls entity.action_sink(entity, fired) for every action that fired this frame. The only behavior that reaches outward, and it calls rather than dispatches. SceneManager assigns the sink: it is the scene's ActionRouter (scripts/game/flow/router.py). |
+| `lifecycle_mark` | 95 | 6 of 6 | Lifecycle | live | `state.life` | Declares this body GONE -- when a named action fires, or after a declared lifetime. It marks and never removes; SceneManager.reap() is what takes a marked body out of the scene and the renderer. |
 
 ### `player_input`
 
@@ -173,6 +212,8 @@ Polls the bound input manager and publishes a MoveIntent. The entity carrying th
 
 - **class** `GamePlayerInputBehavior`
 - **order** 10
+- **runs at** step 1 of 6
+- **category** Input (derived from `scripts.game.behavior.input`, declared nowhere)
 - **hooks** `attach`, `update`, `detach`
 - **binds** nothing (not on the event bus)
 - **writes** `intent`, `state.sprinting`
@@ -199,6 +240,8 @@ Fires on the rising edge of the 'attack' verb, with a cooldown. Records an Actio
 
 - **class** `GameActionInputBehavior`
 - **order** 15
+- **runs at** step 2 of 6
+- **category** Action (derived from `scripts.game.behavior.action`, declared nowhere)
 - **hooks** `attach`, `update`, `detach`
 - **binds** nothing (not on the event bus)
 - **writes** `action_intent.attack_action`
@@ -224,6 +267,8 @@ Fires on the rising edge of the 'action' verb -- talk, use, open. The explicit i
 
 - **class** `GameActionInputBehavior`
 - **order** 15
+- **runs at** step 2 of 6
+- **category** Action (derived from `scripts.game.behavior.action`, declared nowhere)
 - **hooks** `attach`, `update`, `detach`
 - **binds** nothing (not on the event bus)
 - **writes** `action_intent.interact_action`
@@ -249,6 +294,8 @@ Fires on the rising edge of the 'pause' verb. The entity-side half of a pause; w
 
 - **class** `GameActionInputBehavior`
 - **order** 15
+- **runs at** step 2 of 6
+- **category** Action (derived from `scripts.game.behavior.action`, declared nowhere)
 - **hooks** `attach`, `update`, `detach`
 - **binds** nothing (not on the event bus)
 - **writes** `action_intent.pause_action`
@@ -273,6 +320,8 @@ A side-on body: gravity, terminal velocity, air control and a jump with coyote t
 
 - **class** `GamePlatformerMoveBehavior`
 - **order** 20
+- **runs at** step 3 of 6
+- **category** Movement (derived from `scripts.game.behavior.movement`, declared nowhere)
 - **hooks** `attach`, `update`
 - **binds** nothing (not on the event bus)
 - **writes** `transform.position`, `velocity`, `state.support`, `state.support_grace`, `state.phase`, `state.facing`
@@ -301,6 +350,8 @@ Eight-direction axis-aligned movement, each held verb gated separately. The demo
 
 - **class** `GameTopDownMoveBehavior`
 - **order** 20
+- **runs at** step 3 of 6
+- **category** Movement (derived from `scripts.game.behavior.movement`, declared nowhere)
 - **hooks** `attach`, `update`
 - **binds** nothing (not on the event bus)
 - **writes** `transform.position`, `state.phase`, `state.facing`
@@ -320,6 +371,8 @@ Names the animation from the movement state, on the frame it changes. The sequen
 
 - **class** `GameAnimationDriveBehavior`
 - **order** 80
+- **runs at** step 4 of 6
+- **category** Movement (derived from `scripts.game.behavior.movement`, declared nowhere)
 - **hooks** `attach`, `update`
 - **binds** nothing (not on the event bus)
 - **writes** `animation`
@@ -343,6 +396,8 @@ Calls entity.action_sink(entity, fired) for every action that fired this frame. 
 
 - **class** `GameActionRelayBehavior`
 - **order** 90
+- **runs at** step 5 of 6
+- **category** Action (derived from `scripts.game.behavior.action`, declared nowhere)
 - **hooks** `update`
 - **binds** nothing (not on the event bus)
 - **writes** --
@@ -362,6 +417,8 @@ Declares this body GONE -- when a named action fires, or after a declared lifeti
 
 - **class** `GameLifecycleMarkBehavior`
 - **order** 95
+- **runs at** step 6 of 6
+- **category** Lifecycle (derived from `scripts.game.behavior.lifecycle`, declared nowhere)
 - **hooks** `attach`, `update`
 - **binds** nothing (not on the event bus)
 - **writes** `state.life`

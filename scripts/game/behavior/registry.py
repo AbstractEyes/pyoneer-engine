@@ -41,10 +41,11 @@ from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 from scripts.core.errors import (PyoneerAssetMissingError, PyoneerConfigError,
                                  warn_content)
 from scripts.core.log import trace_assets
-from scripts.game.behavior.base import (ACTOR, BEHAVIORS, KNOWN, PARAM_PREFIX,
-                                        PREFIX, TOKEN, BehaviorParam,
-                                        BehaviorRequest, BehaviorSpec,
-                                        EntityBehavior)
+from scripts.game.behavior.base import (ACTOR, BEHAVIORS, KNOWN, ORDER_RULE,
+                                        PARAM_PREFIX, PREFIX, TOKEN,
+                                        BehaviorParam, BehaviorRequest,
+                                        BehaviorSpec, EntityBehavior,
+                                        category_label)
 from scripts.game.behavior.state import (FACING_DEFAULT, LIVES, PHASES,
                                          SUPPORTS, BodyState)
 
@@ -103,6 +104,101 @@ def resolve(name: str,
                  "the object's %s property in Tiled" % BEHAVIORS,
         )
     return spec
+
+
+# ---------------------------------------------------------------------------
+# The two derived views: when a behavior runs, and what family it belongs to
+#
+# Both are functions of the table and nothing else. Neither reads a mapping,
+# because there is no mapping: `BehaviorSpec.order` is authored beside the
+# class and `BehaviorSpec.category` is the module the class is written in. A
+# caller that wants to GROUP or to SEQUENCE calls one of these rather than
+# re-deriving it, so `BEHAVIORS.md` and the editor's Behaviors panel cannot
+# group a behavior two different ways.
+# ---------------------------------------------------------------------------
+
+def order_steps(registry: Mapping[str, BehaviorSpec] | None = None
+                ) -> tuple[int, ...]:
+    """The distinct `order` values in the table, low first: the frame's steps.
+
+    A behavior's step number is its order's position here, one-based, and the
+    step count is the length. Two behaviors that share an `order` share a
+    STEP, which is the only honest rendering of them: their relative order is
+    decided by the sequence they are listed in on the object and by nothing
+    else, so numbering them 2 and 3 would invent a fact that the file does
+    not contain.
+    """
+    table = BEHAVIOR_REGISTRY if registry is None else registry
+    return tuple(sorted({spec.order for spec in table.values()}))
+
+
+def step_of(spec: BehaviorSpec,
+            registry: Mapping[str, BehaviorSpec] | None = None
+            ) -> tuple[int, int]:
+    """(which step this behavior runs in, how many steps the frame has).
+
+    Raises rather than reporting step 0 for a spec whose order is absent from
+    the table -- that means the spec was not registered, and a sequence
+    number invented for something outside the sequence is exactly the
+    plausible-wrong answer this repository refuses.
+    """
+    steps = order_steps(registry)
+    if spec.order not in steps:
+        raise PyoneerConfigError(
+            "behavior %r declares order=%d, which is not one of the orders in "
+            "this registry (%s); it has no step because it is not in the "
+            "sequence" % (spec.name, spec.order,
+                          ", ".join(str(o) for o in steps) or "<empty>"))
+    return steps.index(spec.order) + 1, len(steps)
+
+
+def run_order(names: Iterable[str],
+              registry: Mapping[str, BehaviorSpec] | None = None
+              ) -> tuple[BehaviorSpec, ...]:
+    """The specs for `names`, in the order one frame will call them.
+
+    The same sort key `EntityBehaviors._resort` uses -- declared `order`
+    first, position in the sequence to break a tie -- applied to a list of
+    TOKENS rather than to attached instances, so the editor can show an
+    author what the frame will do before anything has been built. Restating
+    that key is a second home for it, so `tools/check_behavior_ui.py`
+    asserts the two agree by attaching real behaviors to a real
+    `EntityBehaviors` and comparing; if they ever diverge, that goes red
+    rather than a panel quietly showing the wrong sequence.
+
+    Raises on an unknown token, like everything else that resolves one.
+    """
+    specs = [resolve(name, registry) for name in names]
+    return tuple(spec for _, spec in
+                 sorted(enumerate(specs),
+                        key=lambda entry: (entry[1].order, entry[0])))
+
+
+def categories(registry: Mapping[str, BehaviorSpec] | None = None
+               ) -> tuple[tuple[str, tuple[BehaviorSpec, ...]], ...]:
+    """Every registered behavior grouped by `BehaviorSpec.category`.
+
+    Exactly one group per behavior and no empty group, both structurally: a
+    group exists only because a behavior created it, and each behavior is
+    appended once. That is the property `tools/check_behavior_ui.py` asserts
+    against a substituted registry -- a behavior whose class lives in a
+    module nothing has ever heard of gets its own group with no edit here.
+
+    Groups come in RUN ORDER, keyed on the lowest order any of their members
+    declares, so the families read top to bottom the way the frame runs them.
+    A category still INTERLEAVES -- `action` holds both order 15 and order
+    90 -- which is why grouping never replaces the sequence and the panel
+    shows both.
+    """
+    table = BEHAVIOR_REGISTRY if registry is None else registry
+    grouped: dict[str, list[BehaviorSpec]] = {}
+    for spec in table.values():
+        grouped.setdefault(spec.category, []).append(spec)
+    return tuple(
+        (name, tuple(sorted(specs, key=lambda s: (s.order, s.name))))
+        for name, specs in sorted(
+            grouped.items(),
+            key=lambda item: (min(s.order for s in item[1]), item[0])))
 
 
 # ---------------------------------------------------------------------------
@@ -349,9 +445,20 @@ Most specific first, the same shape as `resolve_depth`:
     2. the `<key>` column of the actors row named by `{actor}`
     3. the parameter's declared default
 
-Step 2 needs a row, and **nothing in `scripts/` reads `data/project/`** -- the
-engine has no table reader yet. Until one exists, every parameter resolves
-from step 1 or step 3, and a `required` parameter with neither raises.
+Step 2 needs a row, and **the engine reads one.**
+`scripts/loaders/table_file.py` loads `data/project/tables/*.json`, `actor_row`
+turns an object's `{actor}` into that row, and both spawn routes -- the map
+spawn and `SceneManager.spawn` -- hand it in. `LayerRenderer.tables` is the
+one slot it lives in, assigned in `main.py` beside `spawn_defaults`.
+
+Missing stays free, and only missing: no `tables/` directory, no `{actor}` on
+the object, or a row that omits the column all fall through to step 3.
+Everything else RAISES -- an unreadable or self-contradictory table file, and
+a `{actor}` naming a row that is not there, which raises naming the object.
+A parameter that quietly took its default because the row id was misspelled
+would look exactly like a parameter nobody authored, which is the shape this
+whole chain exists to refuse. A `required` parameter with nothing at any of
+the three levels raises too.
 
 ## The per-frame call chain
 
@@ -427,7 +534,13 @@ design.
 ## Reading the tables below
 
     order      lower runs first within a frame; a tie is legal only when the
-               two behaviors write nothing in common
+               two behaviors write nothing in common. It is a position, not
+               an id -- see "Run order" above
+    frame step which of the frame's ordered steps it runs in, and how many
+               there are. Two behaviors at one order share one step
+    category   the module the behavior is declared in, derived from the class
+               and declared nowhere, so a new behavior needs no entry in any
+               table to appear under the right heading
     writes     which entity attributes it mutates -- this is what makes a
                collision between two composed behaviors visible in advance
     requires   what must be present on the entity for it to do anything;
@@ -516,6 +629,45 @@ def _state_axes() -> list[str]:
     return lines
 
 
+def _run_order_and_categories(table: Mapping[str, BehaviorSpec]) -> list[str]:
+    """The two derived views, rendered from the helpers the editor also calls.
+
+    Generated rather than written into the preamble: the preamble is prose
+    living inside this generator, so it can lie while the file still matches
+    it byte for byte, and it has done exactly that twice. Every line below is
+    read off `table`.
+    """
+    if not table:
+        return []
+    steps = order_steps(table)
+    lines = ["", "## Run order", "", ORDER_RULE, "",
+             "This registry's frame has %d step%s, and every behavior at one "
+             "step runs before every behavior at the next:"
+             % (len(steps), "" if len(steps) == 1 else "s"), ""]
+    for index, order in enumerate(steps, 1):
+        sharing = sorted(spec.name for spec in table.values()
+                         if spec.order == order)
+        lines.append("%d. **order %d** -- %s%s"
+                     % (index, order, ", ".join("`%s`" % n for n in sharing),
+                        " (one step, so the object's own list decides which "
+                        "of these goes first)" if len(sharing) > 1 else ""))
+    lines.extend([
+        "", "## The categories", "",
+        "A behavior's category is the module it is declared in, and nothing "
+        "else. There is no token-to-category table in this repository, so a "
+        "behavior registered tomorrow appears under its own module here and "
+        "in the editor's Behaviors panel -- which groups its checklist by "
+        "exactly this -- with no edit to either. A category interleaves with "
+        "the run order above rather than replacing it.", ""])
+    for name, specs in categories(table):
+        modules = sorted({spec.declared_in for spec in specs})
+        lines.append("- **%s** -- %s -- %d behavior%s"
+                     % (category_label(name),
+                        ", ".join("`%s`" % module for module in modules),
+                        len(specs), "" if len(specs) == 1 else "s"))
+    return lines
+
+
 def describe_all(registry: Mapping[str, BehaviorSpec] | None = None) -> str:
     """Render BEHAVIORS.md from the same table the engine binds from.
 
@@ -527,6 +679,7 @@ def describe_all(registry: Mapping[str, BehaviorSpec] | None = None) -> str:
     lines = [_PREAMBLE.format(behaviors=BEHAVIORS, param=PARAM_PREFIX,
                               actor=ACTOR)]
     lines.extend(_state_axes())
+    lines.extend(_run_order_and_categories(table))
     lines.append("")
     lines.append("## The registry")
     lines.append("")
@@ -540,13 +693,15 @@ def describe_all(registry: Mapping[str, BehaviorSpec] | None = None) -> str:
             "why landing it moved no frame.")
         return "\n".join(lines) + "\n"
 
-    lines.append("| token | order | status | writes | summary |")
-    lines.append("| --- | --- | --- | --- | --- |")
+    lines.append("| token | order | frame step | category | status | writes "
+                 "| summary |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
     for spec in sorted(table.values(), key=lambda s: (s.order, s.name)):
-        lines.append("| `%s` | %d | %s | %s | %s |"
-                     % (spec.name, spec.order, spec.status,
-                        ", ".join("`%s`" % w for w in spec.writes) or "--",
-                        spec.summary))
+        lines.append("| `%s` | %d | %d of %d | %s | %s | %s | %s |"
+                     % ((spec.name, spec.order) + step_of(spec, table)
+                        + (category_label(spec.category), spec.status,
+                           ", ".join("`%s`" % w for w in spec.writes) or "--",
+                           spec.summary)))
     lines.append("")
 
     for spec in sorted(table.values(), key=lambda s: (s.order, s.name)):
@@ -561,6 +716,9 @@ def describe_all(registry: Mapping[str, BehaviorSpec] | None = None) -> str:
         lines.append("- **class** `%s`" % getattr(spec.factory, "__name__",
                                                   repr(spec.factory)))
         lines.append("- **order** %d" % spec.order)
+        lines.append("- **runs at** step %d of %d" % step_of(spec, table))
+        lines.append("- **category** %s (derived from `%s`, declared nowhere)"
+                     % (category_label(spec.category), spec.declared_in))
         lines.append("- **hooks** %s" % (", ".join("`%s`" % h for h in spec.hooks)
                                          or "--"))
         lines.append("- **binds** %s" % (", ".join("`%s`" % b for b in spec.binds)
@@ -621,8 +779,10 @@ register_all((PLAYER_INPUT, TOPDOWN_MOVE, PLATFORMER_MOVE, ANIMATION_DRIVE))
 register_all(ACTION_SPECS + (ACTION_RELAY, LIFECYCLE_MARK))
 
 __all__ = [
-    "ACTOR", "BEHAVIORS", "BEHAVIOR_REGISTRY", "KNOWN", "PARAM_PREFIX",
-    "PREFIX", "BehaviorParam", "BehaviorRequest", "BehaviorSpec",
-    "build", "describe_all", "format_list", "parse_list", "read_requests",
-    "register", "register_all", "resolve", "resolve_params", "validate_list",
+    "ACTOR", "BEHAVIORS", "BEHAVIOR_REGISTRY", "KNOWN", "ORDER_RULE",
+    "PARAM_PREFIX", "PREFIX", "BehaviorParam", "BehaviorRequest",
+    "BehaviorSpec", "build", "categories", "category_label", "describe_all",
+    "format_list", "order_steps", "parse_list", "read_requests", "register",
+    "register_all", "resolve", "resolve_params", "run_order", "step_of",
+    "validate_list",
 ]

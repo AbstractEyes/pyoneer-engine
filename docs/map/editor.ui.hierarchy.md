@@ -5,34 +5,90 @@
 
 > The hierarchy -- one tree for the whole map, Unity/Godot style.
 
-`editor.ui.hierarchy` · 473 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.hierarchy` · 1102 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    editor.core.collision editor.core.commands editor.core.inspect editor.core.project editor.core.scope editor.ui.docks scripts.core.depth
+    editor.core.collision editor.core.commands editor.core.inspect editor.core.project editor.core.scope editor.ui.canvas editor.ui.docks scripts.core.depth scripts.core.errors scripts.game.behavior.base scripts.game.behavior.registry
 
 ## Classes
 
+### `@dataclass(frozen=True) class ObjectClipping` #TAG:ObjectClipping
+
+`editor/ui/hierarchy.py:116`–`154`
+
+> One object's authored data, with its id deliberately left behind.
+
+- `editor/ui/hierarchy.py:152` `property_dict(self) -> dict[str, Any]` #TAG:ObjectClipping.property_dict
+  - A fresh mutable copy, for handing to `map.object.add`.
+
 ### `class HierarchyDock(ScopedDock)` #TAG:HierarchyDock
 
-`editor/ui/hierarchy.py:79`–`471`
+`editor/ui/hierarchy.py:157`–`1100`
 
 > Everything in the map, in the order it was authored.
 
-- `editor/ui/hierarchy.py:90` `build_content(self) -> QWidget` #TAG:HierarchyDock.build_content
-- `editor/ui/hierarchy.py:130` `__known_names(self, kind: str, taken: set[str]) -> list[str]` #TAG:HierarchyDock.__known_names
+- `editor/ui/hierarchy.py:179` `build_content(self) -> QWidget` #TAG:HierarchyDock.build_content
+- `editor/ui/hierarchy.py:226` `__known_names(self, kind: str, taken: set[str]) -> list[str]` #TAG:HierarchyDock.__known_names
   - Layer names that will draw, minus the ones already used.
-- `editor/ui/hierarchy.py:150` `__on_add(self, kind: str) -> None` #TAG:HierarchyDock.__on_add
-- `editor/ui/hierarchy.py:197` `__on_remove(self) -> None` #TAG:HierarchyDock.__on_remove
-- `editor/ui/hierarchy.py:210` `__sync_buttons(self) -> None` #TAG:HierarchyDock.__sync_buttons
+- `editor/ui/hierarchy.py:246` `__on_add(self, kind: str) -> None` #TAG:HierarchyDock.__on_add
+- `editor/ui/hierarchy.py:293` `__orphaned_companion(self, layer: str) -> list[str]` #TAG:HierarchyDock.__orphaned_companion
+  - The companion `layer` takes with it -- at most one, often none.
+- `editor/ui/hierarchy.py:333` `__on_remove(self) -> None` #TAG:HierarchyDock.__on_remove
+- `editor/ui/hierarchy.py:355` `__sync_buttons(self) -> None` #TAG:HierarchyDock.__sync_buttons
   - Enable only what can actually happen, and say why when it cannot.
-- `editor/ui/hierarchy.py:234` `__collision(self, document)` #TAG:HierarchyDock.__collision
+- `editor/ui/hierarchy.py:379` `__collision(self, document)` #TAG:HierarchyDock.__collision
   - Which layers to fold away, and what badge their art layer wears.
-- `editor/ui/hierarchy.py:276` `refresh(self) -> None` #TAG:HierarchyDock.refresh
-- `editor/ui/hierarchy.py:334` `__add_node(self, parent, node, document, pack, map_name, needle: str, folded: set[str], badges: dict[str, tuple[int, str, str | None]]) -> int` #TAG:HierarchyDock.__add_node
-- `editor/ui/hierarchy.py:420` `__on_current(self, current, _previous) -> None` #TAG:HierarchyDock.__on_current
-- `editor/ui/hierarchy.py:432` `on_selection_changed(self, scope: Scope) -> None` #TAG:HierarchyDock.on_selection_changed
+- `editor/ui/hierarchy.py:421` `refresh(self) -> None` #TAG:HierarchyDock.refresh
+- `editor/ui/hierarchy.py:479` `__add_node(self, parent, node, document, pack, map_name, needle: str, folded: set[str], badges: dict[str, tuple[int, str, str | None]]) -> int` #TAG:HierarchyDock.__add_node
+- `editor/ui/hierarchy.py:565` `row_scope(self, point) -> Scope | None` #TAG:HierarchyDock.row_scope
+  - The scope of the row under a VIEWPORT point, or None.
+- `editor/ui/hierarchy.py:583` `__on_context_menu(self, point) -> None` #TAG:HierarchyDock.__on_context_menu
+  - `customContextMenuRequested` delivers a point in the TREE's own
+- `editor/ui/hierarchy.py:590` `open_object_menu(self, point) -> None` #TAG:HierarchyDock.open_object_menu
+  - Right-click, in viewport coordinates.
+- `editor/ui/hierarchy.py:611` `object_menu(self, scope: Scope) -> QMenu` #TAG:HierarchyDock.object_menu
+  - The row menu, built and not yet shown.
+- `editor/ui/hierarchy.py:649` `__entry(self, menu: QMenu, text: str, refusal: str, tip: str, act)` #TAG:HierarchyDock.__entry
+  - One menu row. A refusal greys it AND goes in its own label.
+- `editor/ui/hierarchy.py:669` `__object(self, scope: Scope)` #TAG:HierarchyDock.__object
+  - The `MapObject` a scope names, or None. Never raises.
+- `editor/ui/hierarchy.py:688` `@staticmethod object_label(found) -> str` #TAG:HierarchyDock.object_label
+  - How one object says which one it is, in a message.
+- `editor/ui/hierarchy.py:697` `object_refusal(self, scope: Scope) -> str` #TAG:HierarchyDock.object_refusal
+  - Why Edit, Cut, Copy and Delete cannot act on this row, or "".
+- `editor/ui/hierarchy.py:707` `__canvas_focus(self)` #TAG:HierarchyDock.__canvas_focus
+  - `MapCanvas.focus_object`, or None while the canvas has none.
+- `editor/ui/hierarchy.py:712` `focus_refusal(self, scope: Scope) -> str` #TAG:HierarchyDock.focus_refusal
+  - Why Focus cannot act, or "".
+- `editor/ui/hierarchy.py:728` `paste_layer(self, scope: Scope) -> str | None` #TAG:HierarchyDock.paste_layer
+  - The object layer a paste on this row would land on, or None.
+- `editor/ui/hierarchy.py:742` `is_object_layer(self, scope: Scope) -> bool` #TAG:HierarchyDock.is_object_layer
+- `editor/ui/hierarchy.py:745` `paste_refusal(self, scope: Scope) -> str` #TAG:HierarchyDock.paste_refusal
+  - Why Paste cannot act on this row, or "".
+- `editor/ui/hierarchy.py:789` `edit_object(self, scope: Scope) -> bool` #TAG:HierarchyDock.edit_object
+  - Open the entity editing screen. The window owns that door.
+- `editor/ui/hierarchy.py:808` `focus_object(self, scope: Scope) -> bool` #TAG:HierarchyDock.focus_object
+  - Centre the canvas on the object this row names.
+- `editor/ui/hierarchy.py:831` `copy_object(self, scope: Scope) -> bool` #TAG:HierarchyDock.copy_object
+  - Snapshot the object onto the clipboard. Changes nothing.
+- `editor/ui/hierarchy.py:857` `cut_object(self, scope: Scope) -> bool` #TAG:HierarchyDock.cut_object
+  - Copy it and take it off the map, as ONE transaction.
+- `editor/ui/hierarchy.py:885` `delete_object(self, scope: Scope) -> bool` #TAG:HierarchyDock.delete_object
+  - Remove the object. `map.object.remove` restores its whole XML.
+- `editor/ui/hierarchy.py:905` `@staticmethod paste_position(clip: ObjectClipping, document, step: int) -> tuple[float, float]` #TAG:HierarchyDock.paste_position
+  - Where the `step`-th paste of `clip` lands, in world pixels.
+- `editor/ui/hierarchy.py:927` `paste_object(self, scope: Scope) -> bool` #TAG:HierarchyDock.paste_object
+  - Add a copy of the clipping to the object layer this row is on.
+- `editor/ui/hierarchy.py:991` `select_scope(self, scope: Scope) -> None` #TAG:HierarchyDock.select_scope
+  - Select a row without clicking it -- what a menu entry needs.
+- `editor/ui/hierarchy.py:1006` `__announce(self, scope: Scope) -> None` #TAG:HierarchyDock.__announce
+  - Tell the panel and the editor that this is what is selected.
+- `editor/ui/hierarchy.py:1018` `__on_current(self, current, _previous) -> None` #TAG:HierarchyDock.__on_current
+- `editor/ui/hierarchy.py:1026` `__on_double(self, item, _column) -> None` #TAG:HierarchyDock.__on_double
+  - Double-click. AN OBJECT ROW MOVES THE CANVAS ONTO IT.
+- `editor/ui/hierarchy.py:1044` `on_selection_changed(self, scope: Scope) -> None` #TAG:HierarchyDock.on_selection_changed
   - Follow a selection made elsewhere -- canvas, problems, anywhere.
-- `editor/ui/hierarchy.py:448` `__reselect(self, wanted: str | None=None) -> None` #TAG:HierarchyDock.__reselect
-- `editor/ui/hierarchy.py:461` `__hidden(self) -> set[str]` #TAG:HierarchyDock.__hidden
-- `editor/ui/hierarchy.py:466` `__on_check(self, item, _column) -> None` #TAG:HierarchyDock.__on_check
+- `editor/ui/hierarchy.py:1077` `__reselect(self, wanted: str | None=None) -> None` #TAG:HierarchyDock.__reselect
+- `editor/ui/hierarchy.py:1090` `__hidden(self) -> set[str]` #TAG:HierarchyDock.__hidden
+- `editor/ui/hierarchy.py:1095` `__on_check(self, item, _column) -> None` #TAG:HierarchyDock.__on_check

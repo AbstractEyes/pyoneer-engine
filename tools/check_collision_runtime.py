@@ -1,6 +1,6 @@
 """Verify that the engine reads authored masks and refuses a blocked step.
 
-Eleven claims. Every one is something the code is otherwise free to
+Twelve claims. Every one is something the code is otherwise free to
 break with no visible symptom until a player walks through a wall in a room
 nobody tests twice:
 
@@ -15,6 +15,25 @@ nobody tests twice:
     a companion may be four times the map, and an old one gates as it did
     a mask baked into a TILE gates wherever it is stamped, and loses to paint
     a layer that moves under the camera gates nothing, painted or not
+    the anchor decides WHICH pixel is asked, and the game derives one
+
+WHAT SECTION 11 IS FOR
+----------------------
+Every claim above this one is about the FIELD: which cells block, in which
+direction, decided by which layer. Section 11 is about the other half of a
+collision query, which is WHERE ON THE SPRITE it is asked. That half was a
+class attribute with a reader, a docstring and no writer anywhere in
+`scripts/`, `editor/` or `main.py`; the only two writers in the tree were
+demos assigning it by hand after the map had already built the bodies. So a
+44x64 character was gated at the top-left pixel of its own sprite -- its
+head -- and allowed to move 63.9990234375 pixels DOWN into a floor at y=64
+while the gate worked perfectly.
+
+The section states it in both directions, because an anchor proved to stop a
+body is not an anchor: a body stopped at its head stops too. So the same body
+is walked into a wall in the row its FEET are in, which must stop it, and
+into a wall in the row only its HEAD is in, which must not -- and the head
+anchor is walked into both and gets the opposite pair of answers.
 
 WHAT SECTION 10 IS FOR
 ----------------------
@@ -83,9 +102,11 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
 import ast
+import inspect
 import os
 import sys
 import tempfile
+import types
 import warnings
 
 import pygame
@@ -142,7 +163,8 @@ from scripts.core.collision_runtime import (
 )
 from scripts.core.depth import MAP_DEPTH, resolve_layer_depth
 from scripts.core.errors import PyoneerConfigError
-from scripts.game.entity.game_entity import GameEntity
+from scripts.game.entity.game_entity import GameAnimatedEntity, GameEntity
+from scripts.game.entity.game_player import GamePlayer
 from scripts.loaders.map_document import MapDocument
 
 failures: list[str] = []
@@ -1914,6 +1936,257 @@ expect_raises(
 # it is pinned as a literal rather than compared to itself.
 expect("the declaration is a pyoneer_ property, so pytmx cannot refuse the map",
        runtime.DEFAULTS_PROPERTY, "pyoneer_collision")
+
+
+# ---------------------------------------------------------------------------
+# 11. The anchor: WHICH pixel of the sprite the gate is asked about
+# ---------------------------------------------------------------------------
+print()
+print("the anchor is a constructor keyword, and it decides the tested pixel")
+
+SPRITE = (44, 64)
+"""The shipped `~Garet` frame, TYPED OUT rather than measured off the sheet.
+
+Measuring it here would make every number below a restatement of whatever the
+sheet happens to be, and the pair would agree with itself after someone
+re-cut the sheet at 32x32 and left every body anchored 32 pixels below its
+own feet. config/animations.json declares this size and
+`tools/check_demos.py` pins the same pair.
+"""
+
+FEET = (SPRITE[0] / 2.0, float(SPRITE[1] - 1))
+"""Centre-bottom: half the frame wide, one pixel above its bottom edge."""
+
+
+def anchored(x, y, *, field=None, offset=FEET, speed=256):
+    """A probe whose anchor arrives as a CONSTRUCTOR KEYWORD.
+
+    `probe` above ASSIGNS `collision_offset` after construction, which is what
+    every caller in the tree did before the keyword existed -- and an assigned
+    attribute passes just as happily when the keyword is accepted and thrown
+    away, which is the shape `transform` has had for the life of this class.
+    This one hands it in the way `spawn_arguments` does.
+    """
+    entity = ProbeEntity(movement_config={"move_speed": speed, "sprint_mult": 2},
+                         collision_offset=offset)
+    entity.moveto((x, y))
+    entity.collision_field = field
+    return entity
+
+
+# ---- the keyword exists, all the way down --------------------------------
+# Three signatures, because the value travels GamePlayer ->
+# GameAnimatedEntity -> GameEntity. A passthrough dropped at any one of them
+# leaves every MAP-SPAWNED body on the head anchor while a GameEntity built
+# by hand in a check looks perfect.
+for owner in (GameEntity, GameAnimatedEntity, GamePlayer):
+    parameters = inspect.signature(owner.__init__).parameters
+    expect(f"{owner.__name__}.__init__ takes collision_offset",
+           "collision_offset" in parameters, True)
+    expect(f"...and {owner.__name__} defaults it to the documented head anchor",
+           parameters["collision_offset"].default
+           if "collision_offset" in parameters else None,
+           (0.0, 0.0))
+
+expect("an entity built with no anchor tests its own top-left, as it always did",
+       ProbeEntity(movement_config={"move_speed": 16}).collision_offset,
+       (0.0, 0.0))
+expect("...and one built WITH an anchor keeps the one it was handed",
+       anchored(0.0, 0.0).collision_offset, FEET)
+expect("...as floats, so an integer pair out of a defaults dict is not a second type",
+       [type(value)
+        for value in anchored(0.0, 0.0, offset=(22, 63)).collision_offset],
+       [float, float])
+expect_raises(
+    "a value that is not two numbers is refused, not quietly made (0, 0)",
+    ValueError,
+    lambda: ProbeEntity(movement_config={"move_speed": 16},
+                        collision_offset=(22.0, 63.0, 9.0)),
+    "collision_offset", "two numbers")
+expect_raises(
+    "...and so is a bare number, which unpacks into nothing",
+    ValueError,
+    lambda: ProbeEntity(movement_config={"move_speed": 16},
+                        collision_offset=63.0),
+    "collision_offset", "two numbers")
+
+
+# ---- half one: a floor its FEET reach ------------------------------------
+# One column, two rows of 64px. Everything above y=64 is open and everything
+# below it is wall, so a 44x64 sprite standing at y=0 has its head on the top
+# edge of the map and its feet one pixel above the floor.
+FLOOR_TOP = 64.0
+floor_field = CollisionField(1, 2, bytes([PASS_ALL, BLOCK_ALL]),
+                             tile_width=64, tile_height=64)
+
+feet_first = anchored(0.0, 0.0, field=floor_field, offset=FEET)
+feet_first.move_direction(1.0, "down")
+expect_close("a body anchored at its feet is stopped by the floor its feet reach",
+             feet_first.collision_point()[1], FLOOR_TOP - EDGE_INSET)
+expect_close("...so its sprite comes to rest ON the floor",
+             feet_first.transform.position.y + SPRITE[1],
+             FLOOR_TOP + 1.0 - EDGE_INSET)
+
+head_first = anchored(0.0, 0.0, field=floor_field, offset=(0.0, 0.0))
+head_first.move_direction(1.0, "down")
+expect_close("the SAME gate stops a body anchored at (0, 0) at the same pixel",
+             head_first.collision_point()[1], FLOOR_TOP - EDGE_INSET)
+# The measured defect the keyword exists to end, pinned as the literal it was
+# measured as. The gate is doing its job on both lines; only one of them
+# leaves the character above ground.
+expect("...but that pixel is its HEAD, so it travelled a whole frame into the floor",
+       head_first.transform.position.y, 63.9990234375)
+expect("...which the feet-anchored body did not, and that is the whole difference",
+       (head_first.transform.position.y + SPRITE[1] > FLOOR_TOP + SPRITE[1] - 1.0,
+        feet_first.transform.position.y + SPRITE[1] > FLOOR_TOP + SPRITE[1] - 1.0),
+       (True, False))
+
+
+# ---- half two: NOT stopped by a floor only its HEAD would have reached ----
+# Half-size cells, so the head and the feet of one 64px sprite sit in
+# DIFFERENT rows: standing at y=0 the head point is in row 0 and the feet
+# point (y=63) is in row 1. Two fields, one wall each, the same body from the
+# same pixel in the same direction -- so which wall stops it is decided by
+# the anchor and by nothing else, and each anchor is stopped by one field and
+# walks straight through the other.
+overhang = CollisionField(3, 2,
+                          bytes([PASS_ALL, BLOCK_ALL, PASS_ALL,
+                                 PASS_ALL, PASS_ALL, PASS_ALL]),
+                          tile_width=32, tile_height=32)
+low_step = CollisionField(3, 2,
+                          bytes([PASS_ALL, PASS_ALL, PASS_ALL,
+                                 PASS_ALL, BLOCK_ALL, PASS_ALL]),
+                          tile_width=32, tile_height=32)
+WALL_LEFT = 32.0 - EDGE_INSET
+FAR_EDGE = 96.0 - EDGE_INSET
+
+ducked = anchored(0.0, 0.0, field=overhang, offset=FEET)
+ducked.move_direction(1.0, "right")
+expect_close("a wall only the body's HEAD would have reached does not stop its feet",
+             ducked.collision_point()[0], FAR_EDGE)
+bumped = anchored(0.0, 0.0, field=overhang, offset=(0.0, 0.0))
+bumped.move_direction(1.0, "right")
+expect_close("...while the head anchor walks that same body straight into it",
+             bumped.collision_point()[0], WALL_LEFT)
+
+onto = anchored(0.0, 0.0, field=low_step, offset=FEET)
+onto.move_direction(1.0, "right")
+expect_close("a wall in the FEET's row stops the feet-anchored body",
+             onto.collision_point()[0], WALL_LEFT)
+strode = anchored(0.0, 0.0, field=low_step, offset=(0.0, 0.0))
+strode.move_direction(1.0, "right")
+expect_close("...and the head-anchored one walks over it, testing empty air",
+             strode.collision_point()[0], FAR_EDGE)
+# Stated once more as the pair, because two lines that each pass on their own
+# still pass when the anchor is ignored and BOTH bodies stop at the same
+# wall. The claim is that they disagree.
+expect("the two anchors are stopped by opposite walls, from the same pixel",
+       (bumped.collision_point()[0] < ducked.collision_point()[0],
+        onto.collision_point()[0] < strode.collision_point()[0]),
+       (True, True))
+
+
+# ---- the layer above: main.py DERIVES an anchor and passes it -------------
+# This repository's signature defect is a capability that is complete,
+# checked and unreachable, and `collision_offset` was exactly that: a reader,
+# a docstring, and no writer anywhere in scripts/, editor/ or main.py. So the
+# keyword is only half the fix. The other half is that the game passes one --
+# on BOTH routes, because the driven player on the shipped map is built by a
+# direct construction that `spawn_defaults` never touches.
+print()
+print("main.py derives the anchor and hands it to both routes that build a body")
+
+try:
+    import main as main_module
+except Exception as exc:                                        # noqa: BLE001
+    # A FAILURE, not a skip: main.py is the engine's only entry point and the
+    # file tools/smoke.py boots. Skipping would delete the only guard on the
+    # writer while still printing OK.
+    print(f"  FAIL {'main.py did not import':<58} {exc}")
+    failures.append("main.py must import")
+    main_module = None
+
+
+def _sequence(width, height):
+    """One frame of a given size, with no sheet behind it."""
+    return types.SimpleNamespace(
+        frames=[types.SimpleNamespace(width=width, height=height)])
+
+
+def _category(name, sequences):
+    """A stand-in for `DataAnimationCategory`: no json, no art, no display."""
+    return types.SimpleNamespace(name=name, sequences=sequences)
+
+
+if main_module is not None:
+    expect("feet_anchor measures the frame the handler starts at construction",
+           main_module.feet_anchor(
+               _category("entity", {"idle_down": _sequence(*SPRITE)})),
+           FEET)
+    expect("...and it MEASURES rather than remembering, so a re-cut sheet moves it",
+           main_module.feet_anchor(
+               _category("tall", {"idle_down": _sequence(16, 100)})),
+           (8.0, 99.0))
+    expect_raises(
+        "a category with no frame to measure raises rather than answering (0, 0)",
+        PyoneerConfigError,
+        lambda: main_module.feet_anchor(_category("empty", {})),
+        "collision anchor", "idle_down", "at its head")
+    expect_raises(
+        "...and so does no category at all",
+        PyoneerConfigError,
+        lambda: main_module.feet_anchor(None),
+        "collision anchor", "idle_down")
+
+    # Read as SOURCE. Booting MainGame wants a display, the shipped config,
+    # art and a map, while the claim is only about which arguments each
+    # construction passes -- and "it looked landed and did nothing on the map
+    # the author opens" is made of exactly that.
+    with open(os.path.join(_bootstrap.REPO_ROOT, "main.py"),
+              encoding="utf-8") as handle:
+        main_tree = ast.parse(handle.read(), "main.py")
+
+    spawn_defs = [node for node in ast.walk(main_tree)
+                  if isinstance(node, ast.FunctionDef)
+                  and node.name == "spawn_arguments"]
+    expect("main.py still declares the map-spawn arguments in spawn_arguments",
+           len(spawn_defs), 1)
+    declared_keys = [key.value
+                     for node in spawn_defs
+                     for mapping in ast.walk(node)
+                     if isinstance(mapping, ast.Dict)
+                     for key in mapping.keys
+                     if isinstance(key, ast.Constant)]
+    expect("...and declares a collision_offset there, so a MAP-SPAWNED body gets one",
+           declared_keys.count("collision_offset"), 1)
+
+    hand_built = [node for node in ast.walk(main_tree)
+                  if isinstance(node, ast.Call)
+                  and isinstance(node.func, ast.Name)
+                  and node.func.id == "GamePlayer"]
+    expect("main.py also builds GamePlayers directly, which spawn_defaults never reaches",
+           len(hand_built) >= 2, True)
+    expect("...and every one of those is handed the anchor too",
+           [call.lineno for call in hand_built
+            if not any(keyword.arg == "collision_offset"
+                       for keyword in call.keywords)],
+           [])
+
+    # The other direction, and the reason this was invisible for so long:
+    # `DemoGame` used to REASSIGN `collision_offset` on every spawned record
+    # after the map had built them, so the side-on demo landed on its feet
+    # while the shared route was doing nothing at all.
+    with open(os.path.join(_bootstrap.REPO_ROOT, "demos", "runtime.py"),
+              encoding="utf-8") as handle:
+        demo_tree = ast.parse(handle.read(), "demos/runtime.py")
+    expect("the demo runtime sets no anchor of its own, so it proves the shared route",
+           [node.lineno for node in ast.walk(demo_tree)
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Attribute)
+                    and target.attr == "collision_offset"
+                    for target in node.targets)],
+           [])
+
 
 
 

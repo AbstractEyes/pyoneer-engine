@@ -13,4 +13,4 @@
 
 ## Functions
 
-- `editor/app.py:24` `main(argv: list[str] | None=None) -> int` #TAG:app.main
+- `editor/app.py:24` `main(argv: list[str] | None=None) -> int` #TAG:main
