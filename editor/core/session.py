@@ -87,6 +87,7 @@ class Session:
         return bundle
 
     def ask(self, scope: Scope | str, text: str, kind: str = "change", *,
+            also: Iterable[Scope | str] = (),
             requests_dir: str | None = None) -> str:
         """One note, one bundle, cut to one address. Returns its path.
 
@@ -109,18 +110,41 @@ class Session:
 
         Refuses a scope no verb accepts; `write_bundle` owns that refusal so
         no caller can route around it.
+
+        `also` names the other addresses this one request may touch, and the
+        bundle then ships their verbs too and ACCEPTS a response aimed at
+        them -- `BundleContract` refuses anything else. It exists because
+        one real flow crosses addresses: attaching an event script needs
+        `script.create` at `script:<id>` and `map.object.property.set` at
+        the object that runs it, which is two scopes and no new verb
+        (`docs/PLAN_SCENES.md` section 6). Widening is therefore a
+        declaration the author makes, checked like everything else, rather
+        than a hole in the gate for everybody.
         """
         resolved = scope if isinstance(scope, Scope) else Scope.parse(scope)
         bundle = write_bundle(self.project,
                               Manifest(notes=[Note(resolved, text, kind)]),
-                              requests_dir=requests_dir, scoped=resolved)
+                              requests_dir=requests_dir, scoped=resolved,
+                              also=also)
         self.last_bundle = bundle
         return bundle.directory
 
     # -- responses ---------------------------------------------------------
 
     def apply_response(self, path: str) -> Transaction:
-        """Apply a `response.jsonl` as one undoable transaction."""
+        """Apply a `response.jsonl` as one undoable transaction.
+
+        THE SCOPE GATE IS NOT HERE, DELIBERATELY. A response answering a
+        SCOPED bundle may only use the verbs that bundle shipped, aimed at
+        the addresses it declared -- and that check lives inside
+        `read_response`, one call down, because this method is not the only
+        door: the editor window's Apply-a-response does its own
+        `read_response` and its own `run`, so a gate written here would
+        guard the tool path and leave the path the author actually clicks
+        wide open. That is the shape `CLAUDE.md`'s fourth ACTIVE WARNING
+        counts sightings of. `read_response` is the chokepoint both doors
+        share; see `BundleContract`.
+        """
         commands = read_response(path)
         identifier = os.path.basename(os.path.dirname(os.path.abspath(path)))
         return self.run(commands,

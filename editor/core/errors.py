@@ -27,6 +27,7 @@ than a generic ValueError.
         |   +-- PyoneerRowMissingError
         +-- PyoneerRequestError       a request bundle or response is malformed
             +-- PyoneerResponseParseError
+            +-- PyoneerScopeRefusedError
 
 THE ROLLBACK CONTRACT
 ---------------------
@@ -158,6 +159,20 @@ class PyoneerFieldMissingError(PyoneerProjectError, KeyError):
 
 class PyoneerRequestError(PyoneerEditorError):
     """A request bundle could not be written, or a response could not be read."""
+
+
+class PyoneerScopeRefusedError(PyoneerRequestError):
+    """A response PARSED, and reached outside the scope its bundle declared.
+
+    ITS OWN CLASS, and the reason is a sentence a reader was once shown: a
+    refused response used to arrive at the editor window as "<file> is not a
+    readable response", because both faults are `PyoneerRequestError` and
+    the window caught the base. That is wrong about the one thing the reader
+    needs -- the file IS readable, every line of it parsed -- so the two are
+    told apart by TYPE rather than by reading the message, which is what a
+    UI can act on. See `BundleContract.enforce`, which is the only place
+    that raises it.
+    """
 
 
 class PyoneerResponseParseError(PyoneerRequestError):

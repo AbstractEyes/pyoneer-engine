@@ -56,6 +56,19 @@ edit in the editor with no inverse, no history entry and nothing for a human
 to review. It is shown with `show()` and stays open across an import, so
 adding four regions off one sheet is four drags -- which is what turns a
 form into a tool, and is why it must not be modal.
+
+NO BLOCKING CALL OF ITS OWN, AND BROWSE IS STILL A SEAM
+------------------------------------------------------
+Browse opens the platform file picker, and there is no way to pick a file
+without one -- but the picker is `ask.choose_file` now, so this module owns
+no modal at all and the named exemption `tools/check_editor_ui.py` carried
+for it on 2026-09-04 is gone. `_choose_image_file` stays as a one-line
+adapter, because the SEAM is the half that matters here: it is held as an
+INSTANCE attribute -- `self.choose_file`, the same shape as
+`MapCanvas.popup_menu` and `ask.confirm` -- so a check drives the button,
+substitutes the opener and asserts what Browse did with the answer, instead
+of sitting on a modal until the suite's 600s timeout (law 13).
+#TAG:file_picker_is_a_seam
 """
 from __future__ import annotations
 
@@ -68,7 +81,6 @@ from PySide6.QtCore import QPointF, QRect, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QDialog,
-    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -80,6 +92,8 @@ from PySide6.QtWidgets import (
 )
 
 from scripts.loaders.map_document import tileset_geometry
+
+from editor.ui.ask import choose_file
 
 # Offered as a filter, not enforced. An unreadable file is caught by QImage
 # handing back a null image, which is a real test; a file extension is not.
@@ -457,6 +471,24 @@ class GridPreview(QWidget):
                                  self.columns, self.rows)
 
 
+def _choose_image_file(parent: QWidget | None, start: str) -> str:
+    """Ask the platform for one image path, or "" if the author cancelled.
+
+    THE TITLE AND THE FILTER ARE THIS MODULE'S, THE WINDOW IS `ask.py`'S.
+    That split is the whole reason this two-line adapter still exists: the
+    dialog seam owns "how a file is picked" for the whole editor, and only
+    this file knows that the thing being picked is a tileset sheet.
+
+    Held as `self.choose_file` by the dialog, never called through this
+    name, so replacing the attribute replaces the picker for one widget --
+    the seam `ask.confirm` and `MapCanvas.popup_menu` already are. Its own
+    signature is `(parent, start)` rather than `ask.choose_file`'s four
+    arguments, because a check substituting it should not have to restate a
+    title and a filter it has no opinion about.
+    """
+    return choose_file(parent, "Choose a tileset image", start, IMAGE_FILTER)
+
+
 class TilesetImportDialog(QDialog):
     """Select tiles out of an image and add them as a named tileset.
 
@@ -478,6 +510,11 @@ class TilesetImportDialog(QDialog):
         self.map_dir = map_dir
         self.existing_names = {str(name) for name in existing_names}
         self.next_gid = max(1, next_gid)
+        #: THE FILE PICKER, as a replaceable attribute. See
+        #: `_choose_image_file`: a check drives Browse by substituting this,
+        #: because the shipping call blocks and a check must not (law 13).
+        self.choose_file: Callable[[QWidget | None, str], str] = \
+            _choose_image_file
         self.setWindowTitle("Add tiles")
         self.setMinimumWidth(520)
         # A real window rather than a sheet stapled to the editor, so the map
@@ -608,8 +645,13 @@ class TilesetImportDialog(QDialog):
     # -- input -------------------------------------------------------------
 
     def __browse(self) -> None:
-        chosen, _filter = QFileDialog.getOpenFileName(
-            self, "Choose a tileset image", self.map_dir, IMAGE_FILTER)
+        """Browse: ask through the seam, and do nothing on a cancel.
+
+        A cancelled picker returns "", and clearing the path field on it
+        would throw away a sheet the author had already loaded because they
+        opened the picker and changed their mind.
+        """
+        chosen = self.choose_file(self, self.map_dir)
         if chosen:
             self.set_image_path(chosen)
 

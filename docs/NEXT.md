@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. -->
+<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. -->
 
 # Next — what is open, ranked, and the command that measured it
 
@@ -246,6 +246,68 @@ dock itself reports a `minimumSizeHint` of **168x238**, and `resizeDocks`
 asking for one pixel leaves it **238** tall; the tile palette dock asked the
 same way reports **178x133** and shrinks. That 105-pixel difference between two
 docks sharing one strip is the whole complaint.
+
+**12. `SelectedObject` lives in a Qt module, so the two headless readers
+resolve an object by id and act on whatever answers.** The canvas learned that
+an id is not an identity, and on 2026-09-04 the hierarchy tree learned it too
+-- by IMPORTING the canvas's record rather than inventing a second one. Two
+readers still have no card: `#TAG:object_at` (the behavior panel's) and
+`#TAG:inspect._describe_object` (the inspector's) both resolve
+`layer.find(int(scope.require("object")))` and hand the panel whatever
+is at that address, and every `Field`'s `emit` writes `map.object.set` /
+`map.object.property.set` back to that same scope. Narrower than the menu was,
+and that is why it is here rather than in the suite: `EditorWindow.refresh_all`
+rebuilds both panels on every command, so what is displayed matches what a
+write would hit. It is still the identical unguarded idea, and it cannot be
+closed by importing, because `editor/core/` may not import `editor/ui/` (law
+2). THE SHAPE OF THE FIX: move the `SelectedObject` dataclass verbatim out of
+`editor/ui/canvas.py` into a new `editor/core/identity.py` -- it is Qt-free
+already, which is what makes core the right home -- plus a free
+`identify(document, layer, object_id)`; the canvas, the tree, the inspector and
+the behavior panel then all import one record. Nothing about the record
+changes. Cost: low today and rising, because every new headless reader of an
+object scope is written by copying one of these two.
+Measured 2026-09-04:
+`grep -rn "layer.find(int(" editor/ --include=*.py` returns **2**
+(`behavior_view.py`, and `#TAG:request._describe_object`, the relay's
+read-only renderer, which is correct as an address);
+`grep -rn "class SelectedObject" editor/ --include=*.py` returns **1**, in
+`editor/ui/canvas.py`.
+
+**13. `Session.ask(..., also=...)` has no control anywhere in the window.** The
+scoped-bundle gate landed with a declared widening -- a request may name a
+second address, ship its verbs and accept a response aimed at it -- and the one
+flow that needs it is the main one: attaching an event script is
+`script.create` at `script:<id>` plus `map.object.property.set` at the object
+that runs it (`docs/PLAN_SCENES.md` section 6), which is two addresses and no
+new verb. Today an author can only widen from code or a tool. This is the
+fourth ACTIVE WARNING's shape exactly: a capability that is complete, checked,
+and unreachable by the person who asked for it. The seam that wants it is
+`#TAG:ScriptEditor.ask_here`, which asks about a script and knows which object
+runs it. Cost: low while the refusal names the three reachable ways on (an
+ordinary source edit described in NOTES.md, asking again with both addresses,
+or Ship unscoped) -- and all three are wired.
+Measured 2026-09-04: `grep -rn "also=" editor/ui/ --include=*.py` returns
+**0**; `grep -rn "session.ask(" editor/ui/ --include=*.py` returns **2**
+(`prompt.py`, `script_editor.py`), neither passing a second address.
+
+**14. Painting a TILE on a hidden layer is unguarded, and that is a decision.**
+On 2026-09-04 both object-creation paths learned to refuse a hidden layer --
+`#TAG:hidden_layer_refuses_creation` on the canvas double-click and
+`#TAG:a_paste_is_a_creation_too` on the tree's Paste. The three tile commits
+did not, deliberately, and the asymmetry is real rather than squeamish: for an
+OBJECT, hidden means UNREACHABLE, because `objects_under` skips the layer, so
+what lands can never be selected, dragged, right-clicked or deleted and the
+gesture stacks duplicates. For a TILE nothing becomes unreachable -- a cell is
+addressed by coordinate, painting the same cell twice writes the same gid
+rather than stacking, and the very next stroke after re-ticking the box reaches
+it. This entry exists so the next reader finds the reasoning instead of
+rediscovering the gap; if the author ever asks for it, the shape is identical
+to the two refusals above. Cost: an author can paint into a layer they cannot
+see, once, and see it the moment they tick the box back.
+Measured 2026-09-04: `grep -n "hidden_layers" editor/ui/canvas.py` returns
+**10** lines, none of them inside `#TAG:MapCanvas.__commit_stroke`,
+`#TAG:MapCanvas.__commit_terrain` or `#TAG:MapCanvas.__commit_collision`.
 
 ## What is NOT on this list, and why
 

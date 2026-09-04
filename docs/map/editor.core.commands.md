@@ -5,7 +5,7 @@
 
 > The command stream -- the editor's only way to change anything.
 
-`editor.core.commands` · 524 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.commands` · 542 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -23,7 +23,7 @@
 - `editor/core/commands.py:262` `verb_names() -> list[str]` #TAG:verb_names
 - `editor/core/commands.py:425` `@command('noop', summary='Does nothing. The inverse of a command that changed nothing.', scopes=['project']) _noop(project: Any, cmd: Command) -> None` #TAG:_noop
 - `editor/core/commands.py:429` `_auto_label(batch: list[Command]) -> str` #TAG:_auto_label
-- `editor/core/commands.py:442` `describe_all(*, title: str='Command vocabulary', scopes: Sequence[Scope]=()) -> str` #TAG:commands.describe_all
+- `editor/core/commands.py:442` `describe_all(*, title: str='Command vocabulary', scopes: Sequence[Scope]=(), sample: str='') -> str` #TAG:commands.describe_all
   - Render the registry as markdown -- all of it, or one scope's slice.
 
 ## Classes

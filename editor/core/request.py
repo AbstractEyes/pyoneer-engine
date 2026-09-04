@@ -14,6 +14,38 @@ THE LOOP
     5. The editor validates every line, applies them as ONE transaction,
        and shows you what changed. Undo takes back the whole response.
 
+WHAT A SCOPED BUNDLE PROMISES, AND WHO KEEPS THE PROMISE
+--------------------------------------------------------
+A scoped bundle (`Session.ask`) ships one address's vocabulary and tells
+the responder, in COMMANDS.md, that *every other verb in this editor is
+refused on this scope, so a response that reaches for one is rejected
+whole*. That sentence was printed for weeks and enforced nowhere:
+measured, a bundle cut for `script:toll` accepted a `map.tile.set` aimed at
+`map:test/layer:Floor` and wrote a transaction. Scoping was a payload trim
+wearing the words of a gate.
+
+`BundleContract` is the gate, and it lives in `read_response` rather than
+in a caller for the reason `write_bundle` owns the zero-verb refusal: there
+are two doors that read a response file -- `Session.apply_response` and the
+window's own Apply-a-response -- and a guard on one of them is the shape
+this repository keeps paying for. It refuses BEFORE the first command is
+applied, so a refused batch is not even a rollback.
+
+The gate is a promise about a scoped bundle only. An unscoped ship carries
+the whole vocabulary and claims nothing about addresses, so nothing is
+gated there; a directory with no `manifest.json` promised nothing either.
+A manifest that cannot be read, or that declares a scope with no verb list,
+RAISES -- missing is free, contradictory is not, the same stance
+`scripts/loaders/table_file.py` takes on a missing row.
+
+A response legitimately needs a sibling address sometimes: creating a
+script AND setting `pyoneer_script` on the object that runs it is the main
+flow of the event feature, and its two commands live at `script:<id>` and
+`map:*/layer:*/object:*`. That is why the declaration is a LIST. `also=`
+widens the bundle -- the extra address's verbs are shipped in COMMANDS.md,
+named in `manifest.json`, and accepted by the gate -- so the guarantee is
+explicit and still checked, instead of being quietly untrue for everyone.
+
 WHY A BUNDLE AND NOT A PROMPT STRING
 ------------------------------------
   * **Location.** A note carries a scope, and the bundle turns that scope
@@ -44,10 +76,11 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from editor.core.commands import (
     Command,
+    Verb,
     all_verbs,
     describe_all,
     verbs_accepting,
@@ -55,6 +88,7 @@ from editor.core.commands import (
 from editor.core.errors import (
     PyoneerRequestError,
     PyoneerResponseParseError,
+    PyoneerScopeRefusedError,
 )
 from editor.core.scope import SCOPE_KINDS, Scope, code_locations
 from editor.core import event_script
@@ -65,6 +99,21 @@ NOTE_KINDS: tuple[str, ...] = ("change", "question", "constraint")
 
 RESPONSE_FILE = "response.jsonl"
 NOTES_FILE = "NOTES.md"
+MANIFEST_FILE = "manifest.json"
+
+#: The three keys a scoped bundle's `manifest.json` carries, spelled once
+#: because `write_bundle` writes them and `bundle_contract` reads them back
+#: -- and a response is refused against what they say.
+#:
+#: `SCOPED_KEY` is the single address the bundle was cut FOR and stays a
+#: string, because that is what the UI and the checks already read.
+#: `SCOPES_KEY` is every address it may touch, the first of which is that
+#: same one. A bundle written before `SCOPES_KEY` existed carries only
+#: `SCOPED_KEY`, and reads back as a one-address contract rather than as no
+#: contract at all.
+SCOPED_KEY = "scoped"
+SCOPES_KEY = "scopes"
+VERBS_KEY = "verbs"
 
 #: The scope kinds a genre pack's rules actually speak to.
 #:
@@ -208,37 +257,51 @@ class Bundle:
 
 def write_bundle(project: Any, manifest: Manifest, *,
                  requests_dir: str | None = None,
-                 scoped: Scope | None = None) -> Bundle:
+                 scoped: Scope | None = None,
+                 also: Iterable[Scope | str] = ()) -> Bundle:
     """Write a self-contained request directory. Returns where it went.
 
     `scoped` is the piecemeal grain. Pass one address and the bundle is cut
     for it: `COMMANDS.md` holds only the verbs that address it, `RULES.md`
     is dropped unless the genre pack speaks to it (`rules_travel_with`), and
-    `manifest.json` gains `scoped` and `verbs` so the payload is checkable
-    rather than merely smaller. Measured on this tree: 25,202 bytes of
-    vocabulary become 5,582 for one tile layer.
+    `manifest.json` gains `scoped`, `scopes` and `verbs` so the payload is
+    checkable rather than merely smaller. Measured on this tree: 25,202
+    bytes of vocabulary become 5,582 for one tile layer.
+
+    `also` names the OTHER addresses this one request may touch, and it
+    widens the bundle on every axis at once: those verbs are shipped, that
+    address is written into `manifest.json`, and `BundleContract` accepts
+    commands aimed at it. One knob, so the payload and the gate cannot
+    disagree -- a declared address whose vocabulary was not shipped would be
+    a permission to write a verb the responder never received the arguments
+    for.
 
     THE ZERO-VERB REFUSAL LIVES HERE, not in the caller. A bundle aimed at a
     scope no verb accepts ships a vocabulary the responder structurally
     cannot answer with -- an empty instruction set that reads like an
     instruction set -- and that is a property of the BUNDLE, so putting the
     refusal at the chokepoint means no future caller can route around it
-    (law 7: decide it, do not default into it).
+    (law 7: decide it, do not default into it). It is asked of EVERY
+    declared address, not just the first: an `also` that widens nothing is
+    a promise the author thinks they made and did not.
     """
     if manifest.empty:
         raise PyoneerRequestError(
             "nothing staged; type a note under a panel first")
 
-    vocabulary = all_verbs() if scoped is None else verbs_accepting((scoped,))
-    if scoped is not None and not vocabulary:
-        raise PyoneerRequestError(
-            f"no verb in this editor accepts {scoped}, so a request scoped "
-            f"to it would ship an empty vocabulary and the responder could "
-            f"not answer with a single command. Aim the note at something a "
-            f"verb reaches -- a map, a layer, an object, a table, a row -- "
-            f"or stage it and ship the whole manifest instead.",
-            scope=str(scoped), kind=scoped.kind, verbs=0)
-    carries_rules = scoped is None or rules_travel_with(scoped)
+    declared = _declare(scoped, also)
+    for address in declared:
+        if not verbs_accepting((address,)):
+            raise PyoneerRequestError(
+                f"no verb in this editor accepts {address}, so a request scoped "
+                f"to it would ship an empty vocabulary and the responder could "
+                f"not answer with a single command. Aim the note at something a "
+                f"verb reaches -- a map, a layer, an object, a table, a row -- "
+                f"or stage it and ship the whole manifest instead.",
+                scope=str(address), kind=address.kind, verbs=0)
+
+    vocabulary = verbs_accepting(declared) if declared else all_verbs()
+    carries_rules = not declared or any(rules_travel_with(a) for a in declared)
 
     base = requests_dir or os.path.join(project.root, REQUESTS_DIR)
     os.makedirs(base, exist_ok=True)
@@ -255,13 +318,23 @@ def write_bundle(project: Any, manifest: Manifest, *,
         written.append(path)
 
     put("BRIEF.md", _brief(project, manifest, identifier,
-                           scoped=scoped, carries_rules=carries_rules))
+                           declared=declared, vocabulary=tuple(vocabulary),
+                           carries_rules=carries_rules))
     put("REQUEST.md", _request(project, manifest))
     if carries_rules:
         put("RULES.md", _rules(project))
     put("CONTEXT.md", _context(project, manifest))
-    put("COMMANDS.md", describe_all()
-        if scoped is None else describe_all(scopes=(scoped,)))
+    # THE WORKED LINE AT THE TOP OF COMMANDS.md IS A PERMITTED ONE, on the
+    # scoped path. It used to be the canned `map.tile.set @
+    # map:test/layer:Floor` in every bundle ever cut, which `BundleContract`
+    # refuses outright in a bundle cut for anything else -- a file opening
+    # with the one line guaranteed to cost the responder the whole batch.
+    # Unscoped keeps the canned line: it declares nothing, gates nothing,
+    # and `docs/COMMANDS.md` is regenerated from that exact rendering.
+    put("COMMANDS.md", describe_all(
+        scopes=declared,
+        sample=(_worked_example(declared, tuple(vocabulary))
+                if declared else "")))
 
     payload: dict[str, Any] = {
         "id": identifier,
@@ -269,16 +342,47 @@ def write_bundle(project: Any, manifest: Manifest, *,
         "root": project.root,
         "created": datetime.now().isoformat(timespec="seconds"),
     }
-    if scoped is not None:
-        # The machine-readable half of the sliced COMMANDS.md. This is what
-        # makes the payload checkable: a filter that drifted from
-        # `Verb.validate` shows up here as a name, not as a size.
-        payload["scoped"] = str(scoped)
-        payload["verbs"] = [spec.name for spec in vocabulary]
+    if declared:
+        # The machine-readable half of the sliced COMMANDS.md, and since
+        # `BundleContract` reads it back it is now the ENFORCED half too: a
+        # filter that drifted from `Verb.validate` shows up here as a name
+        # rather than as a size, and a response reaching past these
+        # addresses is refused against exactly what is written here.
+        payload[SCOPED_KEY] = str(declared[0])
+        payload[SCOPES_KEY] = [str(address) for address in declared]
+        payload[VERBS_KEY] = [spec.name for spec in vocabulary]
     payload.update(manifest.to_json())
-    put("manifest.json", json.dumps(payload, indent=2))
+    put(MANIFEST_FILE, json.dumps(payload, indent=2))
 
     return Bundle(directory, identifier, written)
+
+
+def _declare(scoped: Scope | None,
+             also: Iterable[Scope | str]) -> tuple[Scope, ...]:
+    """Every address a scoped bundle may touch, first the one it is cut for.
+
+    An unscoped bundle declares NOTHING and is gated by nothing, which is
+    the honest reading of a payload that carries the whole vocabulary. So
+    `also` without `scoped` is refused rather than silently widening a
+    bundle that was never narrow: it is the author asking for a guarantee
+    this shape does not make.
+    """
+    extra = tuple(a if isinstance(a, Scope) else Scope.parse(a) for a in also)
+    if scoped is None:
+        if extra:
+            raise PyoneerRequestError(
+                f"`also` widens a SCOPED bundle, and this one is not scoped: "
+                f"an unscoped ship carries every verb in the editor and makes "
+                f"no promise about addresses, so there is nothing for "
+                f"{[str(a) for a in extra]} to widen. Pass `scoped` too, or "
+                f"drop `also`.",
+                also=[str(a) for a in extra])
+        return ()
+    declared: list[Scope] = [scoped]
+    for address in extra:
+        if address not in declared:
+            declared.append(address)
+    return tuple(declared)
 
 
 def _next_id(base: str, title: str) -> str:
@@ -290,7 +394,8 @@ def _next_id(base: str, title: str) -> str:
 
 
 def _brief(project: Any, manifest: Manifest, identifier: str, *,
-           scoped: Scope | None = None,
+           declared: tuple[Scope, ...] = (),
+           vocabulary: tuple[Verb, ...] = (),
            carries_rules: bool = True) -> str:
     """The protocol, and NOTHING ELSE.
 
@@ -304,6 +409,16 @@ def _brief(project: Any, manifest: Manifest, identifier: str, *,
     So the file list below is BUILT from what was actually written, not
     typed out once and trusted: a brief that names `RULES.md` in a bundle
     that dropped it is a protocol claim that is already false.
+
+    AND THE WORKED EXAMPLE IS BUILT FROM THE VOCABULARY THAT WAS SHIPPED.
+    It used to be two typed-out lines, `table.row.add @ table:actors` and
+    `map.object.add @ map:test/layer:entity`, printed into every bundle
+    including ones cut for `script:toll` -- a demonstration the bundle's own
+    gate refuses, three lines under the sentence promising the refusal.
+    An example that its own rules reject is the shape that made this
+    findable, so it is generated at the declared address, out of a verb this
+    bundle really shipped, and `tools/check_relay.py` drives every line of
+    it back through `BundleContract`.
     """
     rows = []
     if carries_rules:
@@ -324,13 +439,43 @@ def _brief(project: Any, manifest: Manifest, identifier: str, *,
     event_rule = ("`RULES.md` says what that means concretely"
                   if carries_rules else
                   "`CLAUDE.md` law 3 says what that means concretely")
-    if scoped is None:
+    example = _worked_example(declared, vocabulary)
+    if not declared:
         aim = ""
     else:
-        aim = (f"\n**Scope:** `{scoped}`. This request is about that address "
-               f"and `COMMANDS.md` holds only the verbs that reach it -- a "
-               f"command aimed anywhere else is refused and takes the whole "
-               f"response down with it.\n")
+        addresses = ", ".join(f"`{address}`" for address in declared)
+        one = len(declared) == 1
+        aim = "\n" + "\n".join([
+            f"**Scope:** {addresses}. This request is about "
+            f"{'that address' if one else 'those addresses'} and",
+            f"`COMMANDS.md` holds only the verbs that reach "
+            f"{'it' if one else 'them'}. That is ENFORCED, not",
+            "asked: every line of your response is checked against "
+            f"{'it' if one else 'them'} and against",
+            "that verb list BEFORE the first command runs, and one line "
+            "reaching past",
+            f"{'it' if one else 'them'} refuses the whole response with "
+            f"nothing applied.",
+            "",
+            f"So aim every line at "
+            f"{'that address' if one else 'one of those addresses'}, or at "
+            f"something inside",
+            f"{'it' if one else 'one of them'}. The `scope` written in an "
+            f"example -- the sample line at the top of",
+            "`COMMANDS.md`, and the one under each verb -- shows the JSON and "
+            "the argument",
+            "shape; it is not a claim about what you may aim at. The "
+            "addresses above are.",
+            "",
+            "If carrying out the note needs an address that is not listed, do "
+            "not reach",
+            f"for it: say so in `{NOTES_FILE}`, or do that part as an ordinary "
+            f"source edit.",
+            "The author can ask again declaring that address too, and then its "
+            "verbs are",
+            "shipped and it is allowed.",
+            "",
+        ])
         if not carries_rules:
             aim += ("\nThere is no `RULES.md` in this bundle. The genre pack "
                     "declares which layers and tables a project has, and this "
@@ -358,8 +503,7 @@ wrapping array, no trailing commas. Each line is a command from
 `COMMANDS.md`.
 
 ```
-{{"verb": "table.row.add", "scope": "table:actors", "args": {{"id": "hero", "values": {{"hp": 30}}}}}}
-{{"verb": "map.object.add", "scope": "map:test/layer:entity", "args": {{"type": "PlayerStart", "x": 64, "y": 64}}}}
+{example}
 ```
 
 The editor validates every line before applying any of them. Unknown verb,
@@ -393,6 +537,107 @@ re-baseline something you cannot explain.
 - Do not restructure the event system. It is the one thing the whole engine
   rests on; {event_rule}.
 """
+
+
+#: The value an example writes for a required argument it has nothing real
+#: to say about. Type-correct on purpose: an example is refused by
+#: `Param.check` before it is refused by anything interesting, and `"0"`
+#: instead of `0` would teach the responder the one mistake this vocabulary
+#: is built to refuse. It is never a value that gets applied -- a bundle
+#: writes it, a responder replaces it.
+_PLACEHOLDER: dict[type, Any] = {
+    int: 0, float: 0.0, str: "", bool: False, list: [], dict: {}, object: "",
+}
+
+#: The two lines an UNSCOPED bundle demonstrates with. It declares no
+#: address and gates none, so these are illustrations rather than
+#: permissions -- but they are still real verbs with real arguments, and
+#: `tools/check_relay.py` drives every example line of every brief through
+#: `Verb.validate` for exactly that reason.
+_UNSCOPED_EXAMPLE = (
+    '{"verb": "table.row.add", "scope": "table:actors",'
+    ' "args": {"id": "hero", "values": {"hp": 30}}}\n'
+    '{"verb": "map.object.add", "scope": "map:test/layer:entity",'
+    ' "args": {"type": "PlayerStart", "x": 64, "y": 64}}'
+)
+
+
+def _worked_example(declared: tuple[Scope, ...],
+                    vocabulary: tuple[Verb, ...]) -> str:
+    """One demonstration line per declared address, each one PERMITTED.
+
+    A scoped bundle refuses a verb it did not ship and an address it did not
+    declare, so a demonstration that violates either is worse than none: it
+    is the bundle telling the responder to do the thing that costs them the
+    whole batch. So each line is built out of this bundle's own vocabulary
+    at this bundle's own address, and a bundle declaring two addresses
+    demonstrates BOTH -- because the cross-address answer is the case `also`
+    exists for, and a responder that never sees a second line does not know
+    it may write one.
+
+    The arguments come from the verb's own registered example when it has
+    one, so they are shaped the way that verb really wants; only the
+    `scope` is rewritten, to the address this bundle actually declared.
+    """
+    if not declared:
+        return _UNSCOPED_EXAMPLE
+    lines: list[str] = []
+    for address in declared:
+        spec = _demonstrable(address, vocabulary)
+        if spec is None:                # unreachable: write_bundle refuses a
+            continue                    # declared address with no verbs.
+        lines.append(json.dumps({"verb": spec.name, "scope": str(address),
+                                 "args": _example_args(spec)}))
+    return "\n".join(lines)
+
+
+def _demonstrable(address: Scope, vocabulary: tuple[Verb, ...]) -> Verb | None:
+    """A shipped verb that really accepts `address`.
+
+    Preferring one with a registered example, whose arguments are then
+    authored rather than filled in, and preferring a non-destructive one,
+    because a demonstration is the line most likely to be copied. Only when
+    an address accepts nothing else is a destructive verb demonstrated --
+    measured, that is `table:*/field:*`, whose entire vocabulary is
+    `table.column.remove`, and hiding that would be describing the bundle as
+    something it is not.
+    """
+    accepting = [spec for spec in vocabulary
+                 if any(address.matches(pattern) for pattern in spec.scopes)]
+    for wanted in (lambda s: s.example and not s.destructive,
+                   lambda s: bool(s.example),
+                   lambda s: not s.destructive):
+        found = next((spec for spec in accepting if wanted(spec)), None)
+        if found is not None:
+            return found
+    return accepting[0] if accepting else None
+
+
+def _example_args(spec: Verb) -> dict[str, Any]:
+    """The verb's own example arguments, or a type-correct stand-in."""
+    if spec.example:
+        try:
+            payload = json.loads(spec.example)
+        except json.JSONDecodeError as exc:
+            raise PyoneerRequestError(
+                f"the registered example for {spec.name} is not valid JSON, so "
+                f"every bundle that demonstrates it would teach a parse error: "
+                f"{exc.msg}", verb=spec.name, example=spec.example) from exc
+        return dict(payload.get("args", {}))
+    args: dict[str, Any] = {}
+    for param in spec.params:
+        if not param.required:
+            continue
+        if param.type not in _PLACEHOLDER:
+            raise PyoneerRequestError(
+                f"{spec.name} takes a required {param.type!r} argument and no "
+                f"example is registered for it, so this bundle cannot "
+                f"demonstrate the verb without inventing a value. Register an "
+                f"example on the verb, or add {param.type!r} above.",
+                verb=spec.name, argument=param.name)
+        blank = _PLACEHOLDER[param.type]
+        args[param.name] = type(blank)(blank)   # never share the mutable one
+    return args
 
 
 def _request(project: Any, manifest: Manifest) -> str:
@@ -803,10 +1048,166 @@ def parse_response(text: str, *, source: str = "response.jsonl") -> list[Command
     return commands
 
 
+@dataclass(frozen=True)
+class BundleContract:
+    """What a scoped bundle promised its responder, read back off disk.
+
+    COMMANDS.md tells the responder, verbatim, that *these are the only
+    verbs that address it -- every other verb in this editor is refused on
+    this scope, so a response that reaches for one is rejected whole*. This
+    is the object that makes that sentence true. Before it existed the
+    sentence was decoration: measured on a bundle cut for `script:toll`, a
+    `map.tile.set` aimed at `map:test/layer:Floor` applied and wrote a
+    transaction, and only the same verb aimed AT `script:toll` was refused
+    -- by `Verb.validate`, which is about the verb, not about the bundle.
+
+    BOTH HALVES OF THE PROMISE ARE CHECKED, because they fail apart:
+
+      * the VERB was shipped. A verb outside the slice has no entry in this
+        bundle's COMMANDS.md at all, so a response reaching for one is
+        guessing at arguments it was never given -- which is the same
+        failure as inventing a verb, one step later.
+      * the ADDRESS is one that was declared, or inside one. This is the
+        half a verb list cannot carry: `script.node.add` is shipped by every
+        script bundle, and `script:toll`'s bundle rewriting `script:gate` is
+        the right verb aimed at somebody else's document.
+
+    The refusal is complete rather than first-fault: a responder that
+    misread the scope usually misread it for every line, and a refusal
+    naming one line invites a retry that fails on the next one.
+    """
+
+    identifier: str
+    scopes: tuple[Scope, ...]
+    verbs: frozenset[str]
+
+    def reasons(self, cmd: Command) -> list[str]:
+        """Why this command is outside the contract; empty means inside."""
+        found: list[str] = []
+        if not any(cmd.scope.is_under(address) for address in self.scopes):
+            found.append(
+                f"{cmd.scope} is not at or under "
+                + " or ".join(str(a) for a in self.scopes))
+        if cmd.verb not in self.verbs:
+            found.append(
+                f"{cmd.verb} is not one of the {len(self.verbs)} verbs this "
+                f"bundle shipped, so its arguments are documented nowhere in "
+                f"it")
+        return found
+
+    def enforce(self, commands: Sequence[Command], *, source: str) -> None:
+        """Refuse the whole batch if any command reaches outside. Loudly."""
+        refused = 0
+        detail: list[str] = []
+        for index, cmd in enumerate(commands):
+            why = self.reasons(cmd)
+            if why:
+                refused += 1
+                detail.append(f"  command {index + 1} of {len(commands)}: "
+                              f"{cmd.verb} @ {cmd.scope}")
+                detail += [f"      {line}" for line in why]
+        if not refused:
+            return
+        addresses = ", ".join(str(address) for address in self.scopes)
+        # ITS OWN TYPE, not the base. A refused response and an unparseable
+        # one are both `PyoneerRequestError`s, and the editor window caught
+        # the base and called both "is not a readable response" -- a
+        # sentence that is false about this one in the way that costs an
+        # hour. The window tells them apart by type now.
+        raise PyoneerScopeRefusedError(
+            f"{self.identifier} was cut for {addresses}, and "
+            f"{refused} of its {len(commands)} command"
+            f"{'' if len(commands) == 1 else 's'} reach"
+            f"{'es' if refused == 1 else ''} outside that. NOTHING WAS "
+            f"APPLIED -- the batch is refused before the first command runs, "
+            f"so there is no partial edit and nothing to undo.\n"
+            + "\n".join(detail)
+            + f"\nThat is the promise `COMMANDS.md` makes in this bundle: a "
+              f"scoped bundle ships one address's vocabulary and refuses the "
+              f"rest. Three ways on: do that part as an ordinary source edit "
+              f"and describe it in {NOTES_FILE}; ask again with the other "
+              f"address declared too, so its verbs are shipped as well; or "
+              f"ship the whole manifest unscoped, which carries every verb and "
+              f"makes no promise about addresses.",
+            bundle=self.identifier, source=source,
+            declared=[str(address) for address in self.scopes],
+            refused=refused)
+
+
+def bundle_contract(directory: str) -> BundleContract | None:
+    """The contract the bundle in `directory` made, or None if it made none.
+
+    MISSING IS FREE, CONTRADICTORY RAISES -- the stance
+    `scripts/loaders/table_file.py` already takes on project tables,
+    for the same reason. A directory with no `manifest.json` is not a
+    bundle: `tools/check_script_verbs.py` drops a `response.jsonl` in a bare
+    directory to prove the verbs are reachable, and that is a legitimate
+    shape that promised nothing. An unscoped bundle's manifest carries no
+    `scoped` key and likewise gated nothing. But a manifest that cannot be
+    read, or that names a scope with no verb list beside it, leaves the
+    question "is this response bound?" unanswered, and answering an
+    unanswerable question with "no" is how a gate turns back into
+    decoration.
+    """
+    path = os.path.join(directory, MANIFEST_FILE)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise PyoneerRequestError(
+            f"{path} could not be read, so whether this response is bound to "
+            f"an address cannot be answered: {type(exc).__name__}: {exc}. Fix "
+            f"or delete the manifest -- a response is not applied against a "
+            f"bundle whose terms are unreadable.",
+            path=path) from exc
+    if not isinstance(payload, dict):
+        raise PyoneerRequestError(
+            f"{path} is a {type(payload).__name__}, not an object, so it "
+            f"declares no scope and no vocabulary. A response is not applied "
+            f"against a bundle whose terms are unreadable.", path=path)
+    if SCOPED_KEY not in payload and SCOPES_KEY not in payload:
+        return None                     # an unscoped ship promised nothing
+    raw = payload.get(SCOPES_KEY)
+    if raw is None:
+        raw = [payload[SCOPED_KEY]]     # written before `scopes` existed
+    names = payload.get(VERBS_KEY)
+    if (not isinstance(raw, list) or not raw
+            or not all(isinstance(item, str) for item in raw)
+            or not isinstance(names, list) or not names
+            or not all(isinstance(item, str) for item in names)):
+        raise PyoneerRequestError(
+            f"{path} declares a scope but not the pair of lists that makes it "
+            f"checkable: {SCOPES_KEY!r} must be a non-empty list of addresses "
+            f"and {VERBS_KEY!r} a non-empty list of verb names. Got "
+            f"{raw!r} and {names!r}.",
+            path=path)
+    return BundleContract(os.path.basename(os.path.normpath(directory)),
+                          tuple(Scope.parse(item) for item in raw),
+                          frozenset(names))
+
+
 def read_response(path: str) -> list[Command]:
+    """Every command in a response file, refused whole if it reaches too far.
+
+    THE SCOPE GATE LIVES HERE, at the chokepoint, for the reason the
+    zero-verb refusal lives in `write_bundle`. Two doors read a response
+    file -- `Session.apply_response` and the editor window's own
+    Apply-a-response, which does its own `read_response` and its own
+    `run` -- and a guard on one of them is the exact shape this repository
+    keeps paying for: the guard is added on one path and the sibling path
+    grows without it. Measured before this: `grep -rn "read_response"`
+    returns those two callers and nothing else, so gating the function
+    gates every door there is, including the ones not written yet.
+    """
     if not os.path.isfile(path):
         raise PyoneerRequestError(f"no response at {path}", path=path)
     with open(path, "r", encoding="utf-8") as handle:
-        return parse_response(handle.read(), source=path)
+        commands = parse_response(handle.read(), source=path)
+    contract = bundle_contract(os.path.dirname(os.path.abspath(path)))
+    if contract is not None:
+        contract.enforce(commands, source=path)
+    return commands
 
 

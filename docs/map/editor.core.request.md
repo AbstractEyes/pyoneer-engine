@@ -5,7 +5,7 @@
 
 > Requests -- how a note typed under a panel becomes work an AI can do.
 
-`editor.core.request` · 813 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.request` · 1214 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,80 +13,106 @@
 
 ## Module constants
 
-- `editor/core/request.py:62` `REQUESTS_DIR` #TAG:REQUESTS_DIR
-- `editor/core/request.py:64` `NOTE_KINDS` #TAG:NOTE_KINDS
-- `editor/core/request.py:66` `RESPONSE_FILE` #TAG:RESPONSE_FILE
-- `editor/core/request.py:67` `NOTES_FILE` #TAG:NOTES_FILE
-- `editor/core/request.py:92` `RULES_SCOPE_KINDS` #TAG:RULES_SCOPE_KINDS
+- `editor/core/request.py:96` `REQUESTS_DIR` #TAG:REQUESTS_DIR
+- `editor/core/request.py:98` `NOTE_KINDS` #TAG:NOTE_KINDS
+- `editor/core/request.py:100` `RESPONSE_FILE` #TAG:RESPONSE_FILE
+- `editor/core/request.py:101` `NOTES_FILE` #TAG:NOTES_FILE
+- `editor/core/request.py:102` `MANIFEST_FILE` #TAG:MANIFEST_FILE
+- `editor/core/request.py:114` `SCOPED_KEY` #TAG:SCOPED_KEY
+- `editor/core/request.py:115` `SCOPES_KEY` #TAG:SCOPES_KEY
+- `editor/core/request.py:116` `VERBS_KEY` #TAG:VERBS_KEY
+- `editor/core/request.py:141` `RULES_SCOPE_KINDS` #TAG:RULES_SCOPE_KINDS
 
 ## Functions
 
-- `editor/core/request.py:95` `rules_travel_with(scope: Scope) -> bool` #TAG:rules_travel_with
+- `editor/core/request.py:144` `rules_travel_with(scope: Scope) -> bool` #TAG:rules_travel_with
   - Whether a bundle scoped to `scope` should carry the genre pack.
-- `editor/core/request.py:209` `write_bundle(project: Any, manifest: Manifest, *, requests_dir: str | None=None, scoped: Scope | None=None) -> Bundle` #TAG:write_bundle
+- `editor/core/request.py:258` `write_bundle(project: Any, manifest: Manifest, *, requests_dir: str | None=None, scoped: Scope | None=None, also: Iterable[Scope | str]=()) -> Bundle` #TAG:write_bundle
   - Write a self-contained request directory. Returns where it went.
-- `editor/core/request.py:284` `_next_id(base: str, title: str) -> str` #TAG:_next_id
-- `editor/core/request.py:292` `_brief(project: Any, manifest: Manifest, identifier: str, *, scoped: Scope | None=None, carries_rules: bool=True) -> str` #TAG:_brief
+- `editor/core/request.py:360` `_declare(scoped: Scope | None, also: Iterable[Scope | str]) -> tuple[Scope, ...]` #TAG:_declare
+  - Every address a scoped bundle may touch, first the one it is cut for.
+- `editor/core/request.py:388` `_next_id(base: str, title: str) -> str` #TAG:_next_id
+- `editor/core/request.py:396` `_brief(project: Any, manifest: Manifest, identifier: str, *, declared: tuple[Scope, ...]=(), vocabulary: tuple[Verb, ...]=(), carries_rules: bool=True) -> str` #TAG:_brief
   - The protocol, and NOTHING ELSE.
-- `editor/core/request.py:398` `_request(project: Any, manifest: Manifest) -> str` #TAG:_request
-- `editor/core/request.py:420` `_rules(project: Any) -> str` #TAG:_rules
-- `editor/core/request.py:450` `_context(project: Any, manifest: Manifest) -> str` #TAG:_context
-- `editor/core/request.py:470` `describe_scope(project: Any, scope: Scope) -> list[str]` #TAG:describe_scope
+- `editor/core/request.py:565` `_worked_example(declared: tuple[Scope, ...], vocabulary: tuple[Verb, ...]) -> str` #TAG:_worked_example
+  - One demonstration line per declared address, each one PERMITTED.
+- `editor/core/request.py:594` `_demonstrable(address: Scope, vocabulary: tuple[Verb, ...]) -> Verb | None` #TAG:_demonstrable
+  - A shipped verb that really accepts `address`.
+- `editor/core/request.py:616` `_example_args(spec: Verb) -> dict[str, Any]` #TAG:_example_args
+  - The verb's own example arguments, or a type-correct stand-in.
+- `editor/core/request.py:643` `_request(project: Any, manifest: Manifest) -> str` #TAG:_request
+- `editor/core/request.py:665` `_rules(project: Any) -> str` #TAG:_rules
+- `editor/core/request.py:695` `_context(project: Any, manifest: Manifest) -> str` #TAG:_context
+- `editor/core/request.py:715` `describe_scope(project: Any, scope: Scope) -> list[str]` #TAG:describe_scope
   - A compact, factual rendering of one scope. Shared with the UI.
-- `editor/core/request.py:517` `_describe_project(project: Any) -> list[str]` #TAG:request._describe_project
-- `editor/core/request.py:526` `_describe_map(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_map
-- `editor/core/request.py:537` `_describe_layer(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_layer
-- `editor/core/request.py:574` `_describe_object(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_object
-- `editor/core/request.py:592` `_describe_field(project: Any, scope: Scope) -> list[str]` #TAG:_describe_field
+- `editor/core/request.py:762` `_describe_project(project: Any) -> list[str]` #TAG:request._describe_project
+- `editor/core/request.py:771` `_describe_map(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_map
+- `editor/core/request.py:782` `_describe_layer(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_layer
+- `editor/core/request.py:819` `_describe_object(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_object
+- `editor/core/request.py:837` `_describe_field(project: Any, scope: Scope) -> list[str]` #TAG:_describe_field
   - One column of one table -- what it is, and what the rows put in it.
-- `editor/core/request.py:628` `_describe_script(project: Any, scope: Scope) -> list[str]` #TAG:_describe_script
+- `editor/core/request.py:873` `_describe_script(project: Any, scope: Scope) -> list[str]` #TAG:_describe_script
   - One event script: its loadouts, its pages, and every id in it.
-- `editor/core/request.py:673` `_describe_script_page(page: dict) -> list[str]` #TAG:_describe_script_page
+- `editor/core/request.py:918` `_describe_script_page(page: dict) -> list[str]` #TAG:_describe_script_page
   - One page and its whole body, indented the way the arms nest.
-- `editor/core/request.py:687` `_describe_script_body(body: Iterable[dict], depth: int) -> list[str]` #TAG:_describe_script_body
+- `editor/core/request.py:932` `_describe_script_body(body: Iterable[dict], depth: int) -> list[str]` #TAG:_describe_script_body
   - The nodes of one container, in the order the frame runs them.
-- `editor/core/request.py:710` `_describe_code(project: Any, scope: Scope) -> list[str]` #TAG:_describe_code
+- `editor/core/request.py:955` `_describe_code(project: Any, scope: Scope) -> list[str]` #TAG:_describe_code
   - A source label. Deliberately says what it is NOT.
-- `editor/core/request.py:729` `_describe_table(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_table
-- `editor/core/request.py:757` `_describe_row(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_row
-- `editor/core/request.py:770` `parse_response(text: str, *, source: str='response.jsonl') -> list[Command]` #TAG:parse_response
+- `editor/core/request.py:974` `_describe_table(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_table
+- `editor/core/request.py:1002` `_describe_row(project: Any, scope: Scope) -> list[str]` #TAG:request._describe_row
+- `editor/core/request.py:1015` `parse_response(text: str, *, source: str='response.jsonl') -> list[Command]` #TAG:parse_response
   - Turn a JSON Lines response into commands, loudly.
-- `editor/core/request.py:806` `read_response(path: str) -> list[Command]` #TAG:read_response
+- `editor/core/request.py:1137` `bundle_contract(directory: str) -> BundleContract | None` #TAG:bundle_contract
+  - The contract the bundle in `directory` made, or None if it made none.
+- `editor/core/request.py:1191` `read_response(path: str) -> list[Command]` #TAG:read_response
+  - Every command in a response file, refused whole if it reaches too far.
 
 ## Classes
 
 ### `@dataclass class Note` #TAG:Note
 
-`editor/core/request.py:105`–`130`
+`editor/core/request.py:154`–`179`
 
 > One comment left on one part of the project.
 
-- `editor/core/request.py:113` `__post_init__(self) -> None` #TAG:Note.__post_init__
-- `editor/core/request.py:123` `to_json(self) -> dict[str, Any]` #TAG:Note.to_json
-- `editor/core/request.py:128` `@classmethod from_json(cls, raw: dict[str, Any]) -> 'Note'` #TAG:Note.from_json
+- `editor/core/request.py:162` `__post_init__(self) -> None` #TAG:Note.__post_init__
+- `editor/core/request.py:172` `to_json(self) -> dict[str, Any]` #TAG:Note.to_json
+- `editor/core/request.py:177` `@classmethod from_json(cls, raw: dict[str, Any]) -> 'Note'` #TAG:Note.from_json
 
 ### `@dataclass class Manifest` #TAG:Manifest
 
-`editor/core/request.py:134`–`185`
+`editor/core/request.py:183`–`234`
 
 > The staged notes, waiting to be shipped as one request.
 
-- `editor/core/request.py:140` `add(self, note: Note) -> Note` #TAG:Manifest.add
-- `editor/core/request.py:144` `remove(self, index: int) -> Note` #TAG:Manifest.remove
-- `editor/core/request.py:151` `clear(self) -> None` #TAG:Manifest.clear
-- `editor/core/request.py:156` `@property empty(self) -> bool` #TAG:Manifest.empty
-- `editor/core/request.py:159` `scopes(self) -> list[Scope]` #TAG:Manifest.scopes
+- `editor/core/request.py:189` `add(self, note: Note) -> Note` #TAG:Manifest.add
+- `editor/core/request.py:193` `remove(self, index: int) -> Note` #TAG:Manifest.remove
+- `editor/core/request.py:200` `clear(self) -> None` #TAG:Manifest.clear
+- `editor/core/request.py:205` `@property empty(self) -> bool` #TAG:Manifest.empty
+- `editor/core/request.py:208` `scopes(self) -> list[Scope]` #TAG:Manifest.scopes
   - Every distinct scope, in first-mentioned order.
-- `editor/core/request.py:167` `grouped(self) -> list[tuple[Scope, list[Note]]]` #TAG:Manifest.grouped
-- `editor/core/request.py:171` `suggested_title(self) -> str` #TAG:Manifest.suggested_title
-- `editor/core/request.py:178` `to_json(self) -> dict[str, Any]` #TAG:Manifest.to_json
-- `editor/core/request.py:183` `@classmethod from_json(cls, raw: dict[str, Any]) -> 'Manifest'` #TAG:Manifest.from_json
+- `editor/core/request.py:216` `grouped(self) -> list[tuple[Scope, list[Note]]]` #TAG:Manifest.grouped
+- `editor/core/request.py:220` `suggested_title(self) -> str` #TAG:Manifest.suggested_title
+- `editor/core/request.py:227` `to_json(self) -> dict[str, Any]` #TAG:Manifest.to_json
+- `editor/core/request.py:232` `@classmethod from_json(cls, raw: dict[str, Any]) -> 'Manifest'` #TAG:Manifest.from_json
 
 ### `@dataclass class Bundle` #TAG:Bundle
 
-`editor/core/request.py:193`–`206`
+`editor/core/request.py:242`–`255`
 
 > A written request on disk.
 
-- `editor/core/request.py:201` `@property response_path(self) -> str` #TAG:Bundle.response_path
-- `editor/core/request.py:205` `@property has_response(self) -> bool` #TAG:Bundle.has_response
+- `editor/core/request.py:250` `@property response_path(self) -> str` #TAG:Bundle.response_path
+- `editor/core/request.py:254` `@property has_response(self) -> bool` #TAG:Bundle.has_response
+
+### `@dataclass(frozen=True) class BundleContract` #TAG:BundleContract
+
+`editor/core/request.py:1052`–`1134`
+
+> What a scoped bundle promised its responder, read back off disk.
+
+- `editor/core/request.py:1084` `reasons(self, cmd: Command) -> list[str]` #TAG:BundleContract.reasons
+  - Why this command is outside the contract; empty means inside.
+- `editor/core/request.py:1098` `enforce(self, commands: Sequence[Command], *, source: str) -> None` #TAG:BundleContract.enforce
+  - Refuse the whole batch if any command reaches outside. Loudly.

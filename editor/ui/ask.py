@@ -1,4 +1,4 @@
-"""The two dialogs the panels are allowed to open, and the rule for both.
+"""The three dialogs the panels are allowed to open, and the rule for all.
 
 A dialog costs the author their gesture. It stops the hand, takes the
 keyboard, and refuses to say anything until it is dismissed -- so it may
@@ -12,7 +12,7 @@ That sentence is the whole policy. "Rejected", "Nothing staged", "No IDE
 found" and "Response arrived" are all reports: an OK button asking to be
 told that nothing happened.
 
-So there are exactly two primitives here:
+So there are exactly three primitives here:
 
   * `ask_form` -- ONE dialog for one decision, however many fields it takes.
     Two `QInputDialog`s in a row is not two decisions, it is one decision
@@ -23,17 +23,26 @@ So there are exactly two primitives here:
     something": removing a layer is destructive and recoverable, and asking
     about it is theatre. Discarding staged notes is not recoverable,
     because notes never entered the command stream. That is the line.
+  * `choose_file` -- one path off the filesystem. It is here for a reason
+    that is not "it opens a window": there is NO way to pick a file without
+    the platform picker, so this is the one modal that cannot be argued
+    away -- and that is exactly why it belongs behind a seam a check can
+    substitute rather than inline in whichever panel needed it first. It
+    was inline in two (`editor/ui/tileset_dialog.py`'s Browse and
+    `EditorWindow.apply_response_dialog`), and the source census in
+    `tools/check_editor_ui.py` could see NEITHER of them until it was
+    widened on 2026-09-04. #TAG:the_picker_is_a_primitive_too
 
 WHY THESE ARE FUNCTIONS AND NOT `QMessageBox` CALLS AT THE CALL SITE
 --------------------------------------------------------------------
 A check must never block on a modal -- a headless run sits on
 `QMessageBox.question` forever, indistinguishable from a slow machine. Every
-panel holds these two as INSTANCE ATTRIBUTES (`self.ask`, `self.confirm`),
-so a check replaces the seam on the one widget it is driving and asserts,
-per panel, both that the legitimate question is still asked and that the
-routine path asks nothing at all. An inline `QMessageBox` call is
-unreachable from a check except by patching the class globally, which proves
-nothing about which path opened it.
+panel holds these as INSTANCE ATTRIBUTES (`self.ask`, `self.confirm`,
+`self.choose_file`), so a check replaces the seam on the one widget it is
+driving and asserts, per panel, both that the legitimate question is still
+asked and that the routine path asks nothing at all. An inline
+`QMessageBox` call is unreachable from a check except by patching the class
+globally, which proves nothing about which path opened it.
 """
 from __future__ import annotations
 
@@ -43,6 +52,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QLabel,
     QLineEdit,
@@ -171,3 +181,22 @@ def confirm(parent: QWidget | None, title: str, question: str) -> bool:
     """A yes/no for something undo cannot take back. See the module docstring
     before adding a caller: there is currently ONE in the whole editor."""
     return QMessageBox.question(parent, title, question) == QMessageBox.Yes
+
+
+def choose_file(parent: QWidget | None, title: str, start: str,
+                filters: str) -> str:
+    """Ask the platform for one existing path, or "" if it was cancelled.
+
+    "" AND NEVER None. Every caller here branches on truthiness -- a
+    cancelled picker must leave the sheet the author already loaded exactly
+    where it was -- and a second falsy spelling is a plausible-looking
+    sentinel for someone to test the wrong way round (law 7). An empty
+    string is the one answer that means "no path" and reads as one.
+
+    `start` is a directory or a file: Qt takes either, and a caller that
+    knows which file it is coming back to should hand that over so the
+    picker opens on it rather than merely near it.
+    """
+    chosen, _filter = QFileDialog.getOpenFileName(parent, title, start,
+                                                  filters)
+    return chosen or ""

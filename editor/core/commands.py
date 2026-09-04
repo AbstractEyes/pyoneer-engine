@@ -440,7 +440,7 @@ def _auto_label(batch: list[Command]) -> str:
 # --------------------------------------------------------------------------
 
 def describe_all(*, title: str = "Command vocabulary",
-                 scopes: Sequence[Scope] = ()) -> str:
+                 scopes: Sequence[Scope] = (), sample: str = "") -> str:
     """Render the registry as markdown -- all of it, or one scope's slice.
 
     This is what goes into every request bundle. It is generated from the
@@ -454,12 +454,25 @@ def describe_all(*, title: str = "Command vocabulary",
     other 29 costs about 5,000 tokens of vocabulary the responder cannot
     legally use on that address.
 
+    `sample` replaces the worked line at the top. IT EXISTS BECAUSE THE
+    CANNED ONE WAS A LIE IN A SCOPED BUNDLE: `map.tile.set @
+    map:test/layer:Floor` was printed into every COMMANDS.md ever cut,
+    including one cut for `script:toll` -- where `BundleContract` refuses
+    that exact line, so the file's own first demonstration was the thing
+    that costs the responder the whole batch. `write_bundle` hands over
+    `_worked_example`'s lines, built from a verb this bundle really shipped
+    at an address it really declared. Nothing here invents one: an empty
+    `sample` keeps the canned line, which is what the unscoped rendering
+    wants. #TAG:the_header_sample_is_a_permitted_line
+
     **EMPTY `scopes` IS BYTE-IDENTICAL TO THE UNSCOPED OUTPUT**, and that is
     load-bearing rather than tidy: `tools/check_docs.py` regenerates
     `docs/COMMANDS.md` from this function and compares it byte for byte, so
     any difference on the default path turns the suite red for a change that
     only meant to add a filter. `tools/check_relay.py` asserts the identity
-    against a copy taken before the keyword existed.
+    against a copy taken before the keyword existed. `sample` is defaulted
+    for the same reason and `write_bundle` passes it only when there is a
+    scope to build one from.
     """
     wanted = tuple(scopes)
     selected = verbs_accepting(wanted) if wanted else all_verbs()
@@ -470,8 +483,8 @@ def describe_all(*, title: str = "Command vocabulary",
         "Lines -- one object per line -- into `response.jsonl`.",
         "",
         "```json",
-        '{"verb": "map.tile.set", "scope": "map:test/layer:Floor",'
-        ' "args": {"x": 4, "y": 7, "gid": 65}}',
+        sample or ('{"verb": "map.tile.set", "scope": "map:test/layer:Floor",'
+                   ' "args": {"x": 4, "y": 7, "gid": 65}}'),
         "```",
         "",
         "Rules that are enforced, not suggested:",
@@ -493,6 +506,11 @@ def describe_all(*, title: str = "Command vocabulary",
             "editor is refused on this scope, so a response that reaches for",
             "one is rejected whole. If what you need cannot be said with",
             "these, say so in the reply rather than improvising a verb.",
+            "",
+            "The `scope` in each verb's own example below shows the SHAPE of",
+            "the field, not an address you may aim at: those examples are",
+            "registered once, for the whole editor. The worked line above is",
+            "the one built for this bundle.",
             "",
         ]
     for spec in selected:

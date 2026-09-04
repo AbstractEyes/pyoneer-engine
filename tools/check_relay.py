@@ -28,6 +28,21 @@ WHAT IS ASSERTED, AND WHY EACH HALF EXISTS
     someone "makes it safe" by adding a file back.
   * the ZERO-VERB REFUSAL, both halves: a scope no verb accepts is refused
     by name, and a scope that has verbs writes.
+  * THE PROMISE IS KEPT, NOT PRINTED. Every assertion above measures a
+    DOCUMENT, and none of them could fail while the sentence that document
+    prints -- *every other verb in this editor is refused on this scope, so
+    a response that reaches for one is rejected whole* -- was decoration.
+    It was: a bundle cut for `script:toll` took a `map.tile.set` aimed at
+    `map:test/layer:Floor` and wrote a transaction. So a real
+    `response.jsonl` is written into a real bundle and applied, and the
+    refusal, its emptiness (no transaction, nothing edited), the in-scope
+    response that still applies, and the sibling address `also` declares
+    are each asserted through `Session.apply_response` itself.
+  * THE WORKED EXAMPLE IS ONE THE BUNDLE PERMITS. That is what made the
+    defect findable: the demonstration sat three lines under the promise
+    and violated it. Every example line of every brief is parsed back out,
+    validated against the registry, and driven through that bundle's own
+    contract -- with the old hand-typed line as the negative control.
   * `describe_scope` answers for every kind in `SCOPE_KINDS` and RAISES on
     a kind it has no arm for. The arm it used to have returned "*(no
     description available)*", which writes a complete-looking bundle whose
@@ -69,10 +84,12 @@ from editor.core.request import (
     Manifest,
     Note,
     RULES_SCOPE_KINDS,
+    bundle_contract,
     describe_scope,
     rules_travel_with,
     write_bundle,
 )
+from editor.core import event_script
 from editor.core.scope import SCOPE_KINDS, Scope, Segment
 from editor.core.session import Session
 
@@ -531,6 +548,376 @@ expect_raises("an undeclared kind stops the ship instead of describing nothing",
               lambda: describe_scope(session.project,
                                      Scope((Segment("scene", "overworld"),))),
               naming="scene")
+
+
+# --------------------------------------------------------------------------
+print()
+print("THE PROMISE IS ENFORCED, NOT PRINTED -- a response is refused against "
+      "the bundle it answers")
+# --------------------------------------------------------------------------
+# Every assertion above this line measures a DOCUMENT: which verbs are in
+# COMMANDS.md, which are not, how big the directory is. None of them could
+# fail while the sentence that document prints -- *every other verb in this
+# editor is refused on this scope, so a response that reaches for one is
+# rejected whole* -- was decoration. Measured before the gate existed: a
+# bundle cut for `script:toll` took a `map.tile.set` aimed at
+# `map:test/layer:Floor` and wrote a transaction, while the same verb aimed
+# AT `script:toll` was refused by `Verb.validate`. Scoping was a payload
+# trim wearing the words of a gate, and a document that overstates its
+# guarantee trains the author to review less carefully -- which is the whole
+# thing the relay rests on.
+#
+# So this section drives the DOOR, not the document: it writes real
+# `response.jsonl` files and applies them.
+TOLL = Scope.parse("script:toll")
+FLOOR_CELL = (4, 7)
+
+
+def floor_gid() -> int:
+    """What is really in the cell a leaking response aims at."""
+    return session.project.map("test").tile_layer("Floor").get_tile(*FLOOR_CELL)
+
+
+def respond(directory: str, *lines: dict) -> str:
+    """Write one response.jsonl into a bundle. Returns its path."""
+    path = os.path.join(directory, "response.jsonl")
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        for line in lines:
+            handle.write(json.dumps(line) + "\n")
+    return path
+
+
+LEAK = {"verb": "map.tile.set", "scope": "map:test/layer:Floor",
+        "args": {"x": FLOOR_CELL[0], "y": FLOOR_CELL[1], "gid": 0}}
+IN_SCOPE = {"verb": "script.create", "scope": "script:toll",
+            "args": {"title": "Toll"}}
+
+toll_path = session.ask(TOLL, "make the bridge charge a toll", requests_dir=OUT)
+expect("the bundle prints the promise, verbatim",
+       "is refused on this scope" in
+       open(os.path.join(toll_path, "COMMANDS.md"), encoding="utf-8").read(),
+       True)
+
+# HALF A -- the exact shape that was measured applying. `map.tile.set` is
+# not in this bundle's vocabulary AND `map:test/layer:Floor` is not under
+# `script:toll`, so both reasons fire; the refusal has to name the address,
+# because the address is what the responder got wrong.
+was, history = floor_gid(), len(session.history())
+expect_raises("a response reaching outside the bundle's scope is refused, "
+              "naming the address it reached for",
+              PyoneerRequestError,
+              lambda: session.apply_response(respond(toll_path, LEAK)),
+              naming="map:test/layer:Floor")
+expect("...and NOTHING was applied -- no transaction, not even a rolled-back "
+       "one, and the cell it aimed at is untouched",
+       (len(session.history()), floor_gid()), (history, was))
+
+# HALF B, and without it half A passes for a gate that refuses everything.
+transaction = session.apply_response(respond(toll_path, IN_SCOPE))
+expect("an in-scope response still applies, as EXACTLY ONE transaction",
+       (len(transaction.commands), len(session.history()) - history), (1, 1))
+expect("...and it really did the work",
+       event_script.scripts_of(session.project).has("toll"), True)
+session.undo()
+expect("...which one undo takes back whole",
+       event_script.scripts_of(session.project).has("toll"), False)
+
+# THE ADDRESS HALF ON ITS OWN. `script.node.add` IS in this bundle's
+# vocabulary -- a verb-list gate alone would let this through, and it is
+# this bundle rewriting somebody else's document. An id is not an identity.
+expect("script.node.add is a verb this bundle shipped",
+       "script.node.add" in
+       json.load(open(os.path.join(toll_path, "manifest.json"),
+                      encoding="utf-8"))["verbs"], True)
+expect_raises("...and it is STILL refused when aimed at a sibling script, "
+              "because the address is checked and not just the verb",
+              PyoneerRequestError,
+              lambda: session.apply_response(respond(
+                  toll_path, {"verb": "script.node.add",
+                              "scope": "script:relay_fixture",
+                              "args": {"id": "smuggled", "do": "say",
+                                       "into": "pg_1",
+                                       "args": {"text": "hello"}}})),
+              naming="script:relay_fixture")
+expect("...and the sibling document was not touched",
+       "smuggled" in
+       event_script.scripts_of(session.project).document("relay_fixture").ids(),
+       False)
+
+# THE VOCABULARY HALF ON ITS OWN, isolated the other way: a MAP-scoped
+# bundle, and a command at a layer INSIDE that map. The address is under the
+# declared one, so only the verb list can refuse it -- and it must, because
+# a bundle that shipped no documentation for `map.tile.set` handed the
+# responder no arguments for it.
+map_scoped = session.ask(MAP, "widen the shoreline", requests_dir=OUT)
+expect("map.tile.set is NOT in a map-scoped bundle's vocabulary",
+       "map.tile.set" in
+       json.load(open(os.path.join(map_scoped, "manifest.json"),
+                      encoding="utf-8"))["verbs"], False)
+expect_raises("a verb the bundle never shipped is refused even at an address "
+              "inside the declared one",
+              PyoneerRequestError,
+              lambda: session.apply_response(respond(map_scoped, LEAK)),
+              naming="map.tile.set")
+expect("...and that cell is still untouched", floor_gid(), was)
+
+
+# --------------------------------------------------------------------------
+print()
+print("...and the sibling address a real answer needs is DECLARED, not "
+      "smuggled")
+# --------------------------------------------------------------------------
+# The case that decides this cannot be a pure gate: attaching an event
+# script to the object that runs it is `script.create` at `script:<id>` AND
+# `map.object.property.set` at the object, one note, two addresses
+# (`docs/PLAN_SCENES.md` section 6 -- "attaching a script to an object needs
+# NO new verb"). A gate with no door for that would refuse the main flow of
+# the feature, so `also` widens the bundle on every axis at once: the
+# address is declared, its verbs are SHIPPED, and the gate accepts it.
+ENTITY = Scope.parse("map:test/layer:entity")
+session.run(Command("map.object.add", ENTITY,
+                    {"type": "GamePlayer", "x": 64.0, "y": 64.0,
+                     "name": "toll_keeper"}))
+keeper = session.project.map("test").object_layer("entity").objects()[-1]
+KEEPER = ENTITY.child("object", str(keeper.id))
+ATTACH = {"verb": "map.object.property.set", "scope": str(KEEPER),
+          "args": {"key": "pyoneer_script", "value": "toll"}}
+
+expect_raises("the two-address answer is refused by the NARROW bundle",
+              PyoneerRequestError,
+              lambda: session.apply_response(
+                  respond(toll_path, IN_SCOPE, ATTACH)),
+              naming=str(KEEPER))
+
+widened = session.ask(TOLL, "make the bridge charge a toll", also=[KEEPER],
+                      requests_dir=OUT)
+widened_payload = json.load(open(os.path.join(widened, "manifest.json"),
+                                 encoding="utf-8"))
+expect("a widened bundle names BOTH addresses, the asked-for one first",
+       widened_payload["scopes"], [str(TOLL), str(KEEPER)])
+expect("...and still names one `scoped`, for every reader that reads that",
+       widened_payload["scoped"], str(TOLL))
+expect("...and SHIPS the other address's verbs, so the permission is not a "
+       "licence to guess at arguments",
+       ("map.object.property.set" in widened_payload["verbs"],
+        "### `map.object.property.set`" in
+        open(os.path.join(widened, "COMMANDS.md"), encoding="utf-8").read()),
+       (True, True))
+
+history = len(session.history())
+transaction = session.apply_response(respond(widened, IN_SCOPE, ATTACH))
+expect("...and the same response now applies, as ONE transaction of two",
+       (len(transaction.commands), len(session.history()) - history), (2, 1))
+expect("...doing both halves of the real flow",
+       (event_script.scripts_of(session.project).has("toll"),
+        session.project.map("test").object_layer("entity")
+        .find(keeper.id).properties.as_dict().get("pyoneer_script")),
+       (True, "toll"))
+session.undo()
+
+# And the refusal is not widened for free: an `also` no verb reaches is the
+# author declaring a permission that permits nothing, so it is refused at
+# the door with the same words the first address gets.
+expect_raises("an `also` no verb accepts is refused by name, like any other "
+              "declared address",
+              PyoneerRequestError,
+              lambda: session.ask(TOLL, "and darken the art",
+                                  also=[ASSETS], requests_dir=OUT),
+              naming="assets")
+expect_raises("and `also` without a scope is refused, because an unscoped "
+              "ship promises nothing there is to widen",
+              PyoneerRequestError,
+              lambda: write_bundle(session.project,
+                                   Manifest(notes=[Note(TOLL, "toll")]),
+                                   requests_dir=OUT, also=[KEEPER]),
+              naming="also")
+
+
+# --------------------------------------------------------------------------
+print()
+print("...and what is NOT gated is exactly what promised nothing")
+# --------------------------------------------------------------------------
+# The other half of every gate: what it lets through. An unscoped ship
+# carries every verb in the editor and says nothing about addresses, so
+# gating it would be enforcing a promise nobody made -- and a bare
+# directory is not a bundle at all, which is the shape
+# `tools/check_script_verbs.py` uses to prove the script verbs are
+# reachable without a window.
+# The positive control is aimed at the fixture table this file created
+# rather than at the map, so it measures the GATE and pins nothing about
+# `data/maps/test.tmx` (law 4). The note that wrote `wide` was about
+# `map:test/layer:Floor`, so `table:actors` is as far outside it as the
+# refused ones were outside `script:toll`.
+UNGATED = {"verb": "table.row.add", "scope": "table:actors",
+           "args": {"id": "ungated_row"}}
+
+
+def has_row(row_id: str) -> bool:
+    return row_id in session.project.table("actors").rows
+
+
+history = len(session.history())
+session.apply_response(respond(wide.directory, UNGATED))
+expect("an unscoped bundle's response reaches anywhere, and applies",
+       (len(session.history()) - history, has_row("ungated_row")), (1, True))
+session.undo()
+expect("...and undo takes it back", has_row("ungated_row"), False)
+
+bare = tempfile.mkdtemp(prefix="pyoneer_relay_bare_")
+atexit.register(shutil.rmtree, bare, ignore_errors=True)
+session.apply_response(respond(bare, UNGATED))
+expect("a directory with no manifest.json promised nothing, so it gates "
+       "nothing", has_row("ungated_row"), True)
+session.undo()
+
+# MISSING IS FREE, CONTRADICTORY RAISES. A manifest that cannot be read
+# leaves "is this response bound?" unanswered, and answering an
+# unanswerable question with "no" is how a gate turns back into decoration.
+broken_dir = tempfile.mkdtemp(prefix="pyoneer_relay_broken_")
+atexit.register(shutil.rmtree, broken_dir, ignore_errors=True)
+with open(os.path.join(broken_dir, "manifest.json"), "w",
+          encoding="utf-8") as handle:
+    handle.write("{ this is not json")
+expect_raises("an unreadable manifest refuses the response rather than "
+              "waving it through",
+              PyoneerRequestError,
+              lambda: session.apply_response(respond(broken_dir, LEAK)),
+              naming="manifest.json")
+with open(os.path.join(broken_dir, "manifest.json"), "w",
+          encoding="utf-8") as handle:
+    json.dump({"scoped": "script:toll"}, handle)
+expect_raises("...and so does one that declares a scope with no verb list "
+              "beside it",
+              PyoneerRequestError,
+              lambda: session.apply_response(respond(broken_dir, LEAK)),
+              naming="verbs")
+expect("...neither of which applied anything", floor_gid(), was)
+
+# A bundle written before `scopes` existed carries `scoped` alone. It is a
+# one-address contract, not a no-address one -- the difference between an
+# old bundle being gated and an old bundle being the way around the gate.
+with open(os.path.join(broken_dir, "manifest.json"), "w",
+          encoding="utf-8") as handle:
+    json.dump({"scoped": "script:toll", "verbs": ["script.create"]}, handle)
+expect_raises("a manifest from before `scopes` existed still gates, off "
+              "`scoped` alone",
+              PyoneerRequestError,
+              lambda: session.apply_response(respond(broken_dir, LEAK)),
+              naming="script:toll")
+
+
+# --------------------------------------------------------------------------
+print()
+print("the worked example in a brief is one the bundle itself permits")
+# --------------------------------------------------------------------------
+# This is the assertion that would have caught the original defect. Every
+# bundle printed a demonstration reading
+# `{"verb": "table.row.add", "scope": "table:actors", ...}` three lines
+# under the sentence promising that anything else is rejected whole -- an
+# example its own rules reject, in a document whose entire job is to be
+# trusted. So every example line of every brief is parsed back out and
+# driven through the registry AND through the bundle's own contract.
+EXAMPLE = re.compile(r"^\{.*\}$", re.M)
+
+
+def _why(cmd: Command) -> str:
+    """Why the registry refuses this command, or "" -- for a readable FAIL."""
+    try:
+        next(v for v in all_verbs() if v.name == cmd.verb).validate(cmd)
+    except Exception as exc:                                    # noqa: BLE001
+        return str(exc)
+    return ""
+
+
+def _validates(cmd: Command) -> bool:
+    return not _why(cmd)
+
+
+def example_lines(directory: str) -> list[Command]:
+    with open(os.path.join(directory, "BRIEF.md"), encoding="utf-8") as handle:
+        body = handle.read()
+    block = body.split("## How to answer")[1].split("```")[1]
+    return [Command.from_json(json.loads(line))
+            for line in EXAMPLE.findall(block)]
+
+
+for label, directory in (("script-scoped", toll_path),
+                         ("map-scoped", map_scoped),
+                         ("two-address", widened),
+                         ("unscoped", wide.directory)):
+    lines = example_lines(directory)
+    expect(f"the {label} brief demonstrates at least one line", bool(lines), True)
+    bad = []
+    for cmd in lines:
+        try:
+            next(v for v in all_verbs() if v.name == cmd.verb).validate(cmd)
+        except Exception as exc:                                # noqa: BLE001
+            bad.append(f"{cmd.verb}: {exc}")
+    expect(f"...every {label} line is a real verb with real arguments", bad, [])
+    contract = bundle_contract(directory)
+    expect(f"...and the {label} bundle's own gate permits every one of them",
+           [] if contract is None
+           else [r for cmd in lines for r in contract.reasons(cmd)], [])
+
+# Both halves: the assertion above proves nothing unless the contract it
+# consults would REFUSE a wrong example. The two lines every bundle used to
+# print are exactly that control.
+toll_contract = bundle_contract(toll_path)
+expect("there is a contract to consult", toll_contract is not None, True)
+expect("and the demonstration this bundle used to print is refused by it, "
+       "which is how the defect was findable at all",
+       bool(toll_contract.reasons(Command.from_json(
+           {"verb": "table.row.add", "scope": "table:actors",
+            "args": {"id": "hero"}}))), True)
+expect("the two addresses of a widened bundle are BOTH demonstrated, since "
+       "the cross-address answer is the case `also` exists for",
+       sorted(str(c.scope) for c in example_lines(widened)),
+       sorted([str(TOLL), str(KEEPER)]))
+
+# AND THE SAME QUESTION OF COMMANDS.md, WHICH IS THE OTHER DOCUMENT WITH AN
+# EXAMPLE IN IT -- and the one a responder reads for argument names, so its
+# first demonstration is the line most likely to be copied verbatim. It was
+# the canned `map.tile.set @ map:test/layer:Floor`, printed into every
+# bundle ever cut, three lines under COMMANDS.md's own sentence promising
+# that every other verb on this scope is refused whole. In a bundle cut for
+# `script:toll` that line is refused by both halves of the contract at once.
+
+
+def header_sample(directory: str) -> list[Command]:
+    """The worked line at the top of a bundle's COMMANDS.md."""
+    with open(os.path.join(directory, "COMMANDS.md"), encoding="utf-8") as h:
+        block = h.read().split("```json")[1].split("```")[0]
+    return [Command.from_json(json.loads(line))
+            for line in EXAMPLE.findall(block)]
+
+
+for label, directory in (("script-scoped", toll_path),
+                         ("map-scoped", map_scoped),
+                         ("two-address", widened),
+                         ("unscoped", wide.directory)):
+    lines = header_sample(directory)
+    contract = bundle_contract(directory)
+    expect(f"the {label} COMMANDS.md opens on a real verb with real "
+           f"arguments",
+           [f"{c.verb}: {exc}" for c in lines
+            for exc in ([] if _validates(c) else [_why(c)])], [])
+    expect(f"...and the {label} bundle's own gate permits its header sample "
+           f"too", [] if contract is None
+           else [r for cmd in lines for r in contract.reasons(cmd)], [])
+
+# THE CONTROL. The assertion above is worth nothing unless the line it
+# replaced would have failed it -- and that line is still what an unscoped
+# bundle prints, correctly, because an unscoped bundle declares nothing and
+# gates nothing.
+expect("the unscoped COMMANDS.md still opens on the canned line, which is "
+       "an illustration and gates nothing",
+       [c.verb for c in header_sample(wide.directory)], ["map.tile.set"])
+expect("...while the scoped one does NOT, and the canned line is refused by "
+       "that bundle's gate",
+       ([c.verb for c in header_sample(toll_path)] == ["map.tile.set"],
+        bool(toll_contract.reasons(Command.from_json(
+            {"verb": "map.tile.set", "scope": "map:test/layer:Floor",
+             "args": {"x": 4, "y": 7, "gid": 65}})))), (False, True))
 
 
 # --------------------------------------------------------------------------

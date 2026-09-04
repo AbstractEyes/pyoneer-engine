@@ -2875,6 +2875,16 @@ class MapCanvas(QGraphicsView):
             # twice costs one rebuild and not two.
             self.selected.emit(Scope.of(("map", self.map_name),
                                         ("layer", self.active_layer)))
+            if self.active_layer in self.hidden_layers:
+                # THE SAME TRUTH THE DOUBLE-CLICK WILL TELL. Everything on a
+                # hidden layer is skipped by `objects_under`, so "nothing
+                # here" is what this branch can see and not what is there --
+                # and inviting the double-click that `__place_object` now
+                # refuses would be the editor advertising a dead gesture.
+                self.status.emit(f"{self.active_layer!r} is hidden, so nothing "
+                                 f"on it can be clicked — switch the layer "
+                                 f"back on in Layers first")
+                return
             self.status.emit(
                 f"nothing here — selection cleared. Double-click to "
                 f"place a {self.object_class}, or click an object to "
@@ -2902,10 +2912,36 @@ class MapCanvas(QGraphicsView):
         `__drag_target`'s floor comes from. Two ways of putting an object on
         a map that disagreed about which cell a pixel belongs to would be a
         half-tile jump on the first drag of every object ever placed.
+
+        A HIDDEN LAYER IS REFUSED, in the same words `delete_selected_object`
+        uses, and creation is where the refusal matters MOST -- because
+        creation on a hidden object layer is the one direction that cannot
+        be walked back by hand. `__draw_objects` skips a hidden layer and
+        `objects_under` skips it, so the object that lands is not drawn,
+        cannot be clicked, cannot be dragged and cannot be right-clicked;
+        the Delete key already refuses on the same grounds; and the
+        double-click therefore finds nothing under the cursor and places
+        AGAIN. Measured: three double-clicks in ONE cell of a layer
+        unticked in the Layers panel left objects 1, 2 and 3 stacked, none
+        of them drawn and none of them removable.
+        #TAG:hidden_layer_refuses_creation
+
+        THE LAYER IS NOT SWITCHED BACK ON INSTEAD. Making it visible would
+        be a second effect of a gesture that asked for one, and it is an
+        effect undo cannot reach: `hidden_layers` is view state and never
+        enters the command stream, so Ctrl+Z would take the object back and
+        leave the layer switched on. Refusing is also what the other three
+        guards on this canvas do, and the refusal names the fix, which is
+        this editor's habit everywhere a control declines (law 7).
         """
         document = self.document
         if self.active_layer not in document.object_layer_names():
             self.status.emit("select an object layer to place an object on")
+            return None
+        if self.active_layer in self.hidden_layers:
+            self.status.emit(f"a double-click places an object, and "
+                             f"{self.active_layer!r} is hidden — switch the "
+                             f"layer back on in Layers first")
             return None
         scope = Scope.of(("map", self.map_name), ("layer", self.active_layer))
         if not self.window().run(Command("map.object.add", scope, {

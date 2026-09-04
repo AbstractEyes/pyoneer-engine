@@ -29,6 +29,15 @@ Three failure shapes, none of which raises anywhere:
     All three are asserted, and each with the half that would pass if the
     feature were absent as well as the half that would pass if it worked.
 
+  * A MENU THAT ACTS ON A DIFFERENT OBJECT. The row is an ADDRESS and ids
+    are RECYCLED, so every "does it still resolve" test in the panel passes
+    for an id that now names somebody else -- and `popup` returns with the
+    menu still on screen, so the document is free to change underneath it.
+    Measured before the fix: the canvas refused the identical stale address
+    and the tree deleted. Both directions are driven here, and the race is
+    driven through the SHIPPING opener rather than a helper, because it was
+    the absence of that assertion that let this ship.
+
 ITS OWN FIXTURE, NEVER data/maps/test.tmx (law 4). Two maps in a temporary
 workspace -- one to work on and one to paste ACROSS to -- thrown away at the
 end. Two maps, because "cross-map paste is allowed" and "a gid does not
@@ -63,6 +72,7 @@ from PySide6.QtWidgets import (                                       # noqa: E4
     QTreeWidgetItemIterator,
 )
 
+from editor.core.commands import Command                              # noqa: E402
 from editor.core.scope import Scope                                   # noqa: E402
 from editor.core.session import Session                               # noqa: E402
 from scripts.game.behavior.base import BEHAVIORS                      # noqa: E402
@@ -715,6 +725,73 @@ try:
 
     # ----------------------------------------------------------------
     print()
+    print("a paste is a CREATION too, so a hidden layer refuses it as well")
+    # ----------------------------------------------------------------
+    # THE SAME HOLE `MapCanvas.__place_object` CLOSED, REACHED BY THE OTHER
+    # DOOR. An object pasted onto an unticked layer is not drawn, cannot be
+    # clicked, cannot be dragged and cannot be right-clicked, because
+    # `__draw_objects` and `objects_under` both skip a hidden layer -- so it
+    # is a creation that cannot be walked back by hand.
+    #
+    # Driven through the AUTHOR'S OWN CONTROL: the tick box on the layer
+    # row, whose `visibility_changed` the window wires to
+    # `MapCanvas.set_layer_visible`. Reaching into `canvas.hidden_layers`
+    # directly would pass just as well for a panel whose tick box had come
+    # unwired, which is half the claim gone.
+    step_before = HierarchyDock._paste_step
+    depth, before = len(session.history()), ids()
+    item_for(ENTITY).setCheckState(0, Qt.Unchecked)
+    application.processEvents()
+    expect("unticking the layer row really hides that layer on the canvas",
+           "entity" in window.canvas.hidden_layers, True)
+    hidden_menu = right_click(ENTITY)[0]
+    hidden_text = ascii_fold(entry(hidden_menu, "Paste").text())
+    expect("Paste is greyed, and its own label names the layer AND the way "
+           "back",
+           (entry(hidden_menu, "Paste").isEnabled(), "'entity'" in hidden_text,
+            "switch the layer back on in Layers first" in hidden_text),
+           (False, True, True))
+    expect("...and the call refuses too, so a script cannot get past the "
+           "greying, and NOTHING is created",
+           (hierarchy.paste_object(Scope.parse(ENTITY)),
+            "hidden" in hierarchy.last_notice,
+            len(session.history()), ids(), modals()),
+           (False, True, depth, before, []))
+    # An OBJECT row on the same hidden layer is the other way the author
+    # reaches Paste, and it lands on that same layer. The sentence is
+    # written out here rather than derived from the label, so the words the
+    # canvas already uses are pinned and not merely echoed.
+    HIDDEN_WORDS = ("a paste puts an object on a layer, and 'entity' is "
+                    "hidden - switch the layer back on in Layers first")
+    expect("...and an object row on that layer refuses it in the same words "
+           "the canvas uses",
+           (ascii_fold(hierarchy.paste_refusal(Scope.parse(HERO))),
+            HIDDEN_WORDS in hidden_text), (HIDDEN_WORDS, True))
+
+    # THE OTHER HALF, and it is what makes the refusal an assertion rather
+    # than a panel that cannot paste: the SAME row, the SAME gesture, with
+    # the tick put back.
+    item_for(ENTITY).setCheckState(0, Qt.Checked)
+    application.processEvents()
+    live_menu = right_click(ENTITY)[0]
+    expect("ticking it back leaves no refusal at all",
+           ("entity" in window.canvas.hidden_layers,
+            entry(live_menu, "Paste").isEnabled(),
+            hierarchy.paste_refusal(Scope.parse(ENTITY))), (False, True, ""))
+    entry(live_menu, "Paste").trigger()
+    application.processEvents()
+    expect("...and the very same gesture adds exactly one object, in ONE "
+           "undo step, where the hidden layer added none",
+           (len(ids()) - len(before), len(session.history()) - depth), (1, 1))
+    window.undo()
+    application.processEvents()
+    HierarchyDock._paste_step = step_before
+    expect("...which undoes away, byte for byte",
+           (ids(), session.project.map("fixture").to_bytes() == FIXTURE_BYTES,
+            len(session.history())), (before, True, depth))
+
+    # ----------------------------------------------------------------
+    print()
     print("across maps: an object travels, a gid does not")
     # ----------------------------------------------------------------
     OTHER_ENTITY = "map:other/layer:entity"
@@ -837,6 +914,193 @@ try:
 
     # ----------------------------------------------------------------
     print()
+    print("A RECYCLED ID IS A DIFFERENT OBJECT, AND A MENU IS ABOUT AN OBJECT")
+    # ----------------------------------------------------------------
+    # THE ROW ABOVE IS THE EASY HALF: an id that answers NOTHING. This is
+    # the half that made the canvas rewrite what a selection is.
+    # `MapDocument._release_object_id` rolls `nextobjectid` back when the id
+    # being removed is the one just handed out -- deliberately, because that
+    # is what makes add-then-remove byte-exact -- so ids are REUSED, and a
+    # recycled id RESOLVES. To somebody else. Measured before the fix, on
+    # the identical stale address: the canvas refused and the tree deleted
+    # "removed BOB (GamePlayer)".
+    #
+    # The fixture is byte-identical to disk at this line (asserted one row
+    # up), and this section puts it back that way when it is done.
+    SECTION_BASE = len(session.history())
+
+    def add_object(name: str, cell, *, settle: bool = True):
+        """Place an object WITHOUT selecting it, and answer the new one.
+
+        By command, the way a script, a relayed AI response or a sibling
+        panel places one -- never by the canvas gesture, which selects what
+        it just made and so can never leave the stale address this whole
+        section is about.
+        """
+        window.run(Command("map.object.add", Scope.parse(ENTITY),
+                           {"type": "GamePlayer", "name": name,
+                            "x": float(cell[0] * TILE),
+                            "y": float(cell[1] * TILE),
+                            "width": 16.0, "height": 16.0}))
+        if settle:
+            application.processEvents()
+        return objects()[-1]
+
+    add_object("alice", (1, 3))
+    bob_temp = add_object("bob_temp", (3, 3))
+    RECYCLED = bob_temp.id
+    WAS_AT = (bob_temp.x, bob_temp.y)
+    ADDRESS = f"map:fixture/layer:entity/object:{RECYCLED}"
+    # The menu the author opened while that row still meant `bob_temp`.
+    stale_menu = right_click(ADDRESS)[0]
+    expect("the author opens the menu on bob_temp, and every entry is live",
+           [entry(stale_menu, name).isEnabled()
+            for name in ("Select", "Focus", "Edit", "Cut", "Copy", "Delete")],
+           [True] * 6)
+
+    window.undo()                       # bob_temp goes, and its id with it
+    application.processEvents()
+    bob = add_object("bob", (5, 3))     # ...and the next add is handed it
+    expect("THE ID IS HANDED OUT AGAIN: it is a different object, with a "
+           "different name, in a different place",
+           (bob.id, bob.name, (bob.x, bob.y) == WAS_AT),
+           (RECYCLED, "bob", False))
+    expect("...and the stale menu's entries are STILL ENABLED, because "
+           "greying asks whether the id resolves and a recycled id does",
+           [entry(stale_menu, name).isEnabled()
+            for name in ("Select", "Focus", "Edit", "Cut", "Copy", "Delete")],
+           [True] * 6)
+
+    # EVERY ENTRY THAT ACTS ON THE OBJECT, one after the other, on the menu
+    # that was built before the recycle. Each is expected to refuse and to
+    # name BOTH objects: the one the row meant, and the one the id answers
+    # with now. A refusal that said only "that is not it any more" leaves
+    # the author holding a menu and no idea what happened.
+    no_modals()
+    focused.clear()
+    # THE RECORDER, RE-INSTALLED, and the reason is measured: the map picker
+    # was driven two sections up and `EditorWindow.__switch_map` BUILDS A NEW
+    # CANVAS, so the instance attribute set near the top of this file went
+    # with the old one. Without this the "no camera moved" half below would
+    # be asserting an empty list nothing could ever fill -- vacuous, which is
+    # the failure shape law 5 names.
+    window.canvas.focus_object = fake_focus
+    window.selection.select(Scope.parse(FLOOR))
+    clipping_before = HierarchyDock._clipboard
+    depth, before = len(session.history()), ids()
+    said = {}
+    for name in ("Select", "Focus", "Edit", "Cut", "Copy", "Delete"):
+        entry(stale_menu, name).trigger()
+        application.processEvents()
+        said[name] = ascii_fold(hierarchy.last_notice)
+    expect("every entry REFUSES, and each names the object the row meant "
+           "and the object the id means now",
+           sorted(name for name, notice in said.items()
+                  if "is not bob_temp" in notice
+                  and "that id now names bob (GamePlayer)" in notice),
+           ["Copy", "Cut", "Delete", "Edit", "Focus", "Select"])
+    expect("...so the map, the history and the clipboard are untouched",
+           (ids(), len(session.history()),
+            HierarchyDock._clipboard is clipping_before),
+           (before, depth, True))
+    expect("...and no camera moved, no selection moved, no editor opened, "
+           "and nothing asked",
+           (focused, str(window.selection.scope),
+            window.object_editor is None or not window.object_editor.isVisible(),
+            modals()), ([], FLOOR, True, []))
+
+    # PASTE IS THE CONTRAST THAT PROVES THIS IS NOT A DEAD MENU. It acts on
+    # the LAYER the row is on, which a recycled id cannot change, so it
+    # carries no card and stays live on the very same stale menu.
+    grew = len(ids())
+    entry(stale_menu, "Paste").trigger()
+    application.processEvents()
+    expect("...while Paste on that same stale menu still lands, because it "
+           "acts on the layer and not on the object",
+           len(ids()), grew + 1)
+    window.undo()
+    application.processEvents()
+
+    # ----------------------------------------------------------------
+    print()
+    print("...and a LIVE card still does every one of those things")
+    # ----------------------------------------------------------------
+    # OTHERWISE THIS IS A DEAD MENU. The address below is the SAME STRING as
+    # the stale one -- same map, same layer, same id -- which is the whole
+    # argument in one line: an address cannot tell these two apart, and the
+    # element can.
+    expect("the live row's address is the very same string as the stale one",
+           f"map:fixture/layer:entity/object:{bob.id}", ADDRESS)
+    focused.clear()
+    window.selection.select(Scope.parse(FLOOR))
+    live_menu = right_click(ADDRESS)[0]
+    entry(live_menu, "Select").trigger()
+    application.processEvents()
+    expect("Select on a live card selects", str(window.selection.scope), ADDRESS)
+    entry(live_menu, "Focus").trigger()
+    application.processEvents()
+    expect("...Focus reaches the canvas with that scope", focused, [ADDRESS])
+    # The shipping method back, so nothing below is driving a stub.
+    del window.canvas.focus_object
+    entry(live_menu, "Edit").trigger()
+    application.processEvents()
+    expect("...Edit opens the window's editor on it",
+           (window.object_editor is not None,
+            str(window.object_editor.scope) if window.object_editor else None),
+           (True, ADDRESS))
+    window.object_editor.close()
+    application.processEvents()
+    entry(live_menu, "Copy").trigger()
+    application.processEvents()
+    expect("...Copy takes the clipping",
+           HierarchyDock._clipboard.label, "bob (GamePlayer)")
+    depth = len(session.history())
+    entry(live_menu, "Cut").trigger()
+    application.processEvents()
+    expect("...Cut removes it, in one transaction",
+           (RECYCLED in ids(), len(session.history()) - depth), (False, 1))
+    window.undo()
+    application.processEvents()
+    # A REBUILT MENU FOR DELETE, and not to be tidy: `map.object.restore`
+    # builds a NEW element, so the card the menu above is holding is
+    # legitimately stale now -- the object is back and it is not the same
+    # `<object>`. Asking the old menu here would assert the guard rather
+    # than the verb.
+    delete_menu = right_click(ADDRESS)[0]
+    depth = len(session.history())
+    entry(delete_menu, "Delete").trigger()
+    application.processEvents()
+    expect("...and Delete on a live card removes it",
+           (RECYCLED in ids(), len(session.history()) - depth), (False, 1))
+    window.undo()
+    application.processEvents()
+
+    # A LEGITIMATE EDIT UNDER AN OPEN MENU MUST NOT DROP THE GESTURE, and
+    # this is the assertion that stops the guard from being "refuse whenever
+    # anything changed". A move keeps the element; only a recycle replaces
+    # it, and the card follows the first and refuses the second.
+    move_menu = right_click(ADDRESS)[0]
+    window.run(Command("map.object.move", Scope.parse(ADDRESS),
+                       {"x": 80.0, "y": 64.0}))
+    application.processEvents()
+    expect("an object MOVED under the open menu is still the same object",
+           (by_id(RECYCLED).x, by_id(RECYCLED).y), (80.0, 64.0))
+    depth = len(session.history())
+    entry(move_menu, "Delete").trigger()
+    application.processEvents()
+    expect("...so that menu still acts on it: the ELEMENT is the identity, "
+           "and a move does not replace it",
+           (RECYCLED in ids(), len(session.history()) - depth), (False, 1))
+
+    while len(session.history()) > SECTION_BASE:
+        window.undo()
+    application.processEvents()
+    expect("and the whole recycle dance undoes away, byte for byte",
+           (session.project.map("fixture").to_bytes() == FIXTURE_BYTES,
+            ids()), (True, [1, 2, 3]))
+
+    # ----------------------------------------------------------------
+    print()
     print("THE REAL OPENER, DRIVEN. NOT A STUB.")
     # ----------------------------------------------------------------
     # Everything above replaced `popup_menu`, which is right for READING a
@@ -895,6 +1159,73 @@ try:
     application.processEvents()
     expect("...and the menu is freed once it is dismissed, not before",
            len(tree.findChildren(QMenu)), menus_before)
+
+    # ----------------------------------------------------------------
+    print()
+    print("THE OPEN-MENU RACE, THROUGH THAT SAME REAL OPENER")
+    # ----------------------------------------------------------------
+    # THE ASSERTION WHOSE ABSENCE LET THIS SHIP. Everything above proves the
+    # menu comes back with the loop running -- and that is exactly what
+    # makes "the document cannot change between building this menu and
+    # triggering it" false on the SHIPPING path. `EditorWindow` holds a
+    # QFileSystemWatcher on `editor/requests/` and applies an AI response
+    # from inside that same loop, so the change below is not contrived: it
+    # is what a relayed response does, spelled as the commands it runs.
+    #
+    # NO WATCHDOG IS ARMED HERE, on purpose. A zero-timer fires on the first
+    # `processEvents` below and would close the menu this section needs on
+    # screen; the section above already proved the opener returns without
+    # blocking, three assertions ago, with a watchdog armed.
+    real_menus.clear()
+    hierarchy.popup_menu = watched_open
+    victim = add_object("victim", (1, 4))
+    VICTIM = victim.id
+    VICTIM_ADDRESS = f"map:fixture/layer:entity/object:{VICTIM}"
+    tree.customContextMenuRequested.emit(
+        tree.viewport().mapTo(tree, point_of(VICTIM_ADDRESS)))
+    up = real_menus[-1]
+    expect("the author's own right-click is up, on the object pointed at",
+           (up.isVisible(), entry(up, "Delete").isEnabled()), (True, True))
+    # THE DOCUMENT CHANGES UNDERNEATH IT. `settle=False`: nothing spins the
+    # event loop, so the menu on screen is provably the one built above.
+    window.undo()
+    stranger = add_object("stranger", (3, 4), settle=False)
+    expect("a change lands underneath it and the id now names somebody else",
+           (stranger.id, stranger.name, up.isVisible()),
+           (VICTIM, "stranger", True))
+    expect("...and the entry is STILL ENABLED: it was greyed once, when the "
+           "menu was built", entry(up, "Delete").isEnabled(), True)
+    depth, before = len(session.history()), ids()
+    no_modals()
+    entry(up, "Delete").trigger()
+    expect("...and triggering it removes NOTHING -- the wrong object lives",
+           (ids(), len(session.history()), VICTIM in ids()),
+           (before, depth, True))
+    expect("...saying what the menu was opened on and what the id means now",
+           ("is not victim" in ascii_fold(hierarchy.last_notice),
+            "that id now names stranger (GamePlayer)"
+            in ascii_fold(hierarchy.last_notice), modals()),
+           (True, True, []))
+    # AND THE SAME REAL GESTURE, REPEATED NOW, DELETES. Without this the
+    # section above would pass on a menu that had simply stopped working.
+    real_menus.clear()
+    tree.customContextMenuRequested.emit(
+        tree.viewport().mapTo(tree, point_of(VICTIM_ADDRESS)))
+    fresh = real_menus[-1]
+    entry(fresh, "Delete").trigger()
+    expect("...while a right-click made AFTER the change deletes what it "
+           "was made for",
+           (VICTIM in ids(), len(session.history()) - depth), (False, 1))
+    up.close()
+    fresh.close()
+    application.processEvents()
+    while len(session.history()) > SECTION_BASE:
+        window.undo()
+    application.processEvents()
+    expect("the race leaves the fixture byte-identical too",
+           (session.project.map("fixture").to_bytes() == FIXTURE_BYTES,
+            ids()), (True, [1, 2, 3]))
+
     hierarchy.popup_menu = canvas_module._exec_menu
 
     # ----------------------------------------------------------------

@@ -64,10 +64,12 @@ CHECKS = [
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
     ("window_events", "os window events translate, route, and still fan out"),
     ("editor", "scopes, command stream, exact undo, genre rules, requests"),
-    ("relay", "one scope's vocabulary and no more: the slice is exactly what "
-              "the address accepts, the unscoped rendering is unchanged, a "
-              "scoped bundle is a quarter the size, and a scope no verb "
-              "accepts is refused by name"),
+    ("relay", "one scope's vocabulary and no more, and now ENFORCED: the "
+              "slice is exactly what the address accepts, a response reaching "
+              "past the declared addresses is refused whole before its first "
+              "command runs, a bundle may declare a second address and ship "
+              "its verbs too, and every worked example a bundle prints is a "
+              "line its own gate permits"),
     ("script_verbs", "the script.* verbs: exact inverses through nested elif "
                      "arms, id-only addressing, and every refusal the reader "
                      "would make at load"),

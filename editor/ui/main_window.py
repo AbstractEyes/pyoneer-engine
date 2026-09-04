@@ -46,7 +46,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QDockWidget,
-    QFileDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -57,7 +56,10 @@ from PySide6.QtWidgets import (
 from editor.core import ide
 from editor.core.collision import describe_opinion
 from editor.core.commands import Command
-from editor.core.errors import PyoneerEditorError
+from editor.core.errors import (
+    PyoneerEditorError,
+    PyoneerScopeRefusedError,
+)
 from editor.core.genre import RuleViolation
 from editor.core.inspect import Field
 from editor.core.layers import describe_mask
@@ -65,7 +67,7 @@ from editor.core.paint import EditMode, Tool
 from editor.core.request import REQUESTS_DIR, RESPONSE_FILE, read_response
 from editor.core.scope import Scope
 from editor.ui.actions_panel import ActionsDock
-from editor.ui.ask import ask_form, confirm
+from editor.ui.ask import ask_form, choose_file, confirm
 from editor.ui.behavior_panel import BehaviorDock
 from editor.ui.canvas import MapCanvas, TilePalette, TilesetFacts
 from editor.ui.collision_view import MaskPalette, build_mode_actions
@@ -155,6 +157,12 @@ class EditorWindow(QMainWindow):
         # The dialog seams, same as every panel's. See editor/ui/ask.py.
         self.ask = ask_form
         self.confirm = confirm
+        #: The platform file picker, as a replaceable attribute for the same
+        #: reason as the two above (law 13). It was inline here as
+        #: a bare `getOpenFileName` and the source census could not see
+        #: it -- so a check driving Apply-a-response would have sat on a
+        #: modal until the 600s timeout, and nothing said so.
+        self.choose_file = choose_file
         # The layout seam, same shape and the same reason. See `layout_store`.
         self.layout_store = layout_store
         #: The last response file that arrived on disk and has not been
@@ -1601,14 +1609,41 @@ class EditorWindow(QMainWindow):
         # to be able to find it again.
         start = self.pending_response or os.path.join(
             self.session.project.root, REQUESTS_DIR)
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Apply a response", start, "JSON Lines (*.jsonl);;All files (*)")
+        path = self.choose_file(self, "Apply a response", start,
+                                "JSON Lines (*.jsonl);;All files (*)")
         if path:
             self.apply_response(path)
 
     def apply_response(self, path: str) -> None:
+        """Apply a responder's command list, after that bundle's own gate.
+
+        THIS IS A SECOND DOOR, not a caller of `Session.apply_response` --
+        measured, and it is why the scope gate lives inside `read_response`
+        rather than in the session. A gate in `Session.apply_response`
+        would have covered the tool path and left this one, the one the
+        author actually clicks, wide open.
+
+        TWO REFUSALS, SPELLED APART. A malformed file and a well-formed
+        file that reached outside its bundle's declared scope are different
+        facts, and the second used to be reported as "is not a readable
+        response" -- wrong in the way that costs a reader an hour: the file
+        IS readable, every line of it parsed, and what happened is that the
+        bundle promised one address and the answer touched another.
+        `BundleContract.enforce` has already written the whole explanation,
+        the ways forward included, so it is passed through rather than
+        summarised. #TAG:a_refusal_is_not_a_parse_error
+        """
         try:
             commands = read_response(path)
+        except PyoneerScopeRefusedError as exc:                 # noqa: BLE001
+            # NOTHING WAS APPLIED. The contract refuses the batch
+            # before its first command runs, so there is no partial
+            # edit here and nothing for the author to undo.
+            self.report(f"{os.path.basename(path)} was refused: "
+                        f"{getattr(exc, 'message', str(exc))}",
+                        key="response",
+                        detail=f"{type(exc).__name__}: {exc}\n{path}")
+            return
         except Exception as exc:                                # noqa: BLE001
             self.report(f"{os.path.basename(path)} is not a readable "
                         f"response: {exc}", key="response",

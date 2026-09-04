@@ -5,7 +5,7 @@
 
 > The map canvas and the tile palette.
 
-`editor.ui.canvas` · 3872 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.canvas` · 3908 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -22,9 +22,9 @@
   - Put the mask sheet on disk. CREATE-ONLY-IF-ABSENT, never overwrite.
 - `editor/ui/canvas.py:348` `_EMPTY_READER(_x: int, _y: int) -> int` #TAG:_EMPTY_READER
   - Every cell empty -- what a companion layer that does not exist yet
-- `editor/ui/canvas.py:3106` `_exec_menu(menu: QMenu, at) -> None` #TAG:_exec_menu
+- `editor/ui/canvas.py:3142` `_exec_menu(menu: QMenu, at) -> None` #TAG:_exec_menu
   - Pop `menu` at a global point. THE SEAM, and the only reason it exists.
-- `editor/ui/canvas.py:3131` `_hold_menu(menu: QMenu) -> None` #TAG:_hold_menu
+- `editor/ui/canvas.py:3167` `_hold_menu(menu: QMenu) -> None` #TAG:_hold_menu
   - Free a popped-up menu when it closes, and not one moment sooner.
 
 ## Classes
@@ -73,7 +73,7 @@
 
 ### `class MapCanvas(QGraphicsView)` #TAG:MapCanvas
 
-`editor/ui/canvas.py:485`–`2971`
+`editor/ui/canvas.py:485`–`3007`
 
 > A depth-ordered, paintable view of one map.
 
@@ -242,40 +242,40 @@
   - ONE `map.object.move`, or nothing at all.
 - `editor/ui/canvas.py:2845` `__click_object(self, point, column: int, row: int) -> None` #TAG:MapCanvas.__click_object
   - A left press on an object layer: grab one, or point at nothing.
-- `editor/ui/canvas.py:2885` `__place_object(self, column: int, row: int) -> int | None` #TAG:MapCanvas.__place_object
+- `editor/ui/canvas.py:2895` `__place_object(self, column: int, row: int) -> int | None` #TAG:MapCanvas.__place_object
   - Put one object on the active object layer. THE ONLY CREATE PATH.
-- `editor/ui/canvas.py:2926` `__say_placed(self, object_id: int) -> None` #TAG:MapCanvas.__say_placed
+- `editor/ui/canvas.py:2962` `__say_placed(self, object_id: int) -> None` #TAG:MapCanvas.__say_placed
   - One line for one placement, said where it can still be read.
-- `editor/ui/canvas.py:2940` `__open_object_editor(self, point, column: int, row: int) -> None` #TAG:MapCanvas.__open_object_editor
+- `editor/ui/canvas.py:2976` `__open_object_editor(self, point, column: int, row: int) -> None` #TAG:MapCanvas.__open_object_editor
   - A double-click: open the object here, placing one if there is none.
 
 ### `class _TerrainStroke` #TAG:_TerrainStroke
 
-`editor/ui/canvas.py:2974`–`3031`
+`editor/ui/canvas.py:3010`–`3067`
 
 > One press-drag-release of the terrain tool.
 
-- `editor/ui/canvas.py:2987` `__init__(self, layer, terrain: autotile.TerrainSet, *, erase: bool=False, size: int=1)` #TAG:_TerrainStroke.__init__
-- `editor/ui/canvas.py:3004` `read(self, x: int, y: int) -> int` #TAG:_TerrainStroke.read
+- `editor/ui/canvas.py:3023` `__init__(self, layer, terrain: autotile.TerrainSet, *, erase: bool=False, size: int=1)` #TAG:_TerrainStroke.__init__
+- `editor/ui/canvas.py:3040` `read(self, x: int, y: int) -> int` #TAG:_TerrainStroke.read
   - Uncommitted edits win, so a drag builds on its own work.
-- `editor/ui/canvas.py:3010` `extend(self, column: int, row: int) -> None` #TAG:_TerrainStroke.extend
-- `editor/ui/canvas.py:3029` `edits(self) -> list[tuple[int, int, int]]` #TAG:_TerrainStroke.edits
+- `editor/ui/canvas.py:3046` `extend(self, column: int, row: int) -> None` #TAG:_TerrainStroke.extend
+- `editor/ui/canvas.py:3065` `edits(self) -> list[tuple[int, int, int]]` #TAG:_TerrainStroke.edits
 
 ### `@dataclass(frozen=True) class PaletteSection` #TAG:PaletteSection
 
-`editor/ui/canvas.py:3039`–`3069`
+`editor/ui/canvas.py:3075`–`3105`
 
 > One tileset's strip of the stacked palette.
 
-- `editor/ui/canvas.py:3055` `@property name(self) -> str` #TAG:PaletteSection.name
-- `editor/ui/canvas.py:3059` `@property width(self) -> int` #TAG:PaletteSection.width
-- `editor/ui/canvas.py:3063` `@property bottom(self) -> int` #TAG:PaletteSection.bottom
-- `editor/ui/canvas.py:3066` `rect(self, column: int, row: int) -> QRectF` #TAG:PaletteSection.rect
+- `editor/ui/canvas.py:3091` `@property name(self) -> str` #TAG:PaletteSection.name
+- `editor/ui/canvas.py:3095` `@property width(self) -> int` #TAG:PaletteSection.width
+- `editor/ui/canvas.py:3099` `@property bottom(self) -> int` #TAG:PaletteSection.bottom
+- `editor/ui/canvas.py:3102` `rect(self, column: int, row: int) -> QRectF` #TAG:PaletteSection.rect
   - Where one tile of this section sits on the palette surface.
 
 ### `@dataclass(frozen=True) class TilesetFacts` #TAG:TilesetFacts
 
-`editor/ui/canvas.py:3073`–`3103`
+`editor/ui/canvas.py:3109`–`3139`
 
 > What the MAP knows about one tileset. See `TilePalette.tileset_facts`.
 
@@ -283,72 +283,72 @@
 
 ### `class TilePalette(QWidget)` #TAG:TilePalette
 
-`editor/ui/canvas.py:3147`–`3753`
+`editor/ui/canvas.py:3183`–`3789`
 
 > Every tileset the map declares, stacked in one scrolling column.
 
-- `editor/ui/canvas.py:3190` `__init__(self, parent: QWidget | None=None)` #TAG:TilePalette.__init__
-- `editor/ui/canvas.py:3250` `set_atlas(self, atlas: TilesetAtlas) -> None` #TAG:TilePalette.set_atlas
-- `editor/ui/canvas.py:3256` `set_masks(self, masks: dict[int, int]) -> None` #TAG:TilePalette.set_masks
+- `editor/ui/canvas.py:3226` `__init__(self, parent: QWidget | None=None)` #TAG:TilePalette.__init__
+- `editor/ui/canvas.py:3286` `set_atlas(self, atlas: TilesetAtlas) -> None` #TAG:TilePalette.set_atlas
+- `editor/ui/canvas.py:3292` `set_masks(self, masks: dict[int, int]) -> None` #TAG:TilePalette.set_masks
   - Which gids their own tileset already masks. See `masks`.
-- `editor/ui/canvas.py:3266` `set_zoom(self, zoom: int) -> None` #TAG:TilePalette.set_zoom
+- `editor/ui/canvas.py:3302` `set_zoom(self, zoom: int) -> None` #TAG:TilePalette.set_zoom
   - Draw the sheets at `zoom` screen pixels per source pixel.
-- `editor/ui/canvas.py:3276` `__layout(self) -> None` #TAG:TilePalette.__layout
+- `editor/ui/canvas.py:3312` `__layout(self) -> None` #TAG:TilePalette.__layout
   - Stack the atlas's entries into sections, top to bottom.
-- `editor/ui/canvas.py:3304` `@property surface_size(self) -> tuple[int, int]` #TAG:TilePalette.surface_size
-- `editor/ui/canvas.py:3312` `section(self, name: str) -> PaletteSection | None` #TAG:TilePalette.section
-- `editor/ui/canvas.py:3318` `locate(self, x: float, y: float) -> tuple[PaletteSection, int, int] | None` #TAG:TilePalette.locate
+- `editor/ui/canvas.py:3340` `@property surface_size(self) -> tuple[int, int]` #TAG:TilePalette.surface_size
+- `editor/ui/canvas.py:3348` `section(self, name: str) -> PaletteSection | None` #TAG:TilePalette.section
+- `editor/ui/canvas.py:3354` `locate(self, x: float, y: float) -> tuple[PaletteSection, int, int] | None` #TAG:TilePalette.locate
   - Surface point -> the section under it and a cell inside it.
-- `editor/ui/canvas.py:3339` `@staticmethod clamp(section: PaletteSection, x: float, y: float) -> tuple[int, int]` #TAG:TilePalette.clamp
+- `editor/ui/canvas.py:3375` `@staticmethod clamp(section: PaletteSection, x: float, y: float) -> tuple[int, int]` #TAG:TilePalette.clamp
   - A point, as a cell of `section`, never outside its grid.
-- `editor/ui/canvas.py:3346` `header_at(self, x: float, y: float) -> PaletteSection | None` #TAG:TilePalette.header_at
+- `editor/ui/canvas.py:3382` `header_at(self, x: float, y: float) -> PaletteSection | None` #TAG:TilePalette.header_at
   - Surface point -> the section whose HEADER STRIP is under it.
-- `editor/ui/canvas.py:3365` `gid_at(self, section: PaletteSection, column: int, row: int) -> int | None` #TAG:TilePalette.gid_at
-- `editor/ui/canvas.py:3372` `tile_point(self, name: str, column: int, row: int) -> QPointF | None` #TAG:TilePalette.tile_point
+- `editor/ui/canvas.py:3401` `gid_at(self, section: PaletteSection, column: int, row: int) -> int | None` #TAG:TilePalette.gid_at
+- `editor/ui/canvas.py:3408` `tile_point(self, name: str, column: int, row: int) -> QPointF | None` #TAG:TilePalette.tile_point
   - The centre of one tile, in surface coordinates.
-- `editor/ui/canvas.py:3385` `facts(self, name: str) -> TilesetFacts` #TAG:TilePalette.facts
+- `editor/ui/canvas.py:3421` `facts(self, name: str) -> TilesetFacts` #TAG:TilePalette.facts
   - `TilesetFacts` for one tileset. Never raises.
-- `editor/ui/canvas.py:3402` `open_tileset_menu(self, point) -> None` #TAG:TilePalette.open_tileset_menu
+- `editor/ui/canvas.py:3438` `open_tileset_menu(self, point) -> None` #TAG:TilePalette.open_tileset_menu
   - A right-click on the surface: the header menu, or nothing at all.
-- `editor/ui/canvas.py:3420` `tileset_menu(self, section: PaletteSection) -> QMenu` #TAG:TilePalette.tileset_menu
+- `editor/ui/canvas.py:3456` `tileset_menu(self, section: PaletteSection) -> QMenu` #TAG:TilePalette.tileset_menu
   - The header menu for one tileset, built and not yet shown.
-- `editor/ui/canvas.py:3491` `request_rename(self, section: PaletteSection) -> None` #TAG:TilePalette.request_rename
+- `editor/ui/canvas.py:3527` `request_rename(self, section: PaletteSection) -> None` #TAG:TilePalette.request_rename
   - Ask for a new name and emit the rename. See `tileset_requested`.
-- `editor/ui/canvas.py:3513` `request_grow(self, section: PaletteSection) -> None` #TAG:TilePalette.request_grow
+- `editor/ui/canvas.py:3549` `request_grow(self, section: PaletteSection) -> None` #TAG:TilePalette.request_grow
   - Ask for a row count and emit the growth, or refuse it here.
-- `editor/ui/canvas.py:3587` `request_remove(self, section: PaletteSection) -> None` #TAG:TilePalette.request_remove
+- `editor/ui/canvas.py:3623` `request_remove(self, section: PaletteSection) -> None` #TAG:TilePalette.request_remove
   - Emit the removal, or say what is still painted with it.
-- `editor/ui/canvas.py:3614` `begin_at(self, x: float, y: float) -> None` #TAG:TilePalette.begin_at
-- `editor/ui/canvas.py:3623` `extend_at(self, x: float, y: float) -> None` #TAG:TilePalette.extend_at
+- `editor/ui/canvas.py:3650` `begin_at(self, x: float, y: float) -> None` #TAG:TilePalette.begin_at
+- `editor/ui/canvas.py:3659` `extend_at(self, x: float, y: float) -> None` #TAG:TilePalette.extend_at
   - Grow the selection, ALWAYS inside the anchor's own section.
-- `editor/ui/canvas.py:3637` `commit(self) -> None` #TAG:TilePalette.commit
-- `editor/ui/canvas.py:3656` `stamp(self) -> Stamp | None` #TAG:TilePalette.stamp
+- `editor/ui/canvas.py:3673` `commit(self) -> None` #TAG:TilePalette.commit
+- `editor/ui/canvas.py:3692` `stamp(self) -> Stamp | None` #TAG:TilePalette.stamp
   - The current selection as a Stamp, or None when there is none.
-- `editor/ui/canvas.py:3675` `describe(self, stamp: Stamp) -> str` #TAG:TilePalette.describe
+- `editor/ui/canvas.py:3711` `describe(self, stamp: Stamp) -> str` #TAG:TilePalette.describe
   - The caption for a pick: what it is, and what it already carries.
-- `editor/ui/canvas.py:3694` `selection_rect(self) -> tuple[int, int, int, int] | None` #TAG:TilePalette.selection_rect
+- `editor/ui/canvas.py:3730` `selection_rect(self) -> tuple[int, int, int, int] | None` #TAG:TilePalette.selection_rect
   - The selection in its own tileset's local ids, without the name.
-- `editor/ui/canvas.py:3700` `selection_section(self) -> PaletteSection | None` #TAG:TilePalette.selection_section
-- `editor/ui/canvas.py:3703` `__reseat_selection(self) -> None` #TAG:TilePalette.__reseat_selection
+- `editor/ui/canvas.py:3736` `selection_section(self) -> PaletteSection | None` #TAG:TilePalette.selection_section
+- `editor/ui/canvas.py:3739` `__reseat_selection(self) -> None` #TAG:TilePalette.__reseat_selection
   - Keep the highlight on the SAME tiles across a rebuild.
-- `editor/ui/canvas.py:3723` `select_gid(self, gid: int) -> None` #TAG:TilePalette.select_gid
+- `editor/ui/canvas.py:3759` `select_gid(self, gid: int) -> None` #TAG:TilePalette.select_gid
   - Move the highlight to a gid chosen elsewhere (the canvas picker).
-- `editor/ui/canvas.py:3738` `__show_selection(self) -> None` #TAG:TilePalette.__show_selection
+- `editor/ui/canvas.py:3774` `__show_selection(self) -> None` #TAG:TilePalette.__show_selection
   - Scroll the highlight into view.
 
 ### `class _PaletteSurface(QWidget)` #TAG:_PaletteSurface
 
-`editor/ui/canvas.py:3756`–`3871`
+`editor/ui/canvas.py:3792`–`3907`
 
 > The drawn stack. Split out so the palette can own scrolling.
 
-- `editor/ui/canvas.py:3766` `__init__(self, palette: TilePalette)` #TAG:_PaletteSurface.__init__
-- `editor/ui/canvas.py:3772` `rebuild(self) -> None` #TAG:_PaletteSurface.rebuild
-- `editor/ui/canvas.py:3785` `__draw_header(self, painter: QPainter, section: PaletteSection, width: int) -> None` #TAG:_PaletteSurface.__draw_header
-- `editor/ui/canvas.py:3804` `__draw_sheet(self, painter: QPainter, section: PaletteSection) -> None` #TAG:_PaletteSurface.__draw_sheet
-- `editor/ui/canvas.py:3832` `paintEvent(self, _event) -> None` #TAG:_PaletteSurface.paintEvent
-- `editor/ui/canvas.py:3846` `wheelEvent(self, event) -> None` #TAG:_PaletteSurface.wheelEvent
+- `editor/ui/canvas.py:3802` `__init__(self, palette: TilePalette)` #TAG:_PaletteSurface.__init__
+- `editor/ui/canvas.py:3808` `rebuild(self) -> None` #TAG:_PaletteSurface.rebuild
+- `editor/ui/canvas.py:3821` `__draw_header(self, painter: QPainter, section: PaletteSection, width: int) -> None` #TAG:_PaletteSurface.__draw_header
+- `editor/ui/canvas.py:3840` `__draw_sheet(self, painter: QPainter, section: PaletteSection) -> None` #TAG:_PaletteSurface.__draw_sheet
+- `editor/ui/canvas.py:3868` `paintEvent(self, _event) -> None` #TAG:_PaletteSurface.paintEvent
+- `editor/ui/canvas.py:3882` `wheelEvent(self, event) -> None` #TAG:_PaletteSurface.wheelEvent
   - Ctrl+wheel zooms; a plain wheel scrolls the stack.
-- `editor/ui/canvas.py:3860` `mousePressEvent(self, event) -> None` #TAG:_PaletteSurface.mousePressEvent
-- `editor/ui/canvas.py:3865` `mouseMoveEvent(self, event) -> None` #TAG:_PaletteSurface.mouseMoveEvent
-- `editor/ui/canvas.py:3869` `mouseReleaseEvent(self, event) -> None` #TAG:_PaletteSurface.mouseReleaseEvent
+- `editor/ui/canvas.py:3896` `mousePressEvent(self, event) -> None` #TAG:_PaletteSurface.mousePressEvent
+- `editor/ui/canvas.py:3901` `mouseMoveEvent(self, event) -> None` #TAG:_PaletteSurface.mouseMoveEvent
+- `editor/ui/canvas.py:3905` `mouseReleaseEvent(self, event) -> None` #TAG:_PaletteSurface.mouseReleaseEvent

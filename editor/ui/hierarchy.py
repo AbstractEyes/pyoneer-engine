@@ -57,6 +57,37 @@ for why an id must not make the trip. A paste is ONE `map.object.add`, so
 it is one undo step, and it lands a tile away from the last one it made
 rather than exactly on its source -- a duplicate nobody can see is
 indistinguishable from nothing having happened.
+
+AN OPEN MENU IS ABOUT AN OBJECT, NEVER ABOUT AN ID   #TAG:the_menu_holds_the_object_not_the_id
+--------------------------------------------------
+`popup` RETURNS WITH THE MENU STILL ON SCREEN and the event loop still
+running, which is the whole reason it is used instead of the blocking call
+law 13 is named after -- and it means the document can change while the
+menu is up. `EditorWindow` watches `editor/requests/` and applies an AI
+response from inside that same loop, so this is not a thought experiment:
+measured, the menu stayed up, the response recycled an id onto a DIFFERENT
+object, and Delete removed that one.
+
+Ids ARE recycled. `MapDocument._release_object_id` rolls `nextobjectid`
+back so that add-then-remove is byte-exact, so `find(id)` after a recycle
+answers a DIFFERENT OBJECT rather than answering nothing -- and every
+greying test in this panel asks "does it resolve", which a recycled id
+passes.
+
+SO THE ELEMENT IS THE IDENTITY, exactly as `SelectedObject` already
+decided it for the canvas, and this panel imports that record rather than
+inventing a second opinion about what an id means. `identify` takes the
+card when the menu is BUILT -- while the author can still see the row it
+was built for -- and every entry that acts on the object re-validates
+through `stale_refusal` when it is TRIGGERED.
+
+RE-VALIDATED AT TRIGGER, NOT CLOSED ON CHANGE, and the choice is
+deliberate. Closing the menu would need a document-changed wire this dock
+does not have, would free a QMenu while its own signal may be on the stack
+(the neighbour of law 12), and would still leave every other route in --
+a shortcut, a script, a relayed request -- resolving by id alone. The
+guard belongs at the moment of the action, where there is exactly one of
+them per verb.
 """
 from __future__ import annotations
 
@@ -100,7 +131,13 @@ from editor.core.scope import Scope
 # built. Its own docstring says why there is one function and not one per
 # panel: a second spelling is a second menu nothing is watching, which is
 # how the modal that hung this suite for 40+ minutes got in.
-from editor.ui.canvas import _exec_menu, _hold_menu
+# ...and `SelectedObject` with them, for the same reason: the canvas
+# already paid for the measurement that an id is not an identity -- its
+# docstring is where those five gestures are written down -- and two
+# records deciding what an id means is how this defect existed in the
+# first place. (Cited by name and not as a tag: a `#TAG:` in source is a
+# PLACEMENT, and placing the canvas's twice is a duplicate.)
+from editor.ui.canvas import SelectedObject, _exec_menu, _hold_menu
 from editor.ui.docks import ScopedDock
 
 _KIND_MARK = {"tile": "▦", "object": "◈", "image": "▣", "group": "▾"}
@@ -619,31 +656,42 @@ class HierarchyDock(ScopedDock):
         menu = QMenu(self.tree)
         menu.setToolTipsVisible(True)
         on_object = self.object_refusal(scope)
+        # WHICH OBJECT THIS MENU IS ABOUT, taken now, while the row the
+        # author pointed at is still the row on screen. Every entry below
+        # that acts on the object carries it and re-validates against it
+        # when it is triggered, because `popup` returns with the menu still
+        # up and the document free to change underneath it. None on a layer
+        # row, which is what leaves Paste live there.
+        card = self.identify(scope)
 
         self.__entry(menu, "Select", "",
                      "make this the editor's selection — the inspector, the "
                      "prompt strip and the canvas all follow it",
-                     lambda: self.select_scope(scope))
+                     lambda: self.select_scope(scope, card))
         self.__entry(menu, "Focus", self.focus_refusal(scope),
                      "centre the canvas on it and select it",
-                     lambda: self.focus_object(scope))
+                     lambda: self.focus_object(scope, card))
         self.__entry(menu, "Edit…", on_object,
                      "open the entity editing screen on it",
-                     lambda: self.edit_object(scope))
+                     lambda: self.edit_object(scope, card))
         self.__entry(menu, "Cut", on_object,
                      "copy it and take it off the map, in ONE undo step",
-                     lambda: self.cut_object(scope))
+                     lambda: self.cut_object(scope, card))
         self.__entry(menu, "Copy", on_object,
                      "take its type, its size and every custom property — "
                      "never its id, which this document recycles",
-                     lambda: self.copy_object(scope))
+                     lambda: self.copy_object(scope, card))
+        # NO CARD, and that is the contrast that proves the rest is not a
+        # dead menu: a paste acts on the LAYER this row is on, which a
+        # recycled id cannot change. `paste_object` re-reads `paste_refusal`
+        # when it runs, so a layer that went away is still refused.
         self.__entry(menu, "Paste", self.paste_refusal(scope),
                      "add a copy, a tile away from the last one",
                      lambda: self.paste_object(scope))
         self.__entry(menu, "Delete", on_object,
                      "remove it. One Ctrl+Z puts it back with every property "
                      "it carried",
-                     lambda: self.delete_object(scope))
+                     lambda: self.delete_object(scope, card))
         return menu
 
     def __entry(self, menu: QMenu, text: str, refusal: str, tip: str, act):
@@ -683,6 +731,60 @@ class HierarchyDock(ScopedDock):
             return document.object_layer(layer).find(int(scope.name))
         except Exception:                                       # noqa: BLE001
             return None
+
+    def identify(self, scope: Scope) -> SelectedObject | None:
+        """WHICH object this scope names right now, as a card. Never raises.
+
+        The canvas's record, not a second one: `SelectedObject`'s own
+        docstring carries the five gestures that measured it. The card
+        holds the live `<object>` element, and the element is what survives
+        a move, a rename and a property write, while `add_object` and
+        `restore_object` both build a new one.
+
+        None for every scope `__object` answers None for, and for a layer
+        row: a row that names no object has no identity to be wrong about.
+        """
+        found = self.__object(scope)
+        if found is None:
+            return None
+        return SelectedObject(layer=scope.require("layer"),
+                              object_id=found.id, element=found.element,
+                              x=found.x, y=found.y,
+                              type=found.type, name=found.name)
+
+    def stale_refusal(self, scope: Scope, card) -> str:
+        """Why the object a card was taken from cannot be acted on, or "".
+
+        THE HALF `object_refusal` CANNOT SEE. That one asks whether the id
+        resolves, and a RECYCLED id resolves -- to somebody else. This asks
+        the only question that separates the two: is the element the one
+        the card was taken from.
+
+        BOTH NAMES GO IN THE SENTENCE, the object the author asked for and
+        the object the id answers with now, because "that is not it any
+        more" without saying what it is now is a refusal the author cannot
+        act on.
+
+        A card that still names its object is REFRESHED here rather than
+        merely passed, so a legitimate edit under an open menu -- a move, a
+        rename from the inspector, an undo of either -- follows the object
+        instead of dropping the gesture. `MapCanvas` revalidates its own
+        selection this way, for this reason.
+
+        "" for a null card, which is what a layer row and every direct call
+        hand in: an address is all the caller gave, so an address is all
+        this can check.
+        """
+        if card is None:
+            return ""
+        found = self.__object(scope)
+        if found is None:
+            return f"{card.describe()} is gone"
+        if not card.still(found):
+            return (f"object {card.object_id} is not {card.describe()} any "
+                    f"more — that id now names {self.object_label(found)}")
+        card.refresh(found)
+        return ""
 
     @staticmethod
     def object_label(found) -> str:
@@ -761,6 +863,19 @@ class HierarchyDock(ScopedDock):
             authority is `validate_list` rather than a membership test --
             it also catches the duplicate and the declared conflict, which
             a membership test would paste straight through.
+
+        AND ONE THAT IS ABOUT THE ROW: A HIDDEN LAYER. This is the same
+        hole `MapCanvas.__place_object` closed, arrived at by the other
+        door -- a paste onto an unticked layer creates an object that is
+        not drawn, cannot be clicked, cannot be dragged and cannot be
+        right-clicked, because `__draw_objects` and `objects_under` both
+        skip a hidden layer. Creation is the one direction that cannot be
+        walked back by hand, so it is refused here rather than pasted and
+        the layer is NOT switched back on instead: visibility is view
+        state, it never enters the command stream, and unhiding as a side
+        effect would leave Ctrl+Z able to take the object back and unable
+        to put the tick back. The words are the canvas's words on purpose.
+        #TAG:a_paste_is_a_creation_too
         """
         clip = self._clipboard
         if clip is None:
@@ -768,8 +883,12 @@ class HierarchyDock(ScopedDock):
         map_name = scope.get("map")
         if map_name is None:
             return "this row is not on a map"
-        if self.paste_layer(scope) is None:
+        layer = self.paste_layer(scope)
+        if layer is None:
             return "an object goes on an object layer, and this row is not one"
+        if layer in self.__hidden():
+            return (f"a paste puts an object on a layer, and {layer!r} is "
+                    f"hidden — switch the layer back on in Layers first")
         if clip.map_name != map_name and clip.gid:
             return (f"{clip.label} draws tile gid {clip.gid}, which is a "
                     f"number in map:{clip.map_name}'s tilesets and not in "
@@ -786,15 +905,17 @@ class HierarchyDock(ScopedDock):
 
     # -- what a row can do -------------------------------------------------
 
-    def edit_object(self, scope: Scope) -> bool:
+    def edit_object(self, scope: Scope, card=None) -> bool:
         """Open the entity editing screen. The window owns that door.
 
         `EditorWindow.edit_object` is already the far end of the canvas's
         double-click, so this calls it rather than growing a second route
         to the same window -- two openers is two places for the one-window
         rule to be forgotten.
+
+        `card` is the identity the menu was built on; see `stale_refusal`.
         """
-        refusal = self.object_refusal(scope)
+        refusal = self.stale_refusal(scope, card) or self.object_refusal(scope)
         if refusal:
             self.notify(f"there is nothing to edit here: {refusal}")
             return False
@@ -805,7 +926,7 @@ class HierarchyDock(ScopedDock):
         opener(scope)
         return True
 
-    def focus_object(self, scope: Scope) -> bool:
+    def focus_object(self, scope: Scope, card=None) -> bool:
         """Centre the canvas on the object this row names.
 
         SPELLED OUT, not reached through `__canvas_focus`, and that is not
@@ -818,7 +939,7 @@ class HierarchyDock(ScopedDock):
         attribute is there and callable, so the direct spelling is the
         same call and one a grep can find.
         """
-        refusal = self.focus_refusal(scope)
+        refusal = self.stale_refusal(scope, card) or self.focus_refusal(scope)
         if refusal:
             self.notify(f"the canvas did not move: {refusal}", seconds=10)
             return False
@@ -828,13 +949,18 @@ class HierarchyDock(ScopedDock):
             return False
         return True
 
-    def copy_object(self, scope: Scope) -> bool:
+    def copy_object(self, scope: Scope, card=None) -> bool:
         """Snapshot the object onto the clipboard. Changes nothing.
 
         A snapshot and not a command: nothing about the map moves, so there
         is nothing to undo and nothing to put in the history.
+
+        IT STILL TAKES THE CARD. A copy writes nothing to the map, which
+        makes it look like the one entry that could not do harm -- but the
+        clipping it takes is what the next Paste AUTHORS, so a copy off a
+        recycled id lays a stranger's properties down on the next click.
         """
-        refusal = self.object_refusal(scope)
+        refusal = self.stale_refusal(scope, card) or self.object_refusal(scope)
         if refusal:
             self.notify(f"nothing was copied: {refusal}")
             return False
@@ -854,7 +980,7 @@ class HierarchyDock(ScopedDock):
                     f"new one on any object layer", seconds=8)
         return True
 
-    def cut_object(self, scope: Scope) -> bool:
+    def cut_object(self, scope: Scope, card=None) -> bool:
         """Copy it and take it off the map, as ONE transaction.
 
         ONE `run` call, so ONE Ctrl+Z puts it back -- the same reason
@@ -866,7 +992,14 @@ class HierarchyDock(ScopedDock):
         thing the author was carrying, on the one path where they can least
         afford it.
         """
-        if not self.copy_object(scope):
+        # ASKED HERE FIRST, in cut's own words, and then again inside the
+        # copy: a cut that could only refuse as "nothing was copied" would
+        # name the wrong half of a gesture the author spelled as one verb.
+        refusal = self.stale_refusal(scope, card)
+        if refusal:
+            self.notify(f"nothing was cut: {refusal}", seconds=10)
+            return False
+        if not self.copy_object(scope, card):
             return False
         clip = self._clipboard
         layer_scope = scope.parent()
@@ -882,9 +1015,15 @@ class HierarchyDock(ScopedDock):
                     f"property it carried", seconds=10)
         return True
 
-    def delete_object(self, scope: Scope) -> bool:
-        """Remove the object. `map.object.remove` restores its whole XML."""
-        refusal = self.object_refusal(scope)
+    def delete_object(self, scope: Scope, card=None) -> bool:
+        """Remove the object. `map.object.remove` restores its whole XML.
+
+        `card` is the identity the menu was built on. Without it this took
+        an ADDRESS and removed whatever answered it, which after a recycle
+        is a DIFFERENT OBJECT -- measured, and the reason `stale_refusal`
+        exists.
+        """
+        refusal = self.stale_refusal(scope, card) or self.object_refusal(scope)
         if refusal:
             self.notify(f"nothing was deleted: {refusal}")
             return False
@@ -988,8 +1127,15 @@ class HierarchyDock(ScopedDock):
 
     # -- selection ---------------------------------------------------------
 
-    def select_scope(self, scope: Scope) -> None:
+    def select_scope(self, scope: Scope, card=None) -> bool:
         """Select a row without clicking it -- what a menu entry needs.
+
+        REFUSES A STALE CARD like every other entry, and it writes nothing,
+        which is exactly why the temptation is to let it through. It must
+        not be let through: the selection is what the inspector, the prompt
+        strip and the canvas all follow, so a Select off a recycled id
+        points every one of them at an object the author never pointed at,
+        and the next edit they make there is authored in earnest.
 
         Moves the tree's own cursor as well as the editor's selection, so
         the row the author acted on is the row that ends up highlighted.
@@ -998,10 +1144,15 @@ class HierarchyDock(ScopedDock):
         has no row for (a layer whose object was just cut) would otherwise
         announce nothing at all.
         """
+        refusal = self.stale_refusal(scope, card)
+        if refusal:
+            self.notify(f"nothing was selected: {refusal}", seconds=10)
+            return False
         self.tree.blockSignals(True)
         self.__reselect(str(scope))
         self.tree.blockSignals(False)
         self.__announce(scope)
+        return True
 
     def __announce(self, scope: Scope) -> None:
         """Tell the panel and the editor that this is what is selected.
