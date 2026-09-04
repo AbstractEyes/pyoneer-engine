@@ -133,3 +133,9 @@ Icon?
 # data/art/ is deliberately NOT listed below. If a future rule would sweep it
 # up, that rule is the thing to narrow.
 data/graphics/
+
+# Art cropped in through the tileset import dialog. Third-party images land
+# here, so new ones stay out of the repo by default. NOTE this does not untrack
+# what is already committed: the sample pushed in ef0ea70 is still versioned and
+# public, and only `git rm --cached` takes it back out.
+data/maps/tilesets/
