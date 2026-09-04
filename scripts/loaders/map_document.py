@@ -15,13 +15,17 @@ So the contract is stronger than "produces valid TMX":
     set_tile(x, y, gid)       changes the bytes of exactly one csv token
     add_object + remove_object returns the original bytes
 
-`tools/check_tmx_roundtrip.py` byte-compares that against the shipped
-133,940-byte data/maps/test.tmx.
+`tools/check_tmx_roundtrip.py` byte-compares that against a deliberately
+AWKWARD fixture it builds itself, and once against the shipped
+data/maps/starter.tmx.
 
-WHAT THE SHIPPED FILE ACTUALLY LOOKS LIKE
------------------------------------------
-data/maps/test.tmx is not tidy, and pretending otherwise is how a writer
-breaks. Measured facts about it:
+WHAT AN UNTIDY TILED FILE ACTUALLY LOOKS LIKE
+---------------------------------------------
+A .tmx a human has been editing is not tidy, and pretending otherwise is how
+a writer breaks. Measured on the private canvas this module was written
+against -- retired on 2026-09-04, and every property below is now written
+into `check_tmx_roundtrip`'s own fixture so the coverage is guaranteed rather
+than borrowed:
 
   * CRLF line endings throughout. An XML parser is REQUIRED by spec to
     normalize CRLF to LF while parsing, so every `\\r` is gone by the time
@@ -29,6 +33,9 @@ breaks. Measured facts about it:
   * Inconsistent indentation. The first elements use tabs
     (`\\t<tileset ...>`); everything from the second <layer> down uses one,
     two or three SPACES; and every `</data>` sits at column 0.
+  * ...and a file may be none of those things: `data/maps/starter.tmx` is
+    uniform LF with uniform one-space indent. Both round-trip byte-exactly,
+    which is the actual contract -- reproduce what you were given.
   * ElementTree writes `<export ... format="tmx" />` with a space before the
     slash. Tiled writes `<export ... format="tmx"/>` with none.
   * ElementTree writes `<?xml version='1.0' encoding='UTF-8'?>` with single

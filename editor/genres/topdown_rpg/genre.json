@@ -1,21 +1,21 @@
 {
   "id": "topdown_rpg",
   "title": "Top-down RPG",
-  "summary": "Tile-based overhead world, characters with stats, inventory and equipment. Matches the layer layout already authored in data/maps/test.tmx.",
+  "summary": "Tile-based overhead world, characters with stats, inventory and equipment. Matches the layer layout the shipped data/maps/starter.tmx declares.",
   "docks": ["map", "layers", "objects", "tables", "problems", "manifest", "history"],
   "layers": [
     {
       "name": "Paralax",
       "kind": "tile",
       "depth": 1,
-      "doc": "Background that scrolls slower than the world. Note the spelling: the authored map has one L, and scripts/core/depth.py aliases it.",
+      "doc": "Background that scrolls slower than the world. Spelled with one L here for the same reason scripts/core/depth.py carries the alias: a map written before 2026-09-04 may spell it that way and its tiles must still draw. The shipped map spells it Parallax, and both resolve to depth 1.",
       "required": false
     },
     {
       "name": "Floor",
       "kind": "tile",
       "depth": 10,
-      "doc": "The ground, and the layer passability is authored against. Opaque in the demo map, which is why the parallax layer beneath it is currently invisible. A tile here is ART: the engine reads what blocks movement from this layer's COMPANION layer (FloorCollision by default, or whatever this layer's pyoneer_passability property names), which the editor's collision mode creates on the first mask stroke.",
+      "doc": "The ground, and the layer passability is authored against. In the shipped map it starts below the horizon, so the parallax band beneath it is actually visible -- an opaque Floor over the whole map makes that layer a blit token nobody ever sees. A tile here is ART: the engine reads what blocks movement from this layer's COMPANION layer (FloorCollision by default, or whatever this layer's pyoneer_passability property names), which the editor's collision mode creates on the first mask stroke.",
       "required": true,
       "collision": true
     },
@@ -37,7 +37,7 @@
       "name": "Above1",
       "kind": "tile",
       "depth": 55,
-      "doc": "Above the player, below the foreground. Empty in the demo map.",
+      "doc": "Above the player, below the foreground. The shipped map does not declare it at all -- its canopies sit on Foreground at 60 and its trunks on GroundClutter at 30, either side of the body.",
       "required": false
     },
     {

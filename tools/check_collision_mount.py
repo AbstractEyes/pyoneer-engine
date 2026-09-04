@@ -34,7 +34,7 @@ What it proves:
      moves, the single-layer view does not and says why), and the refusals
      -- an empty cell, a gid no tileset owns.
 
-Against its OWN fixture map, never `data/maps/test.tmx` (law 4). The
+Against its OWN fixture map, never `data/maps/starter.tmx` (law 4). The
 fixture declares exactly what the feature needs: a `collision` tileset to
 store masks in, an art layer with no companion (so the create-on-first-
 stroke path runs), and one that already declares its companion (so the

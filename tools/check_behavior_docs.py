@@ -44,7 +44,7 @@ A rule run only over the live tree passes whenever the live tree happens to be
 clean, and passes vacuously whenever it iterates nothing. So each rule below
 is driven twice: once against a hand-built fixture registry and fixture genre
 pack that is KNOWN to violate it, and once against the live registry and the
-real packs, which must be clean. `data/maps/test.tmx` is never read.
+real packs, which must be clean. `data/maps/starter.tmx` is never read.
 """
 from __future__ import annotations
 

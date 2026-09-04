@@ -1,0 +1,7 @@
+{
+    "frequency": 44100,
+    "size": -16,
+    "channels": 2,
+    "buffer": 512,
+    "master_volume": 0.7
+}

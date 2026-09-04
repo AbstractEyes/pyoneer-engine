@@ -18,7 +18,7 @@ the running engine's path rather than beside it. Four claims:
 
 WHAT IS NOT PINNED
 ------------------
-The fidelity run reads a COPY of data/maps/test.tmx and compares
+The fidelity run reads a COPY of data/maps/starter.tmx and compares
 derived-against-derived: every number on the tmx side is recovered from
 pytmx (undoing its gid renumbering with `tiledgidmap` and `imagemap`), every
 number on the native side from the converted file, and the two are compared
@@ -52,6 +52,7 @@ pygame.display.set_mode((320, 240))
 
 import pytmx
 
+from config.managers.core_asset_manager import CoreAssetManager
 from config.managers.map_data import (TILE_LAYER_TYPES, AssetMapManager,
                                       BlitmapObjectGroup, BlitmapRuntime,
                                       BlitmapTileLayer, MapData, map_format,
@@ -77,7 +78,15 @@ from scripts.loaders.map_document import MapDocument
 from scripts.loaders.map_loader import object_top_left
 
 ROOT = _bootstrap.REPO_ROOT
-REAL_MAP = os.path.join(ROOT, "data", "maps", "test.tmx")
+_ASSETS = CoreAssetManager()
+SPAWN_DEFAULTS = {
+    "GamePlayer": {
+        "input_": _ASSETS.inputs,
+        "movement_config": _ASSETS.config.get("entity").get("default"),
+        "animation_config": _ASSETS.animations.get("entity"),
+    },
+}
+REAL_MAP = os.path.join(ROOT, "data", "maps", "starter.tmx")
 
 failures: list[str] = []
 
@@ -339,7 +348,7 @@ def stage_real_copy(root: str) -> str:
     """
     maps = os.path.join(root, "maps")
     os.makedirs(maps, exist_ok=True)
-    copy = os.path.join(maps, "test.tmx")
+    copy = os.path.join(maps, "starter.tmx")
     shutil.copy2(REAL_MAP, copy)
     document = MapDocument.load(REAL_MAP)
     for element in document.root.findall("tileset"):
@@ -847,6 +856,15 @@ try:
         """Bind a map, then render one frame. Returns (layer census, hash)."""
         surface = pygame.Surface((640, 480))
         renderer = LayerRenderer(surface)
+        # The shipped map PLACES an object, so the bind below constructs a
+        # real GamePlayer -- and a GamePlayer built with no animation config
+        # raises inside `GameAnimationHandler`. The old shipped map spawned
+        # nothing, so this harness never needed defaults and never had any.
+        # Same shape as `MainGame.spawn_arguments`, read off the same asset
+        # manager, minus the anchor: this check compares two maps to each
+        # other and neither the tmx nor its .blitmap twin gets special
+        # treatment.
+        renderer.spawn_defaults = SPAWN_DEFAULTS
         renderer.bind("MAP", GameMap(source_map))
         renderer.bind_camera(GameCamera(
             pygame.Vector2(640, 480),

@@ -423,7 +423,10 @@ workspace = tempfile.mkdtemp(prefix="pyoneer_editor_check_")
 try:
     os.makedirs(os.path.join(workspace, "config"))
     os.makedirs(os.path.join(workspace, "data", "maps"))
-    shutil.copy2(os.path.join(REPO, "data", "maps", "test.tmx"),
+    # The SHIPPED map, copied in. It is the workspace's own fixture from here
+    # on and the workspace calls it "test"; nothing below writes back to
+    # data/maps/starter.tmx.
+    shutil.copy2(os.path.join(REPO, "data", "maps", "starter.tmx"),
                  os.path.join(workspace, "data", "maps", "test.tmx"))
     with open(os.path.join(workspace, "config", "maps.json"), "w",
               encoding="utf-8") as handle:
@@ -435,7 +438,13 @@ try:
 
     session = Session.open(workspace, genre_id="topdown_rpg")
     expect("the map index loaded", session.project.map_names(), ["test"])
-    expect("the map parses", session.project.map("test").width, 100)
+    # READ off the document, never typed. The width used to be `100`, which
+    # was the old canvas's; a number here pins what a MAP contains (law 4)
+    # and dies the day the shipped map is replaced -- which is exactly what
+    # happened. What is worth asserting is that it parsed to a real extent.
+    WIDTH = session.project.map("test").width
+    expect("the map parses", (WIDTH > 0, session.project.map("test").height > 0),
+           (True, True))
     expect("it starts byte-identical",
            session.project.map("test").to_bytes() == ORIGINAL, True)
 
@@ -503,7 +512,7 @@ try:
     expect("the layer exists",
            "Hazard" in session.project.map("test").tile_layer_names(), True)
     expect("at the map's size",
-           session.project.map("test").tile_layer("Hazard").width, 100)
+           session.project.map("test").tile_layer("Hazard").width, WIDTH)
     expect("and empty",
            set(session.project.map("test").tile_layer("Hazard").gids()), {0})
     session.undo()
@@ -535,7 +544,8 @@ try:
     # format the engine reads was unreachable by any command in the stream.
     #
     # Read off the map rather than written as 100: this asserts the
-    # arithmetic, not the fixture, so repainting test.tmx cannot make it red.
+    # arithmetic, not the fixture, so repainting the shipped map cannot make
+    # it red.
     map_document = session.project.map("test")
     columns, rows = map_document.width, map_document.height
     session.run(Command("map.layer.add", MAP,
@@ -613,11 +623,21 @@ try:
 
     print()
     print("removing an EXISTING layer restores it exactly -- every one of them")
-    # The whitespace before a layer lives in its previous sibling's tail, and
-    # this file mixes tabs and spaces, so a recomputed indent is wrong
-    # somewhere no matter what it computes. Each position exercises a
-    # different branch: first child, middle child, last child, only child.
-    for layer_name in ("Paralax", "GroundClutter", "Foreground", "entity"):
+    # The whitespace before a layer lives in its previous sibling's tail, so
+    # a recomputed indent is wrong somewhere no matter what it computes. Each
+    # position exercises a different branch: first child, middle child, last
+    # child, only child -- and every one of the four is READ OFF THE
+    # DOCUMENT, never typed. This used to name `("Paralax", "GroundClutter",
+    # "Foreground", "entity")`, which pinned one map's spelling (law 4) and
+    # went red the day that map was replaced by one spelling Parallax
+    # correctly.
+    _tiles = session.project.map("test").tile_layer_names()
+    _objects = session.project.map("test").object_layer_names()
+    POSITIONS = list(dict.fromkeys(
+        [_tiles[0], _tiles[len(_tiles) // 2], _tiles[-1], _objects[0]]))
+    expect("four different positions were found to remove and restore",
+           len(POSITIONS), 4)
+    for layer_name in POSITIONS:
         session.run(Command(
             "map.layer.remove",
             Scope.of(("map", "test"), ("layer", layer_name))))
@@ -800,22 +820,28 @@ try:
     print()
     print("objects: the entity-spawn seam, add and remove")
     # ---------------------------------------------------------------
-    expect("the entity layer starts empty",
-           len(session.project.map("test").object_layer("entity").objects()), 0)
+    # READ, not assumed. This asserted `0` while the map it copies had an
+    # empty object layer; the shipped map places a body now, so every count
+    # below is relative to what the file already held. `objects()` appends,
+    # so the object each add produces is `[-1]`, never `[0]`.
+    BORN_WITH = len(session.project.map("test").object_layer("entity").objects())
+    expect("the entity layer's starting population was read off the file",
+           BORN_WITH >= 0, True)
     session.run(Command("map.object.add", ENTITY, {
         "type": "GamePlayer", "name": "player_start", "x": 64.0, "y": 96.0,
         "properties": {"hp": 30, "playable": True},
     }))
     objects = session.project.map("test").object_layer("entity").objects()
-    expect("one object exists now", len(objects), 1)
-    expect("its class survived", objects[0].type, "GamePlayer")
+    expect("one more object exists now", len(objects), BORN_WITH + 1)
+    expect("its class survived", objects[-1].type, "GamePlayer")
     expect("an int property stayed an int",
-           objects[0].properties["hp"], 30)
+           objects[-1].properties["hp"], 30)
     expect("a bool property stayed a bool",
-           objects[0].properties["playable"], True)
+           objects[-1].properties["playable"], True)
     session.undo()
     expect("undo removed it",
-           len(session.project.map("test").object_layer("entity").objects()), 0)
+           len(session.project.map("test").object_layer("entity").objects()),
+           BORN_WITH)
     expect("and the objectgroup went back to self-closing (byte-identical)",
            session.project.map("test").to_bytes() == ORIGINAL, True)
 
@@ -835,7 +861,7 @@ try:
 
     session.run(Command("map.object.add", ENTITY,
                         {"type": "GamePlayer", "x": 16.0, "y": 16.0}))
-    born = session.project.map("test").object_layer("entity").objects()[0]
+    born = session.project.map("test").object_layer("entity").objects()[-1]
     # `.as_dict().get` rather than `[...]`, so a version that materialises
     # NOTHING reports a readable got/want instead of raising out of the check
     # -- an assertion that crashes says less than one that names the value.
@@ -852,7 +878,7 @@ try:
 
     session.run(Command("map.object.add", ENTITY,
                         {"type": "GameEntity", "x": 16.0, "y": 16.0}))
-    plain = session.project.map("test").object_layer("entity").objects()[0]
+    plain = session.project.map("test").object_layer("entity").objects()[-1]
     expect("a class the pack does not name is born with NOTHING",
            plain.properties.as_dict(), {})
     session.undo()
@@ -860,7 +886,7 @@ try:
     session.run(Command("map.object.add", ENTITY,
                         {"type": "GamePlayer", "x": 16.0, "y": 16.0,
                          "properties": {BEHAVIORS: "lifecycle_mark"}}))
-    mine = session.project.map("test").object_layer("entity").objects()[0]
+    mine = session.project.map("test").object_layer("entity").objects()[-1]
     expect("a list the CALLER supplied wins over the pack's",
            mine.properties[BEHAVIORS], "lifecycle_mark")
     session.undo()
@@ -868,7 +894,7 @@ try:
     session.run(Command("map.object.add", ENTITY,
                         {"type": "GamePlayer", "x": 16.0, "y": 16.0,
                          "properties": {BEHAVIORS: ""}}))
-    empty = session.project.map("test").object_layer("entity").objects()[0]
+    empty = session.project.map("test").object_layer("entity").objects()[-1]
     expect("an EXPLICITLY empty list wins too -- 'this one does nothing' "
            "is a thing an author may say",
            empty.properties[BEHAVIORS], "")
@@ -880,7 +906,7 @@ try:
     print("...and it is a STARTING VALUE, never a policy that re-asserts")
     session.run(Command("map.object.add", ENTITY,
                         {"type": "GamePlayer", "x": 16.0, "y": 16.0}))
-    first = session.project.map("test").object_layer("entity").objects()[0]
+    first = session.project.map("test").object_layer("entity").objects()[-1]
     target = ENTITY.child("object", str(first.id))
 
     def behaviors_of(object_id):
@@ -895,7 +921,7 @@ try:
                         {"type": "GamePlayer", "x": 48.0, "y": 16.0}))
     expect("adding a SECOND object does not re-assert the default on the first",
            behaviors_of(first.id), "topdown_move")
-    second = session.project.map("test").object_layer("entity").objects()[1]
+    second = session.project.map("test").object_layer("entity").objects()[-1]
     expect("...while the second one is born with the default, as it should be",
            behaviors_of(second.id), STARTS_AS)
     expect("two objects of one class on one map genuinely differ",
@@ -922,7 +948,7 @@ try:
     print("object properties round-trip through set and remove")
     session.run(Command("map.object.add", ENTITY,
                         {"type": "GameEntity", "x": 32.0, "y": 32.0}))
-    created = session.project.map("test").object_layer("entity").objects()[0]
+    created = session.project.map("test").object_layer("entity").objects()[-1]
     target = ENTITY.child("object", str(created.id))
     session.run(Command("map.object.property.set", target,
                         {"key": "hp", "value": 12}))
@@ -944,7 +970,7 @@ try:
     print("moving an object undoes to the original coordinates")
     session.run(Command("map.object.add", ENTITY,
                         {"type": "GameEntity", "x": 10.0, "y": 20.0}))
-    created = session.project.map("test").object_layer("entity").objects()[0]
+    created = session.project.map("test").object_layer("entity").objects()[-1]
     target = ENTITY.child("object", str(created.id))
     session.run(Command("map.object.move", target, {"x": 99.0, "y": 5.0}))
     expect("moved", session.project.map("test").object_layer("entity")
@@ -1290,8 +1316,8 @@ height="16" rotation="37.5" visible="0"/>
     #
     # `Session.problems` is the genre's rules PLUS the collision model's own
     # dead-mask rule, and this block is about the genre half. The fixture map
-    # is a byte copy of the author's `test.tmx`, whose parallaxed `Paralax`
-    # layer really does carry masks that gate nothing, so the collision half
+    # is a byte copy of the shipped `starter.tmx`, whose parallaxed layer
+    # may carry masks that gate nothing, so the collision half
     # is not empty here -- and law 4 forbids a check pinning whether it is.
     # So split the list AT ITS PRODUCER rather than filtering it by message
     # text: `project.problems()` is exactly the genre half, and the

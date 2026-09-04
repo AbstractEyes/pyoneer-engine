@@ -14,7 +14,7 @@ sprite too low:
 THE FIXTURE IS THIS FILE'S OWN
 ------------------------------
 Everything is spawned from a .tmx written into a temp directory by
-`write_fixture` below. `data/maps/test.tmx` is painted in constantly and is
+`write_fixture` below. `data/maps/starter.tmx` is a live, repaintable map and is
 never read here: a check that pins map CONTENT goes red the next time the
 author paints, while the code it guards is working perfectly (law 4).
 

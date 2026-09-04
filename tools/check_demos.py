@@ -38,7 +38,7 @@ let something through and never proved to stop it:
 
 THE MAPS THIS CHECK READS ARE ITS OWN
 --------------------------------------
-`demos/maps/*.tmx` is the AUTHOR's canvas, exactly as `data/maps/test.tmx`
+`demos/maps/*.tmx` is the AUTHOR's canvas, exactly as `data/maps/starter.tmx`
 is, and a check that pinned their content would go red the first time
 somebody repainted one. So `demos.mapgen.MAPS_DIR` is redirected to a temp
 directory and the maps are generated fresh into it. Every number this file

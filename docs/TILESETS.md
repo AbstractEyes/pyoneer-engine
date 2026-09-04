@@ -223,7 +223,7 @@ Measure what a tileset has, and what moving one would cost, before you decide:
 
 ```python
 from scripts.loaders.map_document import MapDocument
-doc = MapDocument.load("data/maps/test.tmx")
+doc = MapDocument.load("data/maps/starter.tmx")
 for ref in doc.tilesets():
     print(ref.name, ref.first_gid, "..", ref.last_gid,
           "headroom", doc.tileset_headroom(ref.name))

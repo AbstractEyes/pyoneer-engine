@@ -19,14 +19,14 @@ symptom until an entity silently stops doing something:
         cannot double-jump, honours coyote time and stops at a wall
      8. composition comes off a tmx property mapping, runs in DECLARED order,
         and refuses a conflicting or duplicated list
-     9. main.py's demo is composed from that same vocabulary
+     9. main.py names the token, and composes no list of its own
     10. an empty behavior set moves nothing, so an entity that declares none
         is inert rather than half-driven
 
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
 Every collision field below is built here from a few lines of ASCII.
-`data/maps/test.tmx` is the author's canvas and is never read: a check that
+`data/maps/starter.tmx` is the shipped map and is never read here: a check that
 pins map CONTENT goes red the next time he paints while the code it guards is
 working perfectly (law 4).
 
@@ -898,24 +898,27 @@ expect("a GamePlayer that declares nothing composes nothing",
 
 
 # ===========================================================================
-print("\n9. main.py's demo is composed from that same vocabulary")
+print("\n9. main.py names the token, and composes no list of its own")
 # ===========================================================================
+# This section used to resolve `main.PLAYER_BEHAVIORS` and
+# `main.SCENERY_BEHAVIORS` token by token. Both constants are deleted: the
+# compositions moved into `pyoneer_behaviors` on the map's own objects, which
+# is where genre is supposed to live. Repointing this at the map's string
+# would make this file pin what a MAP contains (law 4), so it does not --
+# `tools/check_demo_map.py` section 3 owns the "the driven one is the one
+# carrying player_input" claim now, against the resolved spawn records. What
+# is left here is the one main.py symbol still worth reading, and its other
+# half: that main.py grew no replacement roster.
 import main as main_module                                        # noqa: E402
 
-expect("main.py's player list resolves, token by token",
-       validate_list(main_module.PLAYER_BEHAVIORS),
-       ("player_input", "topdown_move", "animation_drive"))
-expect("main.py's scenery list resolves too",
-       validate_list(main_module.SCENERY_BEHAVIORS),
-       ("topdown_move", "animation_drive"))
-expect("the demo's player is the one carrying player_input",
-       ("player_input" in validate_list(main_module.PLAYER_BEHAVIORS),
-        "player_input" in validate_list(main_module.SCENERY_BEHAVIORS)),
-       (True, False))
-expect("the two lists differ by exactly that one token",
-       tuple(t for t in validate_list(main_module.PLAYER_BEHAVIORS)
-             if t not in validate_list(main_module.SCENERY_BEHAVIORS)),
-       ("player_input",))
+expect("main.py's PLAYER_TOKEN resolves against the live registry",
+       validate_list((main_module.PLAYER_TOKEN,)), ("player_input",))
+with open(main_module.__file__, encoding="utf-8") as _handle:
+    _main_source = _handle.read()
+expect("...and main.py types no behavior roster of its own any more",
+       [name for name in ("PLAYER_BEHAVIORS", "SCENERY_BEHAVIORS")
+        if hasattr(main_module, name) or name in _main_source],
+       [])
 
 
 # ===========================================================================
@@ -1044,7 +1047,7 @@ print("\n12. the wire: a map object's list reaches a live entity")
 # ===========================================================================
 # The tmx property is the DECLARATION SITE the design chose, and a declaration
 # site nothing reads is a format, not a feature. This drives the real
-# `spawn_objects` over a fixture map written here -- `data/maps/test.tmx` is
+# `spawn_objects` over a fixture map written here -- `data/maps/starter.tmx` is
 # the author's canvas, and a check that pinned its content would go red the
 # next time he paints while the code it guards works perfectly.
 

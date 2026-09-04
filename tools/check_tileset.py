@@ -23,9 +23,19 @@ returns the first one that is <= the gid, so an orphan resolves to the
 tileset BELOW and paints the wrong art. Silence is the failure mode, so the
 refusals are asserted by message content, not just by exception type.
 
-Every fixture below is BUILT HERE. data/maps/test.tmx is a live file the
-author paints in, so it is used for exactly one thing -- as a byte-exact
-round-trip target on a COPY -- and nothing here asserts what it contains.
+Every fixture below is BUILT HERE, INCLUDING the awkward one. The four
+punctuation claims -- a tab-indented `<tileset>`, its `<image>` one level
+deeper with tabs, no lone LF, and `root.text` surviving an insert -- used to
+be measured against `data/maps/test.tmx`, which happened to be CRLF and
+tab-indented. That made them claims about one person's canvas wearing a
+claim about the WRITER's clothes, and the day the shipped map was replaced
+by `data/maps/starter.tmx` -- uniform LF, uniform one-space indent -- a
+repoint would have deleted the coverage in silence. `UGLY_MAP` below is
+guaranteed awkward instead of borrowed.
+
+The shipped map is still read, once, at the end: every tileset it declares
+must serialize, remove and restore byte-exactly. That loop names none of
+them and asserts nothing about what it contains.
 
     .venv/Scripts/python.exe tools/check_tileset.py
 """
@@ -33,6 +43,7 @@ from __future__ import annotations
 
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
+import atexit
 import os
 import shutil
 import struct
@@ -45,7 +56,55 @@ from scripts.core.errors import PyoneerConfigError
 from scripts.loaders.map_document import (MapDocument, TilesetRef, image_size,
                                           tileset_geometry)
 
-MAP_PATH = os.path.join(_bootstrap.REPO_ROOT, "data", "maps", "test.tmx")
+SHIPPED_PATH = os.path.join(_bootstrap.REPO_ROOT, "data", "maps", "starter.tmx")
+
+
+def png_bytes(width: int, height: int) -> bytes:
+    """A real, decodable 8-bit RGB PNG."""
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        return (struct.pack(">I", len(payload)) + tag + payload
+                + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF))
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    raw = b"".join(b"\x00" + b"\x40\x80\xc0" * width for _ in range(height))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+#: CRLF throughout, tab-indented children, TWO tilesets so the loop below
+#: gets both the index-0 (parent_text) case and a middle (prev_tail) one,
+#: and a tile layer so the file is a map rather than a header.
+UGLY_MAP = (
+    b'<?xml version="1.0" encoding="UTF-8"?>\r\n'
+    b'<map version="1.10" tiledversion="1.11.0" orientation="orthogonal"'
+    b' renderorder="right-down" width="8" height="8" tilewidth="16"'
+    b' tileheight="16" infinite="0" nextlayerid="3" nextobjectid="1">\r\n'
+    b'\t<tileset firstgid="1" name="Alpha" tilewidth="16" tileheight="16"'
+    b' tilecount="64" columns="8">\r\n'
+    b'\t\t<image source="alpha.png" width="128" height="128"/>\r\n'
+    b'\t</tileset>\r\n'
+    b'\t<tileset firstgid="65" name="Beta" tilewidth="16" tileheight="16"'
+    b' tilecount="16" columns="4">\r\n'
+    b'\t\t<image source="beta.png" width="64" height="64"/>\r\n'
+    b'\t</tileset>\r\n'
+    b'\t<layer id="1" name="Floor" width="8" height="8">\r\n'
+    b'\t\t<data encoding="csv">\r\n'
+    + b"".join(b"1,2,3,4,5,6,7,8,\r\n" for _ in range(7))
+    + b"1,2,3,4,5,6,7,8\r\n"
+    b'</data>\r\n'
+    b'\t</layer>\r\n'
+    b'</map>\r\n'
+)
+
+FIXTURE_DIR = tempfile.mkdtemp(prefix="pyoneer_ugly_tileset_")
+atexit.register(shutil.rmtree, FIXTURE_DIR, ignore_errors=True)
+MAP_PATH = os.path.join(FIXTURE_DIR, "ugly.tmx")
+with open(MAP_PATH, "wb") as _handle:
+    _handle.write(UGLY_MAP)
+for _name, _w, _h in (("alpha.png", 128, 128), ("beta.png", 64, 64),
+                      ("check_sheet.png", 64, 48)):
+    with open(os.path.join(FIXTURE_DIR, _name), "wb") as _handle:
+        _handle.write(png_bytes(_w, _h))
 
 failures: list[str] = []
 
@@ -217,10 +276,10 @@ try:
 
     # ----------------------------------------------------------------------
     print()
-    print("add_tileset then remove_tileset returns the shipped file's bytes")
+    print("add_tileset then remove_tileset returns the awkward file's bytes")
     # ----------------------------------------------------------------------
-    # A COPY, in the same directory, because <image source="../graphics/...">
-    # resolves relative to the .tmx and the shipped file must not be touched.
+    # A COPY, in the same directory, because <image source> resolves relative
+    # to the .tmx.
     with open(MAP_PATH, "rb") as handle:
         ORIGINAL = handle.read()
     COPY_PATH = os.path.join(os.path.dirname(MAP_PATH), "_check_tileset.tmx")
@@ -265,8 +324,7 @@ try:
                appended, 1 + sum(r.tile_count for r in refs))
 
         added = document.add_tileset(
-            "CheckSheet", "../graphics/tilesets/System/TileA2.png",
-            image_width=64, image_height=48)
+            "CheckSheet", "check_sheet.png", image_width=64, image_height=48)
         expect("the new tileset took the appended firstgid",
                added.first_gid, appended)
         expect("its geometry came from the image", (added.columns, added.tile_count), (4, 12))
@@ -281,15 +339,15 @@ try:
                b'tileheight="16" tilecount="12" columns="4">' % appended
                in with_tileset, True)
         expect("its <image> carries source, width, height",
-               b'<image source="../graphics/tilesets/System/TileA2.png" '
-               b'width="64" height="48"/>' in with_tileset, True)
+               b'<image source="check_sheet.png" width="64" height="48"/>'
+               in with_tileset, True)
         # The trap, asserted directly: _child_indent(root) returns ' ', the
         # file uses '\t', and a computed indent would show up right here.
         expect("it is tab-indented like its siblings, not space-indented",
                b'\r\n\t<tileset firstgid="%d" name="CheckSheet"' % appended
                in with_tileset, True)
         expect("its <image> is indented one level deeper, with tabs",
-               b'\r\n\t\t<image source="../graphics/tilesets/System/TileA2.png"'
+               b'\r\n\t\t<image source="check_sheet.png"'
                in with_tileset, True)
         expect("no lone LF was introduced",
                with_tileset.count(b"\r\n"), with_tileset.count(b"\n"))
@@ -315,7 +373,7 @@ try:
 
         # ------------------------------------------------------------------
         print()
-        print("every shipped tileset serializes and restores byte identically")
+        print("every tileset in it serializes and restores byte identically")
         # ------------------------------------------------------------------
         # Every one, discovered rather than named: the first is the index-0
         # case (parent_text) and any later one is the middle case
@@ -366,13 +424,41 @@ try:
         os.remove(COPY_PATH)
 
     with open(MAP_PATH, "rb") as handle:
-        expect("data/maps/test.tmx is untouched on disk", handle.read(), ORIGINAL)
+        expect("the awkward fixture is untouched on disk", handle.read(), ORIGINAL)
+
+    # ----------------------------------------------------------------------
+    print()
+    print("and the SHIPPED map survives the same treatment, tileset by tileset")
+    # ----------------------------------------------------------------------
+    # The real file, read-only, on its own bytes. Every tileset is
+    # DISCOVERED, never named, and no attribute of any of them is asserted:
+    # what is asserted is that the reader reproduces the file and that
+    # remove+restore is a no-op on it. That holds for whatever is painted in
+    # it, which is what makes it legal to point at a live map at all.
+    with open(SHIPPED_PATH, "rb") as handle:
+        SHIPPED = handle.read()
+    shipped = MapDocument.load(SHIPPED_PATH)
+    expect("the shipped map round trips untouched", shipped.to_bytes(), SHIPPED)
+    expect("it declares at least two tilesets, so both insert cases run",
+           len(shipped.tilesets()) >= 2, True)
+    for ref in list(shipped.tilesets()):
+        payload = shipped.serialize_tileset(ref.first_gid)
+        expect(f"[shipped] {ref.name} serializes", payload is not None, True)
+        shipped.remove_tileset(ref.first_gid, force=True)
+        expect(f"[shipped] {ref.name} is gone",
+               shipped.tileset_names().count(ref.name), 0)
+        shipped.restore_tileset(payload)
+        expect(f"[shipped] {ref.name} remove+restore is byte identical",
+               shipped.to_bytes(), SHIPPED)
+    with open(SHIPPED_PATH, "rb") as handle:
+        expect("data/maps/starter.tmx is untouched on disk",
+               handle.read(), SHIPPED)
 
     # ----------------------------------------------------------------------
     print()
     print("a map with NO tilesets: the index-0 insert that clobbers root.text")
     # ----------------------------------------------------------------------
-    # This is the case test.tmx cannot exercise, and the one that fails
+    # This is the case the fixture above cannot exercise, and the one that fails
     # without snapshotting root.text: _append_child overwrites parent.text
     # with a COMPUTED indent whenever it is whitespace-only, and
     # _remove_child never puts it back. Tab-indented, so a computed '\n '

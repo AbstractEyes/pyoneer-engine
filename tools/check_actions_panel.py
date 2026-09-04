@@ -19,7 +19,7 @@ This file covers the seams it cannot see:
     needed it -- and provisions the sheet it points at rather than asking.
     `tools/check_collision_mount.py` owns the teeth for that path.
 
-Against its OWN fixture, never `data/maps/test.tmx` (law 4). The author
+Against its OWN fixture, never `data/maps/starter.tmx` (law 4). The author
 repaints that file constantly. The fixture here declares exactly what these
 seams need: no
 collision tileset (so the offer path runs), an object with no declaration,

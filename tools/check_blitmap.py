@@ -9,7 +9,7 @@ Four claims, and only the first is about syntax:
     the reader REFUSES what it cannot read exactly, and says which line
     interning DECIDES before it copies, and the decision is a pure value
 
-The fidelity run is against a COPY of data/maps/test.tmx, and every
+The fidelity run is against a COPY of data/maps/starter.tmx, and every
 assertion in it is derived-versus-derived: the tmx is read by a second,
 independent reader here (a regex over the csv, ElementTree over the
 attributes) and the two censuses are compared. Nothing pins what the map
@@ -68,7 +68,7 @@ from scripts.loaders.tileset_file import (
 from scripts.core.art import resolve_art
 
 ROOT = _bootstrap.REPO_ROOT
-REAL_MAP = os.path.join(ROOT, "data", "maps", "test.tmx")
+REAL_MAP = os.path.join(ROOT, "data", "maps", "starter.tmx")
 # Through `resolve_art`, so this names whatever real sheet THIS checkout
 # has: the author's own file when data/graphics/ holds one, and the tracked
 # generated twin under data/art/ on a clone that has no data/graphics/ at
@@ -546,13 +546,14 @@ expect("a map with nothing to drop says so",
 # ---------------------------------------------------------------------------
 print("\nfidelity against a copy of the real map")
 
-# A COPY. The author paints in data/maps/test.tmx and nothing here may write
-# to it, so the bytes are read once and handed to a document that has never
-# heard of the original path.
+# A COPY. data/maps/starter.tmx is the SHIPPED map -- the one the game boots
+# and the one the smoke baseline is measured over -- and nothing here may
+# write to it, so the bytes are read once and handed to a document that has
+# never heard of the original path.
 with open(REAL_MAP, "rb") as handle:
     real_bytes = handle.read()
 real_scratch = tempfile.mkdtemp(prefix="blitmap_real_")
-real_copy = os.path.join(real_scratch, "test.tmx")
+real_copy = os.path.join(real_scratch, "starter.tmx")
 with open(real_copy, "wb") as handle:
     handle.write(real_bytes)
 

@@ -40,7 +40,7 @@ version 2 out loud instead of guessing.
 
 WHAT IT CARRIES
 ---------------
-Everything `data/maps/test.tmx` carries, which is the bar the converter is
+Everything `data/maps/starter.tmx` carries, which is the bar the converter is
 measured against:
 
     blitmap 1
@@ -398,8 +398,8 @@ class LayerGroup:
     """A `<group>`: how this project's maps are actually organized.
 
     Nesting is carried rather than flattened because the group IS the
-    authored structure -- test.tmx's "Graphic" wraps six tile layers and
-    "Entity" wraps the object group -- and a flattened map cannot be edited
+    authored structure -- the shipped map's "Graphic" wraps its tile layers
+    and "Entity" wraps the object group -- and a flattened map cannot be edited
     back into the shape its author left it in.
     """
 

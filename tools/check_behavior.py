@@ -22,7 +22,7 @@ no visible symptom until an entity silently stops doing something:
 THE FIXTURE IS THIS FILE'S OWN
 ------------------------------
 Every behavior below is defined here and registered into a SCRATCH registry.
-`data/maps/test.tmx` is the author's canvas and is never read: a check that
+`data/maps/starter.tmx` is the shipped map and is never read here: a check that
 pins map CONTENT goes red the next time he paints, while the code it guards
 is working perfectly (law 4).
 

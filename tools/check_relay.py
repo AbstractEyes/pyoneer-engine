@@ -151,7 +151,10 @@ workspace = tempfile.mkdtemp(prefix="pyoneer_relay_check_")
 atexit.register(shutil.rmtree, workspace, ignore_errors=True)
 os.makedirs(os.path.join(workspace, "config"))
 os.makedirs(os.path.join(workspace, "data", "maps"))
-shutil.copy2(os.path.join(REPO, "data", "maps", "test.tmx"),
+# The SHIPPED map, copied in. It is the workspace's own fixture from
+# here on and the workspace calls it "test"; nothing below writes back
+# to data/maps/starter.tmx.
+shutil.copy2(os.path.join(REPO, "data", "maps", "starter.tmx"),
              os.path.join(workspace, "data", "maps", "test.tmx"))
 with open(os.path.join(workspace, "config", "maps.json"), "w",
           encoding="utf-8") as handle:
@@ -745,7 +748,7 @@ print("...and what is NOT gated is exactly what promised nothing")
 # reachable without a window.
 # The positive control is aimed at the fixture table this file created
 # rather than at the map, so it measures the GATE and pins nothing about
-# `data/maps/test.tmx` (law 4). The note that wrote `wide` was about
+# `data/maps/starter.tmx` (law 4). The note that wrote `wide` was about
 # `map:test/layer:Floor`, so `table:actors` is as far outside it as the
 # refused ones were outside `script:toll`.
 UNGATED = {"verb": "table.row.add", "scope": "table:actors",

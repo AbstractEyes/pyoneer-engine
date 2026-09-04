@@ -10,7 +10,7 @@ ONLY door: one `load_assets(name)` that dispatches on the extension, so a
 caller never has to know which format a map is stored in.
 
 The pytmx path is untouched. `.blitmap` is ADDITIVE until something proves
-it can replace tmx, and the thing that would prove it is `test.tmx`
+it can replace tmx, and the thing that would prove it is the shipped map
 converted and loaded side by side producing the same layers, gids, objects,
 properties and tilesets -- which is what `tools/check_blitmap_engine.py`
 measures, field by field, against a copy.
@@ -52,7 +52,7 @@ from scripts.loaders.map_document import MapDocument
 
 # Resolved from this file's location, not the working directory -- the same
 # rule ConfigManager already uses for config/. config/maps.json stores
-# "data/maps/test.tmx" relative to the repo root, so starting the engine (or
+# "data/maps/starter.tmx" relative to the repo root, so starting the engine (or
 # a tool, or a test) from anywhere else made pytmx.load_pygame raise
 # FileNotFoundError on a path the user never wrote down.
 REPO_ROOT = os.path.dirname(
@@ -552,8 +552,8 @@ class AssetMapManager(CoreAsset):
                     reload: bool = False) -> pytmx.TiledMap | BlitmapRuntime | None:
         """Return the parsed map, parsing it at most once.
 
-        Parsing test.tmx builds 100x100 tile data plus tileset surfaces, so
-        it must not happen implicitly more than once. Pass reload=True to
+        Parsing the shipped map builds thousands of tile data entries plus
+        tileset surfaces, so it must not happen implicitly more than once. Pass reload=True to
         force a re-parse after the file changes on disk -- which is what the
         map editor will need.
 

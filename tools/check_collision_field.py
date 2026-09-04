@@ -34,7 +34,7 @@ the file, next to the claim, and both are printed.
 
 THE FIXTURES ARE THIS FILE'S OWN, ART INCLUDED
 -----------------------------------------------
-`data/maps/test.tmx` is repainted constantly and is never read here. It also
+`data/maps/starter.tmx` is repainted whenever the demo changes and is never read here. It also
 declares no collision at all, so it cannot exercise the gate in either
 direction. Five maps are written into a temp directory together with the two
 PNGs pytmx opens eagerly during the parse.

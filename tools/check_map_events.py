@@ -23,7 +23,7 @@ proved here or not at all:
     making the map unloadable at the next boot
 
 Every fixture is built here. Nothing asserts anything about what
-`data/maps/test.tmx` happens to contain -- the author paints in that file.
+`data/maps/starter.tmx` happens to contain -- it is a live, repaintable map.
 
 No Qt. No pygame either until the last section, which imports the editor's
 command layer to drive the authoring verbs and pulls pygame in through

@@ -43,7 +43,7 @@ Plus the two standing structural properties of any window in `editor/ui/`:
 it opens nothing modal (law 13), and it is reachable -- `EditorWindow`
 really does connect the canvas's `edit_object_requested` to it.
 
-Against its OWN fixture, never `data/maps/test.tmx` (law 4).
+Against its OWN fixture, never `data/maps/starter.tmx` (law 4).
 
 Skips cleanly when PySide6 is absent.
 """

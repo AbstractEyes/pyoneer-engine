@@ -209,8 +209,12 @@ are generated into [`PLACEABLE.md`](PLACEABLE.md).
   while walking and smoke could not see it. Use `demos.patrol`: it is the only
   instrument that walks a body deterministically with no key injection.
 - **`HANG`** means a check blocked, almost always on a modal dialog.
-- **A check that asserts what `data/maps/test.tmx` contains is wrong**, even if
-  it is green today. The author repaints that map.
+- **A check that asserts what a MAP contains is wrong**, even if it is green
+  today. That includes `data/maps/starter.tmx`, which ships and is repainted,
+  and it includes its PUNCTUATION: `check_tmx_roundtrip` and `check_tileset`
+  each build their own deliberately awkward fixture rather than borrowing one
+  file's indentation. It cost a red suite twice -- once at `333a77a`, once the
+  day the old canvas was retired.
 
 ---
 

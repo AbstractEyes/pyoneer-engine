@@ -35,7 +35,7 @@ each one turned red for.
 
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
-`data/maps/test.tmx` is the author's canvas and is never read; the one map
+`data/maps/starter.tmx` is the shipped map and is never read here; the one map
 this file needs is written into a tempdir. `config/inputs.json` IS read, but
 only to assert a claim about the CODE agreeing with the CONFIG -- that a
 verb a spec defaults to is bound -- never to pin which key it is bound to.
@@ -979,7 +979,7 @@ print("\n13. the wire: a map object's action list reaches a live entity")
 # ===========================================================================
 # The tmx property is the declaration site, and a declaration site nothing
 # reads is a format rather than a feature. Driven through the real
-# `spawn_objects` over a fixture map written here -- `data/maps/test.tmx` is
+# `spawn_objects` over a fixture map written here -- `data/maps/starter.tmx` is
 # the author's canvas and is never opened.
 from scripts.loaders.map_loader import spawn_objects              # noqa: E402
 

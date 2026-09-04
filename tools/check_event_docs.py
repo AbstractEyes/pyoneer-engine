@@ -38,7 +38,7 @@ disease.
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
 Every probe builds its own one-node script as a dict and parses it through the
-real reader. `data/maps/test.tmx` is never read, and no file has to exist
+real reader. `data/maps/starter.tmx` is never read, and no file has to exist
 under `data/project/scripts/` for this to run.
 """
 from __future__ import annotations
@@ -49,11 +49,13 @@ import ast
 import json
 import os
 import sys
+import warnings
 
 import pygame
 
 pygame.init()
 
+from scripts.core.audio import AudioManager
 from scripts.core.errors import PyoneerConfigError
 from scripts.game.behavior.movement import MS_PER_DELTA
 from scripts.game.behavior.state import ensure_state, state_of
@@ -252,10 +254,53 @@ def _probe_stop():
             "ends the run; nothing after it runs")
 
 
+AUDIO_SETTINGS = {"frequency": 44100, "size": -16, "channels": 2,
+                  "buffer": 512, "master_volume": 0.5}
+"""The probes own mixer numbers. Not read from `config/audio.json`: this
+file's output is byte-compared, and a probe whose note depended on the
+machine would make the document differ between two correct clones."""
+
+
+def _probe_audio():
+    """A prepared AudioManager, silent about an absent card."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")   # a runner with no card warns once
+        AudioManager.reset_singleton()
+        return AudioManager().prepare(AUDIO_SETTINGS)
+
+
+def _probe_play_sound():
+    _probe_audio()
+    run = probe_run([{"id": "n1", "do": "play_sound",
+                      "sound": "sfx/chime.wav"},
+                     {"id": "n2", "do": "set", "var": "count", "to": 1}])
+    run.update(DELTA)
+    # Device-independent on purpose: `locate` RAISES for a name neither audio
+    # root holds whether or not there is a card, so reaching n2 at all means
+    # the file was really found and the call really went through. Asserting
+    # the Sound cache instead would make this row read differently on a
+    # machine with a sound card.
+    return (run.done and run.variables.get("count") == 1,
+            "finds the file and starts it, finishing in the same frame")
+
+
+def _probe_play_music():
+    audio = _probe_audio()
+    run = probe_run([{"id": "n1", "do": "play_music",
+                      "track": "music/pleasant_moments.ogg"},
+                     {"id": "n2", "do": "set", "var": "count", "to": 1}])
+    run.update(DELTA)
+    ran = run.done and run.variables.get("count") == 1
+    named = audio.music_name == "music/pleasant_moments.ogg"
+    audio.stop_music()
+    return ran and named, "starts the stream and finishes in the same frame"
+
+
 PROBES = {
     "say": _probe_say, "ask": _probe_ask, "set": _probe_set,
     "wait": _probe_wait, "hold": _probe_hold, "release": _probe_release,
     "call": _probe_call, "stop": _probe_stop,
+    "play_sound": _probe_play_sound, "play_music": _probe_play_music,
 }
 """One probe per op. `describe_all` cannot see any of this: a spec says what
 an op CLAIMS, and only running it says what it DOES."""

@@ -33,7 +33,7 @@ WHAT THIS FILE CLAIMS
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
 Every collision field is built here from a few lines of ASCII and every body
-is constructed in this file. `data/maps/test.tmx` is never read: a check that
+is constructed in this file. `data/maps/starter.tmx` is never read: a check that
 pins map CONTENT goes red the next time the author paints, while the code it
 guards is working perfectly (law 4).
 

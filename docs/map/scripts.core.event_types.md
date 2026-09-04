@@ -3,7 +3,16 @@
 
 # `scripts/core/event_types.py` — tier 2 #TAG:scripts/core/event_types.py
 
-`scripts.core.event_types` · 121 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.event_types` · 154 lines · tier 1: [`../MAP.md`](../MAP.md)
+
+## Module constants
+
+- `scripts/core/event_types.py:146` `PYGAME_EVENT_TYPES` #TAG:PYGAME_EVENT_TYPES
+
+## Functions
+
+- `scripts/core/event_types.py:122` `_build_translation_table() -> dict[int, GameEventType]` #TAG:_build_translation_table
+  - Map every pygame event type this enum names to the member naming it.
 
 ## Classes
 

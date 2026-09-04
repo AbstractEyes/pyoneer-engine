@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L0 -->
-<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29. The first two KNOWN GAPS bullets were re-measured on 2026-09-03: README's three false gap claims and its stale check count are gone, so that bullet now names only the structural half it still owns, and the BEHAVIORS preamble bullet gained the second lie found in the same preamble that day. Also on 2026-09-03, at the finalize of the repair pass: the `map.tileset.grow`/`.rename` gap is struck through with the grep that closed it, and the fourth ACTIVE WARNING sighting was put into the past tense without being deleted -->
+<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29. The first two KNOWN GAPS bullets were re-measured on 2026-09-03: README's three false gap claims and its stale check count are gone, so that bullet now names only the structural half it still owns, and the BEHAVIORS preamble bullet gained the second lie found in the same preamble that day. Also on 2026-09-03, at the finalize of the repair pass: the `map.tileset.grow`/`.rename` gap is struck through with the grep that closed it, and the fourth ACTIVE WARNING sighting was put into the past tense without being deleted. On 2026-09-04, at the finalize of the audio + map + queue pass: LAW 11 CHANGED SUBJECT -- the author's private test.tmx canvas was retired ON HIS EXPLICIT INSTRUCTION and replaced by the shipped data/maps/starter.tmx, so law 11 now protects that file and the baseline, with its reasons re-measured against the new map (byte-exact round trip under both LF and CRLF); law 4 gained the second instance that cost this pass; the query playbook gained an audio row and re-measured EVENTS.md's reachability count; The constants gained the two asset-root pairs and the shipped map; and KNOWN GAPS gained the audio-unreachable bullet. The ladder's level-0 cost was re-measured at ~9.7k -->
 
 # Pyoneer — read this first
 
@@ -88,6 +88,14 @@ name the generator prefixes both with the module stem
 (`#TAG:GameComponent.depth.setter`), because a bare `update` is claimed by 18
 classes here and a tag returning 18 lines is not an address.
 
+**A TAG IS A DECLARATION, NEVER A CITATION.** A hand-placed tag value may
+appear exactly ONCE anywhere in the mapped tree, so a `see #TAG:<value>`
+inside a docstring that points back at the line declaring it --
+which reads as good practice, and is what this file's own prose does -- makes
+`tools/check_docs.py` report the value at two addresses. Cite it in prose
+instead. The asymmetry to know: `tools/` is not mapped, so a check module may
+name a tag as often as it likes.
+
 You do not write tags for symbols: the generator emits them. Write one by hand
 **only** to name a line that is not a definition — a sentence inside a
 docstring, a token inside a spec literal, a step inside a sequence — as a
@@ -108,7 +116,7 @@ answers is the single most expensive habit available here.
 
 | level | read | cost | when |
 |---|---|---|---|
-| 0 | this file | ~6k tokens | always, first, whole |
+| 0 | this file | ~9.7k tokens | always, first, whole |
 | 1 | `grep -rn "#TAG:<name>"` | one command | you know the name and want the address |
 | 2 | [`docs/MAP.md`](docs/MAP.md) — tier 1 | ~13k tokens | starting a task; "what exists and where" |
 | 3 | `docs/map/<dotted.module>.md` — tier 2 | ~0.5k tokens each; the largest is ~5k | you are about to touch ONE module and need real signatures |
@@ -136,6 +144,13 @@ pyoneer_collision                   ON A <tileset>: the .blitmask holding that
                                     sheet's per-tile masks -- collision level one
 pyoneer_passability                 ON AN ART LAYER: the companion tile layer
                                     holding its per-cell masks -- level two
+
+data/maps/starter.tmx               THE shipped map. main.py boots it, the
+                                    smoke baseline is measured over it, and
+                                    law 11 protects it
+data/graphics/ then data/art/       art: the untracked override, then the
+                                    tracked generated pack
+data/sound/ then data/audio/        audio: the same two-root rule, same order
 ```
 
 A minimal driven top-down body declares
@@ -165,7 +180,8 @@ topic, different layers, and different files.
 |---|---|
 | "what exists" · "where does X live" · "is there already a function for this" | [`docs/MAP.md`](docs/MAP.md) — GENERATED tier 1, then one tier-2 file |
 | "what does this behavior do" · "how do I make it move" · "add a behavior" | [`docs/BEHAVIORS.md`](docs/BEHAVIORS.md) — GENERATED; trust its **measured integration table** over any prose, including its own preamble |
-| "what can a script DO" · "what ops exist" · "what may I write in a `do`" · "does that op actually run" | [`docs/EVENTS.md`](docs/EVENTS.md) — GENERATED, and it makes no hand-written claim about the code at all: its runtime and reachability columns are measured on every run, and today five of six reachability rows read `no` |
+| "what can a script DO" · "what ops exist" · "what may I write in a `do`" · "does that op actually run" | [`docs/EVENTS.md`](docs/EVENTS.md) — GENERATED, and it makes no hand-written claim about the code at all: its runtime and reachability columns are measured on every run, and today four of six reachability rows read `no` |
+| "how do I make a noise" · "where does audio come from" · "why is it silent" · "what am I allowed to ship" | [`data/audio/CREDITS.md`](data/audio/CREDITS.md) for the two shipped assets and their licences; `#TAG:scripts/core/audio.py` for the two roots and the missing-card / missing-file split; [`docs/EVENTS.md`](docs/EVENTS.md) for the two play ops |
 | "my entity does not move" · "nothing happens when I press a key" · "it falls forever" · "it raises at load" · "I painted collision and nothing blocks" | [`docs/DIAGNOSE.md`](docs/DIAGNOSE.md) |
 | "what can I place on an object layer" · "what goes in `type=`" · "why does my layer not draw" · "what key is bound to what" | [`docs/PLACEABLE.md`](docs/PLACEABLE.md) — GENERATED |
 | "make me a platformer" · "make me a top-down RPG" | `editor/genres/<id>/RULES.md`, then `docs/BEHAVIORS.md` |
@@ -222,7 +238,13 @@ A law with no cost attached gets ignored. Every cost below is in the tree.
    called and never dispatched to.
 4. **A check asserts what the CODE does, never what the MAP contains.** Cost:
    red suites, and commit `333a77a` exists solely to undo two checks that pinned
-   `data/maps/test.tmx` content. Write your own fixture.
+   the shipped map's content. Write your own fixture. Paid again the day
+   `data/maps/starter.tmx` replaced the old canvas: `check_tmx_roundtrip` and
+   `check_tileset` were measuring CRLF, tab indentation and `</data>` at
+   column 0 against a file that merely happened to have them, so they read as
+   claims about the WRITER and were claims about one person's punctuation.
+   Both build their own deliberately awkward fixture now, and a repoint would
+   have deleted that coverage while still printing `PASS`.
 5. **An assertion that cannot fail is not an assertion.** The dominant failure
    shape by far is **one half of an invariant** — a gate proved to let something
    through and never proved to stop it. Cost: `[UNVERIFIED]` 26 such assertions
@@ -233,7 +255,8 @@ A law with no cost attached gets ignored. Every cost below is in the tree.
    one of them with 114 assertions.
 7. **Raise; never fall back to a plausible default.** Cost: 39 authored tiles
    silently dropped for months because the renderer looked up `Parallax` and the
-   map said `Paralax`. This is why `BehaviorParam.coerce` raises where
+   retired canvas said `Paralax` (`#TAG:LAYER_NAME_ALIASES` still carries the
+   alias, because someone else's map may still spell it that way). This is why `BehaviorParam.coerce` raises where
    `Capability.coerce` falls back, and why they are deliberately not one class.
 8. **A behavior token, a table row id and a column name are FILE FORMAT
    strings** — stable once referenced, never renamed. Cost: a renamed token
@@ -249,14 +272,23 @@ A law with no cost attached gets ignored. Every cost below is in the tree.
     frame for every sibling in that scene bucket. The behaviors raise at
     **attach** instead — deliberately the opposite timing. Know which you are
     writing.
-11. **Do not touch `data/maps/test.tmx` or `tools/baseline.json`; name a smoke
-    drift field-by-field or do not bless it.** Cost: measured, `test.tmx` mixes
-    tab-indented and space-indented blocks and is CRLF throughout, so no
-    pretty-printer reproduces it — only whitespace-preserving parsing does,
-    which is why `MapDocument` exists and why a hand-edit destroys the
-    byte-exactness contract. And **smoke injects no input**, so "no drift" never
-    means "nothing changed": it cannot see anything that only happens while
-    walking.
+11. **Do not hand-edit `data/maps/starter.tmx` or `tools/baseline.json`; name a
+    smoke drift field-by-field or do not bless it.** The subject changed on
+    2026-09-04 and the reasons did not. The author's private `test.tmx`
+    canvas, which this law used to name, was **retired on the author's
+    explicit instruction** and replaced by `data/maps/starter.tmx`,
+    the shipped demo map: 80×60, tracked, boots the game, and the only thing
+    the smoke baseline is measured over. Cost, measured on the old file and
+    still live: a tmx that mixes tab-indented and space-indented blocks and is
+    CRLF throughout is reproduced by no pretty-printer — only by
+    whitespace-preserving parsing, which is why `MapDocument` exists and why a
+    hand-edit destroys the byte-exactness contract. `starter.tmx` is uniform
+    LF today and round-trips byte-exactly under **both** LF and CRLF
+    (measured), so the contract binds it the same way: edit it through the
+    editor or through `MapDocument`, never by hand. And **smoke injects no
+    input**, so "no drift" never means "nothing changed": it cannot see
+    anything that only happens while walking. A check that pins this map's
+    punctuation is a law-4 violation, not a feature — write a fixture.
 12. **In a Qt panel, never `setParent(None)` to clear a layout, and never free
     the old body synchronously.** Cost, both measured: `setParent(None)` promotes
     a widget to a **top-level window** — ~20 orphan windows flashed on every
@@ -448,6 +480,16 @@ Each address below is a tag, so it stays true when the code moves.
   drives a real right-click, a real `QAction.trigger()` and a real undo. The
   sighting itself stays recorded in ACTIVE WARNINGS above, because that list
   is a record of repetition and closing an instance does not unmake it.
+- **Nothing but a script can make a noise, and no script runs.** The audio
+  subsystem landed on 2026-09-04 -- `#TAG:scripts/core/audio.py`, two roots,
+  the card/file split, `play_sound` and `play_music` as core ops -- and
+  nothing in the shipped game loads a script document, so the two ops are
+  reachable only from a check calling the interpreter. Measured:
+  `grep -rn "load_scripts" main.py demos/` returns nothing. A `.tmx` and a
+  `.blitmap` declare no audio anywhere either, so the demo makes its noise
+  through an ACTION ROUTE (`#TAG:MainGame.play_interaction_sound`) rather
+  than through the vocabulary that was built for it. That is the ACTIVE
+  WARNING shape above, recorded rather than hidden.
 - **`tools/` is not in the code map**, deliberately — a check module is read
   whole or not at all. So `grep -rn "#TAG:"` answers nothing about the check
   suite; [`docs/CHECKS.md`](docs/CHECKS.md) is the index for that half of the

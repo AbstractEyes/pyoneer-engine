@@ -71,7 +71,7 @@ pinned or the migration is a hope. Section 9 asserts, on its own fixtures:
 THE FIXTURE IS THIS FILE'S OWN
 ------------------------------
 Everything is read from a .tmx written into a temp directory by `FIXTURE`
-below. `data/maps/test.tmx` is repainted constantly and declares no
+below. `data/maps/starter.tmx` is the shipped map, repainted whenever the demo changes, and declares no
 passability at all; a check that pinned map CONTENT would go red the next
 time the author paints, while the code it guards worked perfectly (law 4).
 
@@ -1020,7 +1020,7 @@ if editor_collision is not None:
     expect("a name neither table knows falls to UNRANKED_DEPTH",
            runtime.depth_for_layer_name("NoSuchLayerAnywhere"),
            runtime.UNRANKED_DEPTH)
-    # test.tmx spells it "Paralax"; the alias is what keeps the pack (which
+    # A map may spell it "Paralax"; the alias is what keeps the pack (which
     # spells it the same way) and MAP_DEPTH (which does not) in agreement.
     expect("and the misspelled shipped layer resolves through the alias",
            runtime.depth_for_layer_name("Paralax"), MAP_DEPTH["Parallax"])
@@ -2164,13 +2164,19 @@ if main_module is not None:
                   if isinstance(node, ast.Call)
                   and isinstance(node.func, ast.Name)
                   and node.func.id == "GamePlayer"]
-    expect("main.py also builds GamePlayers directly, which spawn_defaults never reaches",
-           len(hand_built) >= 2, True)
-    expect("...and every one of those is handed the anchor too",
-           [call.lineno for call in hand_built
-            if not any(keyword.arg == "collision_offset"
-                       for keyword in call.keywords)],
-           [])
+    # INVERTED, deliberately. This assertion used to read "main.py also
+    # builds GamePlayers directly, which spawn_defaults never reaches" and
+    # demand two or more of them: it was written to RECORD the bypass, not to
+    # close it. The bypass is gone -- `main.py` constructs no entity at all
+    # now, the map's object layer produces the driven body, and every body in
+    # the shipped game therefore travels the one route `spawn_arguments`
+    # feeds. The follow-on assertion ("...and every one of those is handed
+    # the anchor too") went with it: it was vacuous over an empty list.
+    # `tools/check_demo_map.py` section 2 owns that claim now, by AST, in
+    # both directions.
+    expect("...and main.py builds NO GamePlayer by hand, so there is no "
+           "second route for spawn_defaults to miss",
+           len(hand_built), 0)
 
     # The other direction, and the reason this was invisible for so long:
     # `DemoGame` used to REASSIGN `collision_offset` on every spawned record

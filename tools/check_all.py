@@ -58,11 +58,16 @@ CHECKS = [
     ("flow", "action routing, the step sequencer, and the agency it gives back"),
     ("ops", "the event-script vocabulary: every gate the reader closes, "
             "and the step machine that runs what it lets through"),
+    ("audio", "the two audio roots, the missing-card/missing-file split, "
+              "the synthesised fallback pack, and the two play ops"),
     ("event_docs", "EVENTS.md is generated, and every runtime and "
                    "reachability row in it was measured, not claimed"),
     ("window", "drag, close, focus, visibility matrix"),
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
     ("window_events", "os window events translate, route, and still fan out"),
+    ("event_queue", "the OS queue: the translation table built both ways, "
+                    "hardware hotplug kept out of the fan-out, and a boot "
+                    "dispatch report that names the type that moved"),
     ("editor", "scopes, command stream, exact undo, genre rules, requests"),
     ("relay", "one scope's vocabulary and no more, and now ENFORCED: the "
               "slice is exactly what the address accepts, a response reaching "
@@ -118,6 +123,10 @@ CHECKS = [
     ("demos", "three prototype games boot headless and answer injected input"),
     ("prototype", "the design form resolves against the registries, and its "
                   "worked example boots"),
+    ("demo_map", "the shipped map IS the shipped game: it boots, its object "
+                 "layer produces the driven body at its type's depth with a "
+                 "feet anchor, its passability refuses a step, and main.py "
+                 "builds no entity"),
     ("art_tilesets", "the generated terrain and clutter sheets: every corner "
                      "mask's occupancy, every tile inside its own cell, and "
                      "no pixel read from a file"),

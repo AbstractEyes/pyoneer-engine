@@ -63,7 +63,7 @@ registries on every run. Repetition is legal exactly where it is measured.
 
 NO MAP CONTENT IS PINNED
 ------------------------
-`data/maps/test.tmx` is never read. Every fact below comes from a registry, a
+`data/maps/starter.tmx` is never read. Every fact below comes from a registry, a
 config file, the check roster, or a source line the docs themselves nominate.
 """
 from __future__ import annotations

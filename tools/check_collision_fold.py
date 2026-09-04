@@ -49,7 +49,7 @@ What it proves, and the half each assertion would be missing without:
      a living layer is worse than a stray), and afterwards NO formerly
      folded companion is a row.
 
-Against its OWN fixture (law 4), never `data/maps/test.tmx`: the fixture is
+Against its OWN fixture (law 4), never `data/maps/starter.tmx`: the fixture is
 shaped like the author's canvas -- two art layers, two companions, one of
 them parallaxed and therefore dead -- so the migration question is answered
 on a map with the same problem and none of his content.

@@ -35,7 +35,7 @@ is named AND still offered; the parameters of a ticked behavior are offered
 AND withdrawn when it is unticked; a tie in the run order is NAMED as a tie
 AND an untied sequence says nothing about one.
 
-Against its OWN fixture, never `data/maps/test.tmx` (law 4).
+Against its OWN fixture, never `data/maps/starter.tmx` (law 4).
 
 Skips cleanly when PySide6 is absent.
 """

@@ -19,6 +19,7 @@ pygame.init()
 pygame.display.set_mode((64, 64))
 
 from config.managers.core_asset_manager import CoreAssetManager
+from main import MAP_NAME
 from scripts.core.errors import PyoneerAssetMissingError
 
 failures = []
@@ -44,23 +45,23 @@ expect("input manager preserved", b.inputs is sub[4], True)
 
 print()
 print("tmx cache survives re-construction")
-tmx = a.maps.load_assets("test")
+tmx = a.maps.load_assets(MAP_NAME)
 expect("map parsed", tmx is not None, True)
-expect("map reports loaded", a.maps.is_loaded("test"), True)
+expect("map reports loaded", a.maps.is_loaded(MAP_NAME), True)
 c = CoreAssetManager()
-expect("cache preserved across CoreAssetManager()", c.maps.is_loaded("test"), True)
-expect("same tmx object returned", c.maps.load_assets("test") is tmx, True)
+expect("cache preserved across CoreAssetManager()", c.maps.is_loaded(MAP_NAME), True)
+expect("same tmx object returned", c.maps.load_assets(MAP_NAME) is tmx, True)
 
 print()
 print("re-parse only happens when asked")
 t0 = time.perf_counter()
 for _ in range(50):
-    CoreAssetManager().maps.load_assets("test")
+    CoreAssetManager().maps.load_assets(MAP_NAME)
 cached_ms = (time.perf_counter() - t0) * 1000
 expect("50 cached loads are cheap (<50ms)", cached_ms < 50, True)
 print(f"       50 cached load_assets calls took {cached_ms:.2f} ms")
 
-forced = a.maps.load_assets("test", reload=True)
+forced = a.maps.load_assets(MAP_NAME, reload=True)
 expect("reload=True returns a NEW parse", forced is not tmx, True)
 
 print()

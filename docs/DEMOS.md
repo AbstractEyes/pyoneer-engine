@@ -411,8 +411,10 @@ an edge, which is `tools/check_input.py`'s claim to own.
 
 **They read their own maps.** `demos.mapgen.MAPS_DIR` is redirected to a temp
 directory and every map is generated fresh into it, so `demos/maps/*.tmx`
-stays the author's canvas exactly as `data/maps/test.tmx` does, and repainting
-one cannot turn either check red.
+stays the author's canvas, and repainting one cannot turn either check red.
+(`data/maps/starter.tmx` is not a canvas any more -- it is the shipped demo
+map, and `tools/check_demo_map.py` measures it as a CONTRACT: no coordinate,
+gid, layer name or map size is pinned anywhere in it.)
 
 Fourteen mutations were run against `check_demos` and all fourteen turned it
 red: `driven_record` matching any record; the feet offset removed; the side-on

@@ -1,9 +1,9 @@
 {
   "data": [
     {
-      "name": "test",
-      "identifier": "test",
-      "file": "data/maps/test.tmx"
+      "name": "starter",
+      "identifier": "starter",
+      "file": "data/maps/starter.tmx"
     }
   ]
 }

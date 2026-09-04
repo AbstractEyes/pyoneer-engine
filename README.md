@@ -32,7 +32,7 @@ across 201 files — `tools/` 38,102, `scripts/` 20,068, `editor/` 17,348.
 | | |
 |---|---|
 | Runs | yes — headless or windowed, on pygame 2.6 / Python 3.11 |
-| Tested | 54 check tools plus a frame-level regression harness |
+| Tested | 61 check tools plus a frame-level regression harness |
 | Stable API | **no.** Names are still moving. See [Known rough edges](#known-rough-edges) |
 | Docs | [`docs/`](docs/), reconciled against the code and layered: generated files regenerate from the registry that executes them, hand-written ones carry a dated stamp, and finished plans move to [`docs/history/`](docs/history/) with an exemption banner |
 
@@ -64,10 +64,18 @@ animation frame rectangles are declared in `config/animations.json`.
 [`docs/ASSETS.md`](docs/ASSETS.md) is the whole story, including why the
 author's own art is not in here.
 
-Controls in the demo scene: **WASD** move, **Ctrl** sprint, **F1** toggles the
-test window, **←/→** rotate the player, **Esc** quits. Bindings live in
+Controls in the demo scene: **WASD** move, **Ctrl** sprint, **E** interacts --
+which plays a sound, through the action router -- **F1** toggles the test
+window, **←/→** rotate the player, **Esc** quits. Bindings live in
 `config/inputs.json` and are validated at load, so a typo raises rather than
 producing a key that silently does nothing.
+
+Sound ships the way art does, and for the same reason: `data/audio/` is
+tracked and answers on a fresh clone, `data/sound/` is the author's own
+untracked override and wins whenever it holds the file. A missing sound CARD
+is an absent optional capability -- one warning, then every play is a truthful
+no-op. A missing FILE is authored content that is wrong, and raises, on a
+silent machine too. `data/audio/CREDITS.md` accounts for both shipped assets.
 
 ## How rendering works
 
@@ -181,12 +189,14 @@ nothing.
 
 ## Maps
 
-`data/maps/test.tmx` is a [Tiled](https://www.mapeditor.org/) map. pytmx reads
-it; pytmx cannot write it. So `scripts/loaders/map_document.py` is a
-**byte-identical** TMX reader/writer on `xml.etree`:
+`data/maps/starter.tmx` is a [Tiled](https://www.mapeditor.org/) map -- the one
+`main.py` boots, 80x60 at 16 px, with one `<object type="GamePlayer">` on its
+entity layer and nothing built by hand anywhere. pytmx reads it; pytmx cannot
+write it. So `scripts/loaders/map_document.py` is a **byte-identical** TMX
+reader/writer on `xml.etree`:
 
 ```python
-doc = MapDocument.load("data/maps/test.tmx")
+doc = MapDocument.load("data/maps/starter.tmx")
 doc.tile_layer("Floor").set_tile(4, 7, gid=65)
 doc.object_layer("entity").add_object(name="chest", type="Chest", x=128, y=96)
 doc.add_layer("Collision", kind="tile")
@@ -325,7 +335,7 @@ Design and reasoning: [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md).
 .venv/Scripts/python.exe tools/check_all.py
 ```
 
-54 checks plus a frame-level drift comparison, one exit code. They are not unit
+61 checks plus a frame-level drift comparison, one exit code. They are not unit
 tests; each one boots or drives real engine code and asserts measured
 behaviour — token counts, dispatch counts, frame hashes, pixel equality.
 
@@ -428,6 +438,12 @@ Stated plainly, because most of them are recorded with measurements in
   `MOUSE_DRAG_BEGIN`/`END` are bindable, but nothing wires them together.
 - **The editor cannot edit shape geometry.** Polygon, ellipse and text
   objects are shown and preserved byte-exactly; their points are read-only.
+- **The audio ops cannot be reached from a running game.** `play_sound` and
+  `play_music` are registered, live and measured, and nothing in the shipped
+  game loads a script -- `grep -rn "load_scripts" main.py demos/` returns
+  nothing -- so the only way to reach them today is a check calling the
+  interpreter directly. The demo makes its noise through an action route
+  instead. A map declares no audio anywhere either.
 
 `docs/NEXT.md` is the ranked list of what is actually next.
 

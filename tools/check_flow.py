@@ -41,7 +41,7 @@ records what each one turned red for.
 
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
-`data/maps/test.tmx` is the author's canvas and is never read; the one map
+`data/maps/starter.tmx` is the shipped map and is never read here; the one map
 this file needs is written into a tempdir. `editor/core/map_events.py` IS
 imported -- a check under `tools/` may import both sides, and that is the only
 way an agreement between two files that may not import each other can be

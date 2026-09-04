@@ -43,7 +43,7 @@ RTP sheets, the other would ship a repository with no art in it at all.
 
 NO MAP CONTENT IS PINNED
 ------------------------
-`data/maps/test.tmx` is never opened. The tmx this check parses is nine
+`data/maps/starter.tmx` is never opened. The tmx this check parses is nine
 lines it writes into a scratch directory itself.
 
 Runs on a bare clone: it needs `data/art/`, which is tracked, and it does

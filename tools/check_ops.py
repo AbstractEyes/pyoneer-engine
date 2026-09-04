@@ -43,7 +43,7 @@ records what each one turned red for.
 
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
-`data/maps/test.tmx` is never read and no script file has to exist: every
+`data/maps/starter.tmx` is never read and no script file has to exist: every
 document below is a dict this file builds, parsed through the real reader.
 `editor/core/map_events.py` IS imported -- a check under `tools/` may import
 both sides, and that is the only way an agreement between two files that may
@@ -304,25 +304,29 @@ expect_raises("...and refuses one it did not, naming both",
 
 
 # ===========================================================================
-print("\n2. the core eight, and nothing else")
+print("\n2. the core ten, and nothing else")
 # ===========================================================================
-expect("the registry holds exactly the eight core ops",
+expect("the registry holds exactly the ten core ops",
        sorted(OP_REGISTRY), sorted(["say", "ask", "set", "wait", "hold",
-                                    "release", "call", "stop"]))
+                                    "release", "call", "stop",
+                                    "play_sound", "play_music"]))
 expect("CORE_OPS and the registry agree",
        sorted(s.name for s in CORE_OPS), sorted(OP_REGISTRY))
 expect("every one of them is in the `core` loadout",
        sorted({s.loadout for s in OP_REGISTRY.values()}), [CORE])
 # `enter_scene` is core BY THE PORTABILITY TEST and is deliberately absent:
 # scene switching is measurably broken, and an op whose run does nothing is
-# the defect `play_sound` was rejected for.
+# the defect `play_sound` and `play_music` were kept OUT of core for until
+# `scripts/core/audio.py` existed. It exists, they run, and `enter_scene` is
+# the one the rule still points at.
 expect("`enter_scene` is NOT registered -- it lands with the stage that fixes "
        "set_scene", "enter_scene" in OP_REGISTRY, False)
 expect("`ask` is the one op that ships needing a host",
        sorted(n for n, s in OP_REGISTRY.items() if s.status != "live"), ["ask"])
 expect("...and every other one is live",
        sorted(n for n, s in OP_REGISTRY.items() if s.status == "live"),
-       sorted(["say", "set", "wait", "hold", "release", "call", "stop"]))
+       sorted(["say", "set", "wait", "hold", "release", "call", "stop",
+               "play_sound", "play_music"]))
 expect("exactly the three ops that wait declare yields",
        sorted(n for n, s in OP_REGISTRY.items() if s.yields),
        sorted(["ask", "say", "wait"]))
@@ -459,8 +463,8 @@ expect_raises("...and one that is BOTH raises", PyoneerConfigError,
 
 expect_raises("an unknown `do` raises AT LOAD naming file, node and vocabulary",
               PyoneerAssetMissingError,
-              lambda: parse([{"id": "n1", "do": "play_sound"}]),
-              "play_sound", "fixture.json", "'n1'", "say")
+              lambda: parse([{"id": "n1", "do": "play_video"}]),
+              "play_video", "fixture.json", "'n1'", "say")
 expect_no_raise("...and a known one does not",
                 lambda: parse([{"id": "n1", "do": "stop"}]))
 expect_raises("an op outside the declared loadouts raises naming both",

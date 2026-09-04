@@ -1,4 +1,4 @@
-"""Measure the .tmx write path against the shipped 133,940-byte map.
+"""Measure the .tmx write path against a deliberately AWKWARD file.
 
 The claim this file exists to test is narrow and load-bearing: a
 programmatic edit to a map must produce a MINIMAL DIFF, so a human can keep
@@ -6,9 +6,24 @@ editing the same file in Tiled and still read `git diff`. "It produces valid
 XML" is not the claim -- ElementTree already does that, and reflows the
 whole document doing it.
 
-So everything here compares BYTES, against data/maps/test.tmx as it actually
-ships (CRLF, tab indentation for the first elements and spaces for the rest,
-`</data>` at column 0, self-closing tags with no space before the slash).
+So everything here compares BYTES -- against `UGLY_TMX`, built in this file:
+CRLF throughout, tab indentation for the first elements and spaces for the
+rest, `</data>` at column 0, self-closing tags with no space before the
+slash, a double-quoted XML declaration. That is the shape Tiled writes and
+no pretty-printer reproduces, which is the entire reason `MapDocument`
+exists.
+
+It used to measure all of that against `data/maps/test.tmx`, the author's
+own canvas, which happened to have every one of those properties. That was
+a law-4 violation wearing a coincidence's clothes: the assertions read like
+claims about the WRITER and were actually claims about one person's file,
+and when the shipped map was replaced by `data/maps/starter.tmx` -- uniform
+LF, uniform one-space indent -- a repoint would have DELETED the coverage
+silently while still printing `PASS`. The fixture is built here now, so the
+awkwardness is guaranteed rather than borrowed.
+
+The shipped map is still read, once, at the end: it must round-trip
+byte-exactly too. That assertion pins nothing about what it contains.
 
     .venv/Scripts/python.exe tools/check_tmx_roundtrip.py
 """
@@ -16,12 +31,15 @@ from __future__ import annotations
 
 import _bootstrap  # noqa: F401
 
+import atexit
 import os
+import struct
 from xml.etree import ElementTree
 import shutil
 import sys
 import tempfile
 import warnings
+import zlib
 
 import pygame
 
@@ -40,7 +58,88 @@ from scripts.loaders.map_document import (
     subcell_property,
 )
 
-MAP_PATH = os.path.join(_bootstrap.REPO_ROOT, "data", "maps", "test.tmx")
+SHIPPED_SOURCE = "data/maps/starter.tmx"
+SHIPPED_PATH = os.path.join(_bootstrap.REPO_ROOT, *SHIPPED_SOURCE.split("/"))
+
+FIXTURE_WIDTH = FIXTURE_HEIGHT = 100
+FIXTURE_TILE = 16
+FIXTURE_SHEET = "fixture_sheet.png"
+
+
+def png_bytes(width: int, height: int) -> bytes:
+    """A real, decodable 8-bit RGB PNG -- pytmx has to open this one."""
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        return (struct.pack(">I", len(payload)) + tag + payload
+                + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF))
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    raw = b"".join(b"\x00" + b"\x40\x80\xc0" * width for _ in range(height))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def fixture_csv() -> bytes:
+    """One deterministic gid per cell, in Tiled's own csv shape.
+
+    Every gid is in 1..64 so the sheet really holds it, and (3, 4) lands on
+    a TWO-DIGIT value on purpose: the minimal-diff section replaces it with
+    `777` and asserts the file grew by exactly one byte.
+    """
+    rows = []
+    for y in range(FIXTURE_HEIGHT):
+        rows.append(",".join(
+            str((x * 7 + y * 13) % 64 + 1) for x in range(FIXTURE_WIDTH)))
+    return ("\r\n".join(row + "," for row in rows[:-1])
+            + "\r\n" + rows[-1] + "\r\n").encode("ascii")
+
+
+def build_ugly_tmx() -> bytes:
+    """The awkward file, assembled byte by byte.
+
+    Five properties are asserted about it a few lines below, and every one
+    of them is written HERE rather than found somewhere: CRLF everywhere,
+    a tab-indented `<tileset>`, a space-indented `<layer>`, `</data>` at
+    column 0, and a self-closing tag with no space before the slash.
+    """
+    csv = fixture_csv()
+    parts = [
+        b'<?xml version="1.0" encoding="UTF-8"?>\r\n',
+        b'<map version="1.10" tiledversion="1.11.0" orientation="orthogonal"'
+        b' renderorder="right-down" width="%d" height="%d" tilewidth="%d"'
+        b' tileheight="%d" infinite="0" nextlayerid="12" nextobjectid="1">\r\n'
+        % (FIXTURE_WIDTH, FIXTURE_HEIGHT, FIXTURE_TILE, FIXTURE_TILE),
+        b'\t<editorsettings>\r\n',
+        b'\t\t<export target="." format="tmx"/>\r\n',
+        b'\t</editorsettings>\r\n',
+        b'\t<tileset firstgid="1" name="Fixture" tilewidth="%d" tileheight="%d"'
+        b' tilecount="64" columns="8">\r\n' % (FIXTURE_TILE, FIXTURE_TILE),
+        b'\t\t<image source="%s" width="128" height="128"/>\r\n'
+        % FIXTURE_SHEET.encode("ascii"),
+        b'\t</tileset>\r\n',
+    ]
+    for layer_id, name in ((1, b"Floor"), (2, b"Above1")):
+        parts += [
+            b'  <layer id="%d" name="%s" width="%d" height="%d">\r\n'
+            % (layer_id, name, FIXTURE_WIDTH, FIXTURE_HEIGHT),
+            b'   <data encoding="csv">\r\n',
+            csv,
+            b'</data>\r\n',
+            b'  </layer>\r\n',
+        ]
+    parts += [
+        b'  <objectgroup id="9" name="entity"/>\r\n',
+        b'</map>\r\n',
+    ]
+    return b"".join(parts)
+
+
+FIXTURE_DIR = tempfile.mkdtemp(prefix="pyoneer_ugly_tmx_")
+atexit.register(shutil.rmtree, FIXTURE_DIR, ignore_errors=True)
+MAP_PATH = os.path.join(FIXTURE_DIR, "ugly.tmx")
+with open(MAP_PATH, "wb") as _handle:
+    _handle.write(build_ugly_tmx())
+with open(os.path.join(FIXTURE_DIR, FIXTURE_SHEET), "wb") as _handle:
+    _handle.write(png_bytes(128, 128))
 
 failures: list[str] = []
 
@@ -124,16 +223,16 @@ def diff_span(left: bytes, right: bytes) -> tuple[int, int] | None:
 
 with open(MAP_PATH, "rb") as handle:
     ORIGINAL = handle.read()
+with open(SHIPPED_PATH, "rb") as handle:
+    SHIPPED = handle.read()
 
 # --------------------------------------------------------------------------
-print("the shipped file is the awkward case, on purpose")
+print("the fixture is the awkward case, on purpose")
 # --------------------------------------------------------------------------
-# NOT a pinned byte count. The map is a live fixture the author paints in,
-# so its size changes whenever they use the editor -- and a stale constant
-# here fails loudly while every assertion that actually matters (to_bytes()
-# reproduces the file, save() writes the same bytes, revert restores them)
-# still passes. Those compare against the REAL bytes, which is the property
-# under test; the size was only ever a description of it.
+# NOT a pinned byte count, even now that this file writes the bytes: the
+# size was only ever a description of the property under test, which is that
+# `to_bytes()` reproduces the file, `save()` writes the same bytes, and a
+# revert restores them. Those compare against the REAL bytes.
 print(f"  ..   {'size on disk':<54} {len(ORIGINAL)} bytes")
 expect("big enough to exercise the awkward paths", len(ORIGINAL) > 50_000, True)
 expect("CRLF throughout", ORIGINAL.count(b"\r\n"), ORIGINAL.count(b"\n"))
@@ -166,10 +265,8 @@ try:
     print("the document reads what Tiled wrote")
     # --------------------------------------------------------------------
     # Every expectation below is DERIVED from the same file, never named.
-    # `data/maps/test.tmx` is the author's canvas: he repaints it, adds a
-    # collision companion, renames a layer. A check that spells its layers out
-    # goes red for that and says nothing about MapDocument, which is the only
-    # thing it is here to test. What IS a code claim: the reader returns every
+    # A check that spells its layers out says nothing about MapDocument,
+    # which is the only thing it is here to test. What IS a code claim: the reader returns every
     # layer in document order, descending into groups and counting a group as
     # a layer, and splits tile from object by element tag.
     root = ElementTree.parse(MAP_PATH).getroot()
@@ -273,7 +370,7 @@ try:
     print("add_object then remove_object returns the original bytes")
     # --------------------------------------------------------------------
     entity = document.object_layer("entity")
-    expect("the shipped object group is empty", entity.objects(), [])
+    expect("the fixture object group is empty", entity.objects(), [])
     expect("and self-closing", b'<objectgroup id="9" name="entity"/>' in ORIGINAL, True)
     expect("nextobjectid before", document.root.get("nextobjectid"), "1")
 
@@ -294,8 +391,13 @@ try:
            b'<property name="depth" type="int" value="50"/>' in with_object, True)
     expect("the group is no longer self-closing",
            b'<objectgroup id="9" name="entity">' in with_object, True)
-    expect("the added lines use CRLF, like the rest of the file",
-           b'\r\n   <object id="1"' in with_object, True)
+    # The group's OWN indent, read off the file, plus one step. The old form
+    # typed three spaces, which was the author's file's answer rather than
+    # the writer's rule.
+    _before_group = ORIGINAL[:ORIGINAL.index(b'<objectgroup')]
+    GROUP_INDENT = _before_group[_before_group.rindex(b"\n") + 1:]
+    expect("the added lines use CRLF and indent one step past their group",
+           b"\r\n" + GROUP_INDENT + b'  <object id="1"' in with_object, True)
     expect("no lone LF was introduced",
            with_object.count(b"\r\n"), with_object.count(b"\n"))
 
@@ -314,9 +416,8 @@ try:
     # reads -- a companion `subcell` times finer -- could not be written by
     # any editor action at all.
     #
-    # Nothing here pins what the map CONTAINS. It reads width, height and
-    # tile size off whatever the file is and asserts the arithmetic against
-    # those, so repainting test.tmx cannot make this red.
+    # Nothing here pins a dimension. It reads width, height and tile size
+    # off whatever the file is and asserts the arithmetic against those.
     map_width, map_height = document.width, document.height
 
     def added(*args, **kwargs):
@@ -414,7 +515,7 @@ try:
     print()
     print("a shrunken companion is caught at LOAD, not walked through")
     # --------------------------------------------------------------------
-    # A synthetic map, not test.tmx: this is about a shape the author's tmx
+    # A synthetic map, not the fixture above: this is about a shape a real tmx
     # does not have and must never silently acquire. A finite map's layer
     # width/height are spec'd to equal the map's, so Tiled MAY rewrite a 4x
     # companion back to map size on the next save. Nobody has been able to
@@ -481,12 +582,11 @@ try:
     # --------------------------------------------------------------------
     # Growth rewrites four attribute VALUES and adds no element, so the
     # whitespace question is not "does the indent get computed" -- it is
-    # "does anything else move". Measured on the shipped file, because that
-    # is the one that mixes tab-indented and space-indented blocks and is
-    # CRLF throughout, and measured on a tileset THIS SECTION ADDS, so
-    # nothing here depends on what the author has painted or imported.
+    # "does anything else move". Measured on the awkward fixture, because
+    # that is the one that mixes tab-indented and space-indented blocks and
+    # is CRLF throughout, and measured on a tileset THIS SECTION ADDS.
     grower = MapDocument.load(MAP_PATH)
-    expect("a fresh load of the shipped file round trips",
+    expect("a fresh load of the fixture round trips",
            grower.to_bytes(), ORIGINAL)
 
     def placed(doc):
@@ -548,10 +648,10 @@ try:
     expect("renaming back is byte identical", grower.to_bytes(), ADDED)
 
     grower.remove_tileset("RoundTripGrowth")
-    expect("and taking the whole fixture out returns the shipped bytes",
+    expect("and taking the whole tileset out returns the original bytes",
            grower.to_bytes(), ORIGINAL)
     with open(MAP_PATH, "rb") as handle:
-        expect("the shipped file was never written to", handle.read(), ORIGINAL)
+        expect("the fixture was never written to", handle.read(), ORIGINAL)
 
     # --------------------------------------------------------------------
     print()
@@ -699,16 +799,20 @@ try:
     print()
     print("map paths resolve from the repo, not the working directory")
     # --------------------------------------------------------------------
+    # The one section that has to name a REPO-relative path, because
+    # resolving one is the thing under test. It names the shipped map and
+    # asserts nothing about its contents.
     expect("resolve_map_path returns an absolute path",
-           os.path.isabs(resolve_map_path("data/maps/test.tmx")), True)
+           os.path.isabs(resolve_map_path(SHIPPED_SOURCE)), True)
     expect("and it points at the shipped map",
-           os.path.normcase(resolve_map_path("data/maps/test.tmx")),
-           os.path.normcase(MAP_PATH))
+           os.path.normcase(resolve_map_path(SHIPPED_SOURCE)),
+           os.path.normcase(SHIPPED_PATH))
     expect("an already-absolute path is left alone",
            os.path.normcase(resolve_map_path(MAP_PATH)), os.path.normcase(MAP_PATH))
 
-    entry = MapData({"file": "data/maps/test.tmx", "name": "test", "identifier": "test"})
-    expect("MapData keeps the authored string", entry.source, "data/maps/test.tmx")
+    entry = MapData({"file": SHIPPED_SOURCE, "name": "shipped",
+                     "identifier": "shipped"})
+    expect("MapData keeps the authored string", entry.source, SHIPPED_SOURCE)
     expect("MapData resolves the file", os.path.isfile(entry.file), True)
 
     # The path must not depend on where the process happens to be standing,
@@ -717,22 +821,28 @@ try:
     os.chdir(scratch)
     try:
         manager = AssetMapManager().prepare(
-            {"data": [{"file": "data/maps/test.tmx", "name": "test", "identifier": "test"}]}
+            {"data": [{"file": SHIPPED_SOURCE, "name": "shipped",
+                       "identifier": "shipped"}]}
         )
-        parsed = manager.load_assets("test")
+        parsed = manager.load_assets("shipped")
         expect("a map loads from an unrelated working directory",
-               (parsed.width, parsed.height), (100, 100))
-        opened = manager.document("test")
+               (parsed.width > 0, parsed.height > 0), (True, True))
+        opened = manager.document("shipped")
+        # THE SHIPPED MAP, round-tripped. `starter.tmx` is uniform LF where
+        # the fixture above is CRLF, so this is the second spelling of the
+        # same contract and the reason a repoint would not have been enough.
         expect("and document() opens the same file byte-faithfully",
-               opened.to_bytes(), ORIGINAL)
+               opened.to_bytes(), SHIPPED)
     finally:
         os.chdir(previous_cwd)
 finally:
     shutil.rmtree(scratch, ignore_errors=True)
 
-# The shipped map must not have been touched by any of the above.
+# Neither file may have been touched by any of the above.
 with open(MAP_PATH, "rb") as handle:
-    expect("data/maps/test.tmx is untouched on disk", handle.read(), ORIGINAL)
+    expect("the fixture is untouched on disk", handle.read(), ORIGINAL)
+with open(SHIPPED_PATH, "rb") as handle:
+    expect("data/maps/starter.tmx is untouched on disk", handle.read(), SHIPPED)
 
 print()
 if failures:

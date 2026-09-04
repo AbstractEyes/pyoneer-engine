@@ -27,7 +27,7 @@ that came from a broken instrument is not mistaken for a passing claim.
 
 THE FIXTURE IS THIS FILE'S OWN, ART INCLUDED
 --------------------------------------------
-`data/maps/test.tmx` is repainted constantly and is never read here; a check
+`data/maps/starter.tmx` is repainted whenever the demo changes and is never read here; a check
 that pins map content goes red the next time the author paints. The tileset
 PNG is generated into the same temp directory, because unlike check_spawn.py
 this one needs tiles that really rasterize: the whole point is what entity
@@ -198,7 +198,7 @@ OBJECTS = """ <objectgroup id="4" name="entity">
  </objectgroup>
 """
 
-# The same map with nothing on its object layer -- the shape data/maps/test.tmx
+# The same map with nothing on its object layer -- the shape the old canvas
 # ships in. It is what makes "spawning changes nothing when there is nothing to
 # spawn" a measured claim rather than an observation about today's map file.
 EMPTY_OBJECTS = """ <objectgroup id="4" name="entity"/>

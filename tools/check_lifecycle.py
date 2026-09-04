@@ -40,7 +40,7 @@ each one turned red for.
 
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
-`data/maps/test.tmx` is the author's canvas and is never read. The probe
+`data/maps/starter.tmx` is the shipped map and is never read here. The probe
 entity, the probe spawn-registry entry, the whole scene and the two-object
 map section 10 needs are built here -- the map into a tempdir; nothing in
 this file asserts what any shipped map contains.

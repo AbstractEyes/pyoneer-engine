@@ -346,7 +346,7 @@ def select_layer(window, name):
 # --------------------------------------------------------------------------
 # Its own map, because baking a tile mask WRITES: a `.blitmask` beside the
 # .tmx and a `pyoneer_collision` property on the `<tileset>`. Doing that to a
-# copy of `data/maps/test.tmx` would pin the author's tileset names and their
+# copy of `data/maps/starter.tmx` would pin the shipped map's tileset names and their
 # geometry into this file (law 4).
 #
 # Two columns and four tiles, so a tile id, a grid position and a gid are all
@@ -428,7 +428,10 @@ def sheet_cells(palette, tileset):
 try:
     os.makedirs(os.path.join(workspace, "config"))
     os.makedirs(os.path.join(workspace, "data", "maps"))
-    shutil.copy2(os.path.join(REPO, "data", "maps", "test.tmx"),
+    # The SHIPPED map, copied in. It is the workspace's own fixture from here
+    # on and the workspace calls it "test"; nothing below writes back to
+    # data/maps/starter.tmx.
+    shutil.copy2(os.path.join(REPO, "data", "maps", "starter.tmx"),
                  os.path.join(workspace, "data", "maps", "test.tmx"))
     with open(os.path.join(workspace, "config", "maps.json"), "w",
               encoding="utf-8") as handle:
@@ -458,8 +461,13 @@ try:
     expect("the tile palette found every tileset the map declares",
            len(window.canvas.atlas.entries),
            len(window.session.project.map(window.map_name).tileset_names()))
+    # DERIVED, not typed. This read `"Paralax"` -- the misspelling the old
+    # shipped map carried -- so it pinned one map's typo (law 4) and went red
+    # the day a map spelling `Parallax` correctly replaced it. What the canvas
+    # owes the author is a paintable layer THIS map actually has.
     expect("it picked a paintable layer to start on",
-           window.canvas.active_layer, "Paralax")
+           window.canvas.active_layer in
+           session.project.map(window.map_name).tile_layer_names(), True)
 
     # ----------------------------------------------------------------
     print()
@@ -927,7 +935,7 @@ try:
     # WHAT THE FIXTURE ALREADY HOLDS, counted rather than assumed. Every
     # count below is a DELTA against this. "One click leaves one object"
     # is a claim about the map as much as about the click (law 4), and it
-    # was false the day an object was authored into `test.tmx`.
+    # was false the day an object was authored into the shipped map.
     BORN_WITH = len(session.project.map("test").object_layer("entity").objects())
     window.canvas.object_class = "GamePlayer"
     place_object(window, (4, 6))
@@ -1975,9 +1983,11 @@ try:
            [f.key for f in forms[0][1] if ".py" in (f.doc + f.label)], [])
     expect("it suggests names the engine already draws",
            "UI_LAYER_1" in forms[0][1][0].choices, True)
+    # The map's OWN names, read off the document. Typing three of them
+    # pinned map content and named a layer no shipped map has any more.
     expect("but never one the map already has",
            [n for n in forms[0][1][0].choices
-            if n in ("Floor", "Paralax", "Foreground")], [])
+            if n in session.project.map("test").layer_names()], [])
     expect("and no modal was involved", modals(), [])
     expect("the layer landed",
            "Roof" in session.project.map("test").layer_names(), True)
@@ -3090,7 +3100,7 @@ try:
     # and that seam: the signal, the mode-dependent meaning, and the palette
     # being told the answer afterwards.
     #
-    # AGAINST ITS OWN FIXTURE, never `data/maps/test.tmx` (law 4). Baking a
+    # AGAINST ITS OWN FIXTURE, never `data/maps/starter.tmx` (law 4). Baking a
     # mask writes a `.blitmask` beside the map and adds `pyoneer_collision`
     # to a `<tileset>`, so doing it on the author's canvas would pin both the
     # tileset's name and its geometry.

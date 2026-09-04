@@ -6,6 +6,11 @@ names exactly what moved. Note that smoke injects NO input, so "no drift"
 never means "nothing changed": it cannot see anything that only happens while
 walking.
 
+Every dispatch count here is reported PER EVENT TYPE, boot included, because
+a scalar that moved told a reader that something moved and never what. The
+totals are reported alongside so the breakdown and the old scalar stay
+comparable.
+
     .venv/Scripts/python.exe tools/smoke.py --frames 120 --out run.json
     .venv/Scripts/python.exe tools/smoke.py --frames 120 --baseline tools/baseline.json
 """
@@ -47,6 +52,16 @@ def run(frames: int) -> dict:
     # that leaves frame_hash identical is not automatically harmless, because
     # the same pixels can be produced by a different amount of work. Counted
     # over the LAST frame only, so it reports steady state rather than boot.
+    #
+    # BOTH are Counters and BOTH are reported per type. `boot_dispatch` used
+    # to be summed away to a single integer, and that scalar was the one field
+    # in this whole report a reader could not act on: it reads
+    # `559 + 19 * (audio output devices + joysticks + 1)` on the pre-filter
+    # engine, so it moved between machines with no code change and law 11's
+    # "name a smoke drift field by field or do not bless it" had nothing to
+    # name. A breakdown says which event type moved. The scalar is still
+    # reported beside it, as `dispatch_total_during_boot`, so the two reports
+    # stay comparable -- it is the same `sum()` it always was.
     dispatch: collections.Counter = collections.Counter()
     boot_dispatch: collections.Counter = collections.Counter()
     original_invoke = GameComponent._GameComponent__invoke_listener
@@ -116,7 +131,8 @@ def run(frames: int) -> dict:
         "ui_component_census": dict(sorted(ui_census.items())),
         "dispatch_per_frame": dict(sorted(dispatch.items())),
         "dispatch_total_per_frame": sum(dispatch.values()),
-        "dispatch_during_boot": sum(boot_dispatch.values()),
+        "dispatch_during_boot": dict(sorted(boot_dispatch.items())),
+        "dispatch_total_during_boot": sum(boot_dispatch.values()),
         "blit_tokens": captured.get("tokens"),
         "blit_culled": captured.get("culled"),
         "blit_depths": captured.get("depths"),

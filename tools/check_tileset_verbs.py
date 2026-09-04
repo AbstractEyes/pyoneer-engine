@@ -28,7 +28,7 @@ looking correct in the history panel:
 
 WHAT IS FIXTURE AND WHAT IS NOT
 -------------------------------
-data/maps/test.tmx is a live file the author paints in. It is used here for
+data/maps/starter.tmx is the live, shipped map. It is used here for
 exactly one thing: a COPY of it is the byte-identity target for add/undo,
 and nothing below asserts what it contains. Every map whose CONTENT is
 tested -- painted gids, tile objects, an external tileset -- is built in
@@ -300,7 +300,10 @@ try:
     with open(os.path.join(maps_dir, "tall.png"), "wb") as handle:
         handle.write(png_bytes(64, 64))
 
-    shutil.copy2(os.path.join(REPO, "data", "maps", "test.tmx"),
+    # The SHIPPED map, copied in. It is the workspace's own fixture from
+    # here on and the workspace calls it "test"; nothing below writes back
+    # to data/maps/starter.tmx.
+    shutil.copy2(os.path.join(REPO, "data", "maps", "starter.tmx"),
                  os.path.join(maps_dir, "test.tmx"))
     with open(os.path.join(maps_dir, "used.tmx"), "wb") as handle:
         handle.write(IN_USE)

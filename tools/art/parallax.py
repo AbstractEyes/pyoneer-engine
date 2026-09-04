@@ -4,8 +4,8 @@
 
 WHY THIS IS A TILESET AND NOT A BACKDROP                #TAG:art_parallax_tiles
 ------------------------------------------------------------------------
-`MAP_DEPTH` gives `Parallax` depth 1, and `data/maps/test.tmx` spells it
-`Paralax` on a TILE LAYER carrying `pyoneer_parallax_x`. Nothing in the engine
+`MAP_DEPTH` gives `Parallax` depth 1, and `data/maps/starter.tmx` declares it
+on a TILE LAYER carrying `pyoneer_parallax_x`. Nothing in the engine
 blits a standalone background image: the parallax band is gids like every
 other layer, drawn from the map's own tilesets and scrolled at its own rate.
 

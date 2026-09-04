@@ -118,3 +118,36 @@ class GameEventType(tuple[str, Optional[pygame.event.Event]], Enum):
     WINDOW_FOCUS_LOST = ('window_focus', pygame.WINDOWFOCUSLOST)
     WINDOW_FOCUS_GAINED = ('window_focus', pygame.WINDOWFOCUSGAINED)
 
+
+def _build_translation_table() -> dict[int, GameEventType]:
+    """Map every pygame event type this enum names to the member naming it.
+
+    `PyoneerEvent.__translate` used to walk EVERY member for EVERY pygame
+    event that arrived -- 49 tuple comparisons apiece for a table that is
+    frozen at import. This computes the same answer once.
+
+    FIRST DEFINITION WINS, which is exactly what the old loop's `break` did:
+    `for event_type in GameEventType` walks members in definition order and
+    stops at the first whose `value[1]` matches. Today no two members declare
+    the same pygame type -- 14 members, 14 distinct types -- so ordering is
+    not load-bearing, but if two ever do, the one written first above still
+    answers. `tools/check_event_queue.py` builds this table BOTH ways, the
+    old scan and this dict, and compares them, so a rewrite here cannot
+    silently drop a member or re-point one.
+    """
+    table: dict[int, GameEventType] = {}
+    for member in GameEventType:
+        pygame_type = member.value[1]
+        if pygame_type is not None and pygame_type not in table:
+            table[pygame_type] = member
+    return table
+
+
+PYGAME_EVENT_TYPES: dict[int, GameEventType] = _build_translation_table()
+"""The pygame type -> `GameEventType` lookup, built once at import.
+
+A pygame type absent from here has no member and stays `GameEventType.PYGAME`.
+That is a real answer and not a fallback: the member list above is the whole
+declaration of what this engine translates, so an untranslated event is an
+event nobody named.
+"""

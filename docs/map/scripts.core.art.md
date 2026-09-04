@@ -15,13 +15,13 @@
 
 ## Functions
 
-- `scripts/core/art.py:66` `_parts(path: str) -> tuple[str, ...]` #TAG:_parts
+- `scripts/core/art.py:66` `_parts(path: str) -> tuple[str, ...]` #TAG:art._parts
   - Split a repo-relative path on either separator.
 - `scripts/core/art.py:76` `shipped_relative(relative: str) -> str` #TAG:shipped_relative
   - `data/graphics/X` -> `data/art/X`, still repo-relative.
 - `scripts/core/art.py:93` `shipped_path(relative: str) -> str` #TAG:shipped_path
   - Where `shipped_relative(relative)` lands in THIS checkout, absolutely.
-- `scripts/core/art.py:98` `_under_repo(path: str) -> str` #TAG:_under_repo
+- `scripts/core/art.py:98` `_under_repo(path: str) -> str` #TAG:art._under_repo
   - `path` as an absolute path, resolving a relative one against the repo.
 - `scripts/core/art.py:111` `resolve_art(path: str) -> str` #TAG:resolve_art
   - The declared path if anything is there, else its shipped twin.

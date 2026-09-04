@@ -6,7 +6,7 @@ MAP_DEPTH = {
     "GroundClutter":    30, # the ground clutter layer
     "ENTITY_2":         40, # the second entity layer
     "PlayerDepth":      50, # the player depth layer
-    "Above1":           55, # authored in test.tmx between PlayerDepth and Foreground
+    "Above1":           55, # between PlayerDepth and Foreground; no shipped map declares it
     "Foreground":       60, # the foreground layer
     "ENTITY_3":         70, # the third entity layer
     "FOREGROUND_1":     80, # the first foreground layer
@@ -34,9 +34,12 @@ OBJECT_CONVERTER = {
 DEPTH = MAP_DEPTH | OBJECT_DEPTH | OBJECT_CONVERTER
 
 LAYER_NAME_ALIASES = {
-    # data/maps/test.tmx spells this layer "Paralax" (one L), and its 39
-    # tiles draw nothing unless the misspelling resolves. Aliasing rather
-    # than renaming keeps the .tmx byte-identical.
+    # ARCHAEOLOGY, kept on purpose. The private canvas retired on 2026-09-04
+    # spelled this layer "Paralax" (one L), and its 39 tiles drew nothing
+    # until the misspelling resolved -- law 7's standing cost. No shipped map
+    # spells it that way any more; the alias stays because someone else's
+    # .tmx still might, and because aliasing rather than renaming is what
+    # keeps a file byte-identical.
     "Paralax": "Parallax",
 }
 

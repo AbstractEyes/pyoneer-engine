@@ -201,8 +201,8 @@ A pack is `genre.json` + `RULES.md` + `ART.md` (+ optional `template/`).
 }
 ```
 
-Two ship today: `topdown_rpg` (matches the layers already authored in
-`test.tmx`) and `platformer`.
+Two ship today: `topdown_rpg` (matches the layers the shipped
+`data/maps/starter.tmx` declares) and `platformer`.
 
 **Hard rules** raise and roll back — deleting a genre-required table or
 column. **Soft rules** surface in the Problems panel and block nothing: a

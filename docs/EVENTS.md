@@ -2,7 +2,7 @@
 
 **This file is generated.** `scripts/game/flow/ops.py` holds the table. Edit the specs, not this file.
 
-8 op(s) in 1 loadout(s): `core`.
+10 op(s) in 1 loadout(s): `core`.
 
 ## The protocol
 
@@ -24,6 +24,8 @@ A node is one of exactly two shapes: executable `{"id", "do", ...arguments}`, or
 | `ask` | `core` | `prompt`, `into`, `options` | yes | needs-host | Offer a choice and write the chosen index into a variable. |
 | `call` | `core` | `script` | no | live | Run another script's first passing page here, then carry on. |
 | `hold` | `core` | `steerable`, `enabled_inputs`, `simulated` | no | live | Take the bodies' agency, recording what to give back. |
+| `play_music` | `core` | `track`, `loops`, `volume` | no | live | Start the background track. Starts a stream; never waits for it. |
+| `play_sound` | `core` | `sound`, `volume` | no | live | Play one sound effect and carry on in the same frame. |
 | `release` | `core` | -- | no | live | Give back exactly the agency `hold` recorded. Never `true`. |
 | `say` | `core` | `text`, `who` | yes | live | Show a line and wait for the advance. |
 | `set` | `core` | `var`, `by`, `to` | no | live | Write a declared variable, by assignment or by addition. |
@@ -79,6 +81,39 @@ Take the bodies' agency, recording what to give back.
 
 ```json
 {"id": "n2", "do": "hold", "steerable": false}
+```
+
+### `play_music`
+
+Start the background track. Starts a stream; never waits for it.
+
+- **loadout** `core`
+- **yields** no -- it completes in the frame it is entered
+
+| argument | type | default | required | meaning |
+| --- | --- | --- | --- | --- |
+| `track` | str | `''` | yes | The track's name, relative to the audio roots -- "music/pleasant_moments.ogg". Ogg streams rather than decoding whole into memory. |
+| `loops` | int | `0` | no | -1 repeats forever, 0 plays it once, n repeats it n more times. |
+| `volume` | float | `1.0` | no | 0.0 to 1.0, scaled by master_volume in config/audio.json. |
+
+```json
+{"id": "n1", "do": "play_music", "track": "music/pleasant_moments.ogg", "loops": -1}
+```
+
+### `play_sound`
+
+Play one sound effect and carry on in the same frame.
+
+- **loadout** `core`
+- **yields** no -- it completes in the frame it is entered
+
+| argument | type | default | required | meaning |
+| --- | --- | --- | --- | --- |
+| `sound` | str | `''` | yes | The sound's name, relative to the audio roots -- "sfx/chime.wav". data/sound/ is looked at first, then the shipped data/audio/. |
+| `volume` | float | `1.0` | no | 0.0 to 1.0, scaled by master_volume in config/audio.json. |
+
+```json
+{"id": "n7", "do": "play_sound", "sound": "sfx/chime.wav"}
 ```
 
 ### `release`
@@ -161,13 +196,15 @@ Hold this node for a number of milliseconds.
 
 Every row below is produced by constructing a `ScriptRun` over a one-node script and stepping it, then observing the effect. A row that says *no* is an op that does not do its job at this commit -- not one that is merely undocumented.
 
-7 of 8 op(s) run.
+9 of 10 op(s) run.
 
 | op | loadout | status | runtime | what was observed |
 | --- | --- | --- | --- | --- |
 | `ask` | `core` | needs-host | no | raises: `ask` needs a host that reports a CHOICE, and this engine has none -- no widget reports  |
 | `call` | `core` | live | **yes** | runs the called script's body |
 | `hold` | `core` | live | **yes** | clears the axis on a real BodyState, and keeps holding it |
+| `play_music` | `core` | live | **yes** | starts the stream and finishes in the same frame |
+| `play_sound` | `core` | live | **yes** | finds the file and starts it, finishing in the same frame |
 | `release` | `core` | live | **yes** | gives back the RECORDED value mid-run -- an already-held body stays held |
 | `say` | `core` | live | **yes** | opens a duck-typed host's line, waits for the advance, closes it |
 | `set` | `core` | live | **yes** | writes the variable store |
@@ -180,7 +217,7 @@ Each row is measured from the parse tree of the tree above this layer, not from 
 
 | the wire | at this commit | what it takes |
 | --- | --- | --- |
-| an op registry exists and is populated | **yes** | 8 op(s) in `core` |
+| an op registry exists and is populated | **yes** | 10 op(s) in `core` |
 | a genre pack GRANTS a loadout (`event_loadouts`) | no | one array in a pack's `genre.json`, validated through `ops.validate_loadouts`. no pack declares the key, and `editor/core/genre.py` does not parse it |
 | an editor module reaches the op registry (the PICKER) | **yes** | reached by `editor/core/event_script.py`, `editor/core/verbs.py`, `editor/ui/script_editor.py` |
 | a script document is read from disk in production | no | `script_file.load_scripts()` called from the game's boot |
@@ -193,4 +230,4 @@ A loadout exists because an op declares it; there is no separate list. A documen
 
 | loadout | ops |
 | --- | --- |
-| `core` | `ask`, `call`, `hold`, `release`, `say`, `set`, `stop`, `wait` |
+| `core` | `ask`, `call`, `hold`, `play_music`, `play_sound`, `release`, `say`, `set`, `stop`, `wait` |

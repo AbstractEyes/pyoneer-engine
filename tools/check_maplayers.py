@@ -48,7 +48,7 @@ def expect(label, got, want):
         failures.append(label)
 
 
-ENTITY_DEPTHS = (40, 41)
+# ENTITY_DEPTHS is derived from the booted renderer, just below.
 
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
@@ -57,6 +57,16 @@ with warnings.catch_warnings(record=True) as caught:
 
 game.begin(max_frames=1)
 renderer = game.renderer
+
+# DERIVED FROM THE BOOTED RENDERER, never typed. This read `(40, 41)` while
+# `main.py` built six bodies by hand at those depths; those are deleted and
+# the map's own object layer produces the bodies now, so a typed pair would
+# be pinning decoys that no longer exist. `SpawnedEntity.depth` is the LAYER
+# depth each body was bound into -- the code's answer, not the map's -- so
+# repainting or replacing the shipped map cannot make the rows below red.
+ENTITY_DEPTHS = tuple(sorted({s.depth for s in renderer.spawned_entities}))
+expect("the map's object layer produced at least one body",
+       len(ENTITY_DEPTHS) >= 1, True)
 
 
 def tile_layers():
@@ -112,7 +122,7 @@ def frame_blits():
 
 # ---------------------------------------------------------------- empty layers
 print("an empty tile layer produces no MapLayer")
-tmx = game.assets.maps.load_assets("test")
+tmx = game.assets.maps.load_assets(main_module.MAP_NAME)
 declared = {layer.name: layer for layer in tmx.layers
             if isinstance(layer, pytmx.TiledTileLayer)}
 empty = [name for name, layer in declared.items()
@@ -191,7 +201,8 @@ blits = frame_blits()
 tile_depths = [d for d, sender in blits
                if sender in ("MapLayer", "MapComposite")]
 entity_depths = [d for d, sender in blits if sender == "GamePlayer"]
-expect("entities still draw at 40/41", sorted(set(entity_depths)), [40, 41])
+expect("the bodies still draw, at the depths they were bound into",
+       sorted(set(entity_depths)), list(ENTITY_DEPTHS))
 expect("no tile layer draws between the entity layers",
        [d for d in tile_depths if min(ENTITY_DEPTHS) <= d <= max(ENTITY_DEPTHS)], [])
 expect("tiles below the entities are drawn first",
@@ -398,7 +409,7 @@ print("a layer that declares it does not draw is skipped in silence -- and one "
 # no-depth warning is the guard that caught 39 authored tiles going missing
 # to a misspelling, and it must still fire for a layer that really is art.
 #
-# A fixture, never data/maps/test.tmx: the author paints in that file, and
+# A fixture, never data/maps/starter.tmx: that map is repainted, and
 # what it declares is his business (law 4).
 FIXTURE_ROW = "1,1,1,1"
 FIXTURE_CSV = ",\n".join([FIXTURE_ROW] * 4)

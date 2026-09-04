@@ -125,11 +125,18 @@ Both cases, on 2026-08-28, by moving `data/graphics` aside and back:
   `tools/check_all.py` reports `FAILED: []` — the whole roster, not a subset.
   Its `frame_hash` is not the baseline's, because the shipped art is different
   art from the author's; that is the pack working, not a regression.
-- **The author's working copy** renders `frame_hash 8fb62986f72fc71c` and 43
-  blit tokens, identical to `tools/baseline.json` in every field except the
-  one `dispatch_during_boot` difference that is already there at `793b82d`
-  before any of this. His three sheets keep their exact sha256 and their
-  original mtimes: nothing in the pack writes into that directory.
+- **The author's working copy** renders a different `frame_hash` from a bare
+  clone's, because the shipped art is different art. His three sheets keep
+  their exact sha256 and their original mtimes: nothing in the pack writes
+  into that directory.
+- The `dispatch_during_boot` variance this section used to describe is gone.
+  It was one integer that counted `19 x (audio devices + joysticks + 1)`, so
+  it moved with the HARDWARE of whoever ran it. `#TAG:DEVICE_EVENTS` keeps
+  hotplug events out of the component fan-out and the field is a per-type
+  breakdown now, with the old scalar beside it as
+  `dispatch_total_during_boot`. What survives is one `INPUTS` fan-out for the
+  single `WindowShown` SDL emits at display creation, which is one per boot on
+  every machine.
 
 **There is no longer an art-dependent subset of the roster.** A `needs_art`
 flag on the roster has nothing left to describe: the pack is tracked, so every
@@ -143,7 +150,7 @@ workspace copy both hard-coded a `data/graphics/` path — and both now go throu
 | What | Where |
 |---|---|
 | entity spritesheet | `config/animations.json` → `entity.file` |
-| map tilesets | `<tileset source=...>` inside `data/maps/test.tmx` |
+| map tilesets | `<tileset source=...>` inside `data/maps/starter.tmx` |
 | a tileset cropped in the editor | `data/maps/tilesets/<Name>.png` — `#TAG:CROP_DIR`, beside the map rather than beside the source, because the source may be read-only, outside the project, or on another drive |
 | map file list | `config/maps.json` → `data[].file` |
 | the two roots | `#TAG:scripts/core/art.py` — `GRAPHICS_ROOT`, `SHIPPED_ROOT` |

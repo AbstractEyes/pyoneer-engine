@@ -83,6 +83,7 @@ from dataclasses import dataclass
 from typing import (Any, Callable, Iterable, Mapping, MutableMapping,
                     Optional, Sequence, Tuple)
 
+from scripts.core.audio import AudioManager
 from scripts.core.errors import PyoneerAssetMissingError, PyoneerConfigError
 from scripts.game.behavior.base import STATUSES, TOKEN, BehaviorParam
 from scripts.game.flow.scene_flow import AGENCY_AXES
@@ -526,21 +527,68 @@ def _check_hold(values: dict, variables: Any, where: str) -> dict:
     return values
 
 
+def _check_volume(values: dict, where: str, op: str) -> dict:
+    """A volume outside 0.0..1.0 is refused at LOAD, not clamped at play.
+
+    At load for the same reason `check_loadout` is: a cutscene that reaches a
+    bad node has already taken the player's agency. And refused rather than
+    clamped because `1.1` and `11` would both become 1.0, and neither would
+    ever look wrong -- `BehaviorParam.coerce` refuses `'9o'` for exactly that
+    reason, one layer down.
+    """
+    volume = values["volume"]
+    if not 0.0 <= volume <= 1.0:
+        raise PyoneerConfigError(
+            "%s: `%s` declares volume=%r. It runs from 0.0 (silent) to 1.0 "
+            "(as authored) and is scaled by master_volume in "
+            "config/audio.json, so there is no louder than 1.0 to ask for."
+            % (where, op, volume))
+    return values
+
+
+def _check_play_sound(values: dict, variables: Any, where: str) -> dict:
+    """Only the volume; the NAME is judged when the file is opened.
+
+    Deliberately not at load: a script is parsed on a machine whose
+    `data/sound/` override root may hold a file this one does not, so a
+    name-exists gate here would refuse a document that is correct where it
+    runs. `AudioManager.locate` raises naming the name and both roots.
+    """
+    return _check_volume(values, where, "play_sound")
+
+
+def _check_play_music(values: dict, variables: Any, where: str) -> dict:
+    """The volume, and a `loops` count pygame would silently accept."""
+    _check_volume(values, where, "play_music")
+    if values["loops"] < -1:
+        raise PyoneerConfigError(
+            "%s: `play_music` declares loops=%r. -1 repeats forever, 0 plays "
+            "it once, and n repeats it n more times; there is nothing below "
+            "-1 to mean." % (where, values["loops"]))
+    return values
+
+
 # ---------------------------------------------------------------------------
-# THE CORE EIGHT
+# THE CORE TEN
 #
 # The test each member had to pass: does it mean the same thing in a top-down
 # RPG, a platformer and a visual novel? A script written from core alone runs
 # unchanged when the game mode changes.
 #
 # Control flow (if / elif / else, while) is SCHEMA, not vocabulary -- a node
-# shape, as in most languages -- so it costs nothing against the eight.
+# shape, as in most languages -- so it costs nothing against the ten.
 #
-# `enter_scene` is core and is NOT here: scene switching is measurably broken
-# (a `set_scene` that is a one-line pointer swap, an outgoing scene that keeps
-# drawing, an `active` flag no writer clears), so it registers in the stage
-# that fixes it. An op whose `run` does nothing is the defect `play_sound` was
-# rejected for.
+# `play_sound` and `play_music` are the two newest, and they were REFUSED once
+# on the only ground that ever mattered: there was no audio subsystem in this
+# tree to call, so their `run` would have done nothing, and an op whose run
+# does nothing is "registered, documented, unreachable" written on purpose.
+# `scripts/core/audio.py` removed the ground rather than the rule; every
+# sentence of that argument still stands for the next op somebody wants.
+#
+# `enter_scene` is core and is NOT here, and it is where the rule now points:
+# scene switching is measurably broken (a `set_scene` that is a one-line
+# pointer swap, an outgoing scene that keeps drawing, an `active` flag no
+# writer clears), so it registers in the stage that fixes it.
 # ---------------------------------------------------------------------------
 
 def _run_say(run: Any, args: Mapping[str, Any]) -> bool:
@@ -622,6 +670,37 @@ def _run_call(run: Any, args: Mapping[str, Any]) -> bool:
 def _run_stop(run: Any, args: Mapping[str, Any]) -> bool:
     """End the run from inside any arm, releasing anything still held."""
     run.stop()
+    return True
+
+
+def _run_play_sound(run: Any, args: Mapping[str, Any]) -> bool:
+    """Fire one effect and move on in the same frame.
+
+    Completes immediately, always: an effect is fired and forgotten, and a
+    node that waited for a 90 ms blip would be a `wait` with a worse name.
+
+    Reaches the subsystem through `AudioManager()`, which is the process
+    singleton -- not through `run.host`, because a sound is not something a
+    dialogue window owns and every host would have to grow the same forward.
+    A machine with no sound card returns False here and the script carries
+    on; a name neither audio root holds RAISES, naming the node.
+    """
+    AudioManager().play_sound(args["sound"], volume=args["volume"],
+                              where=run.blame)
+    return True
+
+
+def _run_play_music(run: Any, args: Mapping[str, Any]) -> bool:
+    """Start the streamed track and move on in the same frame.
+
+    Also completes immediately: it STARTS a stream, it does not wait for one.
+    There is deliberately no wait-for-music op -- `AudioManager.music_finished`
+    is the queryable half, and the node that would block on it needs a
+    listener that does not exist yet; `scripts/core/audio.py`'s "THERE IS NO
+    MUSIC-END EVENT" section says what that would cost.
+    """
+    AudioManager().play_music(args["track"], loops=args["loops"],
+                              volume=args["volume"], where=run.blame)
     return True
 
 
@@ -738,7 +817,40 @@ STOP = OpSpec(
     run=_run_stop,
     example='{"id": "n13", "do": "stop"}')
 
-CORE_OPS: Tuple[OpSpec, ...] = (SAY, ASK, SET, WAIT, HOLD, RELEASE, CALL, STOP)
+PLAY_SOUND = OpSpec(
+    name="play_sound",                                      # #TAG:play_sound
+    summary="Play one sound effect and carry on in the same frame.",
+    run=_run_play_sound,
+    params=(_param("sound", "sound", "str", "",
+                   "The sound's name, relative to the audio roots -- "
+                   "\"sfx/chime.wav\". data/sound/ is looked at first, then "
+                   "the shipped data/audio/.", required=True),
+            _param("volume", "volume", "float", 1.0,
+                   "0.0 to 1.0, scaled by master_volume in "
+                   "config/audio.json.")),
+    check=_check_play_sound,
+    example='{"id": "n7", "do": "play_sound", "sound": "sfx/chime.wav"}')
+
+PLAY_MUSIC = OpSpec(
+    name="play_music",                                      # #TAG:play_music
+    summary="Start the background track. Starts a stream; never waits for it.",
+    run=_run_play_music,
+    params=(_param("track", "track", "str", "",
+                   "The track's name, relative to the audio roots -- "
+                   "\"music/pleasant_moments.ogg\". Ogg streams rather than "
+                   "decoding whole into memory.", required=True),
+            _param("loops", "loops", "int", 0,
+                   "-1 repeats forever, 0 plays it once, n repeats it n more "
+                   "times."),
+            _param("volume", "volume", "float", 1.0,
+                   "0.0 to 1.0, scaled by master_volume in "
+                   "config/audio.json.")),
+    check=_check_play_music,
+    example='{"id": "n1", "do": "play_music", '
+            '"track": "music/pleasant_moments.ogg", "loops": -1}')
+
+CORE_OPS: Tuple[OpSpec, ...] = (SAY, ASK, SET, WAIT, HOLD, RELEASE, CALL, STOP,
+                                PLAY_SOUND, PLAY_MUSIC)
 """The portable handful, in the order `docs/EVENTS.md` argues for them."""
 
 
@@ -863,7 +975,8 @@ def describe_all(registry: Mapping[str, OpSpec] | None = None) -> str:
 register_all(CORE_OPS)
 
 __all__ = [
-    "ASSIGN", "CORE", "CORE_OPS", "OP_REGISTRY", "REPLACE_MODES", "OpArg",
-    "OpSpec", "check_loadout", "describe_all", "loadouts", "ops_in",
-    "register", "register_all", "resolve", "resolve_args", "validate_loadouts",
+    "ASSIGN", "CORE", "CORE_OPS", "OP_REGISTRY", "PLAY_MUSIC", "PLAY_SOUND",
+    "REPLACE_MODES", "OpArg", "OpSpec", "check_loadout", "describe_all",
+    "loadouts", "ops_in", "register", "register_all", "resolve",
+    "resolve_args", "validate_loadouts",
 ]

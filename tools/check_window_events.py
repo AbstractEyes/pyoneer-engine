@@ -47,7 +47,10 @@ def code_of(member: GameEventType):
 
 # --------------------------------------------------------------------------
 print("translation is exhaustive and unambiguous")
-# PyoneerEvent.__translate linear-scans the enum for value[1] == event.type.
+# PyoneerEvent.__translate looks the code up in PYGAME_EVENT_TYPES, a dict
+# built once at import by #TAG:_build_translation_table. It linear-scanned
+# the enum until 2026-09-04; check_event_queue asserts the dict and the
+# scan agree as MAPPINGS, in both directions.
 # Assert the resolution of each code the engine actually cares about. A code
 # no member claims must stay PYGAME -- that is the honest answer, not a bug.
 for code, name, want in [

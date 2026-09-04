@@ -17,7 +17,7 @@ have been written, passed, and never run by the suite. A check that
 did not run has proved nothing, which is why an absent optional
 dependency reports `SKIP` and never `PASS`.
 
-58 checks:
+61 checks:
 
 | check | roster line | module says |
 |---|---|---|
@@ -35,7 +35,7 @@ dependency reports `SKIP` and never `PASS`.
 | `input` | edge detection, multi-binding, load-time validation | Verify InputActionManager edge semantics by driving synthetic key state. |
 | `animation` | sequence switching, pause/resume, pre-sliced frames | Verify GameAnimationHandler switching, pausing and resuming. |
 | `singletons` | one CoreAssetManager, tmx cached until reload is asked for | Verify CoreAssetManager is constructed once and never silently rebuilt. |
-| `tmx_roundtrip` | byte-identical tmx save, minimal-diff tile, object and tileset-growth edits | Measure the .tmx write path against the shipped 133,940-byte map. |
+| `tmx_roundtrip` | byte-identical tmx save, minimal-diff tile, object and tileset-growth edits | Measure the .tmx write path against a deliberately AWKWARD file. |
 | `tileset` | byte-exact tileset add/remove/grow/rename, gid-range and extent guards, and growth that moves no placed gid | Measure MapDocument's tileset methods against BYTES, not against XML. |
 | `tileset_verbs` | tileset add/remove/restore/grow/rename verbs with exact undo, gid headroom bought at add time, and the tile-mask verb that writes a tileset's .blitmask and declares it | Verify the tileset verbs: exact inverses, and a refusal that survives. |
 | `blitmap` | the native .blitmap/.tileset format and the tmx converter | Measure the native .blitmap / .tileset formats and the tmx converter. |
@@ -50,10 +50,12 @@ dependency reports `SKIP` and never `PASS`.
 | `lifecycle` | a body declares itself gone, and is really unbound, undrawn and forgotten | Verify entity control: a body declares itself gone, and is really removed. |
 | `flow` | action routing, the step sequencer, and the agency it gives back | Verify scene and GUI flow: where a firing goes, and what step we are on. |
 | `ops` | the event-script vocabulary: every gate the reader closes, and the step machine that runs what it lets through | Verify the event-script vocabulary: what it refuses, and what it runs. |
+| `audio` | the two audio roots, the missing-card/missing-file split, the synthesised fallback pack, and the two play ops | Verify the audio subsystem: the roots, the split, the pack, the ops. |
 | `event_docs` | EVENTS.md is generated, and every runtime and reachability row in it was measured, not claimed | Generate `docs/EVENTS.md`, and prove it cannot describe an op that does not run. |
 | `window` | drag, close, focus, visibility matrix | Verify GameWindow drag, close and focus behaviour with synthetic input.""" |
 | `window_close` | visibility cascade, F1 toggle, typing suppresses movement | Close/reopen, visibility cascade, and text-capture gating. |
 | `window_events` | os window events translate, route, and still fan out | Verify that OS window events translate, route, and still fan out. |
+| `event_queue` | the OS queue: the translation table built both ways, hardware hotplug kept out of the fan-out, and a boot dispatch report that names the type that moved | Verify the OS event queue: what translates, what fans out, what is reported. |
 | `editor` | scopes, command stream, exact undo, genre rules, requests | Verify the editor's headless core. |
 | `relay` | one scope's vocabulary and no more, and now ENFORCED: the slice is exactly what the address accepts, a response reaching past the declared addresses is refused whole before its first command runs, a bundle may declare a second address and ship its verbs too, and every worked example a bundle prints is a line its own gate permits | Verify the scoped relay -- the piecemeal door between the author and an AI. |
 | `script_verbs` | the script.* verbs: exact inverses through nested elif arms, id-only addressing, and every refusal the reader would make at load | Verify the `script.*` verbs: what they write, what they refuse, what undo |
@@ -75,6 +77,7 @@ dependency reports `SKIP` and never `PASS`.
 | `palette` | every tileset stacked in one scroll, a stamp clamped to the sheet it started in, a selection addressed by name so no command can move it, and an import that crops the region it was shown into a grid the engine cuts the same way | The stacked tile palette, and importing a tileset by selecting a region. |
 | `demos` | three prototype games boot headless and answer injected input | Boot every demo headless, drive it with injected input, and assert what it |
 | `prototype` | the design form resolves against the registries, and its worked example boots | Resolve every field the design template names, then boot its worked example. |
+| `demo_map` | the shipped map IS the shipped game: it boots, its object layer produces the driven body at its type's depth with a feet anchor, its passability refuses a step, and main.py builds no entity | Boot the SHIPPED game and assert the map is what produces it. |
 | `art_tilesets` | the generated terrain and clutter sheets: every corner mask's occupancy, every tile inside its own cell, and no pixel read from a file | Verify the generated tilesets: corner occupancy, containment, provenance. |
 | `art` | the shipped pack: every sheet on disk at its builder's size, the tracked bytes reproducible twice over, the engine loading each one, resolve_art ordering the two roots both ways, and git ignoring the licensed root but not the pack | Verify the shipped art pack: it is there, it is reproducible, it loads. |
 | `art_sprites` | the generated character sheets, mask palette and parallax band: the declared frame grid, four distinct walk poses, no frame overhanging its cell, every mask edge marked only where it blocks, a seamless join, and no pixel read from a file | Verify the generated sprites, mask palette and parallax background. |

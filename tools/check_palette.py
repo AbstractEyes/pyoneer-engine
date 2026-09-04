@@ -35,7 +35,7 @@ NOT to be the region a margin-ignoring cut would have produced; and every
 assertion about a list is paired with one about the PIXELS that list was
 supposed to draw.
 
-ITS OWN FIXTURE, NEVER data/maps/test.tmx (law 4). Three tilesets over three
+ITS OWN FIXTURE, NEVER data/maps/starter.tmx (law 4). Three tilesets over three
 generated sheets, with cells painted in two of them, built in a temporary
 workspace and thrown away. The first of them is given HEADROOM -- a hole in the gid
 space above its range -- because growth inside a hole is the only growth that

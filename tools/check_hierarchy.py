@@ -38,7 +38,7 @@ Three failure shapes, none of which raises anywhere:
     driven through the SHIPPING opener rather than a helper, because it was
     the absence of that assertion that let this ship.
 
-ITS OWN FIXTURE, NEVER data/maps/test.tmx (law 4). Two maps in a temporary
+ITS OWN FIXTURE, NEVER data/maps/starter.tmx (law 4). Two maps in a temporary
 workspace -- one to work on and one to paste ACROSS to -- thrown away at the
 end. Two maps, because "cross-map paste is allowed" and "a gid does not
 survive the trip" are claims that cannot be made with one.

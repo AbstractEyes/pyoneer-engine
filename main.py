@@ -16,13 +16,13 @@ from scripts.game.entity.game_player import GamePlayer
 
 from config.managers.animation_data import DataAnimationCategory
 from config.managers.core_asset_manager import CoreAssetManager
+from scripts.core.audio import AudioManager
 from scripts.core.errors import PyoneerConfigError
 from scripts.core.input import InputActionManager
 from scripts.game.entity.game_animation import GameAnimationHandler
 from scripts.core.scene.scene_manager import SceneManager
 from scripts.core.component import GameComponent
 from scripts.core.ui.widget.containers.window import GameWindow
-from scripts.game.behavior import format_list
 from scripts.loaders.table_file import load_tables
 from scripts.game.demo_window import DemoWindow
 
@@ -44,21 +44,31 @@ from scripts.game.demo_window import DemoWindow
 
 """
 
-# The demo's two compositions, written in the SAME vocabulary a .tmx object
-# carries in its `pyoneer_behaviors` property -- these strings could be pasted
-# into Tiled unchanged. `format_list` rather than a literal, so a duplicate or
-# an illegal token fails here at import instead of at attach, and so this file
-# cannot invent a spelling the reader would not accept.
-#
-# The ONE difference between them is `player_input`, and that is the whole
-# marker for "this is the entity the human drives". No flag, no class, no
-# `pyoneer_player` property: the five decoys are inert because nothing polls a
-# keyboard on their behalf, not because a boolean says they may not move --
-# which is what makes "the player" an authoring decision instead of a
-# hardcoded one, on a hand-built entity exactly as on a spawned one.
-PLAYER_BEHAVIORS = format_list(("player_input", "topdown_move",
-                                "animation_drive"))
-SCENERY_BEHAVIORS = format_list(("topdown_move", "animation_drive"))
+MAP_NAME: str = "starter"
+"""Which entry of `config/maps.json` the shipped game boots into.
+
+`data/maps/starter.tmx`, and the whole game is in it: tile layers at four
+drawn depths, a passability companion that blocks, and an object layer whose
+`<object type="GamePlayer">` IS the body the human walks around. There is no
+Python in this file that builds an entity -- see `load_test_objects`.
+"""
+
+PLAYER_TOKEN: str = "player_input"
+"""The behavior token that means "the human drives this one".
+
+Which object is the player is answered from its COMPOSITION rather than from
+a flag: no class, no `pyoneer_player` property, no boolean. Two objects of
+the same type built from the same config differ by this one string, and the
+one carrying it is the one the camera follows.
+"""
+
+INTERACT_SOUND: str = "sfx/chime.wav"
+"""What `interact_action` plays, named the way an authored sound is named.
+
+Root-free, exactly as `scripts/core/audio.py` takes it: `data/sound/` is
+looked at first and `data/audio/` -- the shipped pack -- answers when the
+author has put nothing there.
+"""
 
 
 def feet_anchor(animation_config: DataAnimationCategory) -> tuple[float, float]:
@@ -118,10 +128,24 @@ class MainGame:
         self.camera: GameCamera | None = None
         self.renderer: LayerRenderer | None = None
         self.player: GamePlayer | None = None
+        """The body the human drives, picked out of what the MAP spawned.
+
+        Assigned in `load_test_objects` from the object carrying
+        `player_input`, and None for a map whose object layer places nobody.
+        Nothing in this file constructs it.
+        """
         self.window: DemoWindow | None = None
         """The test window. F1 toggles it; the close button hides it."""
         #self.test_entity = None
         self.input: InputActionManager | None = None
+        self.audio: AudioManager | None = None
+        """The process's one mixer, opened in `load_config`.
+
+        Absent hardware is not an error here: `prepare` warns once and every
+        later play is a truthful no-op, so a machine with no sound card runs
+        this game. A missing FILE still raises -- a filename is wrong on a
+        silent machine too.
+        """
         #self.test_ui_element: WidgetDrawableGroup | None = None
         #self.test_ui_element2: WidgetDrawableGroup | None = None
         #self.test_elements: list[WidgetDrawableGroup] = []
@@ -145,8 +169,8 @@ class MainGame:
     def prepare_test_scene(self):
         self.scene = SceneManager(self)
         game_camera, game_map = self.load_map()
-        self.scene.add_scene("test", GameScene("test"))
-        self.scene.set_scene("test")
+        self.scene.add_scene(MAP_NAME, GameScene(MAP_NAME))
+        self.scene.set_scene(MAP_NAME)
         self.scene.bind("renderer", self.renderer)
         self.scene.bind("camera", game_camera)
         # Before the map, not after: binding the map is what spawns the
@@ -159,6 +183,8 @@ class MainGame:
         # absent, so a clone with no Database boots identically.
         self.renderer.tables = load_tables()
         self.scene.bind("MAP", game_map)
+        # AFTER the map, because that bind is what spawns and binds the map's
+        # objects; this hook only configures what already exists.
         test_objects = self.load_test_objects()
         for obj in test_objects:
             self.scene.bind(obj[0], obj[1])
@@ -204,51 +230,80 @@ class MainGame:
         }
 
     def load_map(self) -> tuple[GameCamera, GameMap]:
-        map_data = self.assets.maps.load_assets("test")
+        map_data = self.assets.maps.load_assets(MAP_NAME)
         camera = GameCamera(pygame.Vector2(self.screen.get_width(), self.screen.get_height()),
                             pygame.Rect(0, 0, map_data.tilewidth * map_data.width, map_data.tileheight * map_data.height),
                             scale=1)
         return camera, GameMap(map_data)
 
     def load_test_objects(self):
+        """Configure what the MAP spawned, and build nothing.  #TAG:no_entity_is_built_here
+
+        THIS METHOD USED TO BE THE GAME. It constructed six `GamePlayer`s --
+        five inert decoys and the one the human drove -- and bound them at
+        depths 40 and 41, while `data/maps/test.tmx` placed no objects at
+        all. So for as long as that lasted, "the engine spawns entities from
+        an object layer" and "the game you can actually run" were two
+        different code paths, and every fix to the first one was unmeasured on
+        the second: the feet anchor landed in `spawn_arguments`, reached the
+        hand-built six by being read back out of it, and reached nothing the
+        MAP spawned because the map spawned nothing.
+
+        Now `data/maps/starter.tmx` carries the object layer, `bind("MAP",
+        ...)` runs `spawn_objects` over it, and every body in the world comes
+        through `SPAWN_REGISTRY` with `spawn_defaults` applied -- the same
+        route `tools/check_spawn_runtime.py` already covers. Nothing is left
+        here to construct, which is why this returns an empty list; the
+        binding loop in `prepare_test_scene` still exists for a subclass that
+        wants a hand-built object.
+
+        `tools/check_demo_map.py` asserts by AST that no entity class is
+        called anywhere in this file, so the bypass cannot quietly come back.
+        """
         bindable_objects: list[tuple[str | int,
                                      PyoneerGameObject | GameEntity | GamePlayer | GameComponent]] = []
-        # The five decoys and the one player differ by ONE token. They are the
-        # same class, built with the same config, bound into the same scene;
-        # the player composes `player_input` and they do not, so nothing polls
-        # a keyboard on their behalf and they stand still by construction
-        # rather than by a special case. `can_move` below is still set, and is
-        # still read -- by `player_input` -- so a cutscene can freeze a player
-        # without unpicking its composition.
+        # WHICH OBJECT IS THE PLAYER, answered from the composition. The
+        # records carry RESOLVED `BehaviorRequest`s, so the token is compared
+        # against the registry's own spelling (`spec.name`) and not against a
+        # substring of the raw property -- which would also match a future
+        # `player_input_recorder`.
         #
-        # These six are built HERE rather than spawned from an object layer,
-        # so `spawn_defaults` never reaches them -- which is exactly how the
-        # collision anchor could look landed and do nothing on the map the
-        # author opens. They take the same dict, by reading it, so there is
-        # one derivation and a keyword added to it cannot reach one route and
-        # miss the other.
-        anchor = self.spawn_arguments()["GamePlayer"]["collision_offset"]
-        for i in range(0, 5):
-            bindable_objects.append( (40, GamePlayer(input_=None,
-                                                movement_config=self.assets.config.get('entity').get('default'),
-                                                animation_config=self.assets.animations.get('entity'),
-                                                collision_offset=anchor,
-                                                behaviors=SCENERY_BEHAVIORS)) )
-            bindable_objects[i][1].moveto((200 + i * 5, 200 + i * 5))
-            bindable_objects[i][1].state.can_move = False
-            #self.renderer.__bind_entity(self.test_players[i], f"ENTITY_2")
-        player = GamePlayer(input_=self.input,
-                            movement_config=self.assets.config.get('entity').get('default'),
-                            animation_config=self.assets.animations.get('entity'),
-                            collision_offset=anchor,
-                            behaviors=PLAYER_BEHAVIORS)
-        player.moveto((200, 200))
-        player.state.can_move = True
-        bindable_objects.append((41, player))
-        self.player = player
-        self.scene.camera.attach_target(player)
-        #self.renderer.__bind_entity(self.player, "ENTITY_1")
-        #self.camera.attach_target(bindable_objects[-1])
+        # The demo boot path owns a second copy of this three-line pick, as
+        # `driven_record`. It imports THIS module already, so the two should
+        # become one import in that direction; they are kept apart today only
+        # because that file belongs to another change. (Named by shape rather
+        # than by path on purpose: the demo suite asserts this file does not
+        # so much as SPELL that package's name, because it is the smoke
+        # baseline and the dependency runs one way.)
+        records = list(self.renderer.spawned_entities)
+        driven = next((record for record in records
+                       if any(request.spec.name == PLAYER_TOKEN
+                              for request in record.behaviors)), None)
+        # Fall back to the first spawned entity so a map with no driven object
+        # still gives the camera something to follow. Both may be None on a
+        # map with an empty object layer, and `handle_global_input` guards
+        # for exactly that.
+        followed = driven or (records[0] if records else None)
+        if followed is not None:
+            self.player = followed.entity
+            self.scene.camera.attach_target(followed.entity)
+        # THE ONE ROUTE THIS GAME WIRES, and the reason the map's hero carries
+        # `interact_action,action_relay`: `action_relay` CALLS
+        # `entity.action_sink(entity, fired)`, `SceneManager` assigns its own
+        # `ActionRouter` as that sink on both binding routes, and this is the
+        # handler at the end of it. Nothing fires during a bind -- an action
+        # is produced on the frame path -- so registering here, after the map
+        # has spawned, is in time.
+        #
+        # HERE rather than in `prepare_test_scene`, which is deliberate and
+        # was measured: a subclass INHERITS that method by identity and
+        # overrides this one, so a route registered there would be the shipped
+        # game's wiring silently installed in every game built on this class.
+        # Registered with the DEFAULT payload -- any payload -- so an author
+        # who later adds a `pyoneer_param_payload` to that object still
+        # reaches this; a route keyed to one payload string would go silent
+        # the moment the map said something more specific.
+        self.scene.actions.route("interact_action", self.play_interaction_sound)
         #for i in range(0, 5):
             #bindable_objects.append( (100,
             #    WidgetDrawableGroup(state=WidgetStateInteractive(
@@ -286,7 +341,28 @@ class MainGame:
     def load_config(self):
         self.assets = CoreAssetManager()
         self.input = self.assets.inputs
+        # `ConfigManager` scans `config/*.json`, so `config/audio.json` needed
+        # no wiring anywhere: `prepare` reads its five mixer numbers and opens
+        # the device. It never raises for an absent sound card -- that is an
+        # optional capability, warned about once -- so this line is safe on a
+        # headless runner and on the check suite.
+        self.audio = AudioManager().prepare(self.assets.config.get('audio'))
         # more config loading happens here in the future
+
+    def play_interaction_sound(self, entity, fired) -> None:
+        """Make a noise when a body's `interact_action` fires.
+
+        An `ActionRouter` handler: `(entity, fired)` is what `action_relay`
+        passes, so this needs no adapter. Registered in `prepare_test_scene`.
+
+        Unguarded on purpose. `self.audio` is assigned in `load_config`,
+        which runs before any scene exists, so a None here is a WIRING bug and
+        an AttributeError naming it is the correct report -- where a silent
+        `return` would be indistinguishable from a machine with no sound card,
+        which is the one case `play_sound` already answers truthfully with
+        False. A missing FILE raises, deliberately, on a silent machine too.
+        """
+        self.audio.play_sound(INTERACT_SOUND)
 
     def load_renderer(self):
         bounds = self.assets.config.get('theme').get("window")["bounds"]
@@ -387,10 +463,15 @@ class MainGame:
                     self.quit()
                 if ev.key == pygame.K_F1:
                     self.toggle_window()
-                if ev.key == pygame.K_LEFT:
-                    self.player.rotate(-10)
-                if ev.key == pygame.K_RIGHT:
-                    self.player.rotate(10)
+                # Guarded: `self.player` is whatever the MAP spawned now, so a
+                # map whose object layer places nobody leaves it None. It used
+                # to be a body this file constructed unconditionally, and an
+                # unguarded dereference was safe only because of that.
+                if self.player is not None:
+                    if ev.key == pygame.K_LEFT:
+                        self.player.rotate(-10)
+                    if ev.key == pygame.K_RIGHT:
+                        self.player.rotate(10)
 
     def toggle_window(self):
         """F1: show or hide the test window.

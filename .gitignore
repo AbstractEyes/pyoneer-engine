@@ -139,3 +139,14 @@ data/graphics/
 # what is already committed: the sample pushed in ef0ea70 is still versioned and
 # public, and only `git rm --cached` takes it back out.
 data/maps/tilesets/
+
+# ---------------------------------------------------------------------------
+# Audio you may play but not redistribute
+# ---------------------------------------------------------------------------
+# data/sound/ is the author's own audio: the override root
+# scripts/core/audio.py looks at FIRST. Same rule as data/graphics/ and for
+# the same reason -- a licence to play is not a licence to redistribute, and
+# a public repo redistributes. What ships instead is data/audio/, TRACKED,
+# one prefix swap away, with its provenance in data/audio/CREDITS.md.
+# data/audio/ is deliberately NOT listed here.
+data/sound/

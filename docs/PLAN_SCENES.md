@@ -133,10 +133,15 @@ relay payload and the back channel. Four screens.
 ### 1.5 The measurement that governs section 2
 
 ```
-.venv/Scripts/python.exe -c "<count gids in data/maps/test.tmx by tileset>"
+.venv/Scripts/python.exe -c "<count gids in the shipped map by tileset>"
 ```
 
-- **10,897 painted cells** in `test.tmx` (Floor 9,897 · PlayerDepth 314 ·
+<!-- fact: historical -- measured against the retired private canvas, which
+     was replaced by data/maps/starter.tmx on 2026-09-04. Kept because the
+     RATIO is what governs section 2, and the ratio is a property of how a
+     tile-based map uses one terrain sheet, not of that particular file. -->
+
+- **10,897 painted cells** in the retired canvas (Floor 9,897 · PlayerDepth 314 ·
   Paralax 237 · Foreground 187 · GroundClutter 159 · FloorCollision 43 ·
   ParalaxCollision 40 · Above1 20).
 - **10,210 of them belong to `TileA2`**, which owns 768 tiles in 32 columns
@@ -1479,7 +1484,7 @@ place-to-stand assumption a visual novel has nothing to put in; the scene file's
 | **`change_gold` / `change_items` / `change_weapons` / `change_armor`** | Inventory presumes `table:items` / `table:equipment`, which **only the `topdown_rpg` pack declares**. → loadout |
 | **`change_hp` / `change_exp` / `change_level` / `recover_all`** | `hp` is an `actors` column **because that genre put it there**. And the two shipped packs **already disagree about a column name** (`speed` vs `move_speed`, stated in `topdown_rpg`'s own field doc) — **that is the mechanical test for core membership: if the two packs already spell it differently, it is not core** → loadout, as one general `actor_set` |
 | **`set_graphic` / `walking_anim`** | The incumbent for this is `pyoneer_behaviors` + `animation_drive`; a script command would be a **second way to do what the behavior list does**, and law 8 makes both permanent. Also `#TAG:GameAnimationHandler.__init__` plays `idle_down` unconditionally at construction — a live KNOWN GAP a portrait-only sheet hits first |
-| **`play_sound` / `music`** | Obviously portable, obviously wanted, and **there is no audio subsystem in this tree to call.** An op whose `run` does nothing is the *"registered, documented, unreachable"* defect written on purpose. It joins core the day audio does |
+| **~~`play_sound` / `music`~~ -- LANDED 2026-09-04** | The day arrived. `scripts/core/audio.py` is the subsystem; `play_sound` and `play_music` are core, live, and probed by `tools/check_event_docs.py`. What is still true is the sentence underneath: an op whose `run` does nothing is the defect these two were kept out for, and `enter_scene` is the one the rule still points at. What they are NOT yet is REACHABLE -- nothing in the shipped game loads a script, so the demo makes its noise through an action route instead |
 | **`tint_screen` / `shake_screen`** | The renderer is a sorted blit queue with **no post-process stage**. Same reason |
 | **`spawn` / `despawn`** | `#TAG:SPAWN_REGISTRY` has **exactly one usable entry (`GamePlayer`)** and four advertised-but-absent ones. A core op that can only spawn the player is not a core op |
 | **`script` (raw code)** | Arbitrary code in a JSON document makes every check vacuous (law 5) and turns a relay response into remote code execution. **Refused permanently** |
@@ -1832,7 +1837,8 @@ extracted INTO `scene_flow.py`** with `SceneFlow` rewritten onto it;
 column added to `docs/COMMANDS.md`'s generator.
 
 **THE GESTURE.** `.venv/Scripts/python.exe -m demos.script` — walk to the
-keeper in a demo map (written by `demos/mapgen.py`, **never** `test.tmx`),
+keeper in a demo map (written by `demos/mapgen.py`, **never** the shipped
+map),
 press the action key, and **a branching conversation runs from
 `data/project/scripts/keeper_gate.json`**, with the player unable to walk and
 still able to press continue. Route A only; `ActionRouter` starts it exactly as
@@ -2058,7 +2064,7 @@ Stated so it cannot drift back in.
 | **`parallel` triggers** | A second, non-borrowing runner. `SceneManager.flow` is one slot because two flows *"would each restore agency the other changed"* — that is a second concept nobody in this ask named |
 | **Per-verb scene control profiles** ("this scene has no jump") | `#TAG:InputActionManager.held` is an unguarded dict index; the naive version is a `KeyError` **inside `core_frame_update`** that kills the frame for every sibling (law 10). Needs a new `BodyState` axis and a guarded `held()` |
 | **A scene's map positions (`at: [x, y]`)** | Nothing reads it. An authored field with no reader is exactly what `pyoneer_trigger` has been for months. It lands with the stage that consumes it |
-| **`play_sound` / `music` / screen effects** | An audio subsystem, and a post-process stage in a renderer that is a sorted blit queue |
+| **screen effects** | A post-process stage in a renderer that is a sorted blit queue. (The audio half of this row is paid: `scripts/core/audio.py` landed 2026-09-04 and `play_sound` / `play_music` are core ops) |
 | **A save system** | `SceneManager.vars` survives a scene change and dies with the process. A save file is a separate change with its own check, and this spec does not open it |
 | **Runtime writes to `data/project/tables/`** | A running game writing its own authored source. `actor_set` writes a per-run overlay, discarded at exit |
 | **Native `.blitmap` collision beyond level one** | `#TAG:field_from_map` returns `None` for any source serving its own `object_records`, and a `.blitmap` has no companion layers either |

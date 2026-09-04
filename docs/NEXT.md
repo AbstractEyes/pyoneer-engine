@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. -->
+<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the audio + map + queue pass: items 15, 16 and 17 are new, each carrying the grep that measured it that day. Item 15 is the fourth ACTIVE WARNING's shape again and is the most expensive of the three: an entire op vocabulary that no running game can reach. Items 1-14 were not re-measured in that pass and keep their own dates. -->
 
 # Next — what is open, ranked, and the command that measured it
 
@@ -308,6 +308,53 @@ see, once, and see it the moment they tick the box back.
 Measured 2026-09-04: `grep -n "hidden_layers" editor/ui/canvas.py` returns
 **10** lines, none of them inside `#TAG:MapCanvas.__commit_stroke`,
 `#TAG:MapCanvas.__commit_terrain` or `#TAG:MapCanvas.__commit_collision`.
+
+**15. The audio ops cannot be reached from a running game.** `scripts/core/audio.py`
+landed on 2026-09-04 with two roots, the missing-card / missing-file split and
+a synthesised fallback pack; `play_sound` and `play_music` are registered,
+`core`, `live`, and each has a runtime probe in `docs/EVENTS.md`. Nothing in
+the shipped game loads a script document, so the only caller either op has is
+a check constructing a `ScriptRun` directly. The demo therefore makes its noise
+through an ACTION ROUTE -- `#TAG:MainGame.play_interaction_sound`, wired to
+`interact_action` -- which is a second way to do what the op vocabulary was
+built for, and law 8 makes both permanent once something depends on either.
+This is the fourth ACTIVE WARNING exactly: complete, checked, and unreachable
+by the person who asked for it. The seam is one call to
+`script_file.load_scripts()` in the boot plus one `ScriptRun` started from a
+route, which is how `demos/narrative.py` already starts a `SceneFlow`; what it
+needs first is a decision about where a map names its scripts, because a `.tmx`
+and a `.blitmap` both declare no audio and no script anywhere.
+Measured 2026-09-04: `grep -rn "load_scripts\|load_script" main.py demos/`
+returns **0**; `grep -rln "pyoneer_script" data/maps/` returns **0**;
+`docs/EVENTS.md`'s reachability table reads `no` on four of its six rows.
+
+**16. `pump_pyo`'s event-coalescing branch has never executed.**
+`last_event = PYO_QUEUE[-1]` then `if last_event is not None and last_event ==
+GameEventType.PYGAME` compares a `PyoneerEvent` INSTANCE to a `GameEventType`
+member, which is always False. So the coalescing path and the whole
+`__PROBLEM_EVENTS` macOS duplicate guard underneath it are dead code that reads
+like a live feature. It was left alone deliberately in the pass that found it:
+repairing it changes how many `PyoneerEvent`s a frame produces and therefore
+every dispatch count in the baseline, which is a behaviour change wearing a bug
+fix's clothes. Cost: nobody can tell, from reading it, that duplicate window
+events are NOT being coalesced on any platform. Fixing it is one line plus a
+field-by-field re-baseline, and it wants its own pass.
+Measured 2026-09-04:
+`grep -n "last_event == GameEventType.PYGAME" scripts/core/event_manager.py`
+returns **1**.
+
+**17. `driven_record` is three lines of `main.py` copied into `demos/runtime.py`.**
+`main.py` picks the driven body out of `renderer.spawned_entities` by looking
+for the record whose resolved behaviors carry `PLAYER_TOKEN`; `demos/runtime.py`
+does the same thing under its own name. That file already does
+`from main import MainGame`, so the correct end state is one function in
+`main.py` imported by the demo -- the dependency already runs that way and
+`main.py` may not so much as SPELL the demo package's name
+(`tools/check_demos.py` asserts it). It is two edits in one change, because
+deleting `DemoGame.load_test_objects` (now nearly identical to its parent's)
+moves `check_demos`'s "overrides exactly the hooks it claims to" list.
+Measured 2026-09-04: `grep -n "driven_record" demos/runtime.py` returns
+**3**; `grep -n "PLAYER_TOKEN" main.py` returns **2**.
 
 ## What is NOT on this list, and why
 

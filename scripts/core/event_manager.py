@@ -4,7 +4,7 @@ from typing import Optional
 
 import pygame
 
-from scripts.core.event_types import GameEventType
+from scripts.core.event_types import GameEventType, PYGAME_EVENT_TYPES
 
 # takes the concept of the pygame event queue and simplifies it to a single game-wide queue for reusable access
 # the entire subset here is static, and is not meant to be instantiated
@@ -17,6 +17,56 @@ __PROBLEM_EVENTS: list[int] = [
     pygame.MOUSEBUTTONDOWN,
     pygame.MOUSEBUTTONUP,
 ] # these events are problematic on macOS, and duplicates should be ignored
+
+DEVICE_EVENTS: frozenset[int] = frozenset({
+    pygame.AUDIODEVICEADDED,
+    pygame.AUDIODEVICEREMOVED,
+    pygame.JOYDEVICEADDED,
+    pygame.JOYDEVICEREMOVED,
+    pygame.CONTROLLERDEVICEADDED,
+    pygame.CONTROLLERDEVICEREMOVED,
+    pygame.CONTROLLERDEVICEREMAPPED,
+})
+"""Hardware hotplug notices: they stay in `QUEUE` and never enter `PYO_QUEUE`.
+
+MEASURED, and this is why the number exists. SDL enumerates the machine's
+hardware at `pygame.init()`, so the very first `pygame.event.get()` of a run
+returns one of these per audio output device and one per joystick -- on this
+machine `{'AudioDeviceAdded': 6, 'WindowShown': 1}`, on the author's
+`{'JoyDeviceAdded': 1, 'AudioDeviceAdded': 6, 'WindowShown': 1}`. Nothing in
+`GameEventType` names them, so `__translate` left every one of them
+`GameEventType.PYGAME`, `SceneManager.inputs` handed each to
+`GameScene.core_input_receive`, and every bound object dispatched it under the
+constant `INPUTS`: **19 listener invocations per device, consumed by nobody.**
+That is how `dispatch_during_boot` came to read `559 + 19 * (audio devices +
+joysticks + 1)` -- a number that moved between machines with no code change,
+which made law 11's "name a smoke drift field by field" impossible for the
+one field that actually drifted.
+
+WHY A FILTER AND NOT NEW MEMBERS. Translating these to real `GameEventType`
+members would not have saved a single dispatch: `GameComponent.core_input_receive`
+sends everything under `GameEventType.INPUTS` whatever the event's own type
+is, so the fan-out costs the same for a translated event as for a generic
+one. A member would also be a member with no listener, and `GameEventType.USE`
+is the standing proof of what that costs. So the events are kept OUT of the
+pyo queue, not renamed inside it.
+
+NOT DROPPED. They stay in `QUEUE`, so `get(pygame.AUDIODEVICEADDED)` still
+finds them and a subsystem that genuinely wants to know a device appeared --
+audio being the obvious one -- polls for it the same way `main.py` already
+polls for `pygame.QUIT`. The day such a consumer exists and wants the fan-out
+instead, it brings its own member AND its own listener in one change, and
+takes the type out of this set.
+"""  # #TAG:device_events_not_fanned_out
+
+
+def fans_out(event: pygame.event.Event) -> bool:
+    """Whether this pygame event becomes a `PyoneerEvent` for the scene tree.
+
+    The single statement of the rule, so `pump_pyo` and `queue` cannot
+    disagree about it. Everything fans out except `DEVICE_EVENTS`.
+    """
+    return event.type not in DEVICE_EVENTS
 
 
 class PyoneerEvent:
@@ -63,14 +113,21 @@ class PyoneerEvent:
                 self.data[key] = data[key]
 
     def __translate(self) -> GameEventType:
-        """Naturally these are pygame events, so we need to convert them to the appropriate pyoneer event type."""
+        """Naturally these are pygame events, so we need to convert them to the appropriate pyoneer event type.
+
+        One dict lookup where this used to be a linear scan over every member
+        of `GameEventType` for every pygame event that arrived. Same answer:
+        `PYGAME_EVENT_TYPES` is built from the same members in the same order
+        and keeps the first that claims a pygame type, which is what the old
+        loop's `break` did. An unnamed type still leaves `self.type` as
+        `GameEventType.PYGAME`.
+        """
         typ = self.type
         if typ is GameEventType.PYGAME:
             if self.event is not None:
-                for event_type in GameEventType:
-                    if event_type.value[1] == self.event.type:
-                        self.type = event_type
-                        break
+                translated = PYGAME_EVENT_TYPES.get(self.event.type)
+                if translated is not None:
+                    self.type = translated
         return self.type
 
     def __str__(self):
@@ -91,6 +148,8 @@ def queue():
     global QUEUE
     global PYO_QUEUE
     for event in QUEUE:
+        if not fans_out(event):
+            continue
         pyo_event = PyoneerEvent(GameEventType.PYGAME, event, {}, False)
         PYO_QUEUE.append(pyo_event)
 
@@ -118,6 +177,10 @@ def pump_pyo():
     global QUEUE
     PYO_QUEUE.clear()
     for event in QUEUE:
+        # A hardware hotplug notice never becomes a PyoneerEvent -- see
+        # DEVICE_EVENTS. It is still in QUEUE for anyone who polls for it.
+        if not fans_out(event):
+            continue
 
         # make a Pyoneer event from the pygame event
         last_event = PYO_QUEUE[-1] if len(PYO_QUEUE) > 0 else None

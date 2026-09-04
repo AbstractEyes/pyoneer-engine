@@ -20,7 +20,7 @@ of this module is that a human can tell seventeen masks apart at 16px, and
     problem -- and a faulted layer carrying no masks is reported as nothing,
     which is the half that keeps the dock worth reading
 
-Builds every fixture in this file. Nothing here reads data/maps/test.tmx:
+Builds every fixture in this file. Nothing here reads data/maps/starter.tmx:
 the author paints in it, so a check that asserted what it contains would be
 red by lunchtime.
 
@@ -929,7 +929,7 @@ expect("...which is the fixture being strict, not lenient: a direct read "
 # project is a dock the author learns to ignore, which costs more than the
 # silence it replaced.
 #
-# Against a fixture built in this file (law 4). `data/maps/test.tmx` is where
+# Against a fixture built in this file (law 4). `data/maps/starter.tmx` is where
 # the author paints; asserting "40" against it would be red by lunchtime.
 
 MAP_W, MAP_H = 6, 4

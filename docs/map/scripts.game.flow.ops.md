@@ -5,98 +5,110 @@
 
 > Which word means which op, and what one op is allowed to be handed.
 
-`scripts.game.flow.ops` · 870 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.flow.ops` · 983 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    scripts.core.errors scripts.game.behavior.base scripts.game.flow.scene_flow
+    scripts.core.audio scripts.core.errors scripts.game.behavior.base scripts.game.flow.scene_flow
 
 ## Module constants
 
-- `scripts/game/flow/ops.py:90` `CORE` #TAG:CORE
-- `scripts/game/flow/ops.py:97` `ASSIGN` #TAG:ASSIGN
-- `scripts/game/flow/ops.py:98` `REPLACE_MODES` #TAG:REPLACE_MODES
-- `scripts/game/flow/ops.py:224` `OP_REGISTRY` #TAG:OP_REGISTRY
-- `scripts/game/flow/ops.py:636` `ASK_OPTIONS` #TAG:ASK_OPTIONS
-- `scripts/game/flow/ops.py:642` `SET_TO` #TAG:SET_TO
-- `scripts/game/flow/ops.py:648` `SAY` #TAG:SAY
-- `scripts/game/flow/ops.py:659` `ASK` #TAG:ASK
-- `scripts/game/flow/ops.py:675` `SET` #TAG:SET
-- `scripts/game/flow/ops.py:690` `WAIT` #TAG:WAIT
-- `scripts/game/flow/ops.py:701` `HOLD` #TAG:HOLD
-- `scripts/game/flow/ops.py:720` `RELEASE` #TAG:RELEASE
-- `scripts/game/flow/ops.py:726` `CALL` #TAG:CALL
-- `scripts/game/flow/ops.py:735` `STOP` #TAG:STOP
-- `scripts/game/flow/ops.py:741` `CORE_OPS` #TAG:CORE_OPS
+- `scripts/game/flow/ops.py:91` `CORE` #TAG:CORE
+- `scripts/game/flow/ops.py:98` `ASSIGN` #TAG:ASSIGN
+- `scripts/game/flow/ops.py:99` `REPLACE_MODES` #TAG:REPLACE_MODES
+- `scripts/game/flow/ops.py:225` `OP_REGISTRY` #TAG:OP_REGISTRY
+- `scripts/game/flow/ops.py:715` `ASK_OPTIONS` #TAG:ASK_OPTIONS
+- `scripts/game/flow/ops.py:721` `SET_TO` #TAG:SET_TO
+- `scripts/game/flow/ops.py:727` `SAY` #TAG:SAY
+- `scripts/game/flow/ops.py:738` `ASK` #TAG:ASK
+- `scripts/game/flow/ops.py:754` `SET` #TAG:SET
+- `scripts/game/flow/ops.py:769` `WAIT` #TAG:WAIT
+- `scripts/game/flow/ops.py:780` `HOLD` #TAG:HOLD
+- `scripts/game/flow/ops.py:799` `RELEASE` #TAG:RELEASE
+- `scripts/game/flow/ops.py:805` `CALL` #TAG:CALL
+- `scripts/game/flow/ops.py:814` `STOP` #TAG:STOP
+- `scripts/game/flow/ops.py:820` `PLAY_SOUND` #TAG:PLAY_SOUND
+- `scripts/game/flow/ops.py:834` `PLAY_MUSIC` #TAG:PLAY_MUSIC
+- `scripts/game/flow/ops.py:852` `CORE_OPS` #TAG:CORE_OPS
 
 ## Functions
 
-- `scripts/game/flow/ops.py:232` `register(spec: OpSpec, registry: MutableMapping[str, OpSpec] | None=None) -> OpSpec` #TAG:ops.register
+- `scripts/game/flow/ops.py:233` `register(spec: OpSpec, registry: MutableMapping[str, OpSpec] | None=None) -> OpSpec` #TAG:ops.register
   - Bind one name to its spec, or raise because the name is taken.
-- `scripts/game/flow/ops.py:258` `register_all(specs: Iterable[OpSpec], registry: MutableMapping[str, OpSpec] | None=None) -> None` #TAG:ops.register_all
+- `scripts/game/flow/ops.py:259` `register_all(specs: Iterable[OpSpec], registry: MutableMapping[str, OpSpec] | None=None) -> None` #TAG:ops.register_all
   - Register a sequence of specs. Mirrors `behavior.register_all`.
-- `scripts/game/flow/ops.py:265` `resolve(name: Any, registry: Mapping[str, OpSpec] | None=None, where: str='') -> OpSpec` #TAG:ops.resolve
+- `scripts/game/flow/ops.py:266` `resolve(name: Any, registry: Mapping[str, OpSpec] | None=None, where: str='') -> OpSpec` #TAG:ops.resolve
   - The spec for `name`, or raise naming it and listing the vocabulary.
-- `scripts/game/flow/ops.py:289` `loadouts(registry: Mapping[str, OpSpec] | None=None) -> Tuple[str, ...]` #TAG:loadouts
+- `scripts/game/flow/ops.py:290` `loadouts(registry: Mapping[str, OpSpec] | None=None) -> Tuple[str, ...]` #TAG:loadouts
   - Every loadout the registry knows, sorted, `core` first if present.
-- `scripts/game/flow/ops.py:303` `ops_in(declared: Sequence[str], registry: Mapping[str, OpSpec] | None=None) -> Tuple[OpSpec, ...]` #TAG:ops_in
+- `scripts/game/flow/ops.py:304` `ops_in(declared: Sequence[str], registry: Mapping[str, OpSpec] | None=None) -> Tuple[OpSpec, ...]` #TAG:ops_in
   - Every op a document declaring these loadouts may use, name-sorted.
-- `scripts/game/flow/ops.py:312` `validate_loadouts(value: Any, registry: Mapping[str, OpSpec] | None=None, where: str='') -> Tuple[str, ...]` #TAG:validate_loadouts
+- `scripts/game/flow/ops.py:313` `validate_loadouts(value: Any, registry: Mapping[str, OpSpec] | None=None, where: str='') -> Tuple[str, ...]` #TAG:validate_loadouts
   - Judge a `loadouts` array and return it as authored.
-- `scripts/game/flow/ops.py:355` `check_loadout(spec: OpSpec, declared: Sequence[str], where: str='') -> OpSpec` #TAG:check_loadout
+- `scripts/game/flow/ops.py:356` `check_loadout(spec: OpSpec, declared: Sequence[str], where: str='') -> OpSpec` #TAG:check_loadout
   - Refuse an op the document's own `loadouts` do not grant.
-- `scripts/game/flow/ops.py:376` `resolve_args(spec: OpSpec, raw: Mapping[str, Any], variables: Any=None, where: str='') -> dict[str, Any]` #TAG:resolve_args
+- `scripts/game/flow/ops.py:377` `resolve_args(spec: OpSpec, raw: Mapping[str, Any], variables: Any=None, where: str='') -> dict[str, Any]` #TAG:resolve_args
   - The validated arguments for one node, or raise naming the key.
-- `scripts/game/flow/ops.py:439` `_declared(variables: Any, name: Any, spec_name: str, key: str, where: str)` #TAG:_declared
+- `scripts/game/flow/ops.py:440` `_declared(variables: Any, name: Any, spec_name: str, key: str, where: str)` #TAG:_declared
   - The declaration for a variable a node names, or raise saying why not.
-- `scripts/game/flow/ops.py:466` `_check_set(values: dict, variables: Any, where: str) -> dict` #TAG:_check_set
+- `scripts/game/flow/ops.py:467` `_check_set(values: dict, variables: Any, where: str) -> dict` #TAG:_check_set
   - `to` is typed by the variable `var` names, and `add` needs a number.
-- `scripts/game/flow/ops.py:479` `_check_ask(values: dict, variables: Any, where: str) -> dict` #TAG:_check_ask
+- `scripts/game/flow/ops.py:480` `_check_ask(values: dict, variables: Any, where: str) -> dict` #TAG:_check_ask
   - `options` is a real list, and `into` is a declared int variable.
-- `scripts/game/flow/ops.py:505` `_check_wait(values: dict, variables: Any, where: str) -> dict` #TAG:_check_wait
+- `scripts/game/flow/ops.py:506` `_check_wait(values: dict, variables: Any, where: str) -> dict` #TAG:_check_wait
   - A wait of zero is a node whose runtime is a no-op.
-- `scripts/game/flow/ops.py:517` `_check_hold(values: dict, variables: Any, where: str) -> dict` #TAG:_check_hold
+- `scripts/game/flow/ops.py:518` `_check_hold(values: dict, variables: Any, where: str) -> dict` #TAG:_check_hold
   - A hold that names no axis takes nothing and gives nothing back.
-- `scripts/game/flow/ops.py:546` `_run_say(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_say
+- `scripts/game/flow/ops.py:530` `_check_volume(values: dict, where: str, op: str) -> dict` #TAG:_check_volume
+  - A volume outside 0.0..1.0 is refused at LOAD, not clamped at play.
+- `scripts/game/flow/ops.py:549` `_check_play_sound(values: dict, variables: Any, where: str) -> dict` #TAG:_check_play_sound
+  - Only the volume; the NAME is judged when the file is opened.
+- `scripts/game/flow/ops.py:560` `_check_play_music(values: dict, variables: Any, where: str) -> dict` #TAG:_check_play_music
+  - The volume, and a `loops` count pygame would silently accept.
+- `scripts/game/flow/ops.py:594` `_run_say(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_say
   - Show a line and wait for the advance.
-- `scripts/game/flow/ops.py:563` `_run_ask(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_ask
+- `scripts/game/flow/ops.py:611` `_run_ask(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_ask
   - Refuse, naming what is missing. This op is `needs-host` and honest.
-- `scripts/game/flow/ops.py:581` `_run_set(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_set
+- `scripts/game/flow/ops.py:629` `_run_set(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_set
   - Write a variable. `by="add"` is arithmetic, checked at load.
-- `scripts/game/flow/ops.py:591` `_run_wait(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_wait
+- `scripts/game/flow/ops.py:639` `_run_wait(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_wait
   - Hold this node for `ms` milliseconds of engine time.
-- `scripts/game/flow/ops.py:602` `_run_hold(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_hold
+- `scripts/game/flow/ops.py:650` `_run_hold(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_hold
   - Take agency, through the same `AgencyHold` a `SceneFlow` uses.
-- `scripts/game/flow/ops.py:610` `_run_release(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_release
+- `scripts/game/flow/ops.py:658` `_run_release(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_release
   - Give back exactly what `hold` recorded. Never `True`.
-- `scripts/game/flow/ops.py:616` `_run_call(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_call
+- `scripts/game/flow/ops.py:664` `_run_call(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_call
   - Run another script's body here, then carry on. Depth-capped at 16.
-- `scripts/game/flow/ops.py:622` `_run_stop(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_stop
+- `scripts/game/flow/ops.py:670` `_run_stop(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_stop
   - End the run from inside any arm, releasing anything still held.
-- `scripts/game/flow/ops.py:628` `_param(key: str, label: str, type_: str, default: Any, doc: str, choices: Tuple[Any, ...]=(), required: bool=False) -> BehaviorParam` #TAG:_param
+- `scripts/game/flow/ops.py:676` `_run_play_sound(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_play_sound
+  - Fire one effect and move on in the same frame.
+- `scripts/game/flow/ops.py:693` `_run_play_music(run: Any, args: Mapping[str, Any]) -> bool` #TAG:_run_play_music
+  - Start the streamed track and move on in the same frame.
+- `scripts/game/flow/ops.py:707` `_param(key: str, label: str, type_: str, default: Any, doc: str, choices: Tuple[Any, ...]=(), required: bool=False) -> BehaviorParam` #TAG:_param
   - One op argument. `source` is fixed: a node is the only place it lives.
-- `scripts/game/flow/ops.py:749` `describe_all(registry: Mapping[str, OpSpec] | None=None) -> str` #TAG:ops.describe_all
+- `scripts/game/flow/ops.py:861` `describe_all(registry: Mapping[str, OpSpec] | None=None) -> str` #TAG:ops.describe_all
   - Render the registry half of `docs/EVENTS.md` from the registry itself.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class OpArg` #TAG:OpArg
 
-`scripts/game/flow/ops.py:113`–`140`
+`scripts/game/flow/ops.py:114`–`141`
 
 > One argument whose type the DECLARATION cannot state.
 
-- `scripts/game/flow/ops.py:135` `__post_init__(self) -> None` #TAG:OpArg.__post_init__
+- `scripts/game/flow/ops.py:136` `__post_init__(self) -> None` #TAG:OpArg.__post_init__
 
 ### `@dataclass(frozen=True) class OpSpec` #TAG:OpSpec
 
-`scripts/game/flow/ops.py:144`–`221`
+`scripts/game/flow/ops.py:145`–`222`
 
 > Everything about an op that is true without running one.
 
-- `scripts/game/flow/ops.py:175` `__post_init__(self) -> None` #TAG:OpSpec.__post_init__
-- `scripts/game/flow/ops.py:208` `@property arg_keys(self) -> Tuple[str, ...]` #TAG:OpSpec.arg_keys
+- `scripts/game/flow/ops.py:176` `__post_init__(self) -> None` #TAG:OpSpec.__post_init__
+- `scripts/game/flow/ops.py:209` `@property arg_keys(self) -> Tuple[str, ...]` #TAG:OpSpec.arg_keys
   - Every key a node carrying this op may spell, params first.
-- `scripts/game/flow/ops.py:212` `param(self, key: str) -> BehaviorParam | None` #TAG:OpSpec.param
-- `scripts/game/flow/ops.py:219` `@property tri_state_keys(self) -> Tuple[str, ...]` #TAG:OpSpec.tri_state_keys
+- `scripts/game/flow/ops.py:213` `param(self, key: str) -> BehaviorParam | None` #TAG:OpSpec.param
+- `scripts/game/flow/ops.py:220` `@property tri_state_keys(self) -> Tuple[str, ...]` #TAG:OpSpec.tri_state_keys
   - Params whose declared default is None: absent and null both pass.
