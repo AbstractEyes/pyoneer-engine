@@ -110,11 +110,30 @@ application = QApplication.instance() or QApplication([])
 TILE = 16
 
 
+def image_bytes(image: QImage) -> bytes:
+    """Every pixel of `image`, as bytes that outlive the image they came from.
+
+    THE IMAGE HAS TO BE NAMED, and that is the whole reason this function
+    exists rather than a chained expression. `QImage.bits()` returns a
+    memoryview INTO the image's own buffer, so
+    `x.cell_image(0, 0).convertToFormat(...).bits().tobytes()` lets the
+    QImage be freed the instant `bits()` returns and `tobytes()` then reads
+    whatever has since been written over that memory. Measured at the
+    finalize of 2026-09-11: the chained form failed 1 run in 5, on two rows
+    that compare one baked cell against another, and passed the other 4 --
+    a flake that read as a rendering difference and was a dangling read.
+    `fingerprint` had carried the safe form since it was written; every
+    other call site in this module had grown without it, which is the
+    sibling-route shape one file inside the check suite.
+    """
+    converted = image.convertToFormat(QImage.Format_ARGB32)
+    return converted.bits().tobytes()
+
+
 def fingerprint(pixmap: QPixmap) -> bytes:
     """Every pixel of a glyph, in a format that does not depend on Qt's
     internal premultiplication choice."""
-    image = pixmap.toImage().convertToFormat(QImage.Format_ARGB32)
-    return image.bits().tobytes()
+    return image_bytes(pixmap.toImage())
 
 
 def opaque_pixels(image: QImage, rect: tuple[int, int, int, int]) -> int:
@@ -245,8 +264,7 @@ cells = {name: overlay.cell_image(index % WIDTH, index // WIDTH)
          for name, index in (("blocked", blocked), ("open", opened),
                              ("star", starred))}
 expect("distinct masks composite to distinct pixels",
-       len({c.convertToFormat(QImage.Format_ARGB32).bits().tobytes()
-            for c in cells.values()}), 3)
+       len({image_bytes(c) for c in cells.values()}), 3)
 expect("an open cell composites to nothing",
        opaque_pixels(cells["open"].convertToFormat(QImage.Format_ARGB32),
                      (0, 0, TILE, TILE)), 0)
@@ -256,17 +274,14 @@ expect("an open cell composites to nothing",
 print()
 print("one cell changes in place, and only that cell")
 # --------------------------------------------------------------------------
-before_neighbour = overlay.cell_image(3, 0).convertToFormat(
-    QImage.Format_ARGB32).bits().tobytes()
+before_neighbour = image_bytes(overlay.cell_image(3, 0))
 overlay.set_cell(2, 0, BLOCK_ALL)
 expect("the mask it was told", overlay.mask_at(2, 0), BLOCK_ALL)
 expect("the neighbour is untouched",
-       overlay.cell_image(3, 0).convertToFormat(
-           QImage.Format_ARGB32).bits().tobytes() == before_neighbour, True)
+       image_bytes(overlay.cell_image(3, 0)) == before_neighbour, True)
 expect("the edited cell shows the new glyph",
-       overlay.cell_image(2, 0).convertToFormat(
-           QImage.Format_ARGB32).bits().tobytes()
-       == glyph_image(BLOCK_ALL).bits().tobytes(), True)
+       image_bytes(overlay.cell_image(2, 0))
+       == image_bytes(glyph_image(BLOCK_ALL)), True)
 overlay.set_cell(2, 0, NO_DATA)
 expect("erasing a cell clears it rather than blending over it",
        opaque_pixels(overlay.cell_image(2, 0).convertToFormat(
@@ -355,9 +370,8 @@ expect("a resolved cell carries its provenance tick",
 plain = CollisionOverlay(2, 2, TILE, TILE)
 plain.bake([BLOCK_UP, PASS_ALL, PASS_ALL, PASS_ALL])
 expect("a single-layer bake is the glyph and nothing else",
-       plain.cell_image(0, 0).convertToFormat(
-           QImage.Format_ARGB32).bits().tobytes()
-       == glyph_image(BLOCK_UP).bits().tobytes(), True)
+       image_bytes(plain.cell_image(0, 0))
+       == image_bytes(glyph_image(BLOCK_UP)), True)
 short = CollisionOverlay(2, 2, TILE, TILE)
 short.bake([BLOCK_UP])
 expect("a layer smaller than the map is padded rather than refused",
@@ -526,8 +540,7 @@ expect("...on cells that are identical in every OTHER channel",
 
 
 def cell_bytes(item, x=0, y=0):
-    return item.cell_image(x, y).convertToFormat(
-        QImage.Format_ARGB32).bits().tobytes()
+    return image_bytes(item.cell_image(x, y))
 
 
 def differing_pixels(left, right, size=TILE):
@@ -575,7 +588,7 @@ plain_level.bake([BLOCK_ALL])
 expect("a single-layer bake reports no level anywhere",
        plain_level.level_at(0, 0), LEVEL_NONE)
 expect("...and is still the glyph and nothing else",
-       cell_bytes(plain_level) == glyph_image(BLOCK_ALL).bits().tobytes(), True)
+       cell_bytes(plain_level) == image_bytes(glyph_image(BLOCK_ALL)), True)
 
 # LOD: at a sub-cell the wedge is under a device pixel and drops out rather
 # than smearing over the colour channel, exactly as the provenance tick does.
@@ -1135,6 +1148,37 @@ expect("the same DriftCollision masks are silent once Drift is static",
        (scopes_reported(static),
         world_coordinate_fault(static.project.map("fixture"), "Drift")),
        ([], None))
+
+# --------------------------------------------------------------------------
+print()
+print("every pixel comparison in this module reads a NAMED image")
+# --------------------------------------------------------------------------
+# The row that keeps the flake above from coming back one call site at a
+# time. `QImage.bits()` is a view into a buffer, so the only safe shape is
+# one that holds the image in a local -- and the only way to guarantee that
+# of a whole module is for `.bits()` to appear in it once.
+import ast as _ast                                       # noqa: E402
+with open(__file__, encoding="utf-8") as _handle:
+    _own_tree = _ast.parse(_handle.read())
+_buffer_calls = [node for node in _ast.walk(_own_tree)
+                 if isinstance(node, _ast.Call)
+                 and isinstance(node.func, _ast.Attribute)
+                 and node.func.attr == "bits"]
+_owning = [owner.name for owner in _ast.walk(_own_tree)
+           if isinstance(owner, _ast.FunctionDef)
+           and any(call in _ast.walk(owner) for call in _buffer_calls)]
+# Read off the AST rather than off the text: the prose above says `bits()`
+# four times, and a row counting the SOURCE would be measuring its own
+# comment.
+expect("the raw-buffer call is made once in this module, and inside "
+       "image_bytes, so no comparison can chain it off a temporary again",
+       (len(_buffer_calls), _owning), (1, ["image_bytes"]))
+_through = [node for node in _ast.walk(_own_tree)
+            if isinstance(node, _ast.Call)
+            and isinstance(node.func, _ast.Name)
+            and node.func.id == "image_bytes"]
+expect("...and every pixel comparison in the module goes through it",
+       len(_through) >= 7, True)
 
 for _workspace in workspaces:
     shutil.rmtree(_workspace, ignore_errors=True)

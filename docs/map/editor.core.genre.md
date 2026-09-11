@@ -5,7 +5,7 @@
 
 > Genre packs -- the rules that make a request short.
 
-`editor.core.genre` · 843 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.genre` · 878 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -15,32 +15,32 @@
 
 - `editor/core/genre.py:59` `GENRES_DIR` #TAG:GENRES_DIR
 - `editor/core/genre.py:62` `EVENT_LOADOUTS` #TAG:EVENT_LOADOUTS
-- `editor/core/genre.py:565` `OBJECT_LINKS` #TAG:OBJECT_LINKS
+- `editor/core/genre.py:600` `OBJECT_LINKS` #TAG:OBJECT_LINKS
 
 ## Functions
 
-- `editor/core/genre.py:496` `_message(exc: Exception) -> str` #TAG:_message
+- `editor/core/genre.py:531` `_message(exc: Exception) -> str` #TAG:_message
   - One line of a `PyoneerError`, without its `via` context trail.
-- `editor/core/genre.py:501` `_script_link(value: Any, project: Any, library: Any)` #TAG:_script_link
+- `editor/core/genre.py:536` `_script_link(value: Any, project: Any, library: Any)` #TAG:_script_link
   - Does `pyoneer_script` name a document this project holds?
-- `editor/core/genre.py:519` `_actor_link(value: Any, project: Any, library: Any)` #TAG:_actor_link
+- `editor/core/genre.py:554` `_actor_link(value: Any, project: Any, library: Any)` #TAG:_actor_link
   - Does `pyoneer_actor` name a row the actors table holds?
-- `editor/core/genre.py:546` `_behaviors_link(value: Any, project: Any, library: Any)` #TAG:_behaviors_link
+- `editor/core/genre.py:581` `_behaviors_link(value: Any, project: Any, library: Any)` #TAG:_behaviors_link
   - Will `pyoneer_behaviors` survive the registry at spawn?
-- `editor/core/genre.py:575` `_library_of(project: Any)` #TAG:_library_of
+- `editor/core/genre.py:610` `_library_of(project: Any)` #TAG:_library_of
   - `(library, "")`, or `(None, why it would not open)`.
-- `editor/core/genre.py:594` `available(directory: str | None=None) -> list[str]` #TAG:genre.available
+- `editor/core/genre.py:629` `available(directory: str | None=None) -> list[str]` #TAG:genre.available
   - Ids of every pack on disk.
-- `editor/core/genre.py:604` `load(genre_id: str, directory: str | None=None) -> GenrePack` #TAG:load
-- `editor/core/genre.py:621` `_build(genre_id: str, root: str, raw: dict, path: str) -> GenrePack` #TAG:genre._build
-- `editor/core/genre.py:672` `_event_loadouts(raw: dict, genre_id: str, path: str) -> tuple[str, ...] | None` #TAG:_event_loadouts
+- `editor/core/genre.py:639` `load(genre_id: str, directory: str | None=None) -> GenrePack` #TAG:load
+- `editor/core/genre.py:656` `_build(genre_id: str, root: str, raw: dict, path: str) -> GenrePack` #TAG:genre._build
+- `editor/core/genre.py:707` `_event_loadouts(raw: dict, genre_id: str, path: str) -> tuple[str, ...] | None` #TAG:_event_loadouts
   - Parse `event_loadouts`, the op vocabularies this pack GRANTS.
-- `editor/core/genre.py:708` `_layer(item: dict, path: str) -> GenreLayer` #TAG:_layer
-- `editor/core/genre.py:729` `_object_classes(item: dict, layer_name: str, kind: str, allowed: tuple[str, ...], path: str) -> tuple[GenreObjectClass, ...]` #TAG:_object_classes
+- `editor/core/genre.py:743` `_layer(item: dict, path: str) -> GenreLayer` #TAG:_layer
+- `editor/core/genre.py:764` `_object_classes(item: dict, layer_name: str, kind: str, allowed: tuple[str, ...], path: str) -> tuple[GenreObjectClass, ...]` #TAG:_object_classes
   - Parse `layers[].object_classes[]`, and draw the one line that matters.
-- `editor/core/genre.py:770` `_object_class(entry: Any, layer_name: str, allowed: tuple[str, ...], path: str) -> GenreObjectClass` #TAG:_object_class
-- `editor/core/genre.py:811` `_table(item: dict, path: str) -> GenreTable` #TAG:_table
-- `editor/core/genre.py:836` `_first_duplicate(names: list[str]) -> str | None` #TAG:_first_duplicate
+- `editor/core/genre.py:805` `_object_class(entry: Any, layer_name: str, allowed: tuple[str, ...], path: str) -> GenreObjectClass` #TAG:_object_class
+- `editor/core/genre.py:846` `_table(item: dict, path: str) -> GenreTable` #TAG:_table
+- `editor/core/genre.py:871` `_first_duplicate(names: list[str]) -> str | None` #TAG:_first_duplicate
 
 ## Classes
 
@@ -80,7 +80,7 @@
 
 ### `@dataclass(frozen=True) class GenrePack` #TAG:GenrePack
 
-`editor/core/genre.py:168`–`450`
+`editor/core/genre.py:168`–`485`
 
 > A loaded genre pack.
 
@@ -103,10 +103,10 @@
   - Every script asking for a vocabulary this pack does not grant.
 - `editor/core/genre.py:386` `__check_object_links(self, project: Any, library: Any) -> Iterable['RuleViolation']` #TAG:GenrePack.__check_object_links
   - Every object naming a script, a row or a behavior that is not there.
-- `editor/core/genre.py:433` `__check_tables(self, project: Any) -> Iterable['RuleViolation']` #TAG:GenrePack.__check_tables
+- `editor/core/genre.py:468` `__check_tables(self, project: Any) -> Iterable['RuleViolation']` #TAG:GenrePack.__check_tables
 
 ### `@dataclass(frozen=True) class RuleViolation` #TAG:RuleViolation
 
-`editor/core/genre.py:454`–`462`
+`editor/core/genre.py:489`–`497`
 
-- `editor/core/genre.py:460` `__str__(self) -> str` #TAG:RuleViolation.__str__
+- `editor/core/genre.py:495` `__str__(self) -> str` #TAG:RuleViolation.__str__

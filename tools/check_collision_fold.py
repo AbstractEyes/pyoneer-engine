@@ -364,7 +364,15 @@ def mask_count(document, companion: str) -> int:
 
 
 def image_bytes(image: QImage) -> bytes:
-    return image.convertToFormat(QImage.Format_ARGB32).bits().tobytes()
+    """Every pixel of `image`, as bytes that outlive the image.
+
+    The local is load-bearing: `QImage.bits()` is a memoryview into the
+    image's buffer, and converting inline frees the converted image before
+    `tobytes()` reads it. The same shape flaked 1 run in 5 in
+    `tools/check_collision_view.py` at the finalize of 2026-09-11.
+    """
+    converted = image.convertToFormat(QImage.Format_ARGB32)
+    return converted.bits().tobytes()
 
 
 def click(canvas, cell, *, modifiers=Qt.NoModifier, button=Qt.LeftButton):

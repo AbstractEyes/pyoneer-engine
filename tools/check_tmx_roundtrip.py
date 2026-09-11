@@ -47,11 +47,30 @@ pygame.init()
 pygame.display.set_mode((64, 64))
 
 import pytmx
+from pytmx.pytmx import convert_to_bool
+from pytmx.pytmx import prop_type as PYTMX_PROP_TYPE
+from pytmx.pytmx import types as _pytmx_types
+# A COPY, TAKEN BEFORE ANYTHING LOADS A MAP. `types` is a defaultdict
+# and pytmx SUBSCRIPTS it for every attribute it meets, so the live
+# table grows a `str` row for `pyoneer_behaviors` the first time a
+# fixture is parsed -- and a derivation read off it later would be
+# reading this check's own footprints instead of pytmx's declaration.
+PYTMX_TYPES = dict(_pytmx_types)
 
+# NAMING THE SAME TUPLE RATHER THAN RETYPING IT. `map.object.unset` is the
+# only door in the editor that removes an XML attribute, and the attribute
+# ORDER it disturbs is this module's problem, so the loop that proves the
+# repair has to be driven by the editor's own declared vocabulary. Spelled
+# again here it would cover nine names on the day it was written and five on
+# the day somebody added two -- which is the exact shape the defect shipped
+# in. This is a tools/ module, so law 2 does not bind it; `scripts/` still
+# imports nothing from `editor/`, which the rows in check_blitmap measure.
+from editor.core.verbs import _OBJECT_ATTRIBUTES
 from config.managers.map_data import AssetMapManager, MapData, resolve_map_path
 from scripts.core.collision_runtime import SUBCELL, companion_subcell
 from scripts.core.errors import PyoneerConfigError
-from scripts.core.layer_profile import RESERVED
+from scripts.core.layer_profile import (ATTRIBUTE_TEXT, PROPERTY_TEXT,
+                                       RESERVED, text_reads_back)
 from scripts.loaders.map_document import (
     MapDocument,
     format_property,
@@ -905,6 +924,196 @@ try:
 
     # --------------------------------------------------------------------
     print()
+    print("...and the same door refuses a VALUE no reader can cast")
+    # --------------------------------------------------------------------
+    # THE SIBLING RULE, ONE PASS LATE, which is this repository's most-
+    # repeated defect shape and the reason it is measured here rather than
+    # described. The section above refuses smuggled NAMES and said nothing
+    # about VALUES, so every row it passed still let `<object width="abc"/>`
+    # through -- and that costs the identical thing law 1 costs: pytmx casts
+    # every attribute onto the element before it reads one property, so the
+    # cast raises and takes the WHOLE map with it, naming neither the map
+    # nor the attribute. Driven through the relay before this existed, all
+    # three restore verbs ACCEPTED it.
+    #
+    # The rule is ONE table, `ATTRIBUTE_TEXT`, living beside `RESERVED` in
+    # `scripts/core/layer_profile.py` because `editor/core/verbs.py` asks it
+    # the same question about its typed command arguments and `scripts/` may
+    # never import `editor/` (law 2). So the first rows here are the same
+    # bargain RESERVED is written under: DERIVE it from pytmx, so an upgrade
+    # that adds a cast turns this red instead of turning a map unloadable.
+    AS_PYTMX = {int: int, float: float, str: str, bool: convert_to_bool}
+    expect("every name pytmx casts is declared, with the cast pytmx really "
+           "applies -- `in`, never `[]`, because the subscript on a "
+           "defaultdict would INSERT the name and pass for free",
+           sorted(name for name in PYTMX_TYPES
+                  if name not in ATTRIBUTE_TEXT
+                  or AS_PYTMX[ATTRIBUTE_TEXT[name]] is not PYTMX_TYPES[name]),
+           [])
+    expect("...and the rows pytmx does NOT carry are exactly the three that "
+           "are ours: two names it never casts, and the one counter our own "
+           "reader is stricter about",
+           (sorted(n for n, w in ATTRIBUTE_TEXT.items()
+                   if n not in PYTMX_TYPES and w is str),
+            sorted(n for n, w in ATTRIBUTE_TEXT.items()
+                   if n not in PYTMX_TYPES and w is not str)),
+           (["class", "template"], ["nextlayerid"]))
+    expect("every property type pytmx knows is declared with its own cast, "
+           "and `class` is the one deliberately absent -- pytmx resolves it "
+           "against the map's custom types instead of casting text",
+           (sorted(k for k in PYTMX_PROP_TYPE
+                   if k != "class"
+                   and (k not in PROPERTY_TEXT
+                        or AS_PYTMX[PROPERTY_TEXT[k]] is not PYTMX_PROP_TYPE[k])),
+            sorted(set(PROPERTY_TEXT) - set(PYTMX_PROP_TYPE)),
+            "class" in PROPERTY_TEXT),
+           ([], [], False))
+    # And the predicate itself against the reader, text by text, BOTH ways:
+    # a row that only proved agreement on refusals would be satisfied by a
+    # predicate that refuses everything.
+    corpus = ["0", "1", "16", "-3", "12.5", "22.5", "", "   ", "abc",
+              "not-a-number", "maybe", "true", "False", "y", "n", "NaN"]
+
+    def pytmx_takes(cast, text):
+        try:
+            cast(text)
+        except Exception:                                   # noqa: BLE001
+            return False
+        return True
+
+    expect("text_reads_back agrees with pytmx's own cast on every text in a "
+           "corpus that is half legal and half not, for all four shapes",
+           sorted((wants.__name__, text) for wants in (int, float, bool, str)
+                  for text in corpus
+                  if text_reads_back(wants, text)
+                  is not pytmx_takes(AS_PYTMX[wants], text)),
+           [])
+    expect("...and that corpus really does split, so the row above is not "
+           "agreement between two functions that always say yes",
+           sorted({(wants.__name__, text_reads_back(wants, text))
+                   for wants in (int, float, bool) for text in corpus}),
+           [("bool", False), ("bool", True), ("float", False),
+            ("float", True), ("int", False), ("int", True)])
+
+    # -- now the door, driven on all three restore verbs -------------------
+    # NaN is the text worth using twice: `float("NaN")` SUCCEEDS, so an
+    # `x="NaN"` is a legal float attribute and a `<property type="int">`
+    # carrying it is not. A guard that tested the text instead of the
+    # declared cast would get one of those two wrong.
+    values = MapDocument.load(MAP_PATH)
+    values_group = values.object_layer("entity")
+    VALUES_BEFORE = values.to_bytes()
+    raises_naming("restore_object refuses an <object> whose width is not "
+                  "float text, naming the attribute and the cast",
+                  PyoneerConfigError,
+                  lambda: values_group.restore_object(
+                      '<object id="77" x="0" y="0" width="abc"/>', 0),
+                  "width", "float", "unloadable")
+    raises_naming("...and restore_layer, one verb along and one level down",
+                  PyoneerConfigError,
+                  lambda: values.restore_layer(
+                      {"xml": '<objectgroup id="77" name="v">'
+                              '<object id="1" gid="12.5"/></objectgroup>',
+                       "index": 1, "tag": "objectgroup"}),
+                  "gid", "int")
+    raises_naming("...and restore_tileset, whose firstgid decides what every "
+                  "painted csv token in the map means",
+                  PyoneerConfigError,
+                  lambda: values.restore_tileset(
+                      {"xml": '<tileset firstgid="abc" name="V"/>',
+                       "index": 1, "first_gid": 65}),
+                  "firstgid", "int")
+    raises_naming("a <property> is the same question asked through its own "
+                  "type=, and the TYPED door cannot even build this one",
+                  PyoneerConfigError,
+                  lambda: values_group.restore_object(
+                      '<object id="77" x="0" y="0"><properties>'
+                      '<property name="pyoneer_hp" type="int" value="NaN"/>'
+                      '</properties></object>', 0),
+                  "pyoneer_hp", "int", "NaN")
+    raises_naming("...and a type= pytmx has no cast for at all, because it "
+                  "looks that table up by subscript",
+                  PyoneerConfigError,
+                  lambda: values_group.restore_object(
+                      '<object id="77" x="0" y="0"><properties>'
+                      '<property name="pyoneer_hp" type="colour" value="1"/>'
+                      '</properties></object>', 0),
+                  "colour", "no such property type")
+    expect("five refusals, and the document is the one they started from",
+           (values.to_bytes() == VALUES_BEFORE, values.changed),
+           (True, False))
+
+    # -- THE OTHER HALF, three times over ---------------------------------
+    # A door that refused every payload would pass every row above. These
+    # say what still goes through, and each one is a payload a real inverse
+    # carries.
+    attempt("an attribute NOTHING casts takes any text at all -- a name that "
+            "looks like a number is a name",
+            lambda: values_group.restore_object(
+                '<object id="77" name="not-a-number" type="9" x="0" y="0"/>',
+                0).element.get("name"), "not-a-number")
+    expect("...and it comes back out",
+           (values_group.remove_object(77), values.to_bytes())[1],
+           VALUES_BEFORE)
+    # NOT STRICTER THAN THE READER, and this is the row that keeps it that
+    # way: pytmx's bool cast reads the first character, so `visible="n..."`
+    # is false rather than fatal. Refusing it would break the undo of a
+    # value a human authored, which is a worse failure than the one this
+    # door exists to stop.
+    attempt("a bool attribute is judged the way pytmx judges it, first "
+            "character and all, not by a plausible {'0','1'}",
+            lambda: values_group.restore_object(
+                '<object id="77" x="0" y="0" visible="not-a-number"/>',
+                0).element.get("visible"), "not-a-number")
+    values_group.remove_object(77)
+    attempt("an honest typed property still restores",
+            lambda: values_group.restore_object(
+                '<object id="77" x="0" y="0"><properties>'
+                '<property name="pyoneer_hp" type="int" value="30"/>'
+                '</properties></object>', 0).properties.as_dict()["pyoneer_hp"],
+            30)
+    expect("...and the whole fixture is back where this sub-section found it",
+           (values_group.remove_object(77), values.to_bytes())[1],
+           VALUES_BEFORE)
+
+    # -- AND THE COST, measured on the reader rather than described --------
+    # Every refusal above claims a map pytmx will not load. That claim is
+    # about pytmx, so it is measured on pytmx -- and both halves, because a
+    # row that only planted fatal text would be satisfied by a loader that
+    # refuses everything.
+    EMPTY_GROUP = b'<objectgroup id="9" name="entity"/>'
+    expect("the empty group this sub-section plants an object INTO is in the "
+           "fixture exactly once, so a plant that quietly matched nothing "
+           "cannot report `loads` about a file it never changed",
+           VALUES_BEFORE.count(EMPTY_GROUP), 1)
+    for planted, verdict_wanted in ((b'width="abc"', "ValueError"),
+                                    (b'gid="12.5"', "ValueError"),
+                                    (b'rotation="sideways"', "ValueError"),
+                                    (b'name="not-a-number"', "loads"),
+                                    (b'type="9"', "loads")):
+        fatal_path = os.path.join(scratch, "fatal_value.tmx")
+        # A WHOLE object is written into the fixture's empty group rather
+        # than an attribute inserted beside an existing one: a second copy
+        # of a name is an XML ParseError, which is a different failure
+        # wearing the same red and would have hidden whether pytmx casts at
+        # all.
+        with open(fatal_path, "wb") as handle:
+            handle.write(VALUES_BEFORE.replace(
+                EMPTY_GROUP,
+                b'<objectgroup id="9" name="entity"><object id="1" x="0" '
+                b'y="0" ' + planted + b'/></objectgroup>', 1))
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                pytmx.TiledMap(fatal_path)
+            verdict = "loads"
+        except Exception as exc:                            # noqa: BLE001
+            verdict = type(exc).__name__
+        expect("<object %s ...> in a real file: pytmx %s"
+               % (planted.decode(), verdict_wanted), verdict, verdict_wanted)
+
+    # --------------------------------------------------------------------
+    print()
     print("a 4x sub-cell companion is CREATABLE, and undoes byte-exactly")
     # --------------------------------------------------------------------
     # The dimensions are the point. Before add_layer took them, every layer
@@ -1425,7 +1634,222 @@ try:
                (_which, " -- the EMPTIED layer" if _which == 3 else ""),
                _round.to_bytes(), _before)
 
+    # --------------------------------------------------------------------
+    print()
+    print("an attribute put back comes back WHERE IT WAS, not at the end")
+    # --------------------------------------------------------------------
+    # THE SAME SENTENCE `_separator_of` IS WRITTEN UNDER, on the other axis
+    # of the same contract: read the order off the FILE, never compute one.
+    # There it is the whitespace in front of a child; here it is the
+    # left-to-right order of an attribute list.
+    #
+    # `Element.attrib` is a dict and `Element.set` APPENDS, so removing an
+    # attribute and writing it back moved it to the END of the element.
+    # `map.object.unset` is the only door in the editor that removes one and
+    # its inverse is `map.object.set`, so apply-then-undo restored the VALUE
+    # and not the BYTES -- measured before the repair, EIGHT of the nine
+    # names the verb accepts came back last, each leaving the map dirty
+    # after a NO-OP pair, and the ninth passed only because it already sat
+    # last. One name that cannot move is exactly how a loop covering half a
+    # vocabulary reads green, so the fixture below deliberately puts
+    # vocabulary names in front, in the middle AND at the end, and the loop
+    # is driven by the editor's tuple rather than by a list written here.
+    #
+    # WHY A MEMORY AND NOT A CANONICAL ORDER. A canonical attribute order
+    # would need no memory at all -- and would rewrite every element of
+    # every map the first time it was saved, including the two files this
+    # module measures byte for byte. The memory touches an element only
+    # after something removed one of its attributes; the shipped map's rows
+    # at the end of this file are what that choice is protecting.
+    ORDERED = b"".join([
+        b'<?xml version="1.0" encoding="UTF-8"?>' + CRLF,
+        b'<map version="1.10" width="1" height="1" tilewidth="16"'
+        b' tileheight="16" nextlayerid="3" nextobjectid="4">' + CRLF,
+        b'\t<objectgroup id="2" name="entity">' + CRLF,
+        b'  <object id="1" name="hero" class="Hero" gid="5" visible="1"'
+        b' rotation="90" template="t.tx" type="GamePlayer" x="16" y="16"'
+        b' width="16" height="16">' + CRLF,
+        b'   <properties>' + CRLF,
+        b'    <property name="hp" type="int" value="30"/>' + CRLF,
+        b'   </properties>' + CRLF,
+        b'  </object>' + CRLF,
+        b'\t</objectgroup>' + CRLF,
+        b'</map>' + CRLF,
+    ])
 
+    def object_line(body: bytes) -> bytes:
+        """The fixture's `<object>` line alone.
+
+        Needed because `name=` and `type=` are also spelled on the
+        `<property>` two lines below it, so "is the attribute gone" asked of
+        the whole document answers about the wrong element.
+        """
+        for line in body.split(CRLF):
+            if line.lstrip().startswith(b"<object "):
+                return line
+        return b""
+
+    expect("the ordered fixture round-trips untouched",
+           MapDocument.from_bytes(ORDERED).to_bytes(), ORDERED)
+    _carrier = MapDocument.from_bytes(ORDERED).object_layer("entity").objects()[0]
+    expect("...and carries every name the editor's vocabulary declares, so "
+           "the loop cannot skip one by not finding it",
+           [k for k in _OBJECT_ATTRIBUTES if k not in _carrier.element.attrib],
+           [])
+    expect("...with exactly one vocabulary name sitting LAST -- the one "
+           "position the defect could never show",
+           [k for k in _OBJECT_ATTRIBUTES
+            if k == list(_carrier.element.attrib)[-1]], ["height"])
+
+    _covered = []
+    for _key in tuple(_OBJECT_ATTRIBUTES) + ("id", "x", "y"):
+        _doc = MapDocument.from_bytes(ORDERED)
+        _obj = _doc.object_layer("entity").objects()[0]
+        _was = _obj.unset(_key)
+        _gone = _doc.to_bytes()
+        _obj.set(_key, _was)
+        _covered.append(_key)
+        expect("%-9s unset + set is byte-identical and leaves it clean" % _key,
+               (_was is not None, _doc.to_bytes() == ORDERED, _doc.changed),
+               (True, True, False))
+        # THE HALF THAT MAKES THE ROW ABOVE FALSIFIABLE. A `unset` that did
+        # nothing would satisfy every byte comparison in this loop, so the
+        # removal is measured on its own: it really changed the file, and
+        # the name really left the element. The leading space is load
+        # bearing -- `gid="5"` contains `id="`.
+        expect("%-9s ...and the unset ALONE really changed the bytes" % _key,
+               (_gone != ORDERED,
+                (" %s=\"" % _key).encode("ascii") in object_line(_gone)),
+               (True, False))
+    expect("every name in the vocabulary was driven, both directions -- a "
+           "loop that silently covers five is how this shipped",
+           _covered, list(_OBJECT_ATTRIBUTES) + ["id", "x", "y"])
+
+    # THE MEMORY RESTORES A POSITION, IT NEVER INVENTS ONE -- which is what
+    # keeps it from being a canonical order wearing a disguise. A name the
+    # file never carried still appends, exactly as `Element.set` would.
+    _new = MapDocument.from_bytes(ORDERED)
+    _newobj = _new.object_layer("entity").objects()[0]
+    _newobj.set("probability", "0.5")
+    expect("a genuinely NEW attribute still lands at the end",
+           object_line(_new.to_bytes()).endswith(b'probability="0.5">'), True)
+    expect("...and taking it off again is byte-identical",
+           (_newobj.unset("probability"), _new.to_bytes()), ("0.5", ORDERED))
+
+    # AN ABSENT NAME IS NOT AN EDIT. `unset` answers None and does not even
+    # touch the document, so a verb built on it can return "no inverse"
+    # rather than an inverse that writes None back.
+    _absent = MapDocument.from_bytes(ORDERED)
+    expect("unset of a name the element never carried is a no-op",
+           (_absent.object_layer("entity").objects()[0].unset("ellipse"),
+            _absent.to_bytes() == ORDERED, _absent.changed),
+           (None, True, False))
+
+    # THE ROUTE `map.object.unset` TAKES TODAY: it pops `element.attrib`
+    # itself rather than calling the model. So the record has to be a
+    # property of the DOCUMENT and not of the door, and it has to be taken
+    # for all THREE provenances an `<object>` can have -- parsed, authored
+    # here, restored from text. Each has its own recording line
+    # (`_rebuild_parents`, `add_object`, `restore_object`) and each of the
+    # three rows below reddens exactly one of them.
+    def raw_cycle(document, wrapper, key):
+        """Remove an attribute the way the shipped verb does, then set it."""
+        was = wrapper.element.attrib.pop(key)
+        document._touch()
+        wrapper.set(key, was)
+        return document.to_bytes()
+
+    _raw = MapDocument.from_bytes(ORDERED)
+    expect("PARSED: a raw pop and set on a LOADED object is byte-identical",
+           raw_cycle(_raw, _raw.object_layer("entity").objects()[0], "name"),
+           ORDERED)
+
+    _fresh = MapDocument.from_bytes(ORDERED)
+    _made = _fresh.object_layer("entity").add_object(
+        name="spawned", type="GamePlayer", x=1, y=2, width=3, height=4)
+    _madebytes = _fresh.to_bytes()
+    expect("AUTHORED: and on an object this session CREATED, which never "
+           "passes through _rebuild_parents", raw_cycle(_fresh, _made, "type"),
+           _madebytes)
+    expect("...and it really is the new object's line that is being read, "
+           "still in the order add_object wrote it",
+           b' name="spawned" type="GamePlayer" x="1" y="2"'
+           in _fresh.to_bytes(), True)
+
+    _back = MapDocument.from_bytes(ORDERED)
+    _backgroup = _back.object_layer("entity")
+    _payload3 = _backgroup.serialize_object(1)
+    _backgroup.remove_object(1)
+    _backgroup.restore_object(_payload3, 0)
+    expect("RESTORED: and on one put back from its own XML text, whose "
+           "record `_remove_child` had just thrown away",
+           raw_cycle(_back, _backgroup.objects()[0], "rotation"), ORDERED)
+
+    # AND THE SIBLING IN THIS MODULE, which is where the second instance was
+    # hiding: `MapProperties.__setitem__` POPS `type` when a typed property
+    # is overwritten with a string, and typing it back appended it after
+    # `value`. Same primitive, same repair, a different door.
+    _typed = MapDocument.from_bytes(ORDERED)
+    _view = _typed.object_layer("entity").objects()[0].properties
+    _view["hp"] = "thirty"
+    _loose = _typed.to_bytes()
+    _view["hp"] = 30
+    expect("a typed property overwritten with a string and typed back is "
+           "byte-identical", (_typed.to_bytes(), _typed.changed),
+           (ORDERED, False))
+    expect("...and the string step really did drop the type, so the row "
+           "above is a repair and not a verb that did nothing",
+           (b'<property name="hp" value="thirty"/>' in _loose,
+            b'type=' in [line for line in _loose.split(CRLF)
+                         if b'name="hp"' in line][0]),
+           (True, False))
+
+    # A PROPERTY THIS SESSION CREATED -- the one element `_rebuild_parents`
+    # cannot have seen and no `add_*` records, so `__setitem__`'s own line is
+    # the only thing holding it. Written int, retyped to a string and back.
+    _born = MapDocument.from_bytes(ORDERED)
+    _bornview = _born.object_layer("entity").objects()[0].properties
+    _bornview["mp"] = 7
+    _bornbytes = _born.to_bytes()
+    expect("a NEW typed property is written in Tiled's order",
+           b'<property name="mp" type="int" value="7"/>' in _bornbytes, True)
+    _bornview["mp"] = "seven"
+    _bornview["mp"] = 7
+    expect("...and string-then-int returns it byte-identically",
+           _born.to_bytes(), _bornbytes)
+
+    # AND THE RECORD MERGES RATHER THAN OVERWRITING, which is the whole
+    # subtlety of taking it more than once. The SECOND string write asks
+    # again on an element that has already LOST `type`; an overwrite would
+    # forget where the missing name sat, which is the only thing the record
+    # exists to know.
+    _twice = MapDocument.from_bytes(ORDERED)
+    _twiceview = _twice.object_layer("entity").objects()[0].properties
+    _twiceview["hp"] = "thirty"
+    _twiceview["hp"] = "thirty-one"
+    _twiceview["hp"] = 30
+    expect("two string writes then an int still puts type back in place",
+           (_twice.to_bytes(), _twice.changed), (ORDERED, False))
+
+    # THE MEMORY IS NOT A LEAK. It is keyed by element, so an element that
+    # leaves the tree has to take its entry with it or the document holds
+    # every object the session ever deleted alive. Every restore re-PARSES
+    # the element text, so there is nothing here a later restore wants.
+    _leak = MapDocument.from_bytes(ORDERED)
+    _leakgroup = _leak.object_layer("entity")
+    _leakelement = _leakgroup.objects()[0].element
+    expect("a removed element's remembered order goes with it",
+           (_leakelement in _leak._attribute_spellings,
+            _leakgroup.remove_object(1),
+            _leakelement in _leak._attribute_spellings),
+           (True, True, False))
+
+    # AND IT IS READ IN ONE PLACE, for the reason the self-closing guard
+    # above is spelled once: a second attribute loop in the serializer is a
+    # copy that agrees today and cannot be mutated once.
+    expect("the serializer reads attributes through the one ordering "
+           "function and nowhere else",
+           _module_source.count("element.attrib.items()"), 1)
 
     # --------------------------------------------------------------------
     print()

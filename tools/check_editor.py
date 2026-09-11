@@ -1314,47 +1314,43 @@ height="16" rotation="37.5" visible="0"/>
     expect("a built-in attribute still unsets",
            "name" in rich_session.project.map("rich")
            .object_layer("entity").find(3).element.attrib, False)
+    # AND THE DOCUMENT KNOWS IT CHANGED, measured on a session that has not
+    # been touched yet. This verb goes through `MapObject.unset`, which pops
+    # AND touches; the raw `element.attrib.pop()` it used to do reached
+    # around the model, and a pop with no touch leaves a real edit invisible
+    # to `dirty_maps()` -- the editor then closes without offering to save
+    # it. The row has to open its own session to say so: `rich_session` has
+    # been dirty since the first edit of this section, so the same assertion
+    # made on it would have passed whatever the verb did. That is the shape
+    # this pass is named after, met inside a row written to catch it.
+    flag_session = Session.open(workspace, genre_id="topdown_rpg")
+    expect("a freshly opened session has nothing to save",
+           flag_session.project.dirty_maps(), [])
+    flag_session.run(Command("map.object.unset", dot, {"key": "name"}))
+    expect("...and one unset is an edit the editor will offer to save",
+           flag_session.project.dirty_maps(), ["rich"])
     rich_session.undo()
     expect("...and undo puts the value back",
            rich_session.project.map("rich").object_layer("entity")
            .find(3).element.attrib.get("name"), "spot")
     rich_session.undo()
 
-    # AND HERE IS A DEFECT, PINNED RATHER THAN PAPERED OVER. Measured while
-    # writing the row above, which first asserted byte-identity and went red:
-    # `ElementTree.Element.set` APPENDS, so an attribute removed from the
-    # middle of an element comes back at the END of the attribute list, and
-    # `map.object.unset` followed by undo restores the value and NOT the
-    # bytes. Every other inverse in this file is byte-exact, so this one is
-    # the odd one out rather than the rule. It is pinned the way it really
-    # behaves, so the day somebody fixes it this row goes red and gets
-    # rewritten -- which is the only way an undocumented wart ever becomes a
-    # decision. Repro and the shape of the fix are in `docs/NEXT.md`.
+    # THE DEFECT THIS ROW USED TO PIN IS FIXED, so the row is rewritten as
+    # the invariant it was standing in for -- which is the only way an
+    # undocumented wart ever becomes a decision. `ElementTree.Element.set`
+    # APPENDS, so an attribute removed from the middle of an element came
+    # back at the END and this pair restored the value and not the bytes.
+    # `MapDocument` now records the order each element spells its attributes
+    # in, read off the FILE and never computed
+    # (`#TAG:attribute_order_read_off_the_file`), and `_ordered_attributes`
+    # writes it back. Every name in `_OBJECT_ATTRIBUTES` is driven both
+    # directions, on its own awkward fixture, in
+    # `tools/check_tmx_roundtrip.py`; this row is the editor's end of it.
+    # The by-hand reorder that used to stand here is gone with the wart --
+    # nothing below this line is reading a reordered document any more.
     restored = rich_session.project.map("rich").to_bytes()
-    expect("unset + undo restores the VALUE but not the byte order: the "
-           "attribute comes back at the end of the element",
-           (restored == BEFORE_UNSET, b'name="spot"' in restored),
-           (False, False))
-    expect("...and it is only the ORDER that moved -- same attributes, same "
-           "values, same count",
-           sorted(rich_session.project.map("rich").object_layer("entity")
-                  .find(3).element.attrib.items()),
-           sorted(ElementTree.fromstring(
-               BEFORE_UNSET.decode("utf-8"))
-               .find(".//objectgroup[@name='entity']/object[@id='3']")
-               .attrib.items()))
-    # Put the fixture back BY HAND, because the wart is real and every
-    # section below this one compares bytes against a document this one
-    # would otherwise have left reordered.
-    _dot = rich_session.project.map("rich").object_layer("entity").find(3)
-    _dot.element.attrib.clear()
-    _dot.element.attrib.update(
-        ElementTree.fromstring(BEFORE_UNSET.decode("utf-8"))
-        .find(".//objectgroup[@name='entity']/object[@id='3']").attrib)
-    expect("...and writing the original order back by hand gives the "
-           "original bytes, which is the proof that ORDER was the whole "
-           "difference", rich_session.project.map("rich").to_bytes()
-           == BEFORE_UNSET, True)
+    expect("unset + undo is byte-identical, not merely value-identical",
+           restored == BEFORE_UNSET, True)
 
     # AND THE SETTER GOES THROUGH THE MODEL, not around it. `map.object.set`
     # used to do `element.set(...)` plus a `_touch()`, which reached around
@@ -1514,6 +1510,308 @@ infinite="0" nextlayerid="4" nextobjectid="2">
     del stale.properties["pyoneer_nonsense"]
     expect("...which the plant comes back out of, leaving the original bytes",
            bare_session.project.map("bare").to_bytes() == BARE, True)
+
+    # ---------------------------------------------------------------
+    print()
+    print("a number that travels as TEXT is checked before it is written")
+    # ---------------------------------------------------------------
+    # SIGHTING TWELVE, and the sibling that grew without the guard is a
+    # PARAMETER rather than a file. `map.object.restore`'s `xml` argument
+    # got a door last pass; `next_object_id`, three lines below it in the
+    # same args dict on the same verb, went straight onto `<map>` with no
+    # validation at all. Driven through the relay's JSONL intake -- the
+    # route an AI's edit arrives on, and the only route with no control
+    # behind it -- the verdict was ACCEPTED, the text reached disk, and
+    # pytmx then raised `invalid literal for int()` for the WHOLE MAP,
+    # naming neither the map nor the attribute. That is law 1's stated cost
+    # reached past the door built for exactly it.
+    #
+    # Its own fixture, because law 4 and because the shipped map's counters
+    # are content: this one is written here, carries an object with one of
+    # every attribute shape `map.object.set` can write, and is the only
+    # thing any row below measures.
+    COUNTERS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" \
+renderorder="right-down" width="2" height="2" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="4" nextobjectid="9">
+ <layer id="1" name="Floor" width="2" height="2">
+  <data encoding="csv">
+0,0,
+0,0
+</data>
+ </layer>
+ <objectgroup id="2" name="entity">
+  <object id="8" name="hero" type="GamePlayer" x="16" y="16" width="16" \
+height="16" rotation="90" visible="1"/>
+ </objectgroup>
+</map>
+"""
+    # The same map with a counter no reader of ours can cast -- NEVER
+    # written by a verb, planted here as bytes. It is what the refusals
+    # below are for, and it is how the one row of `_ATTRIBUTE_TEXT` that is
+    # stricter than pytmx justifies itself further down.
+    STUCK = COUNTERS.replace(b'nextlayerid="4"', b'nextlayerid="not-a-number"')
+
+    for stem, body in (("counter", COUNTERS), ("stuck", STUCK)):
+        with open(os.path.join(workspace, "data", "maps", stem + ".tmx"),
+                  "wb") as handle:
+            handle.write(body)
+    with open(os.path.join(workspace, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": [
+            {"name": "test", "identifier": "test", "file": "data/maps/test.tmx"},
+            {"name": "rich", "identifier": "rich", "file": "data/maps/rich.tmx"},
+            {"name": "bare", "identifier": "bare", "file": "data/maps/bare.tmx"},
+            {"name": "counter", "identifier": "counter",
+             "file": "data/maps/counter.tmx"},
+            {"name": "stuck", "identifier": "stuck",
+             "file": "data/maps/stuck.tmx"},
+        ]}, handle)
+
+    counter_session = Session.open(workspace, genre_id="topdown_rpg")
+    COUNTER = Scope.parse("map:counter")
+    COUNTER_FLOOR = Scope.parse("map:counter/layer:Floor")
+    COUNTER_ENTITY = Scope.parse("map:counter/layer:entity")
+    COUNTER_HERO = Scope.parse("map:counter/layer:entity/object:8")
+
+    def counter_bytes():
+        return counter_session.project.map("counter").to_bytes()
+
+    expect("the counter fixture round-trips before any edit",
+           counter_bytes() == COUNTERS, True)
+
+    def through_the_relay(verb_name, scope, args):
+        """One command applied the way an AI's edit really arrives.
+
+        `parse_response` off a JSONL line, not a hand-built `Command`: that
+        is the route every defect in this section was found on, and it is
+        the one route no control in the window offers -- no widget can emit
+        `next_object_id` at all, so a check that only built Commands would
+        be measuring the half of the door nothing walks through.
+        """
+        line = json.dumps({"verb": verb_name, "scope": str(scope),
+                           "args": args})
+        return counter_session.run(parse_response(line + "\n"),
+                                   source="response:counter")
+
+    for label, verb_name, scope, args, needles in (
+        ("map.object.restore next_object_id -- THE SIGHTING",
+         "map.object.restore", COUNTER_ENTITY,
+         {"xml": '<object id="7" name="ghost" x="0" y="0"/>',
+          "next_object_id": "not-a-number"},
+         ("next_object_id", "nextobjectid", "int")),
+        ("map.layer.remove next_layer_id -- the same shape, layer half",
+         "map.layer.remove", COUNTER_FLOOR,
+         {"next_layer_id": "not-a-number"},
+         ("next_layer_id", "nextlayerid", "int")),
+        ("map.layer.restore payload['next_layer_id'] -- the same text one "
+         "dict deeper, where no Param declares it",
+         "map.layer.restore", COUNTER,
+         {"payload": {"xml": '<objectgroup id="3" name="late"/>', "index": 1,
+                      "tag": "objectgroup", "next_layer_id": "nope"}},
+         ("payload['next_layer_id']", "nextlayerid", "int")),
+        ("...and that key as a JSON NUMBER, which ElementTree takes and "
+         "then cannot serialise",
+         "map.layer.restore", COUNTER,
+         {"payload": {"xml": '<objectgroup id="3" name="late"/>', "index": 1,
+                      "tag": "objectgroup", "next_layer_id": 7}},
+         ("payload['next_layer_id']", "nextlayerid", "is TEXT")),
+        ("map.object.set width -- found by enumerating the OTHER arguments "
+         "of the verbs this pass touched",
+         "map.object.set", COUNTER_HERO,
+         {"key": "width", "value": "not-a-number"},
+         ("value", "width", "float")),
+        ("map.object.set gid, where float text is not int text",
+         "map.object.set", COUNTER_HERO, {"key": "gid", "value": "12.5"},
+         ("value", "gid", "int")),
+        ("map.object.set visible, where pytmx's bool cast raises too",
+         "map.object.set", COUNTER_HERO, {"key": "visible", "value": "maybe"},
+         ("value", "visible", "bool")),
+    ):
+        expect_raises_naming(
+            label, PyoneerCommandApplyError,
+            lambda v=verb_name, s=scope, a=args: through_the_relay(v, s, a),
+            *needles)
+    expect("...and seven refusals later the map is byte-identical -- a guard "
+           "that has already mutated before refusing is worse than none",
+           counter_bytes() == COUNTERS, True)
+    expect("...and none of them entered the history",
+           len(counter_session.history()), 0)
+
+    # THE OTHER HALF. A door that refused every value would satisfy every
+    # row above and make the editor useless, and these are the values the
+    # Inspector and every honest inverse really emit.
+    print()
+    print("...and every legitimate value still applies and still inverts")
+    for label, verb_name, scope, args in (
+        ("an int-valued attribute", "map.object.set", COUNTER_HERO,
+         {"key": "width", "value": "32"}),
+        ("a float attribute with a decimal point", "map.object.set",
+         COUNTER_HERO, {"key": "rotation", "value": "22.5"}),
+        ("the spelling tmx uses for false", "map.object.set",
+         COUNTER_HERO, {"key": "visible", "value": "0"}),
+        ("free text that happens not to be a number", "map.object.set",
+         COUNTER_HERO, {"key": "name", "value": "not-a-number"}),
+        ("a counter that really is a counter", "map.layer.remove",
+         COUNTER_FLOOR, {"next_layer_id": "9"}),
+        ("the empty default, which means `write nothing`",
+         "map.layer.remove", COUNTER_FLOOR, {"next_layer_id": ""}),
+    ):
+        through_the_relay(verb_name, scope, args)
+        applied = counter_bytes() != COUNTERS
+        counter_session.undo()
+        expect("%s applies, and undoes to the byte" % label,
+               (applied, counter_bytes() == COUNTERS), (True, True))
+
+    # The inverse the destructive pair really builds, which is where the
+    # guarded argument comes FROM: `map.object.remove` records the map's own
+    # `nextobjectid` and hands it back. A guard that could not tell that
+    # apart from a caller's text would make undo itself start raising.
+    removal = counter_session.run(Command("map.object.remove", COUNTER_HERO))
+    expect("map.object.remove's inverse carries the counter it found",
+           [(c.verb, c.args.get("next_object_id")) for c in removal.inverses],
+           [("map.object.restore", "9")])
+    counter_session.undo()
+    expect("...and undo puts the object and the counter back to the byte",
+           (counter_bytes() == COUNTERS,
+            counter_session.project.dirty_maps()), (True, []))
+
+    # THE REMOVE TWIN, which is the shape this repository keeps paying for:
+    # the guard goes on the write and the delete grows without it. Here it
+    # runs the other way round -- `map.object.unset`'s inverse IS
+    # `map.object.set`, so an attribute whose text the setter may not write
+    # is one this verb may not delete, for the reason `map.layer.unset`
+    # states one screenful up: a command whose inverse cannot run is worse
+    # than a capability that is missing. Planted by hand, because no verb
+    # can write this state any more and only a hand-authored map can be in
+    # it -- which is exactly what the author who opens one is holding.
+    print()
+    print("...and the remove twin will not delete what its inverse could "
+          "not write back")
+    stuck_object = counter_session.project.map("counter") \
+        .object_layer("entity").find(8)
+    stuck_object.element.attrib["width"] = "not-a-number"
+    PLANTED = counter_bytes()
+    expect_raises_naming(
+        "map.object.unset refuses an attribute whose own text map.object.set "
+        "could not write back",
+        PyoneerCommandApplyError,
+        lambda: through_the_relay("map.object.unset", COUNTER_HERO,
+                                  {"key": "width"}),
+        "value", "width", "float")
+    expect("...without touching the document", counter_bytes() == PLANTED, True)
+    expect("...and the attribute it would have taken is still there",
+           stuck_object.element.attrib.get("width"), "not-a-number")
+    # `visible` and not `rotation`, and the choice is worth its sentence:
+    # this row is about the GUARD being a door, and `map.object.unset` has a
+    # separate, known, unrelated wart -- re-setting an attribute appends it,
+    # so any attribute but the last one comes back at the END of the element
+    # (NEXT item 29, pinned by its own row further up). Taking the LAST
+    # attribute keeps this row measuring the guard instead of quietly
+    # re-measuring that. Written down rather than left to look like luck,
+    # because "it passed because it was already last" is the exact shape
+    # that makes an assertion vacuous.
+    through_the_relay("map.object.unset", COUNTER_HERO, {"key": "visible"})
+    expect("a legitimate attribute still unsets, so the guard is a door and "
+           "not a wall", "visible" in stuck_object.element.attrib, False)
+    counter_session.undo()
+    expect("...and undo writes it back",
+           stuck_object.element.attrib.get("visible"), "1")
+    stuck_object.element.attrib["width"] = "16"
+    expect("...and the plant comes back out, leaving the fixture as found",
+           counter_bytes() == COUNTERS, True)
+
+    # ---------------------------------------------------------------
+    print()
+    print("the text shapes are MEASURED against pytmx, not remembered")
+    # ---------------------------------------------------------------
+    # The same bargain `scripts/core/layer_profile.py` strikes for RESERVED:
+    # the table is declared in first-party code so it can be STRICTER than
+    # pytmx where our own reader is, and a check derives pytmx's real casts
+    # so an upgrade that changes one turns this red instead of turning
+    # somebody's map unloadable.
+    import pytmx                                                # noqa: E402
+    from pytmx.pytmx import convert_to_bool                     # noqa: E402
+    from pytmx.pytmx import types as PYTMX_TYPES                # noqa: E402
+
+    ATTRIBUTE_TEXT = editor.core.verbs._ATTRIBUTE_TEXT
+    AS_PYTMX = {int: int, float: float, str: str, bool: convert_to_bool}
+    expect("every declared shape is the cast pytmx really applies",
+           sorted(name for name, wants in ATTRIBUTE_TEXT.items()
+                  # `in` on pytmx's defaultdict, never `[]`: the subscript
+                  # would INSERT the name and make this row pass for free.
+                  if name in PYTMX_TYPES
+                  and PYTMX_TYPES[name] is not AS_PYTMX[wants]), [])
+    expect("...and exactly one row is stricter than pytmx",
+           sorted(name for name, wants in ATTRIBUTE_TEXT.items()
+                  if name not in PYTMX_TYPES and wants is not str),
+           ["nextlayerid"])
+    expect("every attribute map.object.set may write declares a text shape, "
+           "so adding one to the vocabulary without saying what reads it "
+           "cannot pass quietly",
+           [key for key in editor.core.verbs._OBJECT_ATTRIBUTES
+            if key not in ATTRIBUTE_TEXT], [])
+
+    # BOTH HALVES OF THE ONE DIVERGENCE, because "stricter than pytmx" is a
+    # claim about two readers and a check that measured one of them would be
+    # asserting half of it.
+    stuck_path = os.path.join(workspace, "data", "maps", "stuck.tmx")
+    try:
+        pytmx.TiledMap(stuck_path)
+        pytmx_loads = True
+    except Exception as exc:                                    # noqa: BLE001
+        pytmx_loads = "%s: %s" % (type(exc).__name__, exc)
+    expect("pytmx really does leave nextlayerid as text -- it loads a map "
+           "whose counter is not a number at all", pytmx_loads, True)
+    expect_raises_naming(
+        "...and the editor's own reader really does cast it, so the stricter "
+        "row is measured and not a guess",
+        PyoneerCommandApplyError,
+        lambda: counter_session.run(Command(
+            "map.layer.add", Scope.parse("map:stuck"),
+            {"name": "Floor2", "kind": "tile"})),
+        "invalid literal for int")
+    expect("...and that refusal left the stuck map alone",
+           counter_session.project.map("stuck").to_bytes() == STUCK, True)
+
+    # AND THE COST THE WHOLE SECTION IS ABOUT, measured on the reader rather
+    # than described: every text refused above is text that makes pytmx
+    # refuse the map entire, naming neither the map nor the attribute.
+    fatal_path = os.path.join(workspace, "data", "maps", "fatal.tmx")
+    for planted in (b'width="not-a-number"', b'gid="12.5"',
+                    b'rotation="sideways"', b'visible="maybe"'):
+        with open(fatal_path, "wb") as handle:
+            # The object's WHOLE attribute list is the needle: `width="16"`
+            # alone also matches `tilewidth="16"` on `<map>`, where pytmx
+            # would have shrugged at the same text and this row would have
+            # said "loads" about an attribute it never planted.
+            handle.write(COUNTERS.replace(
+                b'x="16" y="16" width="16" height="16" rotation="90" '
+                b'visible="1"', b'x="16" y="16" ' + planted, 1))
+        try:
+            pytmx.TiledMap(fatal_path)
+            verdict = "loads"
+        except Exception as exc:                                # noqa: BLE001
+            verdict = type(exc).__name__
+        expect("<object %s> is a map pytmx will not load at all"
+               % planted.decode(), verdict, "ValueError")
+
+    # An `AttributeText` must stay invisible to `describe_all`, which
+    # renders a parameter field by field into `docs/COMMANDS.md` and has
+    # that output compared byte for byte. A guard that changed the generated
+    # vocabulary would turn a sibling's check red for a change that only
+    # meant to refuse a bad value.
+    guarded = sorted((v.name, p.name) for v in all_verbs() for p in v.params
+                     if isinstance(p, editor.core.verbs.AttributeText))
+    expect("the guarded arguments are exactly the two that write a counter",
+           guarded, [("map.layer.remove", "next_layer_id"),
+                     ("map.object.restore", "next_object_id")])
+    expect("...and each renders exactly as the plain str parameter it "
+           "replaced",
+           sorted({(p.type_name, p.choices, p.required, p.default)
+                   for v in all_verbs() for p in v.params
+                   if isinstance(p, editor.core.verbs.AttributeText)}),
+           [("str", None, False, "")])
 
     # ---------------------------------------------------------------
     print()

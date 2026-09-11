@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L0 -->
-<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29. The first two KNOWN GAPS bullets were re-measured on 2026-09-03: README's three false gap claims and its stale check count are gone, so that bullet now names only the structural half it still owns, and the BEHAVIORS preamble bullet gained the second lie found in the same preamble that day. Also on 2026-09-03, at the finalize of the repair pass: the `map.tileset.grow`/`.rename` gap is struck through with the grep that closed it, and the fourth ACTIVE WARNING sighting was put into the past tense without being deleted. On 2026-09-04, at the finalize of the audio + map + queue pass: LAW 11 CHANGED SUBJECT -- the author's private test.tmx canvas was retired ON HIS EXPLICIT INSTRUCTION and replaced by the shipped data/maps/starter.tmx, so law 11 now protects that file and the baseline, with its reasons re-measured against the new map (byte-exact round trip under both LF and CRLF); law 4 gained the second instance that cost this pass; the query playbook gained an audio row and re-measured EVENTS.md's reachability count; The constants gained the two asset-root pairs and the shipped map; and KNOWN GAPS gained the audio-unreachable bullet. The ladder's level-0 cost was re-measured at ~9.7k. On 2026-09-10, at the finalize of the reachability pass: the query playbook's EVENTS row was re-measured and INVERTED -- all six reachability rows read `yes` now, where four read `no`, because a scripted event runs when a human presses a key; the KNOWN GAPS audio bullet is struck through with the greps that closed it, and the action-route shortcut it named was deleted rather than left beside the real route; and one anchor was added, `#TAG:no_event_pooling`, for the measurement that justified deleting a branch that had never executed. Nothing else in this file was re-measured in that pass and every other claim keeps its own date. On 2026-09-11, at the finalize of the four-defect repair pass: the fifth ACTIVE WARNING's count moved from NINE to ELEVEN and both new sightings are named -- the tenth is `MapDocument._append_child`, whose middle branch recomputed a separator three lines below its own comment saying not to, which ends the "distance is the cause" reading for good; the eleventh is `ScriptLibrary.dirty`, a repaired bug's untouched twin one layer down with no reader at all. That entry also gained the positive proof of its own counter-move: four copies of the self-closing guard in `editor/core/verbs.py` became one line in `_remove_child` and the four copies were deleted, so one mutation now turns four rows red where four were needed before. One anchor was added, `#TAG:childless_parent_closes_itself`. Nothing else in this file was re-measured in that pass. -->
+<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29. The first two KNOWN GAPS bullets were re-measured on 2026-09-03: README's three false gap claims and its stale check count are gone, so that bullet now names only the structural half it still owns, and the BEHAVIORS preamble bullet gained the second lie found in the same preamble that day. Also on 2026-09-03, at the finalize of the repair pass: the `map.tileset.grow`/`.rename` gap is struck through with the grep that closed it, and the fourth ACTIVE WARNING sighting was put into the past tense without being deleted. On 2026-09-04, at the finalize of the audio + map + queue pass: LAW 11 CHANGED SUBJECT -- the author's private test.tmx canvas was retired ON HIS EXPLICIT INSTRUCTION and replaced by the shipped data/maps/starter.tmx, so law 11 now protects that file and the baseline, with its reasons re-measured against the new map (byte-exact round trip under both LF and CRLF); law 4 gained the second instance that cost this pass; the query playbook gained an audio row and re-measured EVENTS.md's reachability count; The constants gained the two asset-root pairs and the shipped map; and KNOWN GAPS gained the audio-unreachable bullet. The ladder's level-0 cost was re-measured at ~9.7k. On 2026-09-10, at the finalize of the reachability pass: the query playbook's EVENTS row was re-measured and INVERTED -- all six reachability rows read `yes` now, where four read `no`, because a scripted event runs when a human presses a key; the KNOWN GAPS audio bullet is struck through with the greps that closed it, and the action-route shortcut it named was deleted rather than left beside the real route; and one anchor was added, `#TAG:no_event_pooling`, for the measurement that justified deleting a branch that had never executed. Nothing else in this file was re-measured in that pass and every other claim keeps its own date. On 2026-09-11, at the finalize of the four-defect repair pass: the fifth ACTIVE WARNING's count moved from NINE to ELEVEN and both new sightings are named -- the tenth is `MapDocument._append_child`, whose middle branch recomputed a separator three lines below its own comment saying not to, which ends the "distance is the cause" reading for good; the eleventh is `ScriptLibrary.dirty`, a repaired bug's untouched twin one layer down with no reader at all. That entry also gained the positive proof of its own counter-move: four copies of the self-closing guard in `editor/core/verbs.py` became one line in `_remove_child` and the four copies were deleted, so one mutation now turns four rows red where four were needed before. One anchor was added, `#TAG:childless_parent_closes_itself`. Nothing else in this file was re-measured in that pass. Later on 2026-09-11, at the finalize of the overnight run: the fifth ACTIVE WARNING's count moved from ELEVEN to FIFTEEN and all four new sightings are named -- the twelfth is the tightest instance recorded here, a guard that landed on one PARAMETER while the sibling parameter in the SAME ARGS DICT stayed open; the thirteenth is the verb that looked guarded because its sibling ARGUMENT declared `choices=`; the fourteenth is a door that read every NAME in a restored element and never one VALUE; the fifteenth is open and filed as item 37 of docs/NEXT.md. That entry also gained the enumeration counter-move and its measured cost (51 verbs, 136 parameters, 5 in the defect class). Three anchors were added: `#TAG:attribute_order_read_off_the_file`, `#TAG:untyped_object_spawns_nothing` and `#TAG:text_the_reader_casts_back`, the last for the shared `ATTRIBUTE_TEXT` table that now lives beside `RESERVED` and is asked by both the editor's command door and the engine-side restore door. Nothing else in this file was re-measured in that pass. -->
 
 # Pyoneer — read this first
 
@@ -415,6 +415,37 @@ of repetition.
   -- and it had NO READER, so nothing went wrong, and the first surface that
   reached for it would have inherited a repaired bug. A latent sibling is
   still a sighting; it is just one nobody can date.
+  **FIFTEEN NOW**, and the four added at the finalize of 2026-09-11 are the
+  tightest instances on this list, because three of them are inside ONE
+  argument list. THE TWELFTH: `map.object.restore`'s `xml` argument was given
+  a door one pass earlier, and `next_object_id` -- THREE LINES BELOW IT, IN
+  THE SAME ARGS DICT, on the same verb -- was left open, so the command that
+  could no longer smuggle an attribute NAME could still write
+  `nextobjectid="not-a-number"` and make the whole map unloadable. Not another
+  file, not another function: another KEY. The thirteenth was found by the
+  enumeration that closed the twelfth rather than by any prover:
+  `map.object.set` LOOKS guarded because its sibling argument `key` declares
+  `choices=_OBJECT_ATTRIBUTES`, so it checked WHICH attribute was written and
+  never WHAT went into it -- `width="not-a-number"` went through the same
+  relay to the same unloadable map. The fourteenth is the same asymmetry one
+  layer down and had stood since that door was built:
+  `_refuse_smuggled_names` reads every NAME in a restored element's subtree
+  and never one VALUE, so `<object pyoneer_x="1"/>` was refused and
+  `<object width="abc"/>` -- identical cost, whole map lost, naming neither
+  the map nor the attribute -- was accepted by all three restore verbs. The
+  fifteenth is still OPEN and filed as item 37 of
+  [`docs/NEXT.md`](docs/NEXT.md): `_release_object_id` tests whether an id is
+  one below the counter where the invariant is "this session handed it out",
+  so a guard written for the CLAIM route is simply wrong on the RESTORE route.
+  Counter-move for this family, which is not the one above: after you guard
+  ONE input, enumerate EVERY OTHER INPUT THE SAME FUNCTION ACCEPTS and give
+  each a verdict out loud. Measured, that enumeration is affordable -- 51
+  verbs and 136 parameters dumped from the live registry, five of them in the
+  defect class, four of those carrying no validation of any kind -- and it is
+  what found the thirteenth. Then make the shared half one function: all five
+  now go through `_checked_attribute_text`, and the fourteenth closed by
+  MOVING its table to `scripts/core/layer_profile.py` so the engine-side door
+  and the editor-side door ask one `ATTRIBUTE_TEXT` rather than two.
   Counter-move, and it is not "grep harder": where the two routes share a
   rule, make the shared half ONE FUNCTION and delete the copy -- or, where a
   rule is a declared vocabulary, make both halves NAME THE SAME TUPLE, which
@@ -631,4 +662,7 @@ probably renamed.
 #TAG:CROP_DIR :: CROP_DIR = "tilesets"
 #TAG:no_event_pooling :: identity and is CONSTANT FALSE
 #TAG:childless_parent_closes_itself :: if not list(parent) and not
+#TAG:attribute_order_read_off_the_file :: READ OFF THE FILE, NEVER COMPUTED
+#TAG:untyped_object_spawns_nothing :: if not obj.type
+#TAG:text_the_reader_casts_back :: THE ONE PLACE THAT QUESTION IS ANSWERED
 ```

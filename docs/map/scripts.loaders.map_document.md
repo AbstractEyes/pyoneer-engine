@@ -5,7 +5,7 @@
 
 > A round-trip-safe read/WRITE document layer for Tiled .tmx files.
 
-`scripts.loaders.map_document` · 2738 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.loaders.map_document` · 2963 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,256 +13,264 @@
 
 ## Functions
 
-- `scripts/loaders/map_document.py:96` `subcell_property() -> str` #TAG:subcell_property
+- `scripts/loaders/map_document.py:98` `subcell_property() -> str` #TAG:subcell_property
   - The tmx layer property that declares a companion's sub-cell factor.
-- `scripts/loaders/map_document.py:142` `_escape_text(text: str) -> str` #TAG:_escape_text
+- `scripts/loaders/map_document.py:144` `_escape_text(text: str) -> str` #TAG:_escape_text
   - Escape character data. Matches ElementTree._escape_cdata.
-- `scripts/loaders/map_document.py:147` `_escape_attribute(value: str) -> str` #TAG:_escape_attribute
+- `scripts/loaders/map_document.py:149` `_escape_attribute(value: str) -> str` #TAG:_escape_attribute
   - Escape an attribute value. Matches ElementTree._escape_attrib.
-- `scripts/loaders/map_document.py:159` `_serialize(element: ElementTree.Element, parts: list[str]) -> None` #TAG:_serialize
+- `scripts/loaders/map_document.py:161` `_ordered_attributes(element: ElementTree.Element, spellings: dict[ElementTree.Element, tuple[str, ...]] | None) -> list[tuple[str, Any]]` #TAG:_ordered_attributes
+  - This element's attributes in the order the FILE spells them.
+- `scripts/loaders/map_document.py:199` `_serialize(element: ElementTree.Element, parts: list[str], spellings: dict[ElementTree.Element, tuple[str, ...]] | None=None) -> None` #TAG:_serialize
   - Append `element` to `parts`, preserving its whitespace verbatim.
-- `scripts/loaders/map_document.py:190` `parse_property(type_name: str | None, raw: str) -> Any` #TAG:parse_property
+- `scripts/loaders/map_document.py:232` `parse_property(type_name: str | None, raw: str) -> Any` #TAG:parse_property
   - Turn a Tiled property's on-disk string into a real Python value.
-- `scripts/loaders/map_document.py:216` `format_property(value: Any) -> tuple[str | None, str]` #TAG:format_property
+- `scripts/loaders/map_document.py:258` `format_property(value: Any) -> tuple[str | None, str]` #TAG:format_property
   - Inverse of parse_property: (type attribute or None, value string).
-- `scripts/loaders/map_document.py:276` `_refuse_smuggled_names(element: ElementTree.Element, verb: str, source: str | None) -> None` #TAG:_refuse_smuggled_names
+- `scripts/loaders/map_document.py:318` `_refuse_smuggled_names(element: ElementTree.Element, verb: str, source: str | None) -> None` #TAG:_refuse_smuggled_names
   - Raise unless every name in `element`'s subtree is one pytmx survives.
-- `scripts/loaders/map_document.py:350` `_parse_restored_element(xml: str, verb: str, kind: str, tags: tuple[str, ...], source: str | None) -> ElementTree.Element` #TAG:_parse_restored_element
+- `scripts/loaders/map_document.py:392` `_refuse_unreadable_text(element: ElementTree.Element, verb: str, source: str | None) -> None` #TAG:_refuse_unreadable_text
+  - Raise unless every VALUE in `element`'s subtree reads back out of tmx.
+- `scripts/loaders/map_document.py:467` `_parse_restored_element(xml: str, verb: str, kind: str, tags: tuple[str, ...], source: str | None) -> ElementTree.Element` #TAG:_parse_restored_element
   - The ONE door authored XML text enters this document through.
-- `scripts/loaders/map_document.py:707` `_as_rect(rect: Any) -> tuple[int, int, int, int]` #TAG:_as_rect
-- `scripts/loaders/map_document.py:839` `_attribute_text(value: Any) -> str` #TAG:_attribute_text
+- `scripts/loaders/map_document.py:839` `_as_rect(rect: Any) -> tuple[int, int, int, int]` #TAG:_as_rect
+- `scripts/loaders/map_document.py:1007` `_attribute_text(value: Any) -> str` #TAG:_attribute_text
   - Render an attribute the way Tiled does: ints stay ints.
-- `scripts/loaders/map_document.py:1007` `image_size(path: str) -> tuple[int, int]` #TAG:image_size
+- `scripts/loaders/map_document.py:1185` `image_size(path: str) -> tuple[int, int]` #TAG:image_size
   - (width, height) of a PNG, read from the 24 bytes of its IHDR header.
-- `scripts/loaders/map_document.py:1032` `tileset_geometry(image_width: int, image_height: int, tile_width: int, tile_height: int, margin: int=0, spacing: int=0) -> tuple[int, int, int]` #TAG:tileset_geometry
+- `scripts/loaders/map_document.py:1210` `tileset_geometry(image_width: int, image_height: int, tile_width: int, tile_height: int, margin: int=0, spacing: int=0) -> tuple[int, int, int]` #TAG:tileset_geometry
   - (columns, rows, tile_count) for a grid tileset, the way Tiled counts.
-- `scripts/loaders/map_document.py:1059` `_int_attribute(element: ElementTree.Element, name: str, default: int) -> int` #TAG:map_document._int_attribute
+- `scripts/loaders/map_document.py:1237` `_int_attribute(element: ElementTree.Element, name: str, default: int) -> int` #TAG:map_document._int_attribute
   - An integer attribute, falling back rather than raising on garbage.
 
 ## Classes
 
 ### `class MapProperties` #TAG:MapProperties
 
-`scripts/loaders/map_document.py:373`–`522`
+`scripts/loaders/map_document.py:497`–`654`
 
 > Typed dict-like view over one element's `<properties>` child.
 
-- `scripts/loaders/map_document.py:382` `__init__(self, document: 'MapDocument', owner: ElementTree.Element)` #TAG:MapProperties.__init__
-- `scripts/loaders/map_document.py:387` `_container(self) -> ElementTree.Element | None` #TAG:MapProperties._container
-- `scripts/loaders/map_document.py:390` `_entries(self) -> list[ElementTree.Element]` #TAG:MapProperties._entries
-- `scripts/loaders/map_document.py:395` `@staticmethod _raw_value(entry: ElementTree.Element) -> str` #TAG:MapProperties._raw_value
-- `scripts/loaders/map_document.py:402` `_find(self, name: str) -> ElementTree.Element | None` #TAG:MapProperties._find
-- `scripts/loaders/map_document.py:409` `__contains__(self, name: str) -> bool` #TAG:MapProperties.__contains__
-- `scripts/loaders/map_document.py:412` `__iter__(self) -> Iterator[str]` #TAG:MapProperties.__iter__
-- `scripts/loaders/map_document.py:415` `__len__(self) -> int` #TAG:MapProperties.__len__
-- `scripts/loaders/map_document.py:418` `__getitem__(self, name: str) -> Any` #TAG:MapProperties.__getitem__
-- `scripts/loaders/map_document.py:424` `get(self, name: str, default: Any=None) -> Any` #TAG:MapProperties.get
-- `scripts/loaders/map_document.py:430` `keys(self) -> list[str]` #TAG:MapProperties.keys
-- `scripts/loaders/map_document.py:433` `items(self) -> list[tuple[str, Any]]` #TAG:MapProperties.items
-- `scripts/loaders/map_document.py:436` `as_dict(self) -> dict[str, Any]` #TAG:MapProperties.as_dict
-- `scripts/loaders/map_document.py:439` `__repr__(self) -> str` #TAG:MapProperties.__repr__
-- `scripts/loaders/map_document.py:442` `__setitem__(self, name: str, value: Any) -> None` #TAG:MapProperties.__setitem__
+- `scripts/loaders/map_document.py:506` `__init__(self, document: 'MapDocument', owner: ElementTree.Element)` #TAG:MapProperties.__init__
+- `scripts/loaders/map_document.py:511` `_container(self) -> ElementTree.Element | None` #TAG:MapProperties._container
+- `scripts/loaders/map_document.py:514` `_entries(self) -> list[ElementTree.Element]` #TAG:MapProperties._entries
+- `scripts/loaders/map_document.py:519` `@staticmethod _raw_value(entry: ElementTree.Element) -> str` #TAG:MapProperties._raw_value
+- `scripts/loaders/map_document.py:526` `_find(self, name: str) -> ElementTree.Element | None` #TAG:MapProperties._find
+- `scripts/loaders/map_document.py:533` `__contains__(self, name: str) -> bool` #TAG:MapProperties.__contains__
+- `scripts/loaders/map_document.py:536` `__iter__(self) -> Iterator[str]` #TAG:MapProperties.__iter__
+- `scripts/loaders/map_document.py:539` `__len__(self) -> int` #TAG:MapProperties.__len__
+- `scripts/loaders/map_document.py:542` `__getitem__(self, name: str) -> Any` #TAG:MapProperties.__getitem__
+- `scripts/loaders/map_document.py:548` `get(self, name: str, default: Any=None) -> Any` #TAG:MapProperties.get
+- `scripts/loaders/map_document.py:554` `keys(self) -> list[str]` #TAG:MapProperties.keys
+- `scripts/loaders/map_document.py:557` `items(self) -> list[tuple[str, Any]]` #TAG:MapProperties.items
+- `scripts/loaders/map_document.py:560` `as_dict(self) -> dict[str, Any]` #TAG:MapProperties.as_dict
+- `scripts/loaders/map_document.py:563` `__repr__(self) -> str` #TAG:MapProperties.__repr__
+- `scripts/loaders/map_document.py:566` `__setitem__(self, name: str, value: Any) -> None` #TAG:MapProperties.__setitem__
   - Write one custom property, typed.
-- `scripts/loaders/map_document.py:514` `__delitem__(self, name: str) -> None` #TAG:MapProperties.__delitem__
+- `scripts/loaders/map_document.py:646` `__delitem__(self, name: str) -> None` #TAG:MapProperties.__delitem__
 
 ### `class _CsvGrid` #TAG:_CsvGrid
 
-`scripts/loaders/map_document.py:529`–`556`
+`scripts/loaders/map_document.py:661`–`688`
 
 > The csv payload of a `<data>` element, split into values and gaps.
 
-- `scripts/loaders/map_document.py:540` `__init__(self, text: str)` #TAG:_CsvGrid.__init__
-- `scripts/loaders/map_document.py:550` `render(self) -> str` #TAG:_CsvGrid.render
+- `scripts/loaders/map_document.py:672` `__init__(self, text: str)` #TAG:_CsvGrid.__init__
+- `scripts/loaders/map_document.py:682` `render(self) -> str` #TAG:_CsvGrid.render
 
 ### `class TileLayer` #TAG:map_document.TileLayer
 
-`scripts/loaders/map_document.py:559`–`704`
+`scripts/loaders/map_document.py:691`–`836`
 
 > Read/write access to one csv-encoded `<layer>`'s gids.
 
-- `scripts/loaders/map_document.py:562` `__init__(self, document: 'MapDocument', element: ElementTree.Element)` #TAG:map_document.TileLayer.__init__
-- `scripts/loaders/map_document.py:602` `__len__(self) -> int` #TAG:map_document.TileLayer.__len__
-- `scripts/loaders/map_document.py:605` `in_bounds(self, x: int, y: int) -> bool` #TAG:map_document.TileLayer.in_bounds
-- `scripts/loaders/map_document.py:608` `_index(self, x: int, y: int) -> int` #TAG:map_document.TileLayer._index
-- `scripts/loaders/map_document.py:618` `get_tile(self, x: int, y: int) -> int` #TAG:map_document.TileLayer.get_tile
-- `scripts/loaders/map_document.py:621` `gids(self) -> list[int]` #TAG:map_document.TileLayer.gids
+- `scripts/loaders/map_document.py:694` `__init__(self, document: 'MapDocument', element: ElementTree.Element)` #TAG:map_document.TileLayer.__init__
+- `scripts/loaders/map_document.py:734` `__len__(self) -> int` #TAG:map_document.TileLayer.__len__
+- `scripts/loaders/map_document.py:737` `in_bounds(self, x: int, y: int) -> bool` #TAG:map_document.TileLayer.in_bounds
+- `scripts/loaders/map_document.py:740` `_index(self, x: int, y: int) -> int` #TAG:map_document.TileLayer._index
+- `scripts/loaders/map_document.py:750` `get_tile(self, x: int, y: int) -> int` #TAG:map_document.TileLayer.get_tile
+- `scripts/loaders/map_document.py:753` `gids(self) -> list[int]` #TAG:map_document.TileLayer.gids
   - A flat copy of every gid, row-major. Safe to mutate.
-- `scripts/loaders/map_document.py:625` `rows(self) -> list[list[int]]` #TAG:map_document.TileLayer.rows
-- `scripts/loaders/map_document.py:630` `_require_gid(self, gid: int) -> int` #TAG:map_document.TileLayer._require_gid
+- `scripts/loaders/map_document.py:757` `rows(self) -> list[list[int]]` #TAG:map_document.TileLayer.rows
+- `scripts/loaders/map_document.py:762` `_require_gid(self, gid: int) -> int` #TAG:map_document.TileLayer._require_gid
   - Reject a gid the csv encoding cannot round-trip.
-- `scripts/loaders/map_document.py:648` `set_tile(self, x: int, y: int, gid: int) -> bool` #TAG:map_document.TileLayer.set_tile
+- `scripts/loaders/map_document.py:780` `set_tile(self, x: int, y: int, gid: int) -> bool` #TAG:map_document.TileLayer.set_tile
   - Set one gid. Returns True if the value actually changed.
-- `scripts/loaders/map_document.py:664` `fill(self, rect: Any, gid: int) -> int` #TAG:map_document.TileLayer.fill
+- `scripts/loaders/map_document.py:796` `fill(self, rect: Any, gid: int) -> int` #TAG:map_document.TileLayer.fill
   - Set every tile in `rect` to `gid`. Returns the number changed.
-- `scripts/loaders/map_document.py:690` `@property properties(self) -> MapProperties` #TAG:map_document.TileLayer.properties
-- `scripts/loaders/map_document.py:693` `_flush(self) -> None` #TAG:map_document.TileLayer._flush
+- `scripts/loaders/map_document.py:822` `@property properties(self) -> MapProperties` #TAG:map_document.TileLayer.properties
+- `scripts/loaders/map_document.py:825` `_flush(self) -> None` #TAG:map_document.TileLayer._flush
   - Push pending gid edits back into the element, once per save.
-- `scripts/loaders/map_document.py:703` `__repr__(self) -> str` #TAG:map_document.TileLayer.__repr__
+- `scripts/loaders/map_document.py:835` `__repr__(self) -> str` #TAG:map_document.TileLayer.__repr__
 
 ### `class MapObject` #TAG:MapObject
 
-`scripts/loaders/map_document.py:718`–`836`
+`scripts/loaders/map_document.py:850`–`1004`
 
 > One `<object>` inside an `<objectgroup>`.
 
-- `scripts/loaders/map_document.py:721` `__init__(self, document: 'MapDocument', element: ElementTree.Element)` #TAG:MapObject.__init__
-- `scripts/loaders/map_document.py:726` `@property id(self) -> int` #TAG:MapObject.id
-- `scripts/loaders/map_document.py:730` `@property name(self) -> str` #TAG:MapObject.name
-- `scripts/loaders/map_document.py:734` `@property type(self) -> str` #TAG:MapObject.type
-- `scripts/loaders/map_document.py:740` `@property gid(self) -> int` #TAG:MapObject.gid
-- `scripts/loaders/map_document.py:744` `@property x(self) -> float` #TAG:MapObject.x
-- `scripts/loaders/map_document.py:748` `@property y(self) -> float` #TAG:MapObject.y
-- `scripts/loaders/map_document.py:752` `@property width(self) -> float` #TAG:MapObject.width
-- `scripts/loaders/map_document.py:756` `@property height(self) -> float` #TAG:MapObject.height
-- `scripts/loaders/map_document.py:760` `@property properties(self) -> MapProperties` #TAG:MapObject.properties
-- `scripts/loaders/map_document.py:763` `set(self, key: str, value: Any) -> None` #TAG:MapObject.set
+- `scripts/loaders/map_document.py:853` `__init__(self, document: 'MapDocument', element: ElementTree.Element)` #TAG:MapObject.__init__
+- `scripts/loaders/map_document.py:858` `@property id(self) -> int` #TAG:MapObject.id
+- `scripts/loaders/map_document.py:862` `@property name(self) -> str` #TAG:MapObject.name
+- `scripts/loaders/map_document.py:866` `@property type(self) -> str` #TAG:MapObject.type
+- `scripts/loaders/map_document.py:872` `@property gid(self) -> int` #TAG:MapObject.gid
+- `scripts/loaders/map_document.py:876` `@property x(self) -> float` #TAG:MapObject.x
+- `scripts/loaders/map_document.py:880` `@property y(self) -> float` #TAG:MapObject.y
+- `scripts/loaders/map_document.py:884` `@property width(self) -> float` #TAG:MapObject.width
+- `scripts/loaders/map_document.py:888` `@property height(self) -> float` #TAG:MapObject.height
+- `scripts/loaders/map_document.py:892` `@property properties(self) -> MapProperties` #TAG:MapObject.properties
+- `scripts/loaders/map_document.py:895` `set(self, key: str, value: Any) -> None` #TAG:MapObject.set
   - Write a built-in `<object>` XML ATTRIBUTE -- `x`, `y`, `name`, `gid`.
-- `scripts/loaders/map_document.py:835` `__repr__(self) -> str` #TAG:MapObject.__repr__
+- `scripts/loaders/map_document.py:967` `unset(self, key: str) -> str | None` #TAG:MapObject.unset
+  - Remove a built-in `<object>` XML attribute -- the twin of `set`.
+- `scripts/loaders/map_document.py:1003` `__repr__(self) -> str` #TAG:MapObject.__repr__
 
 ### `class ObjectLayer` #TAG:map_document.ObjectLayer
 
-`scripts/loaders/map_document.py:853`–`987`
+`scripts/loaders/map_document.py:1021`–`1165`
 
 > Read/write access to one `<objectgroup>`.
 
-- `scripts/loaders/map_document.py:864` `__init__(self, document: 'MapDocument', element: ElementTree.Element)` #TAG:map_document.ObjectLayer.__init__
-- `scripts/loaders/map_document.py:871` `objects(self) -> list[MapObject]` #TAG:map_document.ObjectLayer.objects
-- `scripts/loaders/map_document.py:874` `find(self, object_id: int) -> MapObject | None` #TAG:map_document.ObjectLayer.find
-- `scripts/loaders/map_document.py:880` `add_object(self, name: str | None=None, type: str | None=None, x: float=0, y: float=0, width: float | None=None, height: float | None=None, gid: int | None=None, properties: dict[str, Any] | None=None, object_id: int | None=None) -> MapObject` #TAG:map_document.ObjectLayer.add_object
+- `scripts/loaders/map_document.py:1032` `__init__(self, document: 'MapDocument', element: ElementTree.Element)` #TAG:map_document.ObjectLayer.__init__
+- `scripts/loaders/map_document.py:1039` `objects(self) -> list[MapObject]` #TAG:map_document.ObjectLayer.objects
+- `scripts/loaders/map_document.py:1042` `find(self, object_id: int) -> MapObject | None` #TAG:map_document.ObjectLayer.find
+- `scripts/loaders/map_document.py:1048` `add_object(self, name: str | None=None, type: str | None=None, x: float=0, y: float=0, width: float | None=None, height: float | None=None, gid: int | None=None, properties: dict[str, Any] | None=None, object_id: int | None=None) -> MapObject` #TAG:map_document.ObjectLayer.add_object
   - Append an `<object>`, in Tiled's attribute order.
-- `scripts/loaders/map_document.py:911` `object_index(self, object_id: int) -> int | None` #TAG:map_document.ObjectLayer.object_index
+- `scripts/loaders/map_document.py:1085` `object_index(self, object_id: int) -> int | None` #TAG:map_document.ObjectLayer.object_index
   - Where an object sits among its siblings, for exact restoration.
-- `scripts/loaders/map_document.py:918` `serialize_object(self, object_id: int) -> str | None` #TAG:map_document.ObjectLayer.serialize_object
+- `scripts/loaders/map_document.py:1092` `serialize_object(self, object_id: int) -> str | None` #TAG:map_document.ObjectLayer.serialize_object
   - The object's whole `<object>` element as XML text.
-- `scripts/loaders/map_document.py:937` `restore_object(self, xml: str, index: int | None=None) -> MapObject` #TAG:map_document.ObjectLayer.restore_object
+- `scripts/loaders/map_document.py:1111` `restore_object(self, xml: str, index: int | None=None) -> MapObject` #TAG:map_document.ObjectLayer.restore_object
   - Put back an object serialized by `serialize_object`.
-- `scripts/loaders/map_document.py:966` `remove_object(self, object_id: int) -> bool` #TAG:map_document.ObjectLayer.remove_object
+- `scripts/loaders/map_document.py:1144` `remove_object(self, object_id: int) -> bool` #TAG:map_document.ObjectLayer.remove_object
   - Remove an `<object>` by id. Returns False if it was not there.
-- `scripts/loaders/map_document.py:983` `@property properties(self) -> MapProperties` #TAG:map_document.ObjectLayer.properties
-- `scripts/loaders/map_document.py:986` `__repr__(self) -> str` #TAG:map_document.ObjectLayer.__repr__
+- `scripts/loaders/map_document.py:1161` `@property properties(self) -> MapProperties` #TAG:map_document.ObjectLayer.properties
+- `scripts/loaders/map_document.py:1164` `__repr__(self) -> str` #TAG:map_document.ObjectLayer.__repr__
 
 ### `@dataclass(frozen=True) class TilesetRef` #TAG:TilesetRef
 
-`scripts/loaders/map_document.py:1078`–`1140`
+`scripts/loaders/map_document.py:1256`–`1318`
 
 > A read-only view of one `<tileset>` declaration.
 
-- `scripts/loaders/map_document.py:1105` `@property is_external(self) -> bool` #TAG:TilesetRef.is_external
-- `scripts/loaders/map_document.py:1109` `@property last_gid(self) -> int` #TAG:TilesetRef.last_gid
+- `scripts/loaders/map_document.py:1283` `@property is_external(self) -> bool` #TAG:TilesetRef.is_external
+- `scripts/loaders/map_document.py:1287` `@property last_gid(self) -> int` #TAG:TilesetRef.last_gid
   - Highest gid this tileset owns. Below first_gid when it owns none.
-- `scripts/loaders/map_document.py:1114` `@property extent_known(self) -> bool` #TAG:TilesetRef.extent_known
+- `scripts/loaders/map_document.py:1292` `@property extent_known(self) -> bool` #TAG:TilesetRef.extent_known
   - Can this document say which gids the tileset owns?
-- `scripts/loaders/map_document.py:1128` `holds(self, gid: int) -> bool` #TAG:TilesetRef.holds
+- `scripts/loaders/map_document.py:1306` `holds(self, gid: int) -> bool` #TAG:TilesetRef.holds
   - Is `gid` (flip flags already masked off) inside this range?
-- `scripts/loaders/map_document.py:1136` `__repr__(self) -> str` #TAG:TilesetRef.__repr__
+- `scripts/loaders/map_document.py:1314` `__repr__(self) -> str` #TAG:TilesetRef.__repr__
 
 ### `class MapDocument` #TAG:MapDocument
 
-`scripts/loaders/map_document.py:1156`–`2737`
+`scripts/loaders/map_document.py:1334`–`2962`
 
 > A .tmx file held as an editable, byte-faithful XML document.
 
-- `scripts/loaders/map_document.py:1165` `__init__(self, root: ElementTree.Element, *, path: str | None=None, raw: bytes=b'', declaration: bytes=_DEFAULT_DECLARATION, declaration_newline: bytes=b'\n', newline: str='\n', trailing: bytes=b'')` #TAG:MapDocument.__init__
-- `scripts/loaders/map_document.py:1187` `@classmethod load(cls, path: str) -> 'MapDocument'` #TAG:MapDocument.load
+- `scripts/loaders/map_document.py:1343` `__init__(self, root: ElementTree.Element, *, path: str | None=None, raw: bytes=b'', declaration: bytes=_DEFAULT_DECLARATION, declaration_newline: bytes=b'\n', newline: str='\n', trailing: bytes=b'')` #TAG:MapDocument.__init__
+- `scripts/loaders/map_document.py:1366` `@classmethod load(cls, path: str) -> 'MapDocument'` #TAG:MapDocument.load
   - Parse `path`, remembering everything a serializer would forget.
-- `scripts/loaders/map_document.py:1197` `@classmethod from_bytes(cls, raw: bytes, path: str | None=None) -> 'MapDocument'` #TAG:MapDocument.from_bytes
-- `scripts/loaders/map_document.py:1226` `to_bytes(self) -> bytes` #TAG:MapDocument.to_bytes
+- `scripts/loaders/map_document.py:1376` `@classmethod from_bytes(cls, raw: bytes, path: str | None=None) -> 'MapDocument'` #TAG:MapDocument.from_bytes
+- `scripts/loaders/map_document.py:1405` `to_bytes(self) -> bytes` #TAG:MapDocument.to_bytes
   - Serialize. Identical to `self.raw` when nothing was changed.
-- `scripts/loaders/map_document.py:1238` `save(self, path: str | None=None) -> str` #TAG:MapDocument.save
+- `scripts/loaders/map_document.py:1417` `save(self, path: str | None=None) -> str` #TAG:MapDocument.save
   - Write the document. Returns the path written.
-- `scripts/loaders/map_document.py:1259` `@property changed(self) -> bool` #TAG:MapDocument.changed
+- `scripts/loaders/map_document.py:1438` `@property changed(self) -> bool` #TAG:MapDocument.changed
   - True when serializing would produce different bytes than loaded.
-- `scripts/loaders/map_document.py:1267` `@property width(self) -> int` #TAG:MapDocument.width
-- `scripts/loaders/map_document.py:1271` `@property height(self) -> int` #TAG:MapDocument.height
-- `scripts/loaders/map_document.py:1275` `@property tile_width(self) -> int` #TAG:MapDocument.tile_width
-- `scripts/loaders/map_document.py:1279` `@property tile_height(self) -> int` #TAG:MapDocument.tile_height
-- `scripts/loaders/map_document.py:1283` `@property properties(self) -> MapProperties` #TAG:MapDocument.properties
+- `scripts/loaders/map_document.py:1446` `@property width(self) -> int` #TAG:MapDocument.width
+- `scripts/loaders/map_document.py:1450` `@property height(self) -> int` #TAG:MapDocument.height
+- `scripts/loaders/map_document.py:1454` `@property tile_width(self) -> int` #TAG:MapDocument.tile_width
+- `scripts/loaders/map_document.py:1458` `@property tile_height(self) -> int` #TAG:MapDocument.tile_height
+- `scripts/loaders/map_document.py:1462` `@property properties(self) -> MapProperties` #TAG:MapDocument.properties
   - The map's own custom properties, typed.
-- `scripts/loaders/map_document.py:1287` `properties_of(self, element: ElementTree.Element) -> MapProperties` #TAG:MapDocument.properties_of
+- `scripts/loaders/map_document.py:1466` `properties_of(self, element: ElementTree.Element) -> MapProperties` #TAG:MapDocument.properties_of
   - Typed custom properties for any element in the document.
-- `scripts/loaders/map_document.py:1292` `_layer_elements(self) -> list[ElementTree.Element]` #TAG:MapDocument._layer_elements
-- `scripts/loaders/map_document.py:1295` `layer_names(self) -> list[str]` #TAG:MapDocument.layer_names
+- `scripts/loaders/map_document.py:1471` `_layer_elements(self) -> list[ElementTree.Element]` #TAG:MapDocument._layer_elements
+- `scripts/loaders/map_document.py:1474` `layer_names(self) -> list[str]` #TAG:MapDocument.layer_names
   - Every named layer, group and object group, in document order.
-- `scripts/loaders/map_document.py:1304` `tile_layer_names(self) -> list[str]` #TAG:MapDocument.tile_layer_names
-- `scripts/loaders/map_document.py:1308` `object_layer_names(self) -> list[str]` #TAG:MapDocument.object_layer_names
-- `scripts/loaders/map_document.py:1312` `_find_named(self, tag: str, name: str) -> ElementTree.Element | None` #TAG:MapDocument._find_named
-- `scripts/loaders/map_document.py:1318` `tile_layer(self, name: str) -> TileLayer` #TAG:MapDocument.tile_layer
+- `scripts/loaders/map_document.py:1483` `tile_layer_names(self) -> list[str]` #TAG:MapDocument.tile_layer_names
+- `scripts/loaders/map_document.py:1487` `object_layer_names(self) -> list[str]` #TAG:MapDocument.object_layer_names
+- `scripts/loaders/map_document.py:1491` `_find_named(self, tag: str, name: str) -> ElementTree.Element | None` #TAG:MapDocument._find_named
+- `scripts/loaders/map_document.py:1497` `tile_layer(self, name: str) -> TileLayer` #TAG:MapDocument.tile_layer
   - The csv tile layer called `name`. Cached, so edits accumulate.
-- `scripts/loaders/map_document.py:1333` `object_layer(self, name: str) -> ObjectLayer` #TAG:MapDocument.object_layer
+- `scripts/loaders/map_document.py:1512` `object_layer(self, name: str) -> ObjectLayer` #TAG:MapDocument.object_layer
   - The object group called `name`. Cached, so edits accumulate.
-- `scripts/loaders/map_document.py:1351` `_claim_layer_id(self) -> int` #TAG:MapDocument._claim_layer_id
+- `scripts/loaders/map_document.py:1530` `_claim_layer_id(self) -> int` #TAG:MapDocument._claim_layer_id
   - Next layer id, honouring the map's nextlayerid.
-- `scripts/loaders/map_document.py:1362` `_release_layer_id(self, layer_id: int) -> None` #TAG:MapDocument._release_layer_id
+- `scripts/loaders/map_document.py:1541` `_release_layer_id(self, layer_id: int) -> None` #TAG:MapDocument._release_layer_id
   - Roll nextlayerid back, but only for the id just handed out.
-- `scripts/loaders/map_document.py:1367` `_layer_parent(self, kind: str) -> ElementTree.Element` #TAG:MapDocument._layer_parent
+- `scripts/loaders/map_document.py:1546` `_layer_parent(self, kind: str) -> ElementTree.Element` #TAG:MapDocument._layer_parent
   - Where a new layer of `kind` should go by default.
-- `scripts/loaders/map_document.py:1382` `__sibling_shape(self, parent: ElementTree.Element, tag: str) -> tuple[str | None, str | None]` #TAG:MapDocument.__sibling_shape
+- `scripts/loaders/map_document.py:1561` `__sibling_shape(self, parent: ElementTree.Element, tag: str) -> tuple[str | None, str | None]` #TAG:MapDocument.__sibling_shape
   - How existing siblings of `tag` lay out their inner whitespace.
-- `scripts/loaders/map_document.py:1403` `add_layer(self, name: str, kind: str='tile', *, group: str | None=None, index: int | None=None, fill: int=0, layer_id: int | None=None, width: int | None=None, height: int | None=None, subcell: int | None=None) -> 'TileLayer | ObjectLayer'` #TAG:MapDocument.add_layer
+- `scripts/loaders/map_document.py:1582` `add_layer(self, name: str, kind: str='tile', *, group: str | None=None, index: int | None=None, fill: int=0, layer_id: int | None=None, width: int | None=None, height: int | None=None, subcell: int | None=None) -> 'TileLayer | ObjectLayer'` #TAG:MapDocument.add_layer
   - Add a `<layer>` or `<objectgroup>` and return its wrapper.
-- `scripts/loaders/map_document.py:1507` `__layer_size(self, name: str, width: int | None, height: int | None, subcell: int | None) -> tuple[int, int]` #TAG:MapDocument.__layer_size
+- `scripts/loaders/map_document.py:1686` `__layer_size(self, name: str, width: int | None, height: int | None, subcell: int | None) -> tuple[int, int]` #TAG:MapDocument.__layer_size
   - The dimensions a new tile layer is written at, checked.
-- `scripts/loaders/map_document.py:1547` `__declare_subcell(self, name: str, element: ElementTree.Element, subcell: int, inner: str | None) -> None` #TAG:MapDocument.__declare_subcell
+- `scripts/loaders/map_document.py:1726` `__declare_subcell(self, name: str, element: ElementTree.Element, subcell: int, inner: str | None) -> None` #TAG:MapDocument.__declare_subcell
   - Write `pyoneer_subcell` on a layer just created, and prove the
-- `scripts/loaders/map_document.py:1574` `__csv_payload(self, fill: int, width: int, height: int) -> str` #TAG:MapDocument.__csv_payload
+- `scripts/loaders/map_document.py:1753` `__csv_payload(self, fill: int, width: int, height: int) -> str` #TAG:MapDocument.__csv_payload
   - The csv body, in the shape this file already writes.
-- `scripts/loaders/map_document.py:1594` `remove_layer(self, name: str) -> bool` #TAG:MapDocument.remove_layer
+- `scripts/loaders/map_document.py:1773` `remove_layer(self, name: str) -> bool` #TAG:MapDocument.remove_layer
   - Remove a layer by name. Returns False if it was not there.
-- `scripts/loaders/map_document.py:1612` `serialize_layer(self, name: str) -> dict[str, Any] | None` #TAG:MapDocument.serialize_layer
+- `scripts/loaders/map_document.py:1791` `serialize_layer(self, name: str) -> dict[str, Any] | None` #TAG:MapDocument.serialize_layer
   - Everything needed to put a layer back exactly where it was.
-- `scripts/loaders/map_document.py:1650` `restore_layer(self, payload: dict[str, Any]) -> str` #TAG:MapDocument.restore_layer
+- `scripts/loaders/map_document.py:1829` `restore_layer(self, payload: dict[str, Any]) -> str` #TAG:MapDocument.restore_layer
   - Put back a layer serialized by `serialize_layer`.
-- `scripts/loaders/map_document.py:1714` `_tileset_elements(self) -> list[ElementTree.Element]` #TAG:MapDocument._tileset_elements
+- `scripts/loaders/map_document.py:1893` `_tileset_elements(self) -> list[ElementTree.Element]` #TAG:MapDocument._tileset_elements
   - Every `<tileset>` that is a DIRECT child of `<map>`.
-- `scripts/loaders/map_document.py:1727` `__tileset_ref(self, element: ElementTree.Element) -> TilesetRef` #TAG:MapDocument.__tileset_ref
-- `scripts/loaders/map_document.py:1745` `tilesets(self) -> list[TilesetRef]` #TAG:MapDocument.tilesets
+- `scripts/loaders/map_document.py:1906` `__tileset_ref(self, element: ElementTree.Element) -> TilesetRef` #TAG:MapDocument.__tileset_ref
+- `scripts/loaders/map_document.py:1924` `tilesets(self) -> list[TilesetRef]` #TAG:MapDocument.tilesets
   - Every tileset the map declares, in document order.
-- `scripts/loaders/map_document.py:1755` `tileset_names(self) -> list[str]` #TAG:MapDocument.tileset_names
+- `scripts/loaders/map_document.py:1934` `tileset_names(self) -> list[str]` #TAG:MapDocument.tileset_names
   - Tileset names in document order; '' for each external tileset.
-- `scripts/loaders/map_document.py:1759` `_tileset_element(self, key: str | int) -> ElementTree.Element | None` #TAG:MapDocument._tileset_element
+- `scripts/loaders/map_document.py:1938` `_tileset_element(self, key: str | int) -> ElementTree.Element | None` #TAG:MapDocument._tileset_element
   - Find a tileset by NAME (str) or by FIRSTGID (int).
-- `scripts/loaders/map_document.py:1782` `tileset(self, key: str | int) -> TilesetRef` #TAG:MapDocument.tileset
+- `scripts/loaders/map_document.py:1961` `tileset(self, key: str | int) -> TilesetRef` #TAG:MapDocument.tileset
   - The tileset named `key`, or the one whose firstgid is `key`.
-- `scripts/loaders/map_document.py:1791` `next_tileset_firstgid(self) -> int` #TAG:MapDocument.next_tileset_firstgid
+- `scripts/loaders/map_document.py:1970` `next_tileset_firstgid(self) -> int` #TAG:MapDocument.next_tileset_firstgid
   - The firstgid a newly appended tileset should take.
-- `scripts/loaders/map_document.py:1807` `require_known_extents(self, operation: str) -> None` #TAG:MapDocument.require_known_extents
+- `scripts/loaders/map_document.py:1986` `require_known_extents(self, operation: str) -> None` #TAG:MapDocument.require_known_extents
   - Refuse an operation that cannot be done safely.
-- `scripts/loaders/map_document.py:1833` `tiles_using_tileset(self, key: str | int) -> list[tuple[str, int, int, int]]` #TAG:MapDocument.tiles_using_tileset
+- `scripts/loaders/map_document.py:2012` `tiles_using_tileset(self, key: str | int) -> list[tuple[str, int, int, int]]` #TAG:MapDocument.tiles_using_tileset
   - (layer_name, x, y, raw_gid) for every csv cell inside this range.
-- `scripts/loaders/map_document.py:1863` `objects_using_tileset(self, key: str | int) -> list[tuple[str, int, int]]` #TAG:MapDocument.objects_using_tileset
+- `scripts/loaders/map_document.py:2042` `objects_using_tileset(self, key: str | int) -> list[tuple[str, int, int]]` #TAG:MapDocument.objects_using_tileset
   - (layer_name, object_id, raw_gid) for every TILE OBJECT in range.
-- `scripts/loaders/map_document.py:1886` `__resolve_image(self, image_source: str) -> str | None` #TAG:MapDocument.__resolve_image
+- `scripts/loaders/map_document.py:2065` `__resolve_image(self, image_source: str) -> str | None` #TAG:MapDocument.__resolve_image
   - A tileset image path, resolved the way Tiled resolves it.
-- `scripts/loaders/map_document.py:1898` `add_tileset(self, name: str, image_source: str, *, tile_width: int | None=None, tile_height: int | None=None, margin: int=0, spacing: int=0, columns: int | None=None, tile_count: int | None=None, image_width: int | None=None, image_height: int | None=None, first_gid: int | None=None) -> TilesetRef` #TAG:MapDocument.add_tileset
+- `scripts/loaders/map_document.py:2077` `add_tileset(self, name: str, image_source: str, *, tile_width: int | None=None, tile_height: int | None=None, margin: int=0, spacing: int=0, columns: int | None=None, tile_count: int | None=None, image_width: int | None=None, image_height: int | None=None, first_gid: int | None=None) -> TilesetRef` #TAG:MapDocument.add_tileset
   - Add an EMBEDDED `<tileset>` with one `<image>` child.
-- `scripts/loaders/map_document.py:2091` `_gid_pressure(self, threshold: int) -> tuple[int, dict[str, int]]` #TAG:MapDocument._gid_pressure
+- `scripts/loaders/map_document.py:2270` `_gid_pressure(self, threshold: int) -> tuple[int, dict[str, int]]` #TAG:MapDocument._gid_pressure
   - (total, per-layer counts) of painted gids at or above `threshold`.
-- `scripts/loaders/map_document.py:2124` `tileset_headroom(self, key: str | int) -> int` #TAG:MapDocument.tileset_headroom
+- `scripts/loaders/map_document.py:2303` `tileset_headroom(self, key: str | int) -> int` #TAG:MapDocument.tileset_headroom
   - How many MORE tiles this tileset could own before it collided.
-- `scripts/loaders/map_document.py:2150` `grow_tileset(self, key: str | int, *, image_source: str | None=None, image_width: int | None=None, image_height: int | None=None, tile_count: int | None=None) -> dict[str, Any]` #TAG:MapDocument.grow_tileset
+- `scripts/loaders/map_document.py:2329` `grow_tileset(self, key: str | int, *, image_source: str | None=None, image_width: int | None=None, image_height: int | None=None, tile_count: int | None=None) -> dict[str, Any]` #TAG:MapDocument.grow_tileset
   - Point a tileset at a re-cut sheet and change how many tiles it
-- `scripts/loaders/map_document.py:2379` `rename_tileset(self, key: str | int, new_name: str) -> str` #TAG:MapDocument.rename_tileset
+- `scripts/loaders/map_document.py:2558` `rename_tileset(self, key: str | int, new_name: str) -> str` #TAG:MapDocument.rename_tileset
   - Give a tileset a different name. Returns the name it had.
-- `scripts/loaders/map_document.py:2423` `remove_tileset(self, key: str | int, *, force: bool=False) -> bool` #TAG:MapDocument.remove_tileset
+- `scripts/loaders/map_document.py:2602` `remove_tileset(self, key: str | int, *, force: bool=False) -> bool` #TAG:MapDocument.remove_tileset
   - Remove a tileset by name or firstgid. False if it was not there.
-- `scripts/loaders/map_document.py:2490` `serialize_tileset(self, key: str | int) -> dict[str, Any] | None` #TAG:MapDocument.serialize_tileset
+- `scripts/loaders/map_document.py:2669` `serialize_tileset(self, key: str | int) -> dict[str, Any] | None` #TAG:MapDocument.serialize_tileset
   - Everything needed to put a tileset back exactly where it was.
-- `scripts/loaders/map_document.py:2522` `restore_tileset(self, payload: dict[str, Any]) -> str` #TAG:MapDocument.restore_tileset
+- `scripts/loaders/map_document.py:2701` `restore_tileset(self, payload: dict[str, Any]) -> str` #TAG:MapDocument.restore_tileset
   - Put back a tileset serialized by `serialize_tileset`.
-- `scripts/loaders/map_document.py:2558` `_claim_object_id(self) -> int` #TAG:MapDocument._claim_object_id
+- `scripts/loaders/map_document.py:2737` `_claim_object_id(self) -> int` #TAG:MapDocument._claim_object_id
   - Hand out the next object id, honouring the map's nextobjectid.
-- `scripts/loaders/map_document.py:2568` `_release_object_id(self, object_id: int) -> None` #TAG:MapDocument._release_object_id
+- `scripts/loaders/map_document.py:2747` `_release_object_id(self, object_id: int) -> None` #TAG:MapDocument._release_object_id
   - Undo a claim, but ONLY the most recent one.
-- `scripts/loaders/map_document.py:2581` `_rebuild_parents(self) -> None` #TAG:MapDocument._rebuild_parents
-- `scripts/loaders/map_document.py:2586` `_indent_of(self, element: ElementTree.Element) -> str` #TAG:MapDocument._indent_of
+- `scripts/loaders/map_document.py:2760` `_rebuild_parents(self) -> None` #TAG:MapDocument._rebuild_parents
+- `scripts/loaders/map_document.py:2771` `_remember_attributes(self, element: ElementTree.Element) -> None` #TAG:MapDocument._remember_attributes
+  - Record the order `element` currently spells its attributes in.
+- `scripts/loaders/map_document.py:2805` `_indent_of(self, element: ElementTree.Element) -> str` #TAG:MapDocument._indent_of
   - The horizontal whitespace preceding `element` on its own line.
-- `scripts/loaders/map_document.py:2601` `_child_indent(self, parent: ElementTree.Element) -> str` #TAG:MapDocument._child_indent
+- `scripts/loaders/map_document.py:2820` `_child_indent(self, parent: ElementTree.Element) -> str` #TAG:MapDocument._child_indent
   - Indentation for a NEW child of `parent`.
-- `scripts/loaders/map_document.py:2616` `_separator_of(self, parent: ElementTree.Element, children: list[ElementTree.Element]) -> str | None` #TAG:MapDocument._separator_of
+- `scripts/loaders/map_document.py:2835` `_separator_of(self, parent: ElementTree.Element, children: list[ElementTree.Element]) -> str | None` #TAG:MapDocument._separator_of
   - The whitespace this parent ALREADY puts in front of a child.
-- `scripts/loaders/map_document.py:2651` `_append_child(self, parent: ElementTree.Element, tag: str, index: int | None=None) -> ElementTree.Element` #TAG:MapDocument._append_child
+- `scripts/loaders/map_document.py:2870` `_append_child(self, parent: ElementTree.Element, tag: str, index: int | None=None) -> ElementTree.Element` #TAG:MapDocument._append_child
   - Insert a new element, indented to match its siblings.
-- `scripts/loaders/map_document.py:2697` `_remove_child(self, parent: ElementTree.Element, element: ElementTree.Element) -> None` #TAG:MapDocument._remove_child
+- `scripts/loaders/map_document.py:2916` `_remove_child(self, parent: ElementTree.Element, element: ElementTree.Element) -> None` #TAG:MapDocument._remove_child
   - Remove an element and hand its trailing whitespace back.
-- `scripts/loaders/map_document.py:2732` `_touch(self) -> None` #TAG:MapDocument._touch
-- `scripts/loaders/map_document.py:2735` `__repr__(self) -> str` #TAG:MapDocument.__repr__
+- `scripts/loaders/map_document.py:2957` `_touch(self) -> None` #TAG:MapDocument._touch
+- `scripts/loaders/map_document.py:2960` `__repr__(self) -> str` #TAG:MapDocument.__repr__

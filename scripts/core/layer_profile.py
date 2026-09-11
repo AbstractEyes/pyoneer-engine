@@ -93,6 +93,104 @@ RESERVED = frozenset({
 })
 
 
+# Every tmx ATTRIBUTE whose TEXT a reader casts back to something, and what
+# it casts it to. `str` means nothing casts it, so any text is legal there
+# and the row exists to say so rather than to be missing.
+#
+# THE THIRD HALF OF THE SAME SENTENCE RESERVED AND PREFIX ARE WRITTEN UNDER,
+# which is why it lives here beside them rather than in the editor that
+# first needed it. Law 1's cost is a property NAME pytmx cannot survive;
+# this is the same cost reached through a VALUE -- `<object width="abc"/>`
+# makes the WHOLE map unloadable, naming neither the map nor the attribute,
+# because pytmx casts every attribute onto the element before it looks at
+# anything. Both doors that write tmx text ask this table: the editor's
+# command vocabulary (`editor/core/verbs.py`, which re-exports it, because
+# `scripts/` may never import `editor/` and a second copy is law 2's
+# corollary) and the raw-XML restore door in
+# `scripts/loaders/map_document.py`.
+#
+# MEASURED, NOT REMEMBERED, exactly as RESERVED is: every row is derived
+# from pytmx's own `types` table by `tools/check_tmx_roundtrip.py`, which
+# fails if a row disagrees with the cast the loader really applies AND if
+# pytmx declares a name this table does not -- so a pytmx upgrade turns the
+# suite red instead of turning somebody's map unloadable.
+#
+# FOUR ROWS ARE OURS. `class` and `template` are names pytmx does not cast
+# at all; they are declared `str` so that every attribute the editor may
+# write has a declared shape and adding one to that vocabulary without
+# saying what reads it cannot pass quietly. `nextlayerid` is the one row
+# STRICTER than pytmx: pytmx loads a map whose counter reads `not-a-number`
+# and `MapDocument.add_layer` is the reader that raises on it, so this table
+# answers for our own reader too. `tools/check_editor.py` pins both halves
+# of that divergence.
+ATTRIBUTE_TEXT: dict[str, type] = {
+    # int
+    "columns": int, "duration": int, "firstgid": int, "gid": int, "id": int,
+    "margin": int, "nextobjectid": int, "offsetx": int, "offsety": int,
+    "spacing": int, "tile": int, "tilecount": int, "tileheight": int,
+    "tileid": int, "tilewidth": int,
+    "nextlayerid": int,                 # ours: pytmx leaves it as text
+    # float
+    "height": float, "hexsidelength": float, "opacity": float,
+    "pixelsize": float, "probability": float, "rotation": float,
+    "width": float, "x": float, "y": float,
+    # bool, through pytmx's own `convert_to_bool`
+    "bold": bool, "italic": bool, "kerning": bool, "strikeout": bool,
+    "underline": bool, "visible": bool, "wrap": bool,
+    # str -- nothing casts these, and saying so is the point
+    "backgroundcolor": str, "color": str, "compression": str,
+    "draworder": str, "encoding": str, "fontfamily": str, "format": str,
+    "halign": str, "name": str, "orientation": str, "points": str,
+    "renderorder": str, "source": str, "staggeraxis": str,
+    "staggerindex": str, "terrain": str, "tiledversion": str, "trans": str,
+    "type": str, "valign": str, "value": str, "version": str,
+    "class": str, "template": str,      # ours: pytmx casts neither
+}
+
+# The same question for a custom `<property>`, whose cast is named by its
+# own `type=` attribute rather than by its name. Derived from pytmx's
+# `prop_type` by the same check. `class` is deliberately absent: pytmx
+# resolves it against the map's custom types rather than casting text, so
+# there is no text-level answer to give and refusing one would refuse a
+# payload Tiled writes.
+PROPERTY_TEXT: dict[str, type] = {
+    "bool": bool, "color": str, "enum": str, "file": str, "float": float,
+    "int": int, "object": int, "string": str,
+}
+
+
+def text_reads_back(wants: type, value: object) -> bool:
+    """Can a reader casting `value` to `wants` get an answer instead of a raise?
+
+    THE ONE PLACE THAT QUESTION IS ANSWERED.                # #TAG:text_the_reader_casts_back
+    Both doors ask it -- the editor's typed command arguments and this
+    package's raw-XML restore -- and each raises its own error, because the
+    ERROR belongs to the layer and the ANSWER does not.
+
+    A non-`str` is False and not a crash: `ElementTree` accepts an int in
+    `attrib` and then raises at SERIALISATION, so a map holding one is lost
+    at save rather than at the edit.
+
+    `bool` reproduces pytmx's `convert_to_bool` -- first character, empty
+    string false -- rather than a plausible `{"0", "1"}`, because a reader
+    that accepts `visible="not-a-number"` is a reader whose map must keep
+    loading. Being stricter than the loader here would break the undo of a
+    value a human authored.
+    """
+    if not isinstance(value, str):
+        return False
+    if wants is str:
+        return True
+    if wants is bool:
+        head = value.strip().lower()[:1]
+        return head == "" or head in ("0", "1", "f", "n", "t", "y", "-")
+    try:
+        wants(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class LayerProfile:
     """A layer's declared behaviour, with defaults already applied."""

@@ -57,6 +57,8 @@ from scripts.game.behavior.base import BEHAVIORS
 # question `MapDocument.add_layer` asks before it advises about a depth.
 from scripts.core.depth import resolve_layer_depth
 from scripts.core.errors import PyoneerContentWarning
+from scripts.core.layer_profile import (ATTRIBUTE_TEXT,
+                                       text_reads_back)
 # The op registry, for `script.node.add`'s one ambiguity guard and for the
 # `core` loadout's name. The reader in `scripts/loaders/script_file.py` is
 # what actually judges a script; see the Event scripts section below.
@@ -110,6 +112,122 @@ def _layer_scope(scope: Scope) -> Scope:
 
 def _table_scope(scope: Scope) -> Scope:
     return Scope.of(("table", scope.require("table")))
+
+
+# --------------------------------------------------------------------------
+# Numbers that travel as text
+#
+# A tmx attribute holds TEXT, and a reader casts some of that text straight
+# back to a number: pytmx does it for `width`, `gid` and `nextobjectid`, and
+# `MapDocument.add_layer` does it for `nextlayerid`, which pytmx leaves
+# alone. So a `str` argument that BECOMES one of those attributes is a
+# number wearing a string's type, and `Param(..., str, ...)` -- which checks
+# the Python type and nothing else -- hands `'not-a-number'` to the
+# document. Law 1's stated cost then arrives whole and late:
+# `ValueError: invalid literal for int() with base 10` out of the loader,
+# naming neither the map, the element, nor the attribute.
+#
+# THE GUARD IS ON THE PARAMETER, and the placement is the point.
+# `Verb.validate` runs every parameter's `check` BEFORE `Verb.apply` is
+# called at all, so a refusal here cannot have mutated anything -- and a
+# guard that has already written half of its change before refusing is
+# worse than none. Two verb bodies call the same function directly, because
+# the attribute they write is named by a SIBLING argument
+# (`map.object.set`) or sits inside a payload dict (`map.layer.restore`);
+# both call it before their first write, for that same reason.
+#
+# THE SHAPE THIS CLOSES, on its twelfth sighting: `map.object.restore`'s
+# `xml` argument was given a door last pass, and `next_object_id` -- three
+# lines below it, in the same args dict, on the same verb -- was left open.
+# One table and one function, so the next numeric-valued argument is
+# covered by declaring where it lands rather than by remembering to guard
+# it.
+# --------------------------------------------------------------------------
+
+# THE TABLE MOVED, it was not copied. `ATTRIBUTE_TEXT` now lives beside
+# `RESERVED` in `scripts/core/layer_profile.py`, because the raw-XML restore
+# door in `scripts/loaders/map_document.py` asks the same question and
+# `scripts/` may never import `editor/` (law 2). This module re-exports the
+# name it used to declare, so every call site below and the check that
+# derives pytmx's own casts are unchanged -- and there is exactly one table,
+# which is law 2's corollary rather than the 425-duplicate-line shape.
+#
+# What stays HERE is the refusal, because the ERROR belongs to this layer:
+# a `PyoneerCommandArgumentError` naming the verb and the argument is
+# meaningless inside a document that has no verbs.
+_ATTRIBUTE_TEXT = ATTRIBUTE_TEXT
+
+
+def _checked_attribute_text(attribute: str, value: Any, *, verb: str,
+                            argument: str) -> Any:
+    """`value`, if a reader can cast it back out of tmx attribute `attribute`.
+
+    Raises `PyoneerCommandArgumentError` naming the verb, the argument, the
+    attribute and what was expected. It writes nothing and reads nothing:
+    every caller runs it before its first mutation, so a refusal leaves the
+    document byte-identical, which is the whole difference between a guard
+    and a half-applied change.
+    """
+    if attribute not in _ATTRIBUTE_TEXT:
+        raise PyoneerCommandArgumentError(
+            f"{verb}: argument {argument!r} writes the tmx attribute "
+            f"{attribute!r}, and nothing declares what a reader casts that "
+            f"text to -- add it to ATTRIBUTE_TEXT in "
+            f"scripts/core/layer_profile.py rather than letting an "
+            f"unchecked value through",
+            verb=verb, argument=argument, declared=sorted(_ATTRIBUTE_TEXT))
+    wants = _ATTRIBUTE_TEXT[attribute]
+    if not isinstance(value, str):
+        raise PyoneerCommandArgumentError(
+            f"{verb}: argument {argument!r} becomes the tmx attribute "
+            f"{attribute!r}, which is TEXT; it was handed "
+            f"{type(value).__name__} ({value!r}). ElementTree accepts a "
+            f"non-string here and then raises at serialisation, so the map "
+            f"is lost at save rather than at the edit",
+            verb=verb, argument=argument, attribute=attribute)
+
+    if text_reads_back(wants, value):
+        return value
+    raise PyoneerCommandArgumentError(
+        f"{verb}: argument {argument!r} becomes the tmx attribute "
+        f"{attribute!r}, which a reader casts to {wants.__name__}, and "
+        f"{value!r} is not {wants.__name__} text. Writing it makes the "
+        f"WHOLE MAP unloadable -- the cast raises inside the loader, naming "
+        f"neither the map nor the attribute",
+        verb=verb, argument=argument, attribute=attribute,
+        expected=wants.__name__)
+
+
+class AttributeText(Param):
+    """A `str` argument that is one tmx attribute's text, checked as one.
+
+    `attribute` says WHICH, because the answer to "is this legal" is not in
+    the value -- `'8'` is a fine `name` and a fine `nextobjectid`, and
+    `'hero'` is a fine `name` and an unloadable map as `nextobjectid`.
+
+    Not a dataclass field: `describe_all` renders a parameter field by
+    field into `docs/COMMANDS.md`, which its check compares byte for byte,
+    so this has to be invisible to that rendering. `Param` is frozen, hence
+    the `object.__setattr__`.
+
+    THE DECLARED `default` IS THE ONE VALUE THAT SKIPS THE CHECK. That is
+    how an optional argument spells "there is nothing to write" -- both
+    verbs using this test exactly that before touching the document -- and
+    tying the exemption to the declared default rather than to a literal
+    `""` keeps a future required argument fully checked.
+    """
+
+    def __init__(self, name: str, attribute: str, doc: str, *,
+                 required: bool = True, default: Any = None):
+        super().__init__(name, str, doc, required=required, default=default)
+        object.__setattr__(self, "attribute", attribute)
+
+    def check(self, value: Any, *, verb: str) -> Any:
+        value = super().check(value, verb=verb)
+        if value == self.default:
+            return value
+        return _checked_attribute_text(self.attribute, value,
+                                       verb=verb, argument=self.name)
 
 
 # --------------------------------------------------------------------------
@@ -311,9 +429,10 @@ def _layer_add(project: Project, cmd: Command) -> Command:
             "whole element, its tiles included.",
     scopes=["map:*/layer:*"],
     params=[
-        Param("next_layer_id", str, "restore the map's nextlayerid to this "
-                                    "after removing; used by undo",
-              required=False, default=""),
+        AttributeText("next_layer_id", "nextlayerid",
+                      "restore the map's nextlayerid to this after "
+                      "removing; used by undo",
+                      required=False, default=""),
     ],
     destructive=True,
 )
@@ -443,7 +562,17 @@ def _layer_unset(project: Project, cmd: Command) -> Command | None:
 )
 def _layer_restore(project: Project, cmd: Command) -> Command:
     document = project.map(cmd.scope.require("map"))
-    name = document.restore_layer(cmd.args["payload"])
+    payload = cmd.args["payload"]
+    # The one key in any payload this vocabulary carries that is attribute
+    # TEXT rather than a whole element: `restore_layer` writes it straight
+    # onto `<map>`. Checked here rather than as an `AttributeText` param
+    # because it sits inside a dict, and checked BEFORE the restore so a
+    # refusal leaves the document exactly as it was found.
+    if payload.get("next_layer_id"):
+        _checked_attribute_text("nextlayerid", payload["next_layer_id"],
+                                verb=cmd.verb,
+                                argument="payload['next_layer_id']")
+    name = document.restore_layer(payload)
     return Command("map.layer.remove", cmd.scope.child("layer", name))
 
 
@@ -1314,8 +1443,9 @@ def _object_remove(project: Project, cmd: Command) -> Command:
         Param("xml", str, "the object's whole <object> element as XML text"),
         Param("index", int, "position among sibling objects; omit to append",
               required=False, default=None),
-        Param("next_object_id", str, "the map's nextobjectid before removal",
-              required=False, default=""),
+        AttributeText("next_object_id", "nextobjectid",
+                      "the map's nextobjectid before removal",
+                      required=False, default=""),
     ],
 )
 def _object_restore(project: Project, cmd: Command) -> Command:
@@ -1383,6 +1513,15 @@ def _object_set(project: Project, cmd: Command) -> Command | None:
     key, value = cmd.args["key"], cmd.args["value"]
     attribute = _object_attribute_name(found, key)
 
+    # THE SIBLING ARGUMENT NAMES THE ATTRIBUTE, so `value` cannot be an
+    # `AttributeText` param -- `key` decides what it has to parse as. Same
+    # table, same function, same refusal, and run before the read below so
+    # a refusal cannot have touched the element. `choices=` on `key` made
+    # this verb look guarded and checked only which attribute was written,
+    # never what went into it: `width="not-a-number"` was accepted here and
+    # the map stopped loading.
+    _checked_attribute_text(attribute, value, verb=cmd.verb, argument="value")
+
     # Read the RAW attribute, not the property. `str(getattr(found, key))`
     # raises AttributeError for any key MapObject does not model, and for an
     # ABSENT width it returns "0.0" -- so undo materialised a spurious
@@ -1440,10 +1579,23 @@ def _object_unset(project: Project, cmd: Command) -> Command | None:
     """
     found = _object(project, cmd.scope)
     key = cmd.args["key"]
-    previous = found.element.attrib.pop(key, None)
+    previous = found.element.attrib.get(key)
     if previous is None:
         return None
-    found._document._touch()
+    # AND THE REMOVE TWIN CHECKS WHAT ITS INVERSE WILL WRITE, for the reason
+    # stated above and stated again on `map.layer.unset`: a command whose
+    # inverse cannot run is worse than a capability that is missing. An
+    # object hand-authored `width="abc"` is an unloadable map already;
+    # deleting the attribute through a door whose undo then raises would
+    # take the value with it and empty the history. Same function as the
+    # setter, so the pair cannot drift -- and it refuses before the delete,
+    # so the element is untouched.
+    _checked_attribute_text(key, previous, verb=cmd.verb, argument="value")
+    # THROUGH THE MODEL, not around it -- the same sentence the set half is
+    # written under, and the last place in this pair that still reached past
+    # it. `MapObject.unset` pops, touches, and hands back the value this
+    # inverse needs, so the `_touch()` goes with the raw `del`.
+    found.unset(key)
     return Command("map.object.set", cmd.scope,
                    {"key": key, "value": previous})
 

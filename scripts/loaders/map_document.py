@@ -89,7 +89,9 @@ from dataclasses import dataclass
 from typing import Any, Iterator
 
 from scripts.core.errors import PyoneerAssetMissingError, PyoneerConfigError, warn_content
-from scripts.core.layer_profile import PREFIX, RESERVED
+from scripts.core.layer_profile import (ATTRIBUTE_TEXT, PREFIX,
+                                       PROPERTY_TEXT, RESERVED,
+                                       text_reads_back)
 from scripts.core.log import trace_assets
 
 
@@ -156,7 +158,47 @@ def _escape_attribute(value: str) -> str:
     return value.replace("\r", "&#13;").replace("\n", "&#10;").replace("\t", "&#9;")
 
 
-def _serialize(element: ElementTree.Element, parts: list[str]) -> None:
+def _ordered_attributes(
+    element: ElementTree.Element,
+    spellings: dict[ElementTree.Element, tuple[str, ...]] | None,
+) -> list[tuple[str, Any]]:
+    """This element's attributes in the order the FILE spells them.
+
+    READ OFF THE FILE, NEVER COMPUTED -- the sentence `_separator_of` is
+    written under, applied to the other axis of the same contract. There it
+    is the whitespace in front of a child; here it is the left-to-right
+    order of an attribute list, and both are destroyed the same way: by a
+    writer that computes a plausible answer instead of copying the one the
+    file already gave.
+
+    `Element.attrib` is a plain dict, so `Element.set` APPENDS any name not
+    already present -- which makes removing an attribute and putting it back
+    move it to the END of the list. Measured on a nine-attribute `<object>`:
+    eight of the nine attributes `map.object.unset` accepts came back last,
+    so apply-then-undo left one line of diff nobody authored and
+    `MapDocument.changed` reported the map dirty after a NO-OP PAIR. The
+    ninth passed only because it was already last, which is the exact shape
+    of an assertion that cannot fail.
+
+    `spellings` holds the order each element was last seen spelling, keyed
+    by element. A name it does not carry is emitted after the ones it does,
+    in `attrib` order, so a genuinely NEW attribute still appends -- the
+    memory restores a position, it never invents one.
+    """
+    known = spellings.get(element) if spellings else None
+    if not known:
+        return list(element.attrib.items())
+    attrib = element.attrib
+    ordered = [(key, attrib[key]) for key in known if key in attrib]
+    remembered = set(known)
+    ordered += [(key, value) for key, value in attrib.items()
+                if key not in remembered]
+    return ordered
+
+
+def _serialize(element: ElementTree.Element, parts: list[str],
+               spellings: dict[ElementTree.Element, tuple[str, ...]] | None = None,
+               ) -> None:
     """Append `element` to `parts`, preserving its whitespace verbatim."""
     tag = element.tag
     if tag is ElementTree.Comment:
@@ -165,7 +207,7 @@ def _serialize(element: ElementTree.Element, parts: list[str]) -> None:
         parts.append("<?%s?>" % (element.text or ""))
     else:
         parts.append("<" + tag)
-        for key, value in element.attrib.items():
+        for key, value in _ordered_attributes(element, spellings):
             parts.append(' %s="%s"' % (key, _escape_attribute(str(value))))
         children = list(element)
         # `text is None` distinguishes `<a/>` from `<a></a>`, which is the
@@ -177,7 +219,7 @@ def _serialize(element: ElementTree.Element, parts: list[str]) -> None:
             if element.text:
                 parts.append(_escape_text(element.text))
             for child in children:
-                _serialize(child, parts)
+                _serialize(child, parts, spellings)
             parts.append("</" + tag + ">")
     if element.tail:
         parts.append(_escape_text(element.tail))
@@ -347,15 +389,96 @@ def _refuse_smuggled_names(element: ElementTree.Element, verb: str,
                     source=source, element=tag)
 
 
+def _refuse_unreadable_text(element: ElementTree.Element, verb: str,
+                            source: str | None) -> None:
+    """Raise unless every VALUE in `element`'s subtree reads back out of tmx.
+
+    THE SIBLING OF `_refuse_smuggled_names`, AND IT IS A SIBLING BECAUSE THE
+    NAME DOOR WAS BUILT AND THE VALUE DOOR WAS NOT. The name rule refuses
+    `<object pyoneer_script="...">` and says nothing at all about
+    `<object width="abc"/>`, which costs the identical thing -- pytmx casts
+    every attribute onto the element before it reads one property, so the
+    cast raises and takes the WHOLE map with it, naming neither the map nor
+    the attribute. Measured through the relay on all three restore verbs
+    before this existed: `<object width="abc"/>`, `<layer width="abc">` and
+    `<tileset firstgid="abc">` were all ACCEPTED.
+
+    Both halves ask ONE table -- `ATTRIBUTE_TEXT` in
+    `scripts/core/layer_profile.py`, which `editor/core/verbs.py`
+    re-exports for its typed command arguments. An attribute no reader casts
+    is absent from that table and any text is legal there, which is why this
+    cannot refuse a payload Tiled writes.
+
+    A `<property>` is the same question asked through its own `type=`:
+    `<property type="int" value="NaN"/>` is the same unloadable map, and it
+    is a door the TYPED route cannot even build, because
+    `MapProperties.__setitem__` derives `type=` from the Python value. An
+    unknown `type=` is refused too: pytmx subscripts its `prop_type` table
+    and a KeyError there is the same whole-map loss.
+
+    REFUSES, never repairs, and runs BEFORE anything is appended -- for the
+    reasons `_refuse_smuggled_names` states at length.
+    """
+    for owner in element.iter():
+        tag = owner.tag if isinstance(owner.tag, str) else "?"
+        for name, value in owner.attrib.items():
+            wants = ATTRIBUTE_TEXT.get(name)
+            if wants is None or text_reads_back(wants, value):
+                continue
+            raise PyoneerConfigError(
+                f"{verb} was handed an <{tag}> whose {name}={value!r} is not "
+                f"{wants.__name__} text. A reader casts that attribute, so "
+                f"writing it makes the WHOLE map unloadable -- the cast "
+                f"raises inside the loader, naming neither the map, the "
+                f"element nor the attribute -- and the element would still "
+                f"be there to serialize. Refused rather than repaired: an "
+                f"element quietly rewritten on the way in is not the element "
+                f"the caller serialized, and for a restore verb that breaks "
+                f"the inverse as well.",
+                source=source, element=tag)
+        if tag != "property":
+            continue
+        declared = owner.get("type")
+        if declared is None or declared == "class":
+            continue
+        if declared not in PROPERTY_TEXT:
+            raise PyoneerConfigError(
+                f"{verb} was handed a <property name="
+                f"{owner.get('name')!r} type={declared!r}>, and pytmx has no "
+                f"such property type. It looks its table up by subscript, so "
+                f"an unknown one raises and takes the WHOLE map with it. The "
+                f"types a reader knows are: "
+                f"{', '.join(sorted(PROPERTY_TEXT))}, class.",
+                source=source, element=tag)
+        text = owner.get("value")
+        if text is None or text_reads_back(PROPERTY_TEXT[declared], text):
+            continue
+        raise PyoneerConfigError(
+            f"{verb} was handed a <property name={owner.get('name')!r} "
+            f"type={declared!r} value={text!r}>, and {text!r} is not "
+            f"{PROPERTY_TEXT[declared].__name__} text. The type attribute "
+            f"is a cast instruction to the reader, so the map stops loading "
+            f"entire. map.object.property.set cannot build this at all -- it "
+            f"writes type= FROM the Python value -- which is the measure of "
+            f"what the raw-XML door is for.",
+            source=source, element=tag)
+
+
 def _parse_restored_element(xml: str, verb: str, kind: str,
                             tags: tuple[str, ...],
                             source: str | None) -> ElementTree.Element:
     """The ONE door authored XML text enters this document through.
 
     `fromstring` checks that the names are legal XML and nothing else, so all
-    three things a restored element has to be -- parseable, the tag this verb
-    restores, and free of any name pytmx cannot survive -- are settled here
-    rather than once per caller.
+    four things a restored element has to be -- parseable, the tag this verb
+    restores, free of any name pytmx cannot survive, and free of any VALUE
+    pytmx cannot cast -- are settled here rather than once per caller.
+
+    The fourth arrived a pass after the third and is the reason this door is
+    worth having: a guard that reads NAMES and not VALUES refuses
+    `<object pyoneer_x="1"/>` and accepts `<object width="abc"/>`, which
+    costs the whole map. One door, so a fifth rule reaches every restore
+    verb by being written once.
     """
     try:
         parsed = ElementTree.fromstring(xml)
@@ -367,6 +490,7 @@ def _parse_restored_element(xml: str, verb: str, kind: str,
         raise PyoneerConfigError(
             "%s expects %s, got <%s>" % (verb, kind, parsed.tag), source=source)
     _refuse_smuggled_names(parsed, verb, source)
+    _refuse_unreadable_text(parsed, verb, source)
     return parsed
 
 
@@ -505,6 +629,14 @@ class MapProperties:
                 type_name = existing
             entry.text = None
         if type_name is None:
+            # THE SIBLING OF `map.object.unset`, in this file rather than in
+            # the editor. Overwriting `<property type="int" value="30"/>`
+            # with a string drops `type`; typing it back re-adds it, and
+            # `Element.set` appends -- so `type` came back AFTER `value` and
+            # a set-then-undo left a line of diff nobody authored. The order
+            # is recorded here, before the pop, because after it there is
+            # nothing left to read.
+            self._document._remember_attributes(entry)
             entry.attrib.pop("type", None)
         else:
             entry.set("type", type_name)
@@ -832,6 +964,42 @@ class MapObject:
         self.element.set(key, _attribute_text(value))
         self._document._touch()
 
+    def unset(self, key: str) -> str | None:
+        """Remove a built-in `<object>` XML attribute -- the twin of `set`.
+
+        Returns the removed text, or None when the element never carried it
+        -- which is the value `map.object.set` needs to put it back, so the
+        caller's inverse is this method's return value.
+
+        THE POSITION IS THE POINT, AND THIS METHOD DOES NOT KEEP IT. That
+        is deliberate. `Element.attrib` is a dict and `Element.set` appends,
+        so removing an attribute and writing it back moved it to the END of
+        the list -- measured, eight of the nine names `map.object.unset`
+        accepts came back last and each left the map dirty after a no-op
+        pair. What puts them back is the DOCUMENT's own record of how each
+        element spells its attributes, taken where the order is still true:
+        at parse, and at the moment an element is authored. A copy of that
+        line here would be a second place the rule is spelled, and it could
+        never fire -- every `<object>` in a document has been through one of
+        those two moments before any door can reach it.
+
+        So the repair holds for a caller that reaches around this method and
+        pops the attribute off `element.attrib` itself, which is what
+        `map.object.unset` does today. That is the property worth having:
+        the order survives because the document remembers it, not because
+        every writer remembered to use the right door.
+
+        There is no vocabulary check here on purpose. `map.object.unset`
+        declares `choices=_OBJECT_ATTRIBUTES` and refuses `id`, and that
+        refusal is a statement about which attributes the EDITOR's inverse
+        can write back, not about which ones a document may hold.
+        """
+        previous = self.element.attrib.pop(key, None)
+        if previous is None:
+            return None
+        self._document._touch()
+        return previous
+
     def __repr__(self) -> str:
         return "MapObject(id=%d, name=%r, type=%r)" % (self.id, self.name, self.type)
 
@@ -899,6 +1067,12 @@ class ObjectLayer:
             element.set("width", _attribute_text(width))
         if height is not None:
             element.set("height", _attribute_text(height))
+        # Tiled's order, just written above, is this element's own order --
+        # and nothing else will ever record it: an object the session
+        # created does not pass through `_rebuild_parents`, so without this
+        # line `unset` + `set` on a BRAND NEW object still moves the
+        # attribute to the end while the same pair on a loaded one does not.
+        self._document._remember_attributes(element)
         wrapper = MapObject(self._document, element)
         if properties:
             view = wrapper.properties
@@ -954,6 +1128,10 @@ class ObjectLayer:
 
         placeholder = self._document._append_child(self.element, "object", index)
         placeholder.attrib = dict(parsed.attrib)
+        # The restored text's own order, recorded for the same reason
+        # `add_object` records Tiled's: this is a NEW element and the only
+        # restore that does not go on to call `_rebuild_parents`.
+        self._document._remember_attributes(placeholder)
         placeholder.text = parsed.text
         for child in list(parsed):
             placeholder.append(child)
@@ -1177,6 +1355,7 @@ class MapDocument:
         self._newline = newline
         self._trailing = trailing
         self._parents: dict[ElementTree.Element, ElementTree.Element] = {}
+        self._attribute_spellings: dict[ElementTree.Element, tuple[str, ...]] = {}
         self._rebuild_parents()
         self._tile_layers: dict[str, TileLayer] = {}
         self._object_layers: dict[str, ObjectLayer] = {}
@@ -1228,7 +1407,7 @@ class MapDocument:
         for layer in self._tile_layers.values():
             layer._flush()
         parts: list[str] = []
-        _serialize(self.root, parts)
+        _serialize(self.root, parts, self._attribute_spellings)
         body = "".join(parts)
         if self._newline != "\n":
             body = body.replace("\r\n", "\n").replace("\r", "\n")
@@ -2579,9 +2758,49 @@ class MapDocument:
 
     # -- tree edits with indentation ---------------------------------------
     def _rebuild_parents(self) -> None:
-        self._parents = {
-            child: parent for parent in self.root.iter() for child in parent
-        }
+        parents: dict[ElementTree.Element, ElementTree.Element] = {}
+        for parent in self.root.iter():
+            # The SAME walk, because the two facts have the same lifetime:
+            # a parser just handed us this element, so this is the one moment
+            # its attribute order is guaranteed to be the file's own.
+            self._remember_attributes(parent)
+            for child in parent:
+                parents[child] = parent
+        self._parents = parents
+
+    def _remember_attributes(self, element: ElementTree.Element) -> None:
+        """Record the order `element` currently spells its attributes in.
+
+        THE ORDER IS READ OFF THE FILE, NEVER COMPUTED.  #TAG:attribute_order_read_off_the_file
+
+        MERGE, NEVER OVERWRITE, and that is the whole subtlety. Called a
+        second time on an element that has since LOST an attribute, an
+        overwrite would forget where the missing one sat -- which is the
+        only thing this memory exists to know. So a name already remembered
+        keeps its slot and only names that appeared since are appended.
+
+        Call it wherever the order is STILL TRUE and nothing has recorded it
+        yet. There are exactly three such moments and each has one caller:
+        a parser has just produced the element (`_rebuild_parents`, at load
+        and after every restore that rebuilds); this session has just
+        authored it (`add_object`, `restore_object` -- the two paths that
+        make an element and do not rebuild); and this module is one
+        statement away from destroying it (`MapProperties.__setitem__`,
+        which POPS `type` off a `<property>` it may itself have created).
+
+        `MapObject.unset` deliberately does NOT call it. Every `<object>`
+        has been through one of the three above before any door can reach
+        it, so a call there could not fire -- and the repair has to hold for
+        the caller that pops `element.attrib` directly anyway, which is what
+        `map.object.unset` does today.
+        """
+        known = self._attribute_spellings.get(element)
+        if known is None:
+            self._attribute_spellings[element] = tuple(element.attrib)
+            return
+        appeared = tuple(key for key in element.attrib if key not in known)
+        if appeared:
+            self._attribute_spellings[element] = known + appeared
 
     def _indent_of(self, element: ElementTree.Element) -> str:
         """The horizontal whitespace preceding `element` on its own line."""
@@ -2726,6 +2945,12 @@ class MapDocument:
             children[position - 1].tail = element.tail
         parent.remove(element)
         self._parents.pop(element, None)
+        # Its attribute order goes with it. Every restore re-PARSES the
+        # element text rather than re-inserting this object, so there is
+        # nothing here a later restore could want -- and a dict keyed by
+        # element would otherwise hold every element the session ever
+        # deleted alive for the life of the document.
+        self._attribute_spellings.pop(element, None)
         if not list(parent) and not (parent.text or "").strip():  #TAG:childless_parent_closes_itself
             parent.text = None
 

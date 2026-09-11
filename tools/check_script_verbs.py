@@ -34,6 +34,12 @@ that nothing exercises is not exercised by playing the game either:
      and the editor's own save puts the `.json` on disk, so a map that
      names a script and the script itself reach the disk together and the
      next boot of the game finds what the map references
+  9. the DANGLING-LINK WALK (section 9, last): every per-object property
+     that names something -- `pyoneer_script`, `pyoneer_actor`,
+     `pyoneer_behaviors` -- is reported when it names nothing AND, the
+     half nobody writes, is SILENT for every shape the engine reads
+     nothing on: an untyped region marker, a link on a tile layer, a
+     half-built project with no `scripts/` and no `tables/` at all
 
 EVERY ASSERTION IS A PAIR
 -------------------------
@@ -1460,6 +1466,292 @@ expect("...and with all three resolved the object walk is silent again, so "
        "the three guards agree about a healthy object as well as a broken "
        "one",
        [p for p in links.project.problems() if p.scope.kind == "object"], [])
+
+# -- THE SILENT HALF: every shape the walk must say NOTHING about ----------
+# A VALIDATOR THAT CRIES WOLF IS WORSE THAN NO VALIDATOR, and the Problems
+# dock is the one surface the author reads every session -- the only place
+# that says a `script.delete` broke a map. An author who learns to scroll
+# past one row learns to scroll past all of them, so the rows above (a
+# violation appears) are only half of this guard's contract. The other half
+# is that a healthy or half-built project produces an EMPTY list, and it is
+# the half nobody writes: a walk that reported every object would pass every
+# row above this comment.
+#
+# THE DEFECT THESE CLOSE, measured before the skip existed: the walk visited
+# every object on every object layer, and a TYPELESS region marker carrying
+# a dangling `pyoneer_script` was told "The engine raises at map load naming
+# this object" -- a sentence the engine contradicts. `spawn_objects` collects
+# an untyped object into `untyped` and `continue`s before reading one
+# property, so nothing is built for it, `actor_row` and `read_requests` are
+# never reached, and the map route's script join reads spawn RECORDS. The
+# engine's own words for such an object are "That is normal for region
+# markers".
+#
+# EVERY FIXTURE HERE IS THIS FILE'S OWN (law 4), and every row is a pair: a
+# shape that must stay silent is stated beside the shape that must speak,
+# so a guard that swallowed everything and a guard that swallowed nothing
+# both go red.
+
+from scripts.game.behavior import registry as behavior_registry  # noqa: E402
+from scripts.loaders.map_document import MapDocument           # noqa: E402
+from scripts.loaders.map_loader import spawn_objects           # noqa: E402
+
+DANGLING = {sf.SCRIPT_PROPERTY: "gone", ACTOR: "nobody",
+            BEHAVIORS: "ghost_walk"}
+expect("the fixture below dangles EVERY property the walk knows about, so "
+       "a fourth link cannot be added to the vocabulary and left untested "
+       "here", sorted(DANGLING), sorted(genre_module.OBJECT_LINKS))
+
+
+def tmx_object(oid: int, attributes: str, properties: dict) -> str:
+    """One `<object>`, self-closing when it carries no properties."""
+    rows = "".join('    <property name="%s" value="%s"/>\n' % (key, value)
+                   for key, value in properties.items())
+    head = ('  <object id="%d" name="o%d"%s x="16" y="16" width="16" '
+            'height="16"' % (oid, oid, attributes))
+    if not rows:
+        return "%s/>\n" % head
+    return "%s>\n   <properties>\n%s   </properties>\n  </object>\n" % (
+        head, rows)
+
+
+def tmx_map(groups, layer_properties: dict | None = None) -> bytes:
+    """A 2x2 map: one tile layer, then `(name, [object xml])` per group."""
+    rows = "".join('   <property name="%s" value="%s"/>\n' % (key, value)
+                   for key, value in (layer_properties or {}).items())
+    carried = ("  <properties>\n%s  </properties>\n" % rows) if rows else ""
+    text = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<map version="1.10" tiledversion="1.10.2" '
+            'orientation="orthogonal" renderorder="right-down" width="2" '
+            'height="2" tilewidth="16" tileheight="16" infinite="0" '
+            'nextlayerid="9" nextobjectid="9">\n'
+            ' <layer id="1" name="Floor" width="2" height="2">\n'
+            '%s  <data encoding="csv">\n0,0,\n0,0\n</data>\n </layer>\n'
+            % carried)
+    for index, (name, objects) in enumerate(groups):
+        text += ' <objectgroup id="%d" name="%s">\n%s </objectgroup>\n' % (
+            index + 2, name, "".join(objects))
+    return (text + "</map>\n").encode("utf-8")
+
+
+def project_of(*, scripts=None, **maps) -> str:
+    """A throwaway project holding the maps given as `name=bytes`."""
+    root = project_at(scripts=scripts)
+    os.makedirs(os.path.join(root, "data", "maps"))
+    entries = []
+    for name, body in maps.items():
+        with open(os.path.join(root, "data", "maps", "%s.tmx" % name),
+                  "wb") as handle:
+            handle.write(body)
+        entries.append({"name": name, "identifier": name,
+                        "file": "data/maps/%s.tmx" % name})
+    with open(os.path.join(root, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": entries}, handle)
+    return root
+
+
+def opened_project(root: str):
+    return Session.open(root, genre_id="topdown_rpg").project
+
+
+def walked(project) -> list[tuple]:
+    """`(scope, which link)` for every object row the walk produced.
+
+    Keyed off `OBJECT_LINKS` rather than off three typed-in strings, and it
+    drops `__check_layers`' own object-scoped rows (an undeclared class)
+    without naming them, because those are a different rule.
+    """
+    return sorted((str(p.scope), key)
+                  for p in project.problems() if p.scope.kind == "object"
+                  for key in genre_module.OBJECT_LINKS if key in p.message)
+
+
+class Stub:
+    """A spawnable that needs no assets. The registry entry, not the game."""
+
+    def __init__(self, **kwargs):
+        pass
+
+    def moveto(self, *args, **kwargs):
+        pass
+
+
+def spawn_of(root: str, map_name: str = "yard"):
+    """The ENGINE's own pass on a fixture: `(count, "")` or `(None, why)`."""
+    document = MapDocument.load(
+        os.path.join(root, "data", "maps", "%s.tmx" % map_name))
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return len(spawn_objects(document, {"GamePlayer": Stub})), ""
+    except Exception as exc:                                    # noqa: BLE001
+        return None, str(exc)
+
+
+# 1/7 -- the typed object speaks, the typeless markers do not --------------
+
+MARKERS = project_of(yard=tmx_map([
+    ("entity", [tmx_object(1, ' class="GamePlayer"', DANGLING),
+                tmx_object(2, "", DANGLING)]),
+    ("regions", [tmx_object(3, "", DANGLING)])]))
+markers = opened_project(MARKERS)
+expect("THE NAMED HALF, unchanged: a TYPED object carrying three dangling "
+       "links is reported once per link, at that object",
+       walked(markers),
+       [("map:yard/layer:entity/object:1", key)
+        for key in sorted(genre_module.OBJECT_LINKS)])
+expect("THE SILENT HALF: two TYPELESS markers carrying the SAME three "
+       "dangling values -- one beside the typed object, one on a second "
+       "object layer -- produce no row at all",
+       [row for row in walked(markers) if "object:1" not in row[0]], [])
+marker_spawn = spawn_of(MARKERS)
+expect("...and the engine is why: its own spawn pass refuses that map for "
+       "the TYPED object's actor row, having read nothing at all on the "
+       "other two",
+       (marker_spawn[0], ACTOR in marker_spawn[1],
+        "object id=1" in marker_spawn[1]), (None, True, True))
+
+ONLY_MARKERS = project_of(yard=tmx_map([
+    ("regions", [tmx_object(1, "", DANGLING),
+                 tmx_object(2, "", DANGLING)])]))
+expect("...and with the typed object gone the same three dangling values "
+       "spawn nothing and raise NOTHING, which is the fact the silence "
+       "above is claiming", spawn_of(ONLY_MARKERS), (0, ""))
+expect("...so the editor is silent about that map too -- both halves of "
+       "one sentence", walked(opened_project(ONLY_MARKERS)), [])
+
+# 2/7 -- the test is `obj.type`: both Tiled spellings, and falsiness -------
+# `MapObject.type` reads `type=` (Tiled <1.9) and `class=` (1.9+) in ONE
+# place and `spawn_objects` asks it the same way, so these rows are what
+# stops the skip from being rewritten as an attribute lookup or as a
+# `.strip()`. A blank-but-present class is TRUTHY: the engine tries to spawn
+# it and raises, so the walk must go on reporting it.
+
+SPELLED = project_of(yard=tmx_map([
+    ("entity", [tmx_object(1, ' type="GamePlayer"',
+                           {sf.SCRIPT_PROPERTY: "gone"}),
+                tmx_object(2, ' class="   "',
+                           {sf.SCRIPT_PROPERTY: "gone"})])]))
+expect("an object typed the OLD way (`type=`) is still checked, and so is "
+       "one whose class is present but blank",
+       walked(opened_project(SPELLED)),
+       [("map:yard/layer:entity/object:1", sf.SCRIPT_PROPERTY),
+        ("map:yard/layer:entity/object:2", sf.SCRIPT_PROPERTY)])
+spelled_spawn = spawn_of(SPELLED)
+expect("...because the engine reads both the same way: `type=` spawns, and "
+       "a blank-but-present class is truthy there too, so it RAISES rather "
+       "than being skipped",
+       (spelled_spawn[0], "spawn type" in spelled_spawn[1]), (None, True))
+
+# 3/7 -- a link on something that is not an object -------------------------
+# The walk visits object layers only. A `pyoneer_script` on a TILE layer is
+# read by nobody -- the engine's layer profile reads depth and passability
+# there, never a link -- so reporting it would be the same false sentence
+# one level up.
+
+LAYER_PROPS = project_of(yard=tmx_map(
+    [("entity", [tmx_object(1, ' class="GamePlayer"', {})])],
+    layer_properties=DANGLING))
+expect("a TILE LAYER carrying all three dangling values is silent, because "
+       "nothing reads a link there", walked(opened_project(LAYER_PROPS)), [])
+expect("...and the positive control: the same three values on an OBJECT in "
+       "the same map are all reported",
+       walked(opened_project(project_of(yard=tmx_map(
+           [("entity", [tmx_object(1, ' class="GamePlayer"', DANGLING)])])))),
+       [("map:yard/layer:entity/object:1", key)
+        for key in sorted(genre_module.OBJECT_LINKS)])
+
+# 4/7 -- a project mid-build: no scripts/, no tables/, nothing named -------
+# Silence is the right default for a half-built project, which is
+# `__check_scripts`' own rule. A skeleton with no `data/project/scripts/`
+# and no `data/project/tables/` at all must not be told its maps are broken.
+
+MIDBUILD = project_of(yard=tmx_map([
+    ("entity", [tmx_object(1, ' class="GamePlayer"', {})])]))
+midbuild = opened_project(MIDBUILD)
+expect("a project with no scripts/ and no tables/ directory at all, whose "
+       "objects name nothing, draws no object row and no project-scoped "
+       "complaint about a library that would not open",
+       (walked(midbuild),
+        [str(p.scope) for p in midbuild.problems()
+         if p.scope.kind == "project"]), ([], []))
+expect("...and the positive control: in that SAME skeleton an object that "
+       "names a script and a row is reported for both, because the engine "
+       "raises for both",
+       walked(opened_project(project_of(yard=tmx_map([
+           ("entity", [tmx_object(1, ' class="GamePlayer"',
+                                  {sf.SCRIPT_PROPERTY: "gone",
+                                   ACTOR: "nobody"})])])))),
+       [("map:yard/layer:entity/object:1", ACTOR),
+        ("map:yard/layer:entity/object:1", sf.SCRIPT_PROPERTY)])
+
+# 5/7 -- a value that LOOKS malformed and is not ---------------------------
+# The judgement is the engine's own reader or it is a second opinion. A
+# trailing comma and a space after a comma are accepted by `read_requests`
+# at spawn, so the dock must not object to them; a repeated token is refused
+# there, so it must.
+
+TOLERATED = "topdown_move, player_input,"
+expect("a behaviors list with a space after the comma and a trailing comma "
+       "is silent in the dock, because the ENGINE's own reader builds it",
+       (walked(opened_project(project_of(yard=tmx_map([
+            ("entity", [tmx_object(1, ' class="GamePlayer"',
+                                   {BEHAVIORS: TOLERATED})])])))),
+        len(behavior_registry.read_requests({BEHAVIORS: TOLERATED},
+                                            where="probe"))), ([], 2))
+expect("...and the negative control: a token repeated in that same list is "
+       "refused by that same reader, so the dock says so",
+       walked(opened_project(project_of(yard=tmx_map([
+           ("entity", [tmx_object(1, ' class="GamePlayer"',
+                                  {BEHAVIORS: "topdown_move,topdown_move"})]
+            )])))),
+       [("map:yard/layer:entity/object:1", BEHAVIORS)])
+
+# 6/7 -- one missing script, three objects, two maps -----------------------
+# The dock addresses OBJECTS, so a script two objects name is two rows and
+# not one: an author fixes an object, not a reference count. Nothing is
+# deduplicated and nothing is multiplied.
+
+SHARED = dict(yard=tmx_map([("entity", [
+                  tmx_object(1, ' class="GamePlayer"',
+                             {sf.SCRIPT_PROPERTY: "gone"}),
+                  tmx_object(2, ' class="GamePlayer"',
+                             {sf.SCRIPT_PROPERTY: "gone"})])]),
+              cave=tmx_map([("entity", [
+                  tmx_object(1, ' class="GamePlayer"',
+                             {sf.SCRIPT_PROPERTY: "gone"})])]))
+expect("one missing script named by two objects on one map and one on "
+       "another is THREE rows, one per object",
+       walked(opened_project(project_of(**SHARED))),
+       [("map:cave/layer:entity/object:1", sf.SCRIPT_PROPERTY),
+        ("map:yard/layer:entity/object:1", sf.SCRIPT_PROPERTY),
+        ("map:yard/layer:entity/object:2", sf.SCRIPT_PROPERTY)])
+expect("...and the positive control: write that one document and all three "
+       "go silent together",
+       walked(opened_project(project_of(
+           scripts={"gone": script_doc("gone")}, **SHARED))), [])
+
+# 7/7 -- a map the project declares and does not have ----------------------
+# Reported ONCE, by `__check_layers`, and the object walk stays out of it:
+# two violations for one unreadable file is noise, and a half-built project
+# is allowed to have named its next map already.
+
+ABSENT = project_of(yard=tmx_map([
+    ("entity", [tmx_object(1, ' class="GamePlayer"', {})])]))
+with open(os.path.join(ABSENT, "config", "maps.json"), "w",
+          encoding="utf-8") as handle:
+    json.dump({"data": [{"name": "yard", "identifier": "yard",
+                         "file": "data/maps/yard.tmx"},
+                        {"name": "cave", "identifier": "cave",
+                         "file": "data/maps/cave.tmx"}]}, handle)
+absent = opened_project(ABSENT)
+expect("a map declared in config/maps.json that is not on disk yet is ONE "
+       "hard row from the layer walk, and the object walk adds nothing",
+       ([(p.severity, str(p.scope)) for p in absent.problems()
+         if p.scope.kind == "map"], walked(absent)),
+       ([("hard", "map:cave")], []))
+
 
 # -- the listing and the flag are ONE sentence -----------------------------
 # The close prompt asks `session.dirty` and then lists what is unsaved, and

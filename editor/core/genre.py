@@ -407,6 +407,39 @@ class GenrePack:
         A map that will not parse is SKIPPED rather than reported, because
         `__check_layers` walks the same list and reports it once: two
         violations for one unreadable file is noise, not thoroughness.
+
+        AN OBJECT WITH NO TYPE IS SKIPPED TOO, and that skip is the
+        difference between a report and a lie. `spawn_objects` collects
+        such an object into `untyped` and `continue`s before it reads a
+        single property, so no entity is built for it, `actor_row` and
+        `read_requests` are never reached for it, and `read_object_scripts`
+        joins only what the spawn pass RECORDED -- an untyped marker is in
+        no record. Measured on a fixture carrying all three properties
+        dangling: TYPED -> `PyoneerConfigError` naming the object;
+        TYPELESS -> 0 records, no raise, and the engine's own sentence for
+        it, "That is normal for region markers". So the words below, "The
+        engine raises at map load naming this object", were FALSE for every
+        region marker under construction, printed verbatim by the Problems
+        dock. That is the one failure a validator cannot afford: an author
+        who learns to scroll past one row learns to scroll past all of
+        them, and this dock is the only surface that says a delete broke a
+        map. Silence is the right default here for `__check_scripts`'s
+        reason -- the engine stays the hard half, and it stays silent about
+        this object too.
+
+        THE TEST IS `obj.type`, WHICH IS THE PROPERTY `spawn_objects`
+        READS, not a second copy of its question. Two things follow from
+        that and both are load-bearing. It accepts Tiled's `type=` and
+        1.9's `class=` in one place, so a map saved by either Tiled is
+        still checked -- write the attribute out by hand here and every
+        object in an older map goes quiet. And the test is FALSINESS, never
+        `.strip()`: `class="   "` is truthy, so the engine tries to spawn
+        it and raises `spawn type '   ' not found`, and this walk has to go
+        on reporting that object. The skip lives HERE, in the walk, rather
+        than inside `_script_link` -- one guard the whole vocabulary is
+        behind, so a fourth entry in `_LINK_CHECKERS` inherits it without
+        being told it exists, which is the same reason `OBJECT_LINKS` is
+        derived and not retyped.
         """
         for map_name in project.map_names():
             try:
@@ -415,6 +448,8 @@ class GenrePack:
                 continue          # __check_layers reports it, in one place
             for layer_name in document.object_layer_names():
                 for obj in document.object_layer(layer_name).objects():
+                    if not obj.type:  # #TAG:untyped_object_spawns_nothing
+                        continue      # nothing reads its links; see above
                     properties = obj.properties.as_dict()
                     for prop in OBJECT_LINKS:
                         if prop not in properties:
