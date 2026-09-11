@@ -51,7 +51,10 @@ from editor.core.errors import (
 from editor.core.scope import Scope
 from scripts.core.errors import PyoneerError
 from scripts.game.behavior import registry as behavior_registry
+from scripts.game.behavior.base import ACTOR, BEHAVIORS
 from scripts.game.flow import ops as op_registry
+from scripts.loaders.script_file import SCRIPT_PROPERTY, script_of
+from scripts.loaders.table_file import ACTORS, row_id
 
 GENRES_DIR = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "genres")
@@ -282,11 +285,26 @@ class GenrePack:
     # -- soft rules --------------------------------------------------------
 
     def validate(self, project: Any) -> list["RuleViolation"]:
-        """Everything wrong with `project` under this genre, none of it fatal."""
+        """Everything wrong with `project` under this genre, none of it fatal.
+
+        The library is opened ONCE here and handed to both arms that want
+        it. It used to be opened inside `__check_scripts`, behind that
+        method's `event_loadouts is None` early return, so a pack that
+        granted no loadout could not report a library that would not open
+        at all -- and the object walk below needs the same library for an
+        unrelated reason. Two reads would be two chances to disagree about
+        what this project's scripts are.
+        """
         found: list[RuleViolation] = []
+        library, unreadable = _library_of(project)
+        if unreadable:
+            found.append(RuleViolation(
+                "hard", Scope.of("project"),
+                f"event scripts could not be read: {unreadable}"))
         found.extend(self.__check_layers(project))
         found.extend(self.__check_tables(project))
-        found.extend(self.__check_scripts(project))
+        found.extend(self.__check_scripts(library))
+        found.extend(self.__check_object_links(project, library))
         return found
 
     def __check_layers(self, project: Any) -> Iterable["RuleViolation"]:
@@ -331,7 +349,7 @@ class GenrePack:
                             f"{count} objects of class {kind!r}; this genre "
                             f"expects at most one")
 
-    def __check_scripts(self, project: Any) -> Iterable["RuleViolation"]:
+    def __check_scripts(self, library: Any) -> Iterable["RuleViolation"]:
         """Every script asking for a vocabulary this pack does not grant.
 
         This is where the grant reaches a human. It is a SOFT rule and it is
@@ -343,21 +361,11 @@ class GenrePack:
         stop an author mid-sentence.
 
         A SILENT pack yields nothing at all, which is the same promise
-        `_object_classes` makes about a missing key.
+        `_object_classes` makes about a missing key. A library that would
+        not open yields nothing HERE either -- `validate` has already said
+        so once, in its own sentence, and saying it twice is noise.
         """
-        if self.event_loadouts is None:
-            return
-        # Imported here rather than at module scope: `editor.core.event_script`
-        # imports `editor.core.project`, which imports THIS module, so a
-        # top-level import would be a cycle.
-        from editor.core import event_script
-
-        try:
-            library = event_script.scripts_of(project)
-        except Exception as exc:                       # unreadable library
-            yield RuleViolation(
-                "hard", Scope.of("project"),
-                f"event scripts could not be read: {exc}")
+        if self.event_loadouts is None or library is None:
             return
         granted = (", ".join(repr(l) for l in self.event_loadouts)
                    or "no loadout at all")
@@ -374,6 +382,53 @@ class GenrePack:
                     fix=f'add "{loadout}" to this pack\'s '
                         f"{EVENT_LOADOUTS}, or use an op from a loadout it "
                         f"already grants")
+
+    def __check_object_links(self, project: Any,
+                             library: Any) -> Iterable["RuleViolation"]:
+        """Every object naming a script, a row or a behavior that is not there.
+
+        THE DELETE THAT BREAKS THE MAP. One click on `Delete` in the event
+        screen takes a script out of the library and leaves every
+        `pyoneer_script` naming it exactly where it is; the editor's own
+        save then writes a project that does not boot. Measured before this
+        loop existed: `problems()` was `[]` on both sides of that click, the
+        map still said `pyoneer_script=signpost`, and the next
+        `python main.py` raised `event script 'signpost' not found`. The one
+        sentence that could have said so lived in `ObjectEditor.refresh_script`
+        and fired only while the object screen happened to be open on that
+        one object.
+
+        SOFT, deliberately, for `__check_scripts`'s reason: a half-built
+        project is allowed to name a document nobody has written yet, and
+        the engine stays the hard half -- it still raises at map load. An
+        editor that refused to OPEN such a project would argue with an
+        author mid-sentence. So this says it; it does not forbid it.
+
+        A map that will not parse is SKIPPED rather than reported, because
+        `__check_layers` walks the same list and reports it once: two
+        violations for one unreadable file is noise, not thoroughness.
+        """
+        for map_name in project.map_names():
+            try:
+                document = project.map(map_name)
+            except Exception:                             # noqa: BLE001
+                continue          # __check_layers reports it, in one place
+            for layer_name in document.object_layer_names():
+                for obj in document.object_layer(layer_name).objects():
+                    properties = obj.properties.as_dict()
+                    for prop in OBJECT_LINKS:
+                        if prop not in properties:
+                            continue
+                        broken = _LINK_CHECKERS[prop](
+                            properties[prop], project, library)
+                        if broken is None:
+                            continue
+                        message, fix = broken
+                        yield RuleViolation(
+                            "soft",
+                            Scope.of(("map", map_name), ("layer", layer_name),
+                                     ("object", str(obj.id))),
+                            message, fix=fix)
 
     def __check_tables(self, project: Any) -> Iterable["RuleViolation"]:
         for declared in self.tables:
@@ -405,6 +460,131 @@ class RuleViolation:
     def __str__(self) -> str:
         tail = f"  ({self.fix})" if self.fix else ""
         return f"[{self.severity}] {self.scope}: {self.message}{tail}"
+
+
+# --------------------------------------------------------------------------
+# The per-object joins -- a `pyoneer_` property that NAMES something the
+# project has to contain
+# --------------------------------------------------------------------------
+#
+# THREE PROPERTIES, ONE VOCABULARY, ONE WALK.  `pyoneer_script`,
+# `pyoneer_actor` and `pyoneer_behaviors` each carry a name the engine
+# resolves at map load and each RAISES there when the name resolves to
+# nothing, so each of the three is a way for this editor to write a project
+# that will not start.  All three were unvalidated together and all three are
+# checked together here, out of ONE declared tuple, for the reason ACTIVE
+# WARNINGS gives: a guard that lands on one route while its siblings grow
+# without it is the shape this repository has now sighted nine times, and
+# the one before this was three per-object properties with one guard between
+# them.  A fourth such property is one entry in `_LINK_CHECKERS`; the walk in
+# `__check_object_links` picks it up with no edit at all, which is the only
+# form of "remember the siblings" that does not depend on remembering.
+#
+# THE JUDGEMENT IS ALWAYS THE ENGINE'S OWN READER and never a second opinion
+# written here: `script_of` decides what counts as a dangling script,
+# `row_id` decides what counts as a row id, `validate_list` decides what
+# counts as a loadable token list.  So the editor cannot come to disagree
+# with the game about WHICH projects are broken -- down to the details that
+# drift first, like a present-and-empty value meaning "names none" for a
+# script and being an error for an actor.  What the editor supplies is the
+# SENTENCE: the words `ObjectEditor`'s Script and Actor rows already say, on
+# the screen the author was looking at when they broke it.
+#
+# `fix` IS RENDERED VERBATIM by the Problems dock, so it says what to do and
+# never repeats what is wrong.
+
+def _message(exc: Exception) -> str:
+    """One line of a `PyoneerError`, without its `via` context trail."""
+    return str(getattr(exc, "message", exc)).strip()
+
+
+def _script_link(value: Any, project: Any, library: Any):
+    """Does `pyoneer_script` name a document this project holds?"""
+    if library is None:
+        return None                 # unreadable library; `validate` said so
+    names = list(library.names())
+    try:
+        script_of(dict.fromkeys(names), {SCRIPT_PROPERTY: value},
+                  "this object")
+    except PyoneerError:
+        return (
+            f"{SCRIPT_PROPERTY}={str(value)!r} is not a script in this "
+            f"project ({len(names)} exist). The engine raises at map load "
+            f"naming this object.",
+            "pick one that exists on this object's Script row, or press "
+            "New... there to write it")
+    return None
+
+
+def _actor_link(value: Any, project: Any, library: Any):
+    """Does `pyoneer_actor` name a row the actors table holds?"""
+    try:
+        wanted = row_id(value, "this object")
+    except PyoneerError as exc:
+        return (_message(exc),
+                f"give it the id of a row in the {ACTORS} table on this "
+                f"object's Actor row, or clear that row to remove the "
+                f"property")
+    if not project.has_table(ACTORS):
+        return (
+            f"{ACTOR}={wanted!r} names an actors row and this project has "
+            f"no {ACTORS!r} table. The engine raises at map load naming "
+            f"this object.",
+            f"create the {ACTORS} table in the Database window, or clear "
+            f"this object's Actor row")
+    rows = project.table(ACTORS).rows
+    if wanted in rows:
+        return None
+    return (
+        f"{ACTOR}={wanted!r} is not a row in the {ACTORS} table "
+        f"({len(rows)} rows). The engine raises at map load naming this "
+        f"object.",
+        f"pick one that exists on this object's Actor row, or add the row "
+        f"in the Database window")
+
+
+def _behaviors_link(value: Any, project: Any, library: Any):
+    """Will `pyoneer_behaviors` survive the registry at spawn?"""
+    try:
+        behavior_registry.validate_list(value, where="this object")
+    except PyoneerError as exc:
+        return (f"{BEHAVIORS} will not load, so the engine raises at map "
+                f"load naming this object: {_message(exc)}",
+                "fix the token list on this object; docs/BEHAVIORS.md is "
+                "generated from the registry and lists every token that "
+                "exists")
+    return None
+
+
+_LINK_CHECKERS = {
+    SCRIPT_PROPERTY: _script_link,
+    ACTOR: _actor_link,
+    BEHAVIORS: _behaviors_link,
+}
+
+OBJECT_LINKS: tuple[str, ...] = tuple(_LINK_CHECKERS)
+"""Every per-object `pyoneer_` property that names something else.
+
+DERIVED from the table, never retyped beside it: a list and a dispatch map
+that agree today are two things a later pass can make disagree, and the
+sibling shape this constant exists to stop is exactly that. Iterating this
+tuple and indexing that map is the same fact read twice.
+"""
+
+
+def _library_of(project: Any):
+    """`(library, "")`, or `(None, why it would not open)`.
+
+    Imported here rather than at module scope: `editor.core.event_script`
+    imports `editor.core.project`, which imports THIS module, so a top-level
+    import would be a cycle.
+    """
+    from editor.core import event_script
+
+    try:
+        return event_script.scripts_of(project), ""
+    except Exception as exc:                                  # noqa: BLE001
+        return None, str(exc)
 
 
 # --------------------------------------------------------------------------

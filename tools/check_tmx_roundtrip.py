@@ -61,6 +61,9 @@ from scripts.loaders.map_document import (
 
 SHIPPED_SOURCE = "data/maps/starter.tmx"
 SHIPPED_PATH = os.path.join(_bootstrap.REPO_ROOT, *SHIPPED_SOURCE.split("/"))
+# Spelled once, because a literal escape inside a byte string is the one
+# thing a patch tool reliably mangles.
+CRLF = b"\r\n"
 
 FIXTURE_WIDTH = FIXTURE_HEIGHT = 100
 FIXTURE_TILE = 16
@@ -687,6 +690,221 @@ try:
 
     # --------------------------------------------------------------------
     print()
+    print("the raw-XML door refuses what the other two doors refuse")
+    # --------------------------------------------------------------------
+    # THE THIRD DOOR, and until this pass the only one still open. The two
+    # halves above guard ONE NAME AT A TIME, at the moment a caller writes it.
+    # `restore_object`, `restore_layer` and `restore_tileset` take a whole
+    # ELEMENT as text and hang its attributes on the document verbatim, so a
+    # `pyoneer_` name inside the payload walked past every refusal above --
+    # measured on the shipped verb: the attribute reached the file, pytmx
+    # loaded the map, and `obj.properties` came back `{}`. It matters more
+    # than the other doors because `map.object.restore` is reachable from a
+    # script and from the relay, which is the AI edit path this editor's whole
+    # design treats as equal to a human's.
+    #
+    # Every verb below is measured in BOTH directions: the legal payload
+    # restores and comes back byte-exactly, the smuggled one is refused NAMING
+    # the attribute, and the bytes after a refusal are the bytes before it.
+    #
+    # The pytmx facts these refusals rest on are measured in the section
+    # above, on `probe`, rather than restated here.
+
+    # -- the door is ONE door, which is the half that keeps it shut --------
+    # The recurring defect in this tree is a guard that lands on one route
+    # while its siblings grow without it, so the guard is at the parse and
+    # every restore verb comes through it. These two rows are the tripwire: a
+    # fourth restore verb that calls `fromstring` itself, or an
+    # `attrib = dict(parsed.attrib)` with no parse door in front of it, turns
+    # them red instead of quietly reopening the hole.
+    with open(os.path.join(_bootstrap.REPO_ROOT, "scripts", "loaders",
+                           "map_document.py"), encoding="utf-8") as handle:
+        module_source = handle.read()
+    expect("`fromstring` appears twice in the whole module -- the parse door "
+           "and MapDocument.load, which reads a file rather than text",
+           module_source.count("ElementTree.fromstring("), 2)
+    expect("...and every element hung on the document verbatim came through "
+           "that door: one call site per `attrib = dict(parsed.attrib)`",
+           module_source.count("_parse_restored_element(") - 1,
+           module_source.count("attrib = dict(parsed.attrib)"))
+
+    # -- restore_object ----------------------------------------------------
+    doors = MapDocument.load(MAP_PATH)
+    group = doors.object_layer("entity")
+    made = group.add_object(name="door", type="GamePlayer", x=32, y=32,
+                            width=16, height=16,
+                            properties={"pyoneer_script": "greeting"})
+    WITH_OBJECT = doors.to_bytes()
+    # `next_object_id` is carried the way `map.object.remove` carries it:
+    # remove_object rolls nextobjectid back down, and an inverse that puts
+    # the element back but not the counter is not an inverse.
+    payload_xml = group.serialize_object(made.id)
+    payload_index = group.object_index(made.id)
+    payload_next = doors.root.get("nextobjectid", "1")
+    group.remove_object(made.id)
+    WITHOUT_OBJECT = doors.to_bytes()
+    attempt("serialize + remove + restore_object is byte-exact",
+            lambda: (group.restore_object(payload_xml, payload_index),
+                     doors.root.set("nextobjectid", payload_next),
+                     doors.to_bytes())[2], WITH_OBJECT)
+    expect("...and taking it out again returns the other bytes",
+           (group.remove_object(made.id), doors.to_bytes())[1], WITHOUT_OBJECT)
+
+    SMUGGLED_OBJECT = ('<object id="%d" name="door" x="32" y="32" width="16" '
+                       'height="16" pyoneer_script="smuggled"/>' % made.id)
+    raises_naming("a pyoneer_ ATTRIBUTE in the payload is refused, named",
+                  PyoneerConfigError,
+                  lambda: group.restore_object(SMUGGLED_OBJECT, payload_index),
+                  "pyoneer_script", "ATTRIBUTE", "<property name=")
+    # A name pytmx puts on every object whether the file writes it or not, so
+    # the element's own `attrib` cannot see the collision coming -- the same
+    # residual hole the property door closed with RESERVED.
+    RESERVED_PROPERTY = ('<object id="%d" x="32" y="32"><properties>'
+                         '<property name="rotation" value="90"/>'
+                         '</properties></object>' % made.id)
+    raises_naming("...so is a <property> named after a pytmx name the element "
+                  "does not carry", PyoneerConfigError,
+                  lambda: group.restore_object(RESERVED_PROPERTY, payload_index),
+                  "rotation", "unloadable")
+    # Neither prefixed nor reserved: the ONLY rule that can fire here is the
+    # collision read off the element itself, so this row is what proves the
+    # guard is more than a RESERVED lookup.
+    SHADOWED = ('<object id="%d" x="32" y="32" tint="red"><properties>'
+                '<property name="tint" value="blue"/></properties></object>'
+                % made.id)
+    raises_naming("...and a <property> shadowing an attribute on the SAME "
+                  "element", PyoneerConfigError,
+                  lambda: group.restore_object(SHADOWED, payload_index),
+                  "tint", "unloadable")
+    expect("three refusals, and the document is the one they started from",
+           doors.to_bytes(), WITHOUT_OBJECT)
+    expect("...with nothing appended to the layer either",
+           len(group.objects()), 0)
+
+    # The refusal cannot be "refuse every payload". A RESERVED name used as an
+    # ATTRIBUTE is what Tiled writes on every rotated object, and refusing it
+    # would make undo impossible for exactly the elements serialize_object
+    # exists to carry.
+    ROTATED = ('<object id="%d" name="door" x="32" y="32" width="16" '
+               'height="16" rotation="90" visible="0"/>' % made.id)
+    attempt("a RESERVED name as an ATTRIBUTE still restores",
+            lambda: (group.restore_object(ROTATED, payload_index).element
+                     .get("rotation")), "90")
+    expect("...and it undoes byte-exactly too",
+           (group.remove_object(made.id), doors.to_bytes())[1], WITHOUT_OBJECT)
+
+    # -- restore_layer: the same guard, reached through a different verb ----
+    # And through a CHILD, not the payload's own element: a layer carries its
+    # objects, so a name smuggled one level down is the same defect wearing a
+    # parent. A guard that read only `parsed.attrib` would pass this.
+    layer_payload = doors.serialize_layer("Above1")
+    doors.remove_layer("Above1")
+    WITHOUT_LAYER = doors.to_bytes()
+    raises_naming("restore_layer refuses a pyoneer_ attribute on a CHILD of "
+                  "the payload", PyoneerConfigError,
+                  lambda: doors.restore_layer(
+                      dict(layer_payload,
+                           xml='<objectgroup id="9" name="smuggler">'
+                               '<object id="1" pyoneer_actor="ghost"/>'
+                               '</objectgroup>')),
+                  "pyoneer_actor", "ATTRIBUTE")
+    raises_naming("...and a RESERVED <property> on the layer itself",
+                  PyoneerConfigError,
+                  lambda: doors.restore_layer(
+                      dict(layer_payload,
+                           xml='<objectgroup id="9" name="smuggler">'
+                               '<properties><property name="opacity" '
+                               'value="1"/></properties></objectgroup>')),
+                  "opacity", "unloadable")
+    expect("both refusals left the document where it was",
+           doors.to_bytes(), WITHOUT_LAYER)
+    attempt("and the real payload still restores byte-exactly",
+            lambda: (doors.restore_layer(layer_payload),
+                     doors.to_bytes())[1], WITHOUT_OBJECT)
+
+    # -- restore_tileset: on one nothing places, so it can come out --------
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        doors.add_tileset("RestoreDoor", doors.tilesets()[0].image_source,
+                          image_width=FIXTURE_TILE * 4,
+                          image_height=FIXTURE_TILE * 3)
+    WITH_TILESET = doors.to_bytes()
+    tileset_payload = doors.serialize_tileset("RestoreDoor")
+    doors.remove_tileset("RestoreDoor")
+    WITHOUT_TILESET = doors.to_bytes()
+    raises_naming("restore_tileset refuses a pyoneer_ attribute on a <tile> "
+                  "child", PyoneerConfigError,
+                  lambda: doors.restore_tileset(
+                      dict(tileset_payload,
+                           xml='<tileset firstgid="65" name="RestoreDoor">'
+                               '<tile id="0" pyoneer_solid="1"/></tileset>')),
+                  "pyoneer_solid", "ATTRIBUTE")
+    raises_naming("...and a RESERVED <property> on the <tileset> itself",
+                  PyoneerConfigError,
+                  lambda: doors.restore_tileset(
+                      dict(tileset_payload,
+                           xml='<tileset firstgid="65" name="RestoreDoor">'
+                               '<properties><property name="columns" '
+                               'value="4"/></properties></tileset>')),
+                  "columns", "unloadable")
+    expect("both refusals left the document where it was",
+           doors.to_bytes(), WITHOUT_TILESET)
+    # A `<tile>`'s own `<properties>` are NOT subject to the collision rule:
+    # pytmx merges a tile's attributes and its properties into one dict and
+    # checks neither against the other, so refusing this would refuse a
+    # legitimate payload. The rule is where pytmx's failure modes are, and
+    # this row is the edge of it.
+    attempt("a RESERVED <property> on a <tile> child is accepted, because "
+            "pytmx never checks one",
+            lambda: doors.restore_tileset(
+                dict(tileset_payload,
+                     xml='<tileset firstgid="65" name="RestoreDoor" '
+                         'tilewidth="16" tileheight="16" tilecount="12" '
+                         'columns="4"><tile id="0"><properties>'
+                         '<property name="width" value="9"/>'
+                         '</properties></tile></tileset>')),
+            "RestoreDoor")
+    doors.remove_tileset("RestoreDoor")
+    expect("...and that one came back out cleanly",
+           doors.to_bytes(), WITHOUT_TILESET)
+    attempt("and the real payload restores byte-exactly",
+            lambda: (doors.restore_tileset(tileset_payload),
+                     doors.to_bytes())[1], WITH_TILESET)
+
+    # -- the refusal survives the round trip a caller actually makes -------
+    # In memory is not the claim that matters: a caller who catches the
+    # refusal and saves anyway must ship the file it opened.
+    refused_restore = MapDocument.load(MAP_PATH)
+    refused_group = refused_restore.object_layer("entity")
+    raises("the raw-XML door refuses without touching the document",
+           PyoneerConfigError,
+           lambda: refused_group.restore_object(SMUGGLED_OBJECT, 0))
+    expect("...the document still reports itself unchanged",
+           refused_restore.changed, False)
+    smuggle_path = os.path.join(scratch, "after_smuggle.tmx")
+    refused_restore.save(smuggle_path)
+    with open(smuggle_path, "rb") as handle:
+        expect("...and the file it WRITES after the refusal is the one it "
+               "loaded", handle.read(), ORIGINAL)
+
+    # -- the tag and parse refusals the door inherited still land ----------
+    raises_naming("restore_object still refuses a non-<object>",
+                  PyoneerConfigError,
+                  lambda: refused_group.restore_object("<layer/>", 0),
+                  "expects an <object>")
+    raises_naming("restore_layer still refuses a non-layer", PyoneerConfigError,
+                  lambda: refused_restore.restore_layer({"xml": "<tileset/>"}),
+                  "expects a layer element")
+    raises_naming("restore_tileset still refuses a non-<tileset>",
+                  PyoneerConfigError,
+                  lambda: refused_restore.restore_tileset({"xml": "<layer/>"}),
+                  "expects a <tileset>")
+    raises_naming("...and text that is not XML at all", PyoneerConfigError,
+                  lambda: refused_group.restore_object("<not xml", 0),
+                  "was handed text that is not")
+
+    # --------------------------------------------------------------------
+    print()
     print("a 4x sub-cell companion is CREATABLE, and undoes byte-exactly")
     # --------------------------------------------------------------------
     # The dimensions are the point. Before add_layer took them, every layer
@@ -1052,6 +1270,162 @@ try:
     del document3.properties["spawned"]
     del document3.properties["flag"]
     expect("deleting them restores the original bytes", document3.to_bytes(), synthetic)
+
+    # --------------------------------------------------------------------
+    print()
+    print("the last child out turns the light off -- and only when the room "
+          "is empty")
+    # --------------------------------------------------------------------
+    # WHY THIS SECTION EXISTS, and it is the counter-move CLAUDE.md's
+    # sibling-route warning prescribes rather than a new rule.
+    # `_append_child` writes `parent.text` -- the whitespace in front of the
+    # first child -- the moment an element gains one, and nothing took it
+    # away again. So an element the file wrote SELF-CLOSING came back as an
+    # open/close pair with a blank line between the tags after a
+    # declare-then-undo: two lines of diff nobody authored, and a map
+    # reported dirty after a NO-OP pair, because `MapDocument.changed`
+    # re-serialises and compares BYTES.
+    # That one line was copied into FOUR verb bodies in
+    # `editor/core/verbs.py`, each carrying a comment saying it belonged
+    # here -- and the fourth was missed for a whole pass by a grep that
+    # enumerated the other three. It is one line in `_remove_child` now and
+    # the four copies are deleted, so it cannot be missed a fifth time.
+    closing = MapDocument.from_bytes(ORIGINAL)
+    empty = closing.object_layer("entity")
+    expect("the fixture's object group is the self-closing case",
+           (empty.objects(), empty.element.text), ([], None))
+
+    empty.properties["pyoneer_depth"] = 5
+    expect("declaring a capability opens the group",
+           b'<objectgroup id="9" name="entity">' in closing.to_bytes(), True)
+    expect("...and the element gains the text that opened it",
+           (empty.element.text or "").strip(), "")
+    expect("...which really is text, not nothing",
+           empty.element.text is None, False)
+
+    del empty.properties["pyoneer_depth"]
+    expect("removing it closes the group again, BYTE for byte",
+           closing.to_bytes(), ORIGINAL)
+    expect("...at the mechanism: the text is gone, not merely blank",
+           empty.element.text, None)
+    expect("...so a no-op pair does not leave the document dirty",
+           closing.changed, False)
+
+    # THE OFF HALF, and it is the half an unconditional `text = None` fails.
+    # A tile layer always carries `<data>`, so removing its property leaves
+    # a parent that still has a child: the whitespace in front of `<data>`
+    # is load-bearing and must survive untouched.
+    floor = closing.tile_layer("Floor")
+    kept_text = floor.element.text
+    expect("a tile layer's text is the indent in front of its <data>",
+           (kept_text or "").strip() == "" and kept_text is not None, True)
+    floor.properties["pyoneer_depth"] = 5
+    del floor.properties["pyoneer_depth"]
+    expect("a parent that still has children keeps its text",
+           floor.element.text, kept_text)
+    expect("...and the file is byte-identical either way",
+           closing.to_bytes(), ORIGINAL)
+
+    # THE OTHER OFF HALF: only WHITESPACE is cleared. An element carrying
+    # real content keeps it no matter what is removed from it, which is the
+    # exact mirror of `_append_child`'s own condition.
+    holder = ElementTree.fromstring("<holder>keep me<child/></holder>")
+    closing._remove_child(holder, list(holder)[0])
+    expect("a parent whose text is REAL CONTENT keeps it when its last "
+           "child goes", (holder.text, len(list(holder))), ("keep me", 0))
+
+    # AND THE GUARD IS NOT COPIED BACK. A fifth copy in a verb body is how
+    # this defect survived three passes; the primitive is the only place
+    # that may spell it.
+    with open(os.path.join(_bootstrap.REPO_ROOT, "scripts", "loaders", "map_document.py"),
+              "r", encoding="utf-8") as handle:
+        _module_source = handle.read()
+    expect("`parent.text = None` is spelled exactly once in the module",
+           _module_source.count("parent.text = None"), 1)
+    with open(os.path.join(_bootstrap.REPO_ROOT, "editor", "core", "verbs.py"),
+              "r", encoding="utf-8") as handle:
+        _verbs_source = handle.read()
+    expect("and no verb body carries a copy of it any more",
+           _verbs_source.count(".element.text = None"), 0)
+
+    # AND THE SAME RULE ON THE OTHER END OF THE LIST. `_append_child`'s
+    # append branch already INHERITED the closing whitespace -- with a
+    # comment saying recomputing "looked equivalent and was not" -- and
+    # then recomputed the separator it put in front of the new last child,
+    # three lines below its own warning. `_separator_of` is that sentence
+    # made into one function both branches call.
+    odd = b"".join([
+        b'<?xml version="1.0" encoding="UTF-8"?>' + CRLF,
+        b'<map version="1.2" width="1" height="1" tilewidth="16"'
+        b' tileheight="16" nextlayerid="2" nextobjectid="3">' + CRLF,
+        b' <objectgroup id="1" name="odd">' + CRLF,
+        b'   <object id="1" x="0" y="0"/>' + CRLF,
+        b'   <object id="2" x="0" y="0"/>' + CRLF,
+        b' </objectgroup>' + CRLF,
+        b'</map>' + CRLF,
+    ])
+    # Three-space children under a one-space parent, so the computed answer
+    # is TWO and every recomputed indent in this fixture is wrong by a byte.
+    quirky = MapDocument.from_bytes(odd)
+    expect("the quirky fixture round-trips untouched", quirky.to_bytes(), odd)
+    group = quirky.object_layer("odd")
+    expect("its children really are indented deeper than the rule computes",
+           (group.element.text, quirky._child_indent(group.element)),
+           ("\n   ", "  "))
+    added = group.add_object(name="third", x=0, y=0)
+    expect("an APPENDED child copies its siblings' indent, not the computed "
+           "one",
+           CRLF + b'   <object id="3" name="third"' in quirky.to_bytes(), True)
+    expect("...and removing it again is byte-identical",
+           (group.remove_object(added.id), quirky.to_bytes()), (True, odd))
+
+    # THE EXCLUSION, asserted directly, because no fixture above can reach
+    # it: measured, a mutation that widened the candidate list to include
+    # the LAST child's tail left every row in this file green. That tail is
+    # the whitespace before the PARENT's own closing tag, so it is a step
+    # shallower than a sibling separator, and taking it would indent a new
+    # child level with its parent.
+    probe = ElementTree.Element("probe")
+    kid = ElementTree.SubElement(probe, "kid")
+    probe.text = None
+    kid.tail = "\n "
+    expect("a lone child's tail is not a sibling separator, so there is "
+           "nothing to copy and the computed indent has to answer",
+           quirky._separator_of(probe, list(probe)), None)
+    kid.tail = "\n   "
+    second = ElementTree.SubElement(probe, "kid")
+    second.tail = "\n "
+    expect("...and with a real sibling in front of it, the separator "
+           "between the two is the one that is read",
+           quirky._separator_of(probe, list(probe)), "\n   ")
+
+    # THE WHOLE INVERSE, on the fixture that can tell a read indent from a
+    # computed one: `map.object.remove` serializes, removes and carries the
+    # index, and `map.object.restore` puts it back. Every position, and the
+    # EMPTIED layer last -- that one has no sibling left to copy, so it is
+    # the case `ObjectLayer.remove_object`'s saved text answers and the one
+    # the R7 handoff reported as a one-byte-per-line diff.
+    for _which in (1, 2, 3):
+        _round = MapDocument.from_bytes(odd)
+        _group = _round.object_layer("odd")
+        if _which == 3:
+            _round.object_layer("odd").remove_object(2)
+            _before = _round.to_bytes()
+            _target = 1
+        else:
+            _before = odd
+            _target = _which
+        _payload = _group.serialize_object(_target)
+        _index = _group.object_index(_target)
+        _next = _round.root.get("nextobjectid")
+        _group.remove_object(_target)
+        _group.restore_object(_payload, _index)
+        _round.root.set("nextobjectid", _next)
+        expect("remove-then-restore is byte-exact at position %d%s" %
+               (_which, " -- the EMPTIED layer" if _which == 3 else ""),
+               _round.to_bytes(), _before)
+
+
 
     # --------------------------------------------------------------------
     print()

@@ -449,7 +449,7 @@ Every row below is measured, not declared: the drive row is produced by construc
 | `GameEntity.behaviors` exists on a constructed entity | **yes** | one attribute in `GameEntity.__init__` |
 | `GameEntity.core_frame_update` runs the drive | **yes** | one line replacing the `pass` in `game_entity.py` |
 | a behavior is registered | **yes** | one `register(BehaviorSpec(...))` in `scripts/game/behavior/registry.py` |
-| a declaration is turned into attached behaviors somewhere | **yes** | done in `scripts/core/scene/scene_manager.py`, `scripts/game/entity/game_player.py`, `scripts/loaders/map_loader.py` |
+| a declaration is turned into attached behaviors somewhere | **yes** | read in `scripts/core/scene/scene_manager.py`, `scripts/game/entity/game_player.py`, `scripts/loaders/map_loader.py`, attached in `scripts/core/renderer.py`, `scripts/core/scene/scene_manager.py`, `scripts/game/entity/game_player.py` |
 | a **tmx object's** `pyoneer_behaviors` property is read when it spawns | **yes** | read in `scripts/core/scene/scene_manager.py`, `scripts/loaders/map_loader.py` |
 | `GameEntity.collision_field` is assigned in production | **yes** | assigned in `scripts/core/renderer.py` |
 | a `jump` input action exists | **yes** | `prepare_inputs` registered `action`, `attack`, `down`, `jump`, `left`, `pause`, `right`, `sprint`, `up` |

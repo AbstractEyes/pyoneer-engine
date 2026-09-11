@@ -391,12 +391,44 @@ def _layer_set(project: Project, cmd: Command) -> Command | None:
     destructive=True,
 )
 def _layer_unset(project: Project, cmd: Command) -> Command | None:
+    """Remove one declared capability. Refuses a key its INVERSE cannot write.
+
+    THE REMOVE TWIN HAS A VOCABULARY, and it is the set half's own. This
+    verb's inverse is `map.layer.set`, whose `key` is
+    `choices=tuple(_layer_keys())` and whose body runs
+    `layer_module.validate_property`, so an unset of any OTHER
+    `pyoneer_`-named property returned an inverse that RAISES on the way
+    back: measured on a layer carrying a hand-authored
+    `pyoneer_nonsense="x"` -- the property is deleted, Ctrl+Z raises
+    `argument 'key' must be one of [...]`, the value is gone and the
+    history is emptied. That is `table.drop`'s fault on a different verb,
+    and the same sentence answers it: a command whose inverse cannot run is
+    worse than a capability that is missing.
+
+    So the refusal is the decision `map.object.unset` already made one
+    screenful away, for the same reason and in the same words -- and it is
+    checked HERE rather than declared as `choices=` on the param only
+    because the param list is copied into a GENERATED `docs/COMMANDS.md`;
+    see this pass's handoff.
+    """
+    declared = _layer_keys()
+    if cmd.args["key"] not in declared:
+        raise PyoneerCommandArgumentError(
+            f"{cmd.verb}: argument 'key' must be one of {declared}, got "
+            f"{cmd.args['key']!r} -- this verb's inverse is map.layer.set, "
+            f"which cannot write that name back, so removing it would be a "
+            f"deletion undo could not take back",
+            verb=cmd.verb, argument="key")
     layer = _layer_element(project, cmd.scope)
     name = layer_module.PREFIX + cmd.args["key"]
     existing = layer.properties.as_dict()
     if name not in existing:
         return None
+    # The self-closing guard that used to sit here, and at three other
+    # deletion sites in this file, is now one line inside
+    # `MapDocument._remove_child` -- the primitive all four go through.
     del layer.properties[name]
+
     return Command("map.layer.set", cmd.scope,
                    {"key": cmd.args["key"], "value": existing[name]})
 
@@ -1030,15 +1062,9 @@ def _mask_edit(project: Project, cmd: Command, *,
             view[DEFAULTS_PROPERTY] = becomes
         else:
             del view[DEFAULTS_PROPERTY]
-            # `MapProperties.__delitem__` drops an emptied `<properties>` and
-            # `_remove_child` hands its whitespace back to the OWNER, so an
-            # element the file wrote self-closing returns as
-            # `<tileset ...>\n</tileset>`. An embedded tileset always carries
-            # an `<image>` child, so this cannot bite today; it is the guard
-            # `map.object.action.unset` had to learn the hard way and it costs
-            # one line.
-            if not list(ref.element):
-                ref.element.text = None
+            # Self-closing is restored by `MapDocument._remove_child`; an
+            # embedded tileset always carries an `<image>` child, so this
+            # element cannot reach that branch today.
 
     return Command("map.tileset.mask.restore", cmd.scope, {
         "name": cmd.args["name"], "first_gid": cmd.args["first_gid"],
@@ -1467,19 +1493,8 @@ def _object_property_remove(project: Project, cmd: Command) -> Command | None:
     if key not in existing:
         return None
     del found.properties[key]
-
-    # The SAME line `map.object.action.unset` carries, for the same measured
-    # reason, and this is where it was missing: `MapProperties.__delitem__`
-    # drops the `<properties>` container once it empties and `_remove_child`
-    # hands the whitespace back to the OWNER, so an `<object .../>` the file
-    # wrote self-closing comes back as `<object ...>\n   </object>`. Measured
-    # on a one-object fixture: declare `pyoneer_script` and undo, and the map
-    # gains two lines of diff that nobody authored. That is the gesture the
-    # object screen's `New...` makes, so it is not a corner -- and the guard
-    # existed one screenful away on the sibling verb the whole time.
-    # Belongs in `MapProperties.__delitem__`, which is in scripts/.
-    if not list(found.element):
-        found.element.text = None
+    # An element the file wrote self-closing goes back to self-closing
+    # inside `MapDocument._remove_child`, not here.
 
     return Command("map.object.property.set", cmd.scope,
                    {"key": key, "value": existing[key]})
@@ -1602,17 +1617,8 @@ def _action_unset(project: Project, cmd: Command) -> Command | None:
     if name not in existing:
         return None
     del found.properties[name]
-
-    # `MapProperties.__delitem__` drops the `<properties>` container once it
-    # empties, but `_remove_child` hands the whitespace back to the OWNER --
-    # so an `<object .../>` the file wrote self-closing would come back as
-    # `<object ...>\n</object>`: two lines of diff on a declare-then-undo
-    # that must leave none. A childless object is written self-closing by
-    # Tiled and by this document, so `text = None` returns it to the file's
-    # own spelling, as `ObjectLayer.remove_object` does one level up.
-    # Belongs in `MapProperties.__delitem__`, which is in scripts/.
-    if not list(found.element):
-        found.element.text = None
+    # An element the file wrote self-closing goes back to self-closing
+    # inside `MapDocument._remove_child`, not here.
 
     return Command("map.object.action.restore", cmd.scope,
                    {"key": cmd.args["key"], "value": existing[name]})

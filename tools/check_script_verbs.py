@@ -1184,19 +1184,63 @@ expect("authoring a script ALONE makes the session dirty, so the close "
        "prompt fires instead of the window closing silently",
        (wired.dirty, wired.project.dirty_maps(), wired.project.dirty_tables()),
        (True, [], []))
-# Measured while writing this row, which first asserted that undo CLEANS the
-# session. It does not, and the three document kinds do not agree about why:
-# `MapDocument.changed` re-serialises and compares bytes, so undoing a map
-# edit really does clean it, while a table's `dirty` and a script's are
-# sticky flags set at the mutation. A script created and undone therefore
-# leaves the session dirty until a save -- which then writes nothing for it
-# and clears. That is the conservative answer and it matches the neighbour a
-# script most resembles; the row pins which model is in force rather than
-# asserting the one it would prefer, because an undocumented disagreement
-# between two kinds is how the next pass loses an afternoon.
-expect("...undo does not clean it: a script's dirtiness is a FLAG set at "
-       "the mutation, like a table's, not the byte comparison a map's is",
-       (wired.undo() is not None, wired.dirty), (True, True))
+# THE MODEL MOVED, and this row moved with it rather than being deleted.
+# It used to pin `undo does not clean it` -- a script's dirtiness read as a
+# sticky flag, like a table's, where `MapDocument.changed` re-serialises and
+# compares bytes so undoing a map edit really does clean it. That was the
+# conservative reading of a disagreement between three document kinds, and
+# it was measured on `Project.dirty_scripts` BEFORE that listing learned to
+# ask what EXISTS: `ScriptLibrary.delete` adds to `removed` unconditionally,
+# including for a document that was never written, so `New... -> Ctrl+Z`
+# left the session dirty forever naming a file that existed nowhere.
+#
+# So the two halves are now genuinely different questions and both are
+# asserted here. A CREATED script that is undone is clean, because the
+# document is gone from memory and no `.json` was ever written for the id
+# the undo put into `removed` -- there is nothing to save and nothing to
+# delete. A SAVED script that is deleted stays dirty, because its file is
+# still on disk and only the save unlinks it. The flag is still a flag; what
+# changed is that `removed` no longer counts an id with no file under it.
+expect("...and undo CLEANS it, because the id the undo put in `removed` "
+       "has no .json under it: nothing to save, nothing to delete",
+       (wired.undo() is not None, wired.dirty), (True, False))
+# THE OTHER HALF, so this cannot pass by the listing simply going quiet --
+# in its OWN project, because `wired` is the fixture the save section below
+# starts from and it has to arrive there with nothing on disk.
+STICKY = yard()
+made.append(STICKY)
+sticky = Session.open(STICKY, genre_id="topdown_rpg")
+sticky.run(Command("script.create", SIGN_SCOPE, {"title": "The signpost"}))
+sticky.save()
+expect("a SAVED script is on disk, so the session is clean", sticky.dirty, False)
+sticky.run(Command("script.delete", SIGN_SCOPE, {"confirm": True}))
+expect("...and deleting it is dirty, because the unlink waits for the save",
+       (sticky.dirty, sticky.project.dirty_scripts()), (True, [SIGNPOST]))
+
+# -- and the same rule ONE LAYER DOWN, where nothing was reading it -------
+# `ScriptLibrary.dirty` is `Project.dirty_scripts`'s twin and it counted
+# `removed` unconditionally after the project half had stopped. It had NO
+# reader at the time -- the event screen's footer asks `dirty_scripts()`
+# and the close prompt asks the project -- so it was latent rather than
+# live, which is exactly why it survived the pass that fixed its sibling.
+# Both halves are asserted here so the two cannot come apart again.
+sticky_library = event_script.scripts_of(sticky.project)
+expect("the library agrees with the project about a pending deletion, "
+       "because the file really is still on disk",
+       (sticky_library.dirty, sorted(sticky_library.removed)), (True, [SIGNPOST]))
+
+FRESH = yard()
+made.append(FRESH)
+fresh = Session.open(FRESH, genre_id="topdown_rpg")
+fresh.run(Command("script.create", SIGN_SCOPE, {"title": "The signpost"}))
+fresh_library = event_script.scripts_of(fresh.project)
+expect("an unsaved NEW document makes the library dirty by its own flag",
+       fresh_library.dirty, True)
+fresh.undo()
+expect("...and undoing that creation leaves it CLEAN, because the id the "
+       "undo put in `removed` has no .json under it",
+       (fresh_library.dirty, sorted(fresh_library.removed)),
+       (False, [SIGNPOST]))
 
 # -- the same transaction, undone, leaves the map byte-identical -----------
 # Not a detour from the wire: `New...` writes `pyoneer_script` onto an object
@@ -1283,10 +1327,139 @@ expect("a delete leaves the file alone and makes the session dirty",
 lost.save()
 expect("...and the editor's own save is what removes it",
        (os.path.isfile(lost_path), lost.dirty), (False, False))
+
+# -- THE DELETE BREAKS THE MAP, AND SOMETHING HAS TO SAY SO -----------------
+# The one call `boot()` was never made: immediately after a delete. One click
+# on `Delete` in the event screen -- the most prominent button on that screen,
+# no confirmation, no report -- plus the save above, and the map STILL says
+# `pyoneer_script=signpost` while the file it names is gone. Measured before
+# these rows existed: `project.problems()` was `[]` on BOTH sides of that
+# click, so the editor turned a working game into one that will not start
+# without a word. The only sentence about it in the tree lived in
+# `ObjectEditor.refresh_script` and fired only while the object screen
+# happened to be open on that one object.
+#
+# TWO ROWS, AND THEY SAY DIFFERENT THINGS. The boot row states the defect:
+# this project does not start, and it is not supposed to -- `script_of`
+# raising is the engine being the hard half, and a check that demanded a
+# booting project here would be demanding that `script.delete` silently
+# rewrite every map that names the document. The problems row is the FIX:
+# the editor now says so, softly, because a half-built project is allowed to
+# name a script nobody has written yet.
+
+gone_id, gone_why = boot(LOST)
+expect("after that delete the map STILL names the script, so the project "
+       "the editor has just saved no longer boots",
+       (gone_id, SIGNPOST in gone_why, "event script" in gone_why),
+       (None, True, True))
+dangling = [p for p in lost.project.problems() if p.scope.kind == "object"]
+expect("...and the editor SAYS so -- one SOFT violation, addressed at the "
+       "object that carries the property, naming the property and the "
+       "script that is not there",
+       [(p.severity, str(p.scope), sf.SCRIPT_PROPERTY in p.message,
+         SIGNPOST in p.message) for p in dangling],
+       [("soft", "map:yard/layer:entity/object:1", True, True)])
+expect("...and the `fix` the Problems dock prints VERBATIM says what to do, "
+       "not what is wrong",
+       [p.fix for p in dangling],
+       ["pick one that exists on this object's Script row, or press New... "
+        "there to write it"])
+
 lost.undo()
 lost.save()
 expect("...and undo plus one save puts the document back on disk",
        (os.path.isfile(lost_path), lost.dirty), (True, False))
+expect("POSITIVE CONTROL: with the document back, the same walk says "
+       "nothing and the same boot finds it",
+       ([str(p.scope) for p in lost.project.problems()
+         if p.scope.kind == "object"], boot(LOST)), ([], (SIGNPOST, "")))
+
+# -- all three per-object links, both halves each ---------------------------
+# `pyoneer_script` is one of THREE properties an object carries that name
+# something the project must contain -- `pyoneer_actor` is a row id and
+# `pyoneer_behaviors` is a list of registry tokens -- and all three make the
+# boot raise when the name resolves to nothing. All three were unvalidated
+# together; guarding one of three siblings is the shape ACTIVE WARNINGS has
+# now sighted nine times, so each of the three is asserted BOTH WAYS below,
+# on one object, in one fixture:
+#
+#     dangling -> a violation naming the object and the missing thing
+#     resolved -> nothing
+#     absent   -> nothing
+#
+# The vocabulary row is the anti-drift half: `genre.OBJECT_LINKS` is DERIVED
+# from the dispatch table rather than retyped beside it, so a fourth property
+# cannot be added to one and forgotten in the other -- which is the ninth
+# sighting's own counter-move, "make both halves name the same tuple".
+
+from editor.core import genre as genre_module        # noqa: E402
+from scripts.game.behavior.base import ACTOR, BEHAVIORS   # noqa: E402
+from scripts.loaders.table_file import ACTORS       # noqa: E402
+
+expect("the walk's vocabulary IS the dispatch table, read twice and never "
+       "typed twice, and it is exactly the three per-object properties that "
+       "name something else",
+       (genre_module.OBJECT_LINKS,
+        genre_module.OBJECT_LINKS == tuple(genre_module._LINK_CHECKERS)),
+       ((sf.SCRIPT_PROPERTY, ACTOR, BEHAVIORS), True))
+
+LINKS = yard()
+made.append(LINKS)
+links = Session.open(LINKS, genre_id="topdown_rpg")
+GHOST = Scope.of(("script", "ghost"))
+
+
+def link_problems(needle: str) -> list[tuple]:
+    """What the object walk says about the one object, filtered by needle."""
+    return [(p.severity, str(p.scope)) for p in links.project.problems()
+            if p.scope.kind == "object" and needle in p.message]
+
+
+expect("an object carrying none of the three is SILENT, so none of the rows "
+       "below can pass by reporting everything",
+       [link_problems(key) for key in genre_module.OBJECT_LINKS],
+       [[], [], []])
+
+# 1/3 -- pyoneer_script
+links.run(Command("map.object.property.set", HERO,
+                  {"key": sf.SCRIPT_PROPERTY, "value": "ghost"}))
+expect("a %s naming no document is reported at the object" % sf.SCRIPT_PROPERTY,
+       link_problems(sf.SCRIPT_PROPERTY),
+       [("soft", "map:yard/layer:entity/object:1")])
+links.run(Command("script.create", GHOST, {"title": "Ghost"}))
+expect("...and the positive control: write that document and the same "
+       "object is silent", link_problems(sf.SCRIPT_PROPERTY), [])
+
+# 2/3 -- pyoneer_actor
+links.run(Command("map.object.property.set", HERO,
+                  {"key": ACTOR, "value": "nobody"}))
+expect("a %s naming no row is reported at the object" % ACTOR,
+       link_problems(ACTOR), [("soft", "map:yard/layer:entity/object:1")])
+links.run([Command("table.create", Scope.of(("table", ACTORS)), {}),
+           Command("table.row.add", Scope.of(("table", ACTORS)),
+                   {"id": "nobody", "values": {}})])
+expect("...and the positive control: add that row and the same object is "
+       "silent", link_problems(ACTOR), [])
+
+# 3/3 -- pyoneer_behaviors
+links.run(Command("map.object.property.set", HERO,
+                  {"key": BEHAVIORS, "value": "topdown_move,ghost_walk"}))
+expect("a %s carrying a token the registry does not know is reported at the "
+       "object" % BEHAVIORS,
+       link_problems(BEHAVIORS), [("soft", "map:yard/layer:entity/object:1")])
+expect("...and it names the token, which is the thing an author has to fix",
+       [("ghost_walk" in p.message, "topdown_move" in p.fix)
+        for p in links.project.problems()
+        if p.scope.kind == "object" and BEHAVIORS in p.message],
+       [(True, False)])
+links.run(Command("map.object.property.set", HERO,
+                  {"key": BEHAVIORS, "value": "topdown_move"}))
+expect("...and the positive control: a list of registered tokens is silent",
+       link_problems(BEHAVIORS), [])
+expect("...and with all three resolved the object walk is silent again, so "
+       "the three guards agree about a healthy object as well as a broken "
+       "one",
+       [p for p in links.project.problems() if p.scope.kind == "object"], [])
 
 # -- the listing and the flag are ONE sentence -----------------------------
 # The close prompt asks `session.dirty` and then lists what is unsaved, and

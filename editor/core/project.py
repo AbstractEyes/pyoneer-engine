@@ -311,6 +311,17 @@ class Project:
         self.__maps: dict[str, str] = {}          # name -> absolute .tmx path
         self.__open_maps: dict[str, MapDocument] = {}
         self.__tables: dict[str, DataTable] = {}
+        self.__removed_tables: set[str] = set()
+        """Tables dropped in memory whose `.json` is still on disk.
+
+        The mirror of `ScriptLibrary.removed`, and it exists for the fault
+        that docstring names by name: `drop_table` used to call `os.remove`
+        INSIDE the command, so a drop that was rolled back had already
+        deleted the file and `table.restore` -- the registered, exact
+        inverse -- could not put it back. A file's existence is the one
+        thing a command cannot invert, so the unlink waits for `save`,
+        where an undo has already had its chance.
+        """
         self.__load_map_index()
         self.__load_tables()
 
@@ -395,24 +406,60 @@ class Project:
     def has_table(self, name: str) -> bool:
         return name in self.__tables
 
+    def table_path(self, name: str) -> str:
+        """Where one table's `.json` lives. Spelled once, as
+        `ScriptLibrary.path_for` is: it was written out at three call sites
+        and the third one deleted a file the other two only wrote."""
+        return os.path.join(self.tables_dir, f"{name}.json")
+
     def create_table(self, table: DataTable) -> DataTable:
         if table.name in self.__tables:
             raise PyoneerProjectError(
                 f"table {table.name!r} already exists", table=table.name)
         table.dirty = True
         self.__tables[table.name] = table
+        # A drop that is taken back -- by `table.restore`, by `table.create`
+        # under the same name, by any route at all -- cancels the pending
+        # unlink. `ScriptLibrary.create` discards from `removed` for the
+        # same reason and in the same line.
+        self.__removed_tables.discard(table.name)
         return table
 
     def drop_table(self, name: str) -> DataTable:
+        """Drop a table from the session. The FILE goes at `save`, not here.
+
+        THE FIX FOR A NAMED FAULT, cited in `ScriptLibrary`'s own docstring
+        as its reason for existing: this called `os.remove` inside the
+        command, so `table.restore` -- the exact inverse `table.drop`
+        returns and the history offers as Ctrl+Z -- restored the table to
+        memory and left the `.json` deleted. The author who pressed Ctrl+Z
+        and then declined to save had lost the file, and the session was
+        not even dirty, so the close prompt never fired: the clean-close
+        branch committed a deletion nobody confirmed.
+        """
         table = self.table(name)
         del self.__tables[name]
-        path = os.path.join(self.tables_dir, f"{name}.json")
-        if os.path.isfile(path):
-            os.remove(path)
+        self.__removed_tables.add(name)
         return table
 
     def dirty_tables(self) -> list[str]:
-        return sorted(n for n, t in self.__tables.items() if t.dirty)
+        """Every table that is not on disk as the session has it.
+
+        A DROP COUNTS, the way a script deletion counts in
+        `dirty_scripts` -- the table is gone from memory, nothing in
+        `__tables` is dirty, and the `.json` is still there, so a
+        drop-only session must still raise the close prompt.
+
+        IT ASKS WHAT EXISTS rather than trusting the set, which is the
+        other half of the same rule: a table created and dropped without
+        ever being saved has no file to unlink, so it is not a document
+        "not on disk" and naming it would be a prompt about a file that
+        never existed.
+        """
+        live = {n for n, t in self.__tables.items() if t.dirty}
+        pending = {n for n in self.__removed_tables
+                   if os.path.isfile(self.table_path(n))}
+        return sorted(live | pending)
 
     # -- event scripts -----------------------------------------------------
 
@@ -435,10 +482,23 @@ class Project:
         `dirty_maps() + dirty_tables()`, which had not, so a script-only
         session was told "0 documents have changes that are not on disk:"
         and shown an empty list. Work was not lost; the sentence was.
+
+        AND IT ASKS WHAT EXISTS, which is the half that was missing.
+        `ScriptLibrary.delete` adds to `removed` unconditionally, including
+        for a document that was never on disk -- so `New... -> Ctrl+Z` left
+        `removed={'brand_new'}` and this listing named a script that
+        existed nowhere: the session was dirty forever and the close prompt
+        offered to save a file the undo had already taken away. Nothing was
+        lost; the sentence was false in exactly the direction this method
+        was written to fix, with the opposite sign. A `removed` id with no
+        `.json` under it is a deletion with nothing to delete.
         """
         library = _opened_scripts(self)
-        return [] if library is None else sorted(
-            set(library.dirty_scripts()) | set(library.removed))
+        if library is None:
+            return []
+        pending = {n for n in library.removed
+                   if os.path.isfile(library.path_for(n))}
+        return sorted(set(library.dirty_scripts()) | pending)
 
     # -- genre -------------------------------------------------------------
 
@@ -480,10 +540,20 @@ class Project:
             if document.changed:
                 written.append(document.save())
 
+        # The deferred unlink, as `ScriptLibrary.save` does it and for the
+        # same reason -- see `drop_table`. A path is not reported in
+        # `written`: nothing was written there, and the notify line the
+        # window prints counts files it wrote.
+        for name in sorted(self.__removed_tables):
+            path = self.table_path(name)
+            if os.path.isfile(path):
+                os.remove(path)
+        self.__removed_tables.clear()
+
         for name, table in self.__tables.items():
             if not table.dirty:
                 continue
-            path = os.path.join(self.tables_dir, f"{name}.json")
+            path = self.table_path(name)
             payload = json.dumps(table.to_json(), indent=2, sort_keys=True)
             with open(path, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(payload + "\n")

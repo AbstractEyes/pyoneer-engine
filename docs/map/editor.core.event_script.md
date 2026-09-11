@@ -5,7 +5,7 @@
 
 > The event-script document -- the AUTHORING half of `data/project/scripts/`.
 
-`editor.core.event_script` · 832 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.event_script` · 848 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -39,9 +39,9 @@
   - Which keys `script.node.set` may write on this node, sorted.
 - `editor/core/event_script.py:574` `node_value(node: Mapping[str, Any], key: str, registry=None) -> Any` #TAG:node_value
   - What `key` holds on this node, an absent key reading as its default.
-- `editor/core/event_script.py:767` `scripts_of(project) -> ScriptLibrary` #TAG:scripts_of
+- `editor/core/event_script.py:783` `scripts_of(project) -> ScriptLibrary` #TAG:scripts_of
   - The `ScriptLibrary` for one open project, made on first use.
-- `editor/core/event_script.py:806` `opened_scripts(project) -> 'ScriptLibrary | None'` #TAG:opened_scripts
+- `editor/core/event_script.py:822` `opened_scripts(project) -> 'ScriptLibrary | None'` #TAG:opened_scripts
   - The library this project already has, or None if it never asked.
 
 ## Classes
@@ -102,7 +102,7 @@
 
 ### `class ScriptLibrary` #TAG:ScriptLibrary
 
-`editor/core/event_script.py:640`–`761`
+`editor/core/event_script.py:640`–`777`
 
 > Every event script under one project, and the one place they save.
 
@@ -117,5 +117,6 @@
 - `editor/core/event_script.py:729` `path_for(self, script_id: str) -> str` #TAG:ScriptLibrary.path_for
 - `editor/core/event_script.py:732` `dirty_scripts(self) -> list[str]` #TAG:ScriptLibrary.dirty_scripts
 - `editor/core/event_script.py:736` `@property dirty(self) -> bool` #TAG:ScriptLibrary.dirty
-- `editor/core/event_script.py:739` `save(self) -> list[str]` #TAG:ScriptLibrary.save
+  - True when something here is not on disk as this library has it.
+- `editor/core/event_script.py:755` `save(self) -> list[str]` #TAG:ScriptLibrary.save
   - Write every dirty document and delete every removed one.

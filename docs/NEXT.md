@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the audio + map + queue pass: items 15, 16 and 17 are new, each carrying the grep that measured it that day. Item 15 is the fourth ACTIVE WARNING's shape again and is the most expensive of the three: an entire op vocabulary that no running game can reach. Items 1-14 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the spawn-funnel + boot-path pass, item 18 is new and carries the grep that measured it that day. It is a recorded DECISION rather than a task, in the shape of items 11 and 14: the rename it describes was possible in that pass and was deliberately not done, because three checks assert the two names as data and a partial rename is a red suite for the next reader. Items 1-17 were not re-measured in that pass and keep their own dates. On 2026-09-10, at the finalize of the reachability pass: items 10, 15, 16 and 17 are STRUCK THROUGH and each carries the command that now returns the opposite of what it recorded. Two of the four also record that their own prescription was measurably WRONG -- item 10's regex would have fired 13 times on this repository's render-queue and behavior tokens, and item 16's one-line repair reads the translated member and never touches the duplicates the branch was aimed at -- which is why they were retired rather than re-run. Item 17 landed in a different module than it prescribed, and says so. Items 1, 2, 4, 5, 7, 9, 13 and 18 were re-measured that day and kept: item 4's second command was CORRECTED (it was written in capitals the source does not use, so it returned 0 and read like the refusal had gone), item 7's `QUIT` count moved from 0 to 1 without the fact moving (the one hit is prose), and item 18's count GREW from 28 to 35 because the script wire added two more readers of both names. Items 19 and 20 are new: both were found by the pass that deleted item 16's dead branch, both are the same type-confusion shape, and one of them is live in a public accessor. Items 3, 6, 8, 11, 12 and 14 were not re-measured and keep their own dates. On 2026-09-11, at the finalize of the integration pass: NOTHING on this list closed, and that is worth saying plainly -- the pass closed two seams that were never filed here (the scene variable schema, which had no file and no reader, and `pyoneer_script` on the runtime spawn route) plus a guard in `main.py::run_object_script` that tested `script_run` where it had to test the flow SLOT. Items 1, 9, 10, 18, 19 and 20 were re-measured that day and every number they state still holds (item 1: 2 prose sites; item 9: `root.iter()` x2, `zoom` x0; item 10's open seam: 0 hooks; item 18: 49 lines in 11 files, GROWN again from 35 because the shared script reader added callers; item 19: 2 constant-false arms; item 20: 1 definition and no caller). Items 21-25 are NEW and all five came from PLAYING the game rather than from reading it, which is why none of them is a broken assertion -- 21, 22 and 23 are what the newest feature actually looks like to a person, and 23 is the one a new player hits first. Item 21 is a recorded DEFERRAL in the shape of items 11, 14 and 18: the fix moves the frame, and a finalize that re-baselines is a finalize nobody can trust. Items 2-8 and 11-17 were not re-measured in that pass and keep their own dates. On 2026-09-11, at the finalize of the four-defect repair pass: item 24's FIRST bullet is STRUCK THROUGH and carries the command that now returns the opposite -- and it records that the bullet had mis-filed itself, because "a finished run is never cleared" was written up as a leak and was in fact the reason one finished cutscene disabled event scripts for the rest of the session. Items 26-30 are NEW. Item 26 is a TRAP rather than a defect: nothing in the tree is broken by it today and the shipped StoryDemo is the configuration that reaches it first. Item 27 is the fourth ACTIVE WARNING one file over -- the detectors behind the one table CLAUDE.md tells every reader to trust have never been watched saying `no`. Items 28 and 29 are round-trip defects found by DRIVING an undo and comparing bytes, not by reading, and 29 is pinned as it really behaves by a check so that fixing it turns a row red. Item 30 is two missing verbs, filed together. Items 1-23 and 25 were not re-measured in that pass and keep their own dates. -->
+<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the audio + map + queue pass: items 15, 16 and 17 are new, each carrying the grep that measured it that day. Item 15 is the fourth ACTIVE WARNING's shape again and is the most expensive of the three: an entire op vocabulary that no running game can reach. Items 1-14 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the spawn-funnel + boot-path pass, item 18 is new and carries the grep that measured it that day. It is a recorded DECISION rather than a task, in the shape of items 11 and 14: the rename it describes was possible in that pass and was deliberately not done, because three checks assert the two names as data and a partial rename is a red suite for the next reader. Items 1-17 were not re-measured in that pass and keep their own dates. On 2026-09-10, at the finalize of the reachability pass: items 10, 15, 16 and 17 are STRUCK THROUGH and each carries the command that now returns the opposite of what it recorded. Two of the four also record that their own prescription was measurably WRONG -- item 10's regex would have fired 13 times on this repository's render-queue and behavior tokens, and item 16's one-line repair reads the translated member and never touches the duplicates the branch was aimed at -- which is why they were retired rather than re-run. Item 17 landed in a different module than it prescribed, and says so. Items 1, 2, 4, 5, 7, 9, 13 and 18 were re-measured that day and kept: item 4's second command was CORRECTED (it was written in capitals the source does not use, so it returned 0 and read like the refusal had gone), item 7's `QUIT` count moved from 0 to 1 without the fact moving (the one hit is prose), and item 18's count GREW from 28 to 35 because the script wire added two more readers of both names. Items 19 and 20 are new: both were found by the pass that deleted item 16's dead branch, both are the same type-confusion shape, and one of them is live in a public accessor. Items 3, 6, 8, 11, 12 and 14 were not re-measured and keep their own dates. On 2026-09-11, at the finalize of the integration pass: NOTHING on this list closed, and that is worth saying plainly -- the pass closed two seams that were never filed here (the scene variable schema, which had no file and no reader, and `pyoneer_script` on the runtime spawn route) plus a guard in `main.py::run_object_script` that tested `script_run` where it had to test the flow SLOT. Items 1, 9, 10, 18, 19 and 20 were re-measured that day and every number they state still holds (item 1: 2 prose sites; item 9: `root.iter()` x2, `zoom` x0; item 10's open seam: 0 hooks; item 18: 49 lines in 11 files, GROWN again from 35 because the shared script reader added callers; item 19: 2 constant-false arms; item 20: 1 definition and no caller). Items 21-25 are NEW and all five came from PLAYING the game rather than from reading it, which is why none of them is a broken assertion -- 21, 22 and 23 are what the newest feature actually looks like to a person, and 23 is the one a new player hits first. Item 21 is a recorded DEFERRAL in the shape of items 11, 14 and 18: the fix moves the frame, and a finalize that re-baselines is a finalize nobody can trust. Items 2-8 and 11-17 were not re-measured in that pass and keep their own dates. On 2026-09-11, at the finalize of the four-defect repair pass: item 24's FIRST bullet is STRUCK THROUGH and carries the command that now returns the opposite -- and it records that the bullet had mis-filed itself, because "a finished run is never cleared" was written up as a leak and was in fact the reason one finished cutscene disabled event scripts for the rest of the session. Items 26-30 are NEW. Item 26 is a TRAP rather than a defect: nothing in the tree is broken by it today and the shipped StoryDemo is the configuration that reaches it first. Item 27 is the fourth ACTIVE WARNING one file over -- the detectors behind the one table CLAUDE.md tells every reader to trust have never been watched saying `no`. Items 28 and 29 are round-trip defects found by DRIVING an undo and comparing bytes, not by reading, and 29 is pinned as it really behaves by a check so that fixing it turns a row red. Item 30 is two missing verbs, filed together. Items 1-23 and 25 were not re-measured in that pass and keep their own dates. On 2026-09-11, at the finalize of the four-defect repair pass: items 27 and 28 are STRUCK THROUGH and each carries the command that now returns the opposite of what it recorded -- and BOTH record that the entry under-counted its own defect. Item 27 named two weak detectors and the audit found a third (row 4 measured the READ and never the ATTACH, so deleting every `attach_all` in the engine left it green) plus two further blindnesses in the regex it named. Item 28 named one symptom and the one function had three, including the `restore_object` wart the R7 handoff had filed as a separate wart. Items 29 and 30 were re-measured and kept: 29 is untouched by 28's repair because that repair is about whitespace and this one is about attribute ORDER, and 30's first count moved from 3 to 4 without its fact moving. Items 31-36 are NEW. Items 31, 32 and 33 are each a guard that landed on one route while a sibling route kept the old shape -- 31 inside one walk, 32 and 33 inside the CHECK suite, which is the sighting that should worry a reader most. Items 34 and 35 came from DRIVING the save wire rather than reading it, and 36 is the cache half of 30's second bullet, filed with the hand-edit-clobber it compounds with. Items 1-26 were not re-measured in that pass and keep their own dates. -->
 
 # Next — what is open, ranked, and the command that measured it
 
@@ -558,44 +558,57 @@ The fix is a routing decision -- a second route, or a payload-aware starter --
 and it belongs in `demos/story.py` or `scripts/game/flow/router.py`, not in the
 slot guard that was fixed this pass.
 
-**27. `docs/BEHAVIORS.md`'s measured-integration column is measured by detectors
-nobody has ever seen report `no`.** `CLAUDE.md` routes every reader to that
-table with the instruction to trust it over prose, so a detector that reports a
-wire which is not there is the most expensive kind of wrong in this tree --
-and `tools/check_event_docs.py` had exactly that, twice, until 2026-09-11. The
-same shapes are live next door: `_calls` matches a BARE spelling
-(`func.id`/`func.attr`) with no resolution through the import that brought the
-name in, so a module defining its own `read_requests` reads as a wire; and
-`_assigns_collision_field` is a REGEX (`\.collision_field\s*=`) over source
-text, which is weaker still. Neither has a negative corpus -- no fixture where
-the wire is planted broken and the row is asserted to read `no`. Cost: the
-table can say `live` about a wire that has been cut, and the one document
-CLAUDE.md tells you to trust would be the thing lying. The repair is the one
-`check_event_docs` section 6 already carries: `ROW_KEYS` + `CORPUS`, a gate
-that every row is claimed by exactly one corpus key, and a per-row gate that it
-is driven BOTH ways. Measured 2026-09-11:
-`grep -n "def _calls" -A 40 tools/check_behavior_docs.py` shows the bare match;
-`grep -c "CORPUS" tools/check_behavior_docs.py` returns **0**.
+**~~27. `docs/BEHAVIORS.md`'s measured-integration column is measured by
+detectors nobody has ever seen report `no`.~~ -- PAID OFF 2026-09-11, and the
+audit found a THIRD defect the entry did not name.** Every one of the seven
+rows was audited per column, not just the two this entry described. `_calls`
+became `calls_through`, which resolves a name through the import that bound it
+(and accepts BOTH the package that re-exports `read_requests` and the module
+that defines it -- asking the function for its own `__module__`, the sibling
+instrument's rule, would have matched none of the three real readers).
+`_assigns_collision_field` became `assigns_field`, an AST walk of assignment
+targets. Row 5 is now scan AND DRIVE: the check writes its own 4-cell tmx,
+authors one token on one object and asserts the RECORD carries it. And the
+third defect: row 4's title says "turned into ATTACHED behaviors" and the code
+measured only the READ, so deleting all three `attach_all` call sites in the
+engine left it green -- it is a conjunction now, and the evidence cell names
+the attach site (`scripts/core/renderer.py`) that no version of the document
+had ever printed.
+**The rows did not move.** All seven still read `yes` and the generated file
+was byte-identical after the repair, which is the worse thing to discover late
+than a red row: the instrument was weak, not wrong, so there was nothing to
+notice.
+The entry's own diagnosis was also short by two: the regex `\.collision_field
+\s*=` counted a COMMENT, a DOCSTRING, `entity.collision_field == other` (the
+first half of `==` satisfies `\s*=`) and -- the expensive one --
+`self.collision_field = ...`, which is a private slot on `LayerRenderer`, so
+deleting the ONE hand-out line left the row saying yes with every body in the
+game ungated.
+Re-measured 2026-09-11: `grep -c "CORPUS" tools/check_behavior_docs.py`
+returns **5** where it returned 0; the file reports 133 assertions where it
+reported 81, and section 9 drives 40 broken worlds plus a gate that every live
+row is claimed by exactly one corpus key.
 
-**28. Adding a child to an element whose existing children are NOT indented
-two-per-level re-indents the first one, so add-then-delete is not byte-exact.**
-`#TAG:MapDocument._child_indent` computes `parent_indent + 2` instead of
-reading the indent the existing first child actually uses, and
-`#TAG:MapDocument._append_child` writes that computed indent in front of it.
-Cost: one byte of diff nobody authored, on a `<layer>` whose `<data>` is
-indented three spaces -- precisely the deliberate awkwardness
-`tools/check_tmx_roundtrip.py`'s own fixture is built around, and precisely the
-hand-authored punctuation law 11 exists to protect. It predates this pass:
-loading `git show HEAD~1:scripts/loaders/map_document.py` as a separate module
-reproduces it. It is NOT confined to properties -- `_append_child` is the one
-add path for layers, tilesets, objects and properties alike -- so it wants its
-own sibling sweep rather than a patch at one call site. Measured 2026-09-11 on
-a CRLF fixture whose `<layer>` is indented one space and whose `<data>` is
-indented three:
-
-    layer.properties["pyoneer_depth"] = 3; del layer.properties["pyoneer_depth"]
-    -   <data encoding="csv">
-    +  <data encoding="csv">
+**~~28. Adding a child to an element whose existing children are NOT indented
+two-per-level re-indents the first one, so add-then-delete is not
+byte-exact.~~ -- PAID OFF 2026-09-11, and it was three defects rather than
+one.** `_append_child` had THREE branches each computing their own answer
+while the middle one carried a comment saying that recomputing "looked
+equivalent and was not". They now share `#TAG:MapDocument._separator_of`,
+which READS the whitespace the parent already puts in front of a child --
+`parent.text`, then each child's tail except the last, which is the closing
+tag's indent and a step shallower -- and falls back to `_child_indent` only
+for a parent with nothing to copy. Three symptoms died together: the
+re-indented first child this entry named, an APPENDED child landing at the
+computed indent beside siblings at another, and `restore_object` into an
+EMPTIED layer, which the R7 handoff had reported separately as one byte per
+line.
+Re-measured 2026-09-11: `grep -c "_separator_of" scripts/loaders/map_document.py`
+returns **2**, and `tools/check_tmx_roundtrip.py` carries a fixture whose
+children are indented three under a parent indented one -- where the computed
+answer is two, so every recomputed indent in it is wrong by a byte. Six
+remove-then-restore positions across two indents are byte-exact; four
+mutations of the one function turn them red.
 
 **29. `map.object.unset` followed by one undo restores the VALUE and not the
 BYTES.** `ElementTree.Element.set` appends, so an attribute removed from the
@@ -609,7 +622,10 @@ Cost: a git diff on a map that was only ever edited and undone -- the thing
 `tools/check_editor.py` ("unset + undo restores the VALUE but not the byte
 order"), so the day it is fixed that row goes red and gets rewritten. Measured
 2026-09-11: `<object id="1" name="hero" x="16" .../>` comes back as
-`<object id="1" x="16" ... name="hero"/>`.
+`<object id="1" x="16" ... name="hero"/>`. STILL OPEN and re-measured at the
+finalize of the same day: item 28's repair was to the WHITESPACE model and
+does not touch attribute order, so the pinned row is still green and still
+describes the wrong behaviour on purpose.
 
 **30. Two things the editor cannot write at all, filed together because each is
 a missing verb rather than a broken one.**
@@ -624,15 +640,122 @@ a missing verb rather than a broken one.**
   attribute back. A command whose inverse cannot run is worse than a missing
   capability, so this needs a verb whose inverse is a restore, not a widened
   `choices`. Measured 2026-09-11:
-  `grep -c "_OBJECT_ATTRIBUTES" editor/core/verbs.py` returns **3** -- the
-  tuple and the two params that now share it.
+  Re-measured 2026-09-11 at the finalize:
+  `grep -c "_OBJECT_ATTRIBUTES" editor/core/verbs.py` returns **4** where it
+  returned 3 -- the tuple, the two params that share it, and a docstring on
+  `map.object.unset` naming it as the reason the pair is symmetrical. The
+  count moved and the fact did not: still no door that can remove an
+  attribute.
 - **`data/project/scenes/*.json` has a reader and no writer.** The editor READS
   them (`scripts_of` -> `load_vars`, the one place the variable schema comes
   from) and cannot write one, so there is no gesture for declaring a scene
   variable: the condition builder's combo is the closed declared list and its
   refusal names a file the editor cannot open. Measured 2026-09-11:
   `grep -c "\"scene\." editor/core/verbs.py` returns **0** across 51 verbs
-  whose prefixes are `map`, `script`, `table`, `project` and `noop`.
+  whose prefixes are `map`, `script`, `table`, `project` and `noop` --
+  re-measured at the finalize by loading the registry rather than grepping,
+  and the census is unchanged: 26 / 14 / 9 / 1 / 1. Item 36 is the other half
+  of this one: even after the file is written by hand, the library caches the
+  schema and the editor has to be restarted to see it.
+
+**31. `pyoneer_param_<key>` is the fourth per-object link and the only one the
+editor does not resolve.** `GenrePack.validate` now walks every object and
+resolves `pyoneer_script`, `pyoneer_actor` and `pyoneer_behaviors` through the
+ENGINE's own readers, so the Problems dock names the object, the property and
+the missing thing before the game refuses to boot. The fourth was left out for
+a measured reason rather than by oversight: the only reader that judges a
+parameter is `read_requests`, and it calls `warn_content` for an orphan key --
+so calling it from `validate()` would make the dock emit warnings as a side
+effect of merely LOOKING at the project, which is a validator with a side
+effect. Cost: a wrong-TYPED value or a missing `required` one raises in
+`resolve_params` at spawn exactly as the other three do, and the editor says
+nothing. The shape of the fix is a non-warning judging path plus the actors
+row threaded into the checker, so the parameter can be resolved against the
+column it may be sourced from. Measured 2026-09-11:
+`grep -c "OBJECT_LINKS" editor/core/genre.py` returns **2** and
+`grep -c "PARAM_PREFIX" editor/core/genre.py` returns **0**;
+`grep -n "resolve_params" scripts/game/behavior/registry.py` names the raiser.
+
+**32. Two check modules still carry the bare-name AST call match that
+`check_behavior_docs` replaced one file over.** `tools/check_demo_map.py` and
+`tools/check_log.py` both match a call by `func.id`/`func.attr` with no
+resolution through the import that brought the name in, which is the shape a
+module defining its own same-named method walks straight through. Cost is one
+order of magnitude below item 27's and that is the whole ranking: neither
+fills a GENERATED column, so a wrong match is a green assertion rather than a
+published lie in the one document `CLAUDE.md` tells every reader to trust. The
+repair is now written down next door -- `calls_through(name, modules, *roots)`
+in `tools/check_behavior_docs.py`, which accepts both the defining module and
+the package that re-exports the name. Measured 2026-09-11:
+`grep -rln "func.id if isinstance" tools/*.py` returns exactly those **2**
+files.
+
+**33. The gate that keeps a foreign name out of `check_event_docs`'s picker
+row is name-shaped, not role-shaped.** Section 4 asks only
+`hasattr(ops_module, n)` of every entry in `OP_TABLE_NAMES`, and the op module
+re-exports its own imports -- so `CORE`, `loadouts`, `Optional`, `Mapping`,
+`dataclass` and `AudioManager` all satisfy it. Cost: the reachability row that
+says an editor module reaches the op REGISTRY can be reopened by one tuple
+entry with the check still green, and a decoy that names only the label
+constant `op_registry.CORE` -- which is exactly what `ScriptEditor` does for
+its own heading -- reads as a picker. `granted_registry` was rejected only
+because it lives in another module, which is the accident that makes this look
+closed. The fix is to ask what the name IS (a registry mapping, a function
+over one) rather than whether the module happens to carry it. Measured
+2026-09-11: `grep -n "hasattr(ops_module" tools/check_event_docs.py` returns
+**1**, and with `"CORE"` appended to the tuple the check still exits 0.
+
+**34. The event screen's footer never learns that a save happened, and the two
+`dirty_scripts` it sits between disagree about a deletion.** The footer is
+written only from `ScriptEditor.__refresh`, and `EditorWindow.save` refreshes
+the window title and nothing else -- so after a successful Ctrl+S the title's
+star clears, the file really is on disk, and the sentence under the script
+still reads *"Not on disk yet: signpost."* until the next gesture of any kind.
+Before the save wire landed it was accidentally right; now it claims work is
+off disk when it is on, which is the direction that costs an author a second
+save. Related and smaller, in the other direction: the footer reads
+`ScriptLibrary.dirty_scripts()`, which excludes `removed`, while the close
+prompt reads `Project.dirty_scripts()`, which includes it -- so after a delete
+the prompt names the document and the footer says nothing. Cost: low, and it
+self-corrects, which is why it is here rather than in the suite. Measured
+2026-09-11: `grep -n "def save" -A 12 editor/ui/main_window.py` mentions no
+script surface at all (**0** hits for "script" in that body) while
+`grep -c "script_editor" editor/ui/main_window.py` returns **12**.
+
+**35. `Project.save` writes the map before the script, which is backwards for
+the one failure mode that matters.** The order is maps, tables, `project.json`,
+scripts. A script-write failure therefore leaves the MAP on disk naming a
+document that is not -- precisely the corruption the two-document transaction
+exists to prevent -- and the boot of what is on disk raises
+`PyoneerAssetMissingError: event script 'signpost' not found`. It is announced
+rather than silent (the window shows its own stop and the session stays dirty,
+so the close prompt fires), and that is the whole difference between this and a
+data-loss bug, which is why it is ranked here. Cost: an author whose disk fills
+mid-save has a project that will not boot and a dialog that does not say so.
+The fix is either to write the scripts first or to stage every document and
+commit once. Measured 2026-09-11 by making `ScriptLibrary.save` raise
+`OSError` with everything else real: `grep -n "def save" -A 40
+editor/core/project.py` shows maps at the top of the body and the library call
+at the bottom.
+
+**36. Declaring a scene variable costs a text editor AND a process restart,
+and the loop that forces the hand-edit is the one that loses it.** Item 30's
+second bullet is the missing WRITER; this is the CACHE, and the two compound.
+`scripts_of` holds one `ScriptLibrary` per `Project` in a `WeakKeyDictionary`,
+and the scene's `vars` are read once when that library is made -- so after
+writing `data/project/scenes/*.json` by hand, `screen.refresh()` and a
+brand-new `ScriptEditor` both still offer the old closed list, and only
+relaunching the editor picks up the declaration. Worse in combination: the
+editor does not notice a file edited underneath it at all (`session.dirty`
+stays False), and one in-editor edit plus Ctrl+S writes the whole document
+back, so a hand-written change to a file the editor also owns is silently
+overwritten. `data/project/scenes/` happens to be safe because nothing writes
+it; `data/project/scripts/` next door is not, and nothing distinguishes them
+for the reader. Cost: the authoring loop's one mandatory alt-tab step is also
+its one lossy step. Measured 2026-09-11:
+`grep -n "WeakKeyDictionary" editor/core/event_script.py` returns the cache
+that has to be invalidated, and `grep -c "def reload\|def invalidate"
+editor/core/event_script.py` returns **0**.
 
 ## What is NOT on this list, and why
 

@@ -734,7 +734,23 @@ class ScriptLibrary:
 
     @property
     def dirty(self) -> bool:
-        return bool(self.dirty_scripts() or self.removed)
+        """True when something here is not on disk as this library has it.
+
+        IT ASKS WHAT EXISTS, for the same measured reason
+        `Project.dirty_scripts` does, and it is spelled the same way on
+        purpose: `delete` adds to `removed` unconditionally, including for
+        a document that was never written, so `New... -> Ctrl+Z` left this
+        property True forever with nothing anywhere to save or delete. A
+        `removed` id with no `.json` under it is a deletion with nothing to
+        delete.
+
+        This one had NO reader when the project-level twin was repaired --
+        the event screen's footer asks `dirty_scripts()` and the close
+        prompt asks the project -- so it was the latent half of the same
+        defect, waiting for the first surface that reached for it.
+        """
+        pending = any(os.path.isfile(self.path_for(n)) for n in self.removed)
+        return bool(self.dirty_scripts() or pending)
 
     def save(self) -> list[str]:
         """Write every dirty document and delete every removed one.

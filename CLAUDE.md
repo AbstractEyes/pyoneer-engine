@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L0 -->
-<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29. The first two KNOWN GAPS bullets were re-measured on 2026-09-03: README's three false gap claims and its stale check count are gone, so that bullet now names only the structural half it still owns, and the BEHAVIORS preamble bullet gained the second lie found in the same preamble that day. Also on 2026-09-03, at the finalize of the repair pass: the `map.tileset.grow`/`.rename` gap is struck through with the grep that closed it, and the fourth ACTIVE WARNING sighting was put into the past tense without being deleted. On 2026-09-04, at the finalize of the audio + map + queue pass: LAW 11 CHANGED SUBJECT -- the author's private test.tmx canvas was retired ON HIS EXPLICIT INSTRUCTION and replaced by the shipped data/maps/starter.tmx, so law 11 now protects that file and the baseline, with its reasons re-measured against the new map (byte-exact round trip under both LF and CRLF); law 4 gained the second instance that cost this pass; the query playbook gained an audio row and re-measured EVENTS.md's reachability count; The constants gained the two asset-root pairs and the shipped map; and KNOWN GAPS gained the audio-unreachable bullet. The ladder's level-0 cost was re-measured at ~9.7k. On 2026-09-10, at the finalize of the reachability pass: the query playbook's EVENTS row was re-measured and INVERTED -- all six reachability rows read `yes` now, where four read `no`, because a scripted event runs when a human presses a key; the KNOWN GAPS audio bullet is struck through with the greps that closed it, and the action-route shortcut it named was deleted rather than left beside the real route; and one anchor was added, `#TAG:no_event_pooling`, for the measurement that justified deleting a branch that had never executed. Nothing else in this file was re-measured in that pass and every other claim keeps its own date. -->
+<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29. The first two KNOWN GAPS bullets were re-measured on 2026-09-03: README's three false gap claims and its stale check count are gone, so that bullet now names only the structural half it still owns, and the BEHAVIORS preamble bullet gained the second lie found in the same preamble that day. Also on 2026-09-03, at the finalize of the repair pass: the `map.tileset.grow`/`.rename` gap is struck through with the grep that closed it, and the fourth ACTIVE WARNING sighting was put into the past tense without being deleted. On 2026-09-04, at the finalize of the audio + map + queue pass: LAW 11 CHANGED SUBJECT -- the author's private test.tmx canvas was retired ON HIS EXPLICIT INSTRUCTION and replaced by the shipped data/maps/starter.tmx, so law 11 now protects that file and the baseline, with its reasons re-measured against the new map (byte-exact round trip under both LF and CRLF); law 4 gained the second instance that cost this pass; the query playbook gained an audio row and re-measured EVENTS.md's reachability count; The constants gained the two asset-root pairs and the shipped map; and KNOWN GAPS gained the audio-unreachable bullet. The ladder's level-0 cost was re-measured at ~9.7k. On 2026-09-10, at the finalize of the reachability pass: the query playbook's EVENTS row was re-measured and INVERTED -- all six reachability rows read `yes` now, where four read `no`, because a scripted event runs when a human presses a key; the KNOWN GAPS audio bullet is struck through with the greps that closed it, and the action-route shortcut it named was deleted rather than left beside the real route; and one anchor was added, `#TAG:no_event_pooling`, for the measurement that justified deleting a branch that had never executed. Nothing else in this file was re-measured in that pass and every other claim keeps its own date. On 2026-09-11, at the finalize of the four-defect repair pass: the fifth ACTIVE WARNING's count moved from NINE to ELEVEN and both new sightings are named -- the tenth is `MapDocument._append_child`, whose middle branch recomputed a separator three lines below its own comment saying not to, which ends the "distance is the cause" reading for good; the eleventh is `ScriptLibrary.dirty`, a repaired bug's untouched twin one layer down with no reader at all. That entry also gained the positive proof of its own counter-move: four copies of the self-closing guard in `editor/core/verbs.py` became one line in `_remove_child` and the four copies were deleted, so one mutation now turns four rows red where four were needed before. One anchor was added, `#TAG:childless_parent_closes_itself`. Nothing else in this file was re-measured in that pass. -->
 
 # Pyoneer — read this first
 
@@ -403,6 +403,18 @@ of repetition.
   that could not WRITE `id` could DELETE it. Note what the three have in
   common and the earlier six do not: all three pairs live in ONE file, two of
   them within thirty lines of each other. Distance is not the cause.
+  **ELEVEN NOW**, and the tenth is the end of the distance argument: at the
+  finalize of 2026-09-11, `MapDocument._append_child`'s middle branch carried
+  the comment *"Recomputing looked equivalent and was not ... Inheriting makes
+  the pair exactly reversible"* -- and recomputed the very next separator it
+  wrote, THREE LINES BELOW its own warning, as did the branch after it. One
+  function, three branches, one rule, two of them wrong. A rule written in a
+  comment is a rule the line under it does not obey. The eleventh is the
+  quiet kind: `Project.dirty_scripts` learned to ask what EXISTS instead of
+  trusting a `removed` set, and `ScriptLibrary.dirty` one layer down did not
+  -- and it had NO READER, so nothing went wrong, and the first surface that
+  reached for it would have inherited a repaired bug. A latent sibling is
+  still a sighting; it is just one nobody can date.
   Counter-move, and it is not "grep harder": where the two routes share a
   rule, make the shared half ONE FUNCTION and delete the copy -- or, where a
   rule is a declared vocabulary, make both halves NAME THE SAME TUPLE, which
@@ -410,10 +422,18 @@ of repetition.
   closed the fourth sighting that way, and the proof it worked is a single
   mutation -- `if False and script_id not in scripts` -- turning BOTH
   `tools/check_spawn_runtime.py` and `tools/check_script_runtime.py` red in
-  one run. Two copies that agree today cannot be mutated once. When the shared
+  one run. Two copies that agree today cannot be mutated once. It closed the
+  self-closing guard the same way on 2026-09-11: FOUR copies of
+  `if not list(x.element): x.element.text = None` in `editor/core/verbs.py`,
+  each carrying a comment saying it belonged in `scripts/`, became one line in
+  `#TAG:childless_parent_closes_itself` and the four copies were deleted --
+  and one mutation of that line now turns four rows red where four separate
+  mutations were needed before. When the shared
   half genuinely cannot be one function, name every sibling you checked and
   why each is safe, in the handoff, as a list -- an unnamed sibling is an
-  unchecked one.
+  unchecked one. And check the CHECK SUITE last, not never: three of this
+  pass's sightings were in `tools/`, where a wrong detector is a green
+  assertion rather than a visible failure.
 
 ## Known gaps — fill on sight
 
@@ -610,4 +630,5 @@ probably renamed.
 #TAG:BRUSH_DOMAIN :: MASK_DOMAIN + (NO_DATA,)
 #TAG:CROP_DIR :: CROP_DIR = "tilesets"
 #TAG:no_event_pooling :: identity and is CONSTANT FALSE
+#TAG:childless_parent_closes_itself :: if not list(parent) and not
 ```

@@ -28,6 +28,26 @@ WHAT IS ASSERTED
         class that is absent from the tree
      8. the integration status written in the file matches what the code
         actually does when driven
+     9. EVERY column of that integration table goes `no` when the code it
+        describes is broken  <- the negative corpus
+
+THE ONE TABLE `CLAUDE.md` TELLS EVERY READER TO TRUST
+-----------------------------------------------------
+`CLAUDE.md` routes readers here with the instruction to trust this document's
+MEASURED integration table over any prose, including its own preamble. That
+makes a detector reporting a wire which is not there the most expensive kind
+of wrong available in this tree -- and the sibling instrument one file over,
+`tools/check_event_docs.py`, was caught printing `yes` over broken code in
+three consecutive passes.
+
+Two of the detectors behind this table had the same two shapes. `_calls`
+matched a bare `func.id`/`func.attr` with no resolution through the import
+that brought the name in, so any function with a matching NAME satisfied it;
+`_assigns_collision_field` was a regex over source text, which counted a
+comment, a docstring and an `==`. Neither had ever been watched saying `no`.
+Section 9 is the repair the sibling already carries: `ROW_KEYS` + `CORPUS`, a
+gate that every row is claimed by exactly one key, and a per-row gate that it
+is driven BOTH ways. Nothing in it edits a tracked file.
 
 THE DOCUMENT IS GENERATED, INCLUDING THE PARTS THAT ARE NOT `describe_all`
 -------------------------------------------------------------------------
@@ -56,6 +76,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 import pygame
 
@@ -69,12 +90,15 @@ from scripts.core.event_manager import PyoneerEvent
 from scripts.core.input import InputActionManager
 from scripts.core.event_types import GameEventType
 from scripts.core.spawn import SPAWN_REGISTRY
+from scripts.game import behavior as behavior_package
 from scripts.game.behavior import (ACTOR, BEHAVIOR_REGISTRY, BEHAVIORS,
                                    PARAM_PREFIX, TOKEN, BehaviorParam,
-                                   BehaviorSpec, EntityBehavior,
-                                   EntityBehaviors, describe_all, format_list,
-                                   parse_list, validate_list)
+                                   BehaviorRequest, BehaviorSpec,
+                                   EntityBehavior, EntityBehaviors,
+                                   describe_all, format_list, parse_list,
+                                   read_requests, validate_list)
 from scripts.game.entity.game_entity import GameEntity
+from scripts.loaders import map_loader
 
 ROOT = _bootstrap.REPO_ROOT
 DOC_PATH = os.path.join(ROOT, "docs", "BEHAVIORS.md")
@@ -480,7 +504,8 @@ _SPY_SPEC = BehaviorSpec(name="probe_spy",
                          factory=_Spy, order=50)
 
 
-def drive_calls(frames: int, enabled: bool = True) -> int | None:
+def drive_calls(frames: int, enabled: bool = True,
+                entity_class=None) -> int | None:
     """How many times a bound behavior's `update` ran over `frames` frames.
 
     None when there is no `EntityBehaviors` on the entity to attach to at all,
@@ -493,9 +518,14 @@ def drive_calls(frames: int, enabled: bool = True) -> int | None:
     again returns 1 for any frame count, and a drive that fires twice per
     frame returns 2 for one frame. Only `calls == frames` for more than one
     value of `frames` separates them from a working one.
+
+    `entity_class` is section 9's seam: an entity with no holder, a holder of
+    the wrong type, a dead drive and a doubled one are all constructible from
+    out here, so rows 1 and 2 are watched saying `no` without the engine being
+    edited to make them.
     """
-    entity = _ProbeEntity()
-    holder = getattr(entity, "behaviors", None)
+    entity = (_ProbeEntity if entity_class is None else entity_class)()
+    holder = getattr(entity, HOLDER, None)
     if not isinstance(holder, EntityBehaviors):
         return None
     spy = _Spy()
@@ -508,81 +538,366 @@ def drive_calls(frames: int, enabled: bool = True) -> int | None:
     return spy.calls
 
 
-def entity_drives_behaviors() -> bool:
+def entity_drives_behaviors(entity_class=None) -> bool:
     """True when `GameEntity.core_frame_update` really runs a bound behavior."""
-    return drive_calls(2) == 2
+    return drive_calls(2, entity_class=entity_class) == 2
 
 
-def _calls(name: str, *relative: str) -> tuple[str, ...]:
-    """Files under `relative` that CALL `name`, repo-relative, package excluded.
+# ---------------------------------------------------------------------------
+# THE SCANS -- "is this wire in the CODE", asked of the parse tree.
+#
+# Two of these measured something weaker than the column they filled, and both
+# shapes had already been paid for next door. `_calls` matched a BARE spelling
+# (`func.id` / `func.attr`) with no resolution through the import that brought
+# the name in, so a module holding its own `read_requests` method read as the
+# whole wire. `_assigns_collision_field` was a REGEX over source text, which is
+# weaker still: measured on the real pattern, it counted a COMMENT, a DOCSTRING
+# and `entity.collision_field == other` -- the first half of `==` satisfies it
+# -- and it counted the renderer assigning its OWN slot, which is the one line
+# whose deletion the column exists to report.
+#
+# Every scan below is driven BOTH ways by section 9 against a PLANTED source
+# tree. A detector nobody has watched say `no` is a green word, not a
+# measurement.
+# ---------------------------------------------------------------------------
 
-    AST rather than a substring search, and calls rather than imports. Both
-    distinctions earn their keep here: `read_requests` appears in three
-    docstrings under `scripts/`, and a module that imports the behavior
-    package to hold an `EntityBehaviors` is not thereby a module that reads a
-    map's behavior list. Counting either would report a wire that is not
-    there, which is the one thing this table must never do.
+SKIP_DIRS = {".git", "__pycache__", ".venv", "docs", "data"}
+
+HOLDER = "behaviors"
+"""The attribute a constructed entity keeps its `EntityBehaviors` under.
+
+Row 1's own title prints this name and row 4's attach scan matches
+`<something>.behaviors.attach_all(...)` structurally, so the two rows agree
+about what the holder is called by spelling it in exactly one place.
+"""
+
+ATTACH = EntityBehaviors.attach_all.__name__
+READ = read_requests.__name__
+"""Asked of the class and of the function rather than retyped: a rename moves
+the scan with the thing, instead of quietly emptying it."""
+
+BEHAVIOR_MODULES = (behavior_package.__name__, read_requests.__module__)
+"""Both legal homes of the read: the package that re-exports it and the module
+that defines it.
+
+Asking the FUNCTION for its module alone -- the sibling instrument's rule --
+would have matched none of the three real readers, because every one of them
+imports from the package. A false negative is the safe direction to fail in
+and it is still a wrong answer, so both are accepted and nothing else is.
+"""
+
+BEHAVIOR_DIR = behavior_package.__name__.replace(".", "/") + "/"
+"""The package that DEFINES the read, excluded from every scan of its callers:
+a function calling its own neighbour is not a production wire."""
+
+COLLISION_FIELD = "collision_field"
+PROBE_TYPE = "ProbeBody"
+
+_TREES: dict = {}
+_FILES: dict = {}
+_SCANS: dict = {}
+"""Parse and scan caches for the REAL tree only -- never for a planted world.
+
+Section 9 drives `integration_rows` a few dozen times and every call that
+plants nothing re-walks `scripts/` and `main.py`. Nothing in this process
+writes a `.py`, so a tree parsed once is the tree for the whole run.
+"""
+
+
+def _cached(key, hits, sources):
+    """One scan's answer, remembered only when it came from the REAL tree."""
+    out = tuple(sorted(set(hits)))
+    if sources is None:
+        _SCANS[key] = out
+    return out
+
+
+def python_files(*roots, sources=None) -> tuple[str, ...]:
+    """Every `.py` under `roots`, repo-relative, forward slashes, sorted.
+
+    A root is a directory OR a single `.py` file: `main.py` is the game's boot
+    and belongs to no package, and a walker that took directories only could
+    not see the one file some of these rows describe.
+
+    `sources` replaces the tree with a `{repo/relative/path.py: source}`
+    mapping, which is how section 9 hands every scan a world where the wire is
+    planted broken without touching a tracked file. The roots still apply to
+    it, which is the point: a decoy under `scripts/game/` must not answer a
+    scan of `scripts/loaders/`.
     """
-    package = os.path.join("game", "behavior")
+    if sources is not None:
+        return tuple(sorted(
+            rel for rel in sources
+            if any(rel == root or rel.startswith(root.rstrip("/") + "/")
+                   for root in roots)))
+    if roots in _FILES:
+        return _FILES[roots]
     found: list[str] = []
-    targets: list[str] = []
-    for part in relative:
-        root = os.path.join(ROOT, part)
-        if os.path.isfile(root):
-            targets.append(root)
+    for root in roots:
+        base = os.path.join(ROOT, root)
+        if os.path.isfile(base) and base.endswith(".py"):
+            found.append(os.path.relpath(base, ROOT).replace(os.sep, "/"))
             continue
-        for dirpath, _dirs, files in os.walk(root):
-            if "__pycache__" in dirpath or package in dirpath:
-                continue
-            targets.extend(os.path.join(dirpath, n) for n in files
-                           if n.endswith(".py"))
-    for path in targets:
-        with open(path, encoding="utf-8") as handle:
-            try:
-                tree = ast.parse(handle.read())
-            except SyntaxError:
-                continue
+        for folder, dirs, names in os.walk(base):
+            dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+            for name in sorted(names):
+                if name.endswith(".py"):
+                    found.append(
+                        os.path.relpath(os.path.join(folder, name),
+                                        ROOT).replace(os.sep, "/"))
+    _FILES[roots] = tuple(sorted(found))
+    return _FILES[roots]
+
+
+def _tree(rel, sources=None):
+    if sources is not None:
+        return ast.parse(sources[rel])
+    if rel not in _TREES:
+        with open(os.path.join(ROOT, rel), encoding="utf-8",
+                  errors="replace") as handle:
+            _TREES[rel] = ast.parse(handle.read())
+    return _TREES[rel]
+
+
+def _dotted(node):
+    """`a.b.c` written out, or None for anything that is not a plain name."""
+    parts = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+def _spellings(tree, modules, wanted) -> set[str]:
+    """Every way THIS file could spell one of `wanted` and mean one of `modules`.
+
+    Three import shapes, three bindings: `import a.b.c` binds the dotted path
+    (`a.b.c.NAME`), `from a.b import c` binds the module under one name
+    (`c.NAME`, or its alias), and `from a.b.c import NAME` binds the attribute
+    itself (a bare `NAME`, or its alias). Nothing else counts, and a star
+    import binds nothing this can name.
+
+    That is the direction to fail in: a row saying `no` for a wire that exists
+    sends somebody to look, while a row saying `yes` for a wire that does not
+    is the defect this whole table is the instrument against.
+    """
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in modules:
+                    out |= {"%s.%s" % (alias.asname or alias.name, w)
+                            for w in wanted}
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if node.module in modules and alias.name in wanted:
+                    out.add(alias.asname or alias.name)
+                elif "%s.%s" % (node.module or "", alias.name) in modules:
+                    out |= {"%s.%s" % (alias.asname or alias.name, w)
+                            for w in wanted}
+    return out
+
+
+def calls_through(name, modules, *roots, sources=None, skip=None):
+    """Files under `roots` that CALL `name` THROUGH an import of `modules`.
+
+    The parse tree, not the text, and the import, not the spelling. Both
+    distinctions are paid for here: `read_requests` is named in three
+    docstrings under `scripts/`, and a module holding its own method by that
+    name is not a module that reads a map's behavior list. Counting either
+    reports a wire that is not there, which is the one thing this table must
+    never do.
+    """
+    key = ("calls", name, modules, roots, skip)
+    if sources is None and key in _SCANS:
+        return _SCANS[key]
+    hits: list[str] = []
+    for rel in python_files(*roots, sources=sources):
+        if skip and rel.startswith(skip):
+            continue
+        tree = _tree(rel, sources=sources)
+        spellings = _spellings(tree, modules, (name,))
+        if not spellings:
+            continue
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            called = (func.id if isinstance(func, ast.Name)
-                      else func.attr if isinstance(func, ast.Attribute) else "")
-            if called == name:
-                found.append(os.path.relpath(path, ROOT).replace(os.sep, "/"))
+            if isinstance(node, ast.Call) and _dotted(node.func) in spellings:
+                hits.append(rel)
                 break
-    return tuple(sorted(found))
+    return _cached(key, hits, sources)
 
 
-def _assigns_collision_field() -> tuple[str, ...]:
-    """Files that ASSIGN `collision_field`, which is what feeds the gate.
+def attach_calls(*roots, sources=None, skip=None):
+    """Files that call `<something>.behaviors.attach_all(...)`.
 
-    The annotated declaration on `GameEntity` is not an assignment of a field
-    -- `self.collision_field: CollisionField | None = None` has a colon where
-    this pattern wants an equals sign -- so the declaration does not count
-    itself as its own consumer.
+    ROW 4'S MISSING HALF. The row says a declaration is turned into ATTACHED
+    behaviors and the scan measured only the read, so deleting every
+    `attach_all` call in the engine left it green while nothing was ever
+    attached to anything.
+
+    Matched structurally rather than by name: the call must be `attach_all` on
+    an attribute called `behaviors`, so a module with an unrelated
+    `self.attach_all(...)` of its own is not mistaken for the drive's holder.
     """
-    pattern = re.compile(r"\.collision_field\s*=")
-    found: list[str] = []
-    targets = [os.path.join(ROOT, "main.py")]
-    for dirpath, _dirs, files in os.walk(os.path.join(ROOT, "scripts")):
-        if "__pycache__" in dirpath:
+    key = ("attach", roots, skip)
+    if sources is None and key in _SCANS:
+        return _SCANS[key]
+    hits: list[str] = []
+    for rel in python_files(*roots, sources=sources):
+        if skip and rel.startswith(skip):
             continue
-        targets.extend(os.path.join(dirpath, n) for n in files
-                       if n.endswith(".py"))
-    for path in targets:
-        with open(path, encoding="utf-8") as handle:
-            if pattern.search(handle.read()):
-                found.append(os.path.relpath(path, ROOT).replace(os.sep, "/"))
-    return tuple(sorted(found))
+        for node in ast.walk(_tree(rel, sources=sources)):
+            func = node.func if isinstance(node, ast.Call) else None
+            if (isinstance(func, ast.Attribute) and func.attr == ATTACH
+                    and isinstance(func.value, ast.Attribute)
+                    and func.value.attr == HOLDER):
+                hits.append(rel)
+                break
+    return _cached(key, hits, sources)
 
 
-_INPUT_DECLARED: list[str] = []
-"""Verbs `config/inputs.json` declares that the LOADER did not register."""
+def _assigned_attributes(node):
+    """Every attribute an assignment STATEMENT writes, tuple targets included.
+
+    `ast.AnnAssign` is deliberately absent: an annotated declaration is not an
+    assignment of a field, so `self.collision_field: CollisionField | None =
+    None` does not count itself as its own consumer. That was true of the
+    regex this replaces as well, and it is the one property of it worth
+    keeping.
+    """
+    if isinstance(node, ast.Assign):
+        targets = list(node.targets)
+    elif isinstance(node, ast.AugAssign):
+        targets = [node.target]
+    else:
+        return
+    while targets:
+        target = targets.pop()
+        if isinstance(target, (ast.Tuple, ast.List)):
+            targets.extend(target.elts)
+        elif isinstance(target, ast.Starred):
+            targets.append(target.value)
+        elif isinstance(target, ast.Attribute):
+            yield target
 
 
-def _input_actions() -> tuple[str, ...]:
-    """Every verb a REAL `InputActionManager` ends up holding. Not the JSON.
+def _writes_field(tree, attr) -> bool:
+    """True when this file assigns SOMEONE ELSE'S `.<attr>`."""
+    for node in ast.walk(tree):
+        for target in _assigned_attributes(node):
+            if target.attr != attr:
+                continue
+            owner = target.value
+            if isinstance(owner, ast.Name) and owner.id in ("self", "cls"):
+                continue
+            return True
+    return False
+
+
+def assigns_field(attr, *roots, sources=None):
+    """Files that hand ANOTHER object a `.<attr>`, from the parse tree.
+
+    Four separate weaknesses of the regex this replaces, all four measured on
+    it: it counted a COMMENT; it counted a DOCSTRING; it counted
+    `entity.collision_field == other`, because the first half of `==` is an
+    `=`; and it counted `self.collision_field = ...`.
+
+    The last one is not a nicety. `LayerRenderer` keeps a field of its own
+    under that name, so deleting the ONE line that hands it to an entity --
+    `entity.collision_field = self.collision_field` -- left the row saying
+    **yes** with every body in the game ungated, which is precisely the
+    failure the row's own cost text describes.
+
+    DECLARED BLINDNESS: an entity class assigning its OWN `self.collision_field`
+    in production would read `no` here. That is the price of telling the
+    renderer's private slot apart from the hand-out; it is the safe direction
+    to be wrong in, and section 9 pins it as a case rather than leaving it to
+    be discovered.
+    """
+    key = ("assigns", attr, roots)
+    if sources is None and key in _SCANS:
+        return _SCANS[key]
+    hits = [rel for rel in python_files(*roots, sources=sources)
+            if _writes_field(_tree(rel, sources=sources), attr)]
+    return _cached(key, hits, sources)
+
+
+# ---------------------------------------------------------------------------
+# The spawn drive. A scan can prove a production module CALLS the read; only a
+# drive can prove the OBJECT'S OWN properties are what reaches it.
+# ---------------------------------------------------------------------------
+
+_SPAWN_TMX = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" orientation="orthogonal" renderorder="right-down" \
+width="4" height="4" tilewidth="16" tileheight="16" infinite="0" \
+nextlayerid="3" nextobjectid="3">
+ <objectgroup id="2" name="entity">
+  <object id="1" name="body" type="%s" x="0" y="16" width="16" height="16">
+   <properties>
+    <property name="%s" value="%s"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>
+"""
+
+_TMP = tempfile.TemporaryDirectory(prefix="pyoneer_behavior_docs_")
+
+
+def _spawn_fixture(token: str) -> str:
+    """A four-cell map carrying ONE object that declares ONE behavior.
+
+    LAW 4: this check's own fixture, written here and deleted with the run.
+    A row measured over `data/maps/starter.tmx` would report what somebody
+    authored rather than what the loader does with what it is given.
+    """
+    path = os.path.join(_TMP.name, "declares.tmx")
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(_SPAWN_TMX % (PROBE_TYPE, BEHAVIORS, token))
+    return path
+
+
+def declaration_reaches_spawn(reader=None) -> bool:
+    """Does a tmx object's `pyoneer_behaviors` REALLY reach a spawn record?
+
+    DRIVEN, not scanned, and this is the sibling instrument's lesson applied a
+    row early: a detector that reads a FILE reports what was AUTHORED, one that
+    runs the code reports what RUNS. The scan beside this cannot tell
+    `read_requests(obj.properties)` from `read_requests({})`, and it cannot
+    tell either from a spawn path that attaches a fixed list of its own -- all
+    three read identically, and two of them mean the authored list does
+    nothing.
+
+    So: write a map with one object declaring one token, run the real
+    `spawn_objects` over it with a registry of this check's own, and assert the
+    RECORD carries the token the object declared and nothing else.
+
+    `reader` replaces `map_loader`'s own `read_requests` for the length of one
+    call, which is how section 9 breaks the engine without editing it.
+    """
+    if not BEHAVIOR_REGISTRY:
+        return False
+    token = sorted(BEHAVIOR_REGISTRY)[0]
+    original = map_loader.read_requests
+    if reader is not None:
+        map_loader.read_requests = reader
+    try:
+        records = map_loader.spawn_objects(_spawn_fixture(token),
+                                           {PROBE_TYPE: _ProbeEntity})
+        got = [tuple(request.spec.name for request in record.behaviors)
+               for record in records]
+    except Exception:                                      # noqa: BLE001
+        return False
+    finally:
+        map_loader.read_requests = original
+    return got == [(token,)]
+
+
+def input_actions(config=None, manager=None) -> tuple[tuple[str, ...],
+                                                      tuple[str, ...]]:
+    """(verbs a REAL `InputActionManager` holds, verbs the LOADER dropped).
 
     THE ONE ROW IN THIS TABLE THAT MEASURED A FILE. It read `config/inputs.json`
     with `json.load` and reported the key set, so the cell printed **yes** for a
@@ -601,54 +916,90 @@ def _input_actions() -> tuple[str, ...]:
     The file is still opened, for one reason: to tell "the author declared no
     `jump`" apart from "the author declared one and the LOADER dropped it",
     which is the difference between an authoring gap and a broken engine. The
-    second is reported in the cell.
+    second is reported in the cell, and it is the second tuple returned here.
+
+    `config` and `manager` are section 9's seams -- a synthesised binding table
+    and a planted loader -- so both answers are DRIVEN rather than hoped for.
     """
-    with open(INPUTS_PATH, encoding="utf-8") as handle:
-        config = json.load(handle)
+    if config is None:
+        with open(INPUTS_PATH, encoding="utf-8") as handle:
+            config = json.load(handle)
+    build_manager = InputActionManager if manager is None else manager
     try:
         loaded = tuple(sorted(
-            InputActionManager().prepare_inputs(dict(config)).actions))
+            build_manager().prepare_inputs(dict(config)).actions))
     except Exception:                                      # noqa: BLE001
         # A refusal here is the loader doing its job loudly, and it means no
         # verb is pollable at all -- so the honest answer is the empty tuple.
-        return ()
-    for name in sorted(config):
-        if name not in loaded and name not in _INPUT_DECLARED:
-            _INPUT_DECLARED.append(name)
-    return loaded
+        return (), ()
+    return loaded, tuple(name for name in sorted(config) if name not in loaded)
 
 
-def integration_rows() -> list[tuple[str, bool, str]]:
-    """(what the wire is, whether it exists, what it would cost) -- all derived."""
-    entity = _ProbeEntity()
-    has_holder = isinstance(getattr(entity, "behaviors", None), EntityBehaviors)
-    readers = _calls("read_requests", "scripts", "main.py")
-    spawners = _calls("read_requests", "scripts/loaders", "scripts/core")
-    gated = _assigns_collision_field()
-    actions = _input_actions()
+def integration_rows(registry=None, *, sources=None, entity_class=None,
+                     config=None, manager=None,
+                     reader=None) -> list[tuple[str, bool, str]]:
+    """(what the wire is, whether it exists, what it would cost) -- all derived.
+
+    EVERY SEAM THIS READS IS AN ARGUMENT, and section 9 drives each one with
+    the code planted BROKEN: an entity with no holder, an entity whose drive
+    never fires, an empty registry, a decoy source tree, a spawn whose reader
+    ignores the object it was handed, a binding table the loader refuses.
+
+    Two rows are CONJUNCTIONS of a scan and a drive, and both halves have to
+    hold. A scan proves a production module calls the read; only a drive
+    proves the object's own properties are what reaches it, and only a second
+    scan proves anything ever attaches what was read. A row that is one half
+    of its own claim is law 5's vacuous assertion wearing a table cell.
+    """
+    table = BEHAVIOR_REGISTRY if registry is None else registry
+    entity = (_ProbeEntity if entity_class is None else entity_class)()
+    has_holder = isinstance(getattr(entity, HOLDER, None), EntityBehaviors)
+    readers = calls_through(READ, BEHAVIOR_MODULES, "scripts", "main.py",
+                            sources=sources, skip=BEHAVIOR_DIR)
+    attached = attach_calls("scripts", "main.py", sources=sources,
+                            skip=BEHAVIOR_DIR)
+    spawners = calls_through(READ, BEHAVIOR_MODULES, "scripts/loaders",
+                             "scripts/core", sources=sources,
+                             skip=BEHAVIOR_DIR)
+    reaches = declaration_reaches_spawn(reader=reader)
+    gated = assigns_field(COLLISION_FIELD, "main.py", "scripts",
+                          sources=sources)
+    actions, dropped = input_actions(config=config, manager=manager)
     return [
-        ("`GameEntity.behaviors` exists on a constructed entity",
+        ("`GameEntity.%s` exists on a constructed entity" % HOLDER,
          has_holder,
          "one attribute in `GameEntity.__init__`"),
         ("`GameEntity.core_frame_update` runs the drive",
-         entity_drives_behaviors(),
+         entity_drives_behaviors(entity_class=entity_class),
          "one line replacing the `pass` in `game_entity.py`"),
         ("a behavior is registered",
-         bool(BEHAVIOR_REGISTRY),
+         bool(table),
          "one `register(BehaviorSpec(...))` in "
          "`scripts/game/behavior/registry.py`"),
         ("a declaration is turned into attached behaviors somewhere",
-         bool(readers),
-         "`read_requests` + `build` + `attach_all`" if not readers else
-         "done in " + ", ".join("`%s`" % r for r in readers)),
+         bool(readers) and bool(attached),
+         # BOTH HALVES ARE PRINTED, because both halves are measured. The
+         # cell used to name the READERS alone and call that "done in",
+         # which left the attach site -- the half whose disappearance now
+         # turns this row `no` -- unnamed anywhere in the document. A
+         # reader chasing "where does my list actually get attached" was
+         # sent to `map_loader.py`, which only fills a `SpawnedEntity`.
+         ("read in " + ", ".join("`%s`" % r for r in readers)
+          + ", attached in " + ", ".join("`%s`" % a for a in attached))
+         if readers and attached else
+         ("`%s` + `build` + `%s`" % (READ, ATTACH)
+          + ("" if not readers else
+             "; the read is done in %s and NOTHING in production calls "
+             "`.%s.%s`, so every list read is then dropped on the floor"
+             % (", ".join("`%s`" % r for r in readers), HOLDER, ATTACH)))),
         ("a **tmx object's** `%s` property is read when it spawns" % BEHAVIORS,
-         bool(spawners),
+         bool(spawners) and reaches,
          "`read_requests(obj.properties)` in `scripts/loaders/map_loader.py`, "
          "carried on `SpawnedEntity` and attached by the binder. Until then a "
          "list authored in Tiled does nothing and only a Python caller can "
-         "compose one." if not spawners else
+         "compose one." if not (spawners and reaches) else
          "read in " + ", ".join("`%s`" % s for s in spawners)),
-        ("`GameEntity.collision_field` is assigned in production",
+        ("`GameEntity.%s` is assigned in production" % COLLISION_FIELD,
          bool(gated),
          "`field_from_map` at map load, handed to each spawned entity. Until "
          "then every body is UNGATED -- a platformer body accelerates "
@@ -659,7 +1010,7 @@ def integration_rows() -> list[tuple[str, bool, str]]:
          ("`config/inputs.json` declares `jump` and the loader did NOT "
           "register it, so polling the verb raises inside the frame -- that "
           "is an engine defect, not a missing binding"
-          if "jump" in _INPUT_DECLARED else
+          if "jump" in dropped else
           "one entry in `config/inputs.json`; `held()`/`pressed()` are "
           "unguarded dict indexes, so the behavior and the binding are ONE "
           "change") if "jump" not in actions else
@@ -1199,7 +1550,7 @@ expect("three frames driven, three calls -- exactly one per frame",
 expect("...and a disabled behavior is skipped, not merely counted",
        drive_calls(3, enabled=False), 0)
 
-_jump = "jump" in _input_actions()
+_jump = "jump" in input_actions()[0]
 expect("the file reports the jump binding as it actually is",
        "| a `jump` input action exists | **yes** |" in DOC
        or "| a `jump` input action exists | no |" in DOC, True)
@@ -1209,7 +1560,377 @@ expect("...and reports it correctly",
 
 
 # ===========================================================================
-print("\n9. summary")
+print("\n9. every integration row goes NO when the CODE is broken")
+# ===========================================================================
+# THE NEGATIVE CORPUS. `CLAUDE.md` routes every reader of this repository to
+# docs/BEHAVIORS.md with the instruction to trust its measured integration
+# table over any prose, including its own preamble -- so a detector that
+# reports a wire which is not there is the most expensive kind of wrong
+# available here. The sibling instrument next door was caught printing `yes`
+# over broken code three passes running, and every one of those was found by a
+# PERSON breaking the code by hand and watching the row not move.
+#
+# This section is that work written down. For every row: the mutations that
+# MUST drive it to `no`, and at least one planted world that drives it to
+# `yes`. A row whose corpus is one-sided fails the gate below, so an eighth
+# row cannot land with a detector nobody has seen give both answers.
+#
+# NOTHING HERE EDITS A TRACKED FILE. The broken worlds are decoy source trees
+# in memory, entity classes built in this file, an empty registry, a
+# synthesised binding table, a planted input loader, and a `read_requests`
+# swapped into `map_loader` for the length of one call.
+
+
+def _row(rows, starts):
+    """One row's verdict, addressed by the words the table prints."""
+    for what, ok, _ in rows:
+        if what.startswith(starts):
+            return ok
+    raise KeyError("no integration row starts %r -- a row was renamed, and "
+                   "both the corpus and its coverage gate address rows by "
+                   "the words they print" % starts)
+
+
+def _cost(rows, starts):
+    """One row's `what it takes` cell, addressed the same way."""
+    for what, _, cost in rows:
+        if what.startswith(starts):
+            return cost
+    raise KeyError(starts)
+
+
+# -- rows 1 and 2: four shapes of entity -------------------------------------
+class _NoHolder(_ProbeEntity):
+    """An entity that reaches a frame with no holder at all.
+
+    What `GameEntity.__init__` losing its one attribute looks like from out
+    here, and the thing row 1 claims cannot happen.
+    """
+
+    def __init__(self):
+        super().__init__()
+        if hasattr(self, HOLDER):
+            delattr(self, HOLDER)
+
+
+class _ListHolder(_ProbeEntity):
+    """`self.behaviors = []` -- the familiar spelling of the wrong type.
+
+    A `hasattr` probe calls this wired. Nothing can be attached to it and
+    nothing can be driven through it.
+    """
+
+    def __init__(self):
+        super().__init__()
+        setattr(self, HOLDER, [])
+
+
+class _DeadDrive(_ProbeEntity):
+    """`core_frame_update` left as the `pass` the row's own cost text names."""
+
+    def core_frame_update(self, event=None):
+        pass
+
+
+class _DoubleDrive(_ProbeEntity):
+    """A drive that runs every behavior TWICE per frame.
+
+    Exactly double speed for a movement behavior, and indistinguishable from
+    a working drive under a single-frame yes/no probe.
+    """
+
+    def core_frame_update(self, event=None):
+        super().core_frame_update(event)
+        super().core_frame_update(event)
+
+
+# -- rows 4 and 5: shapes of a production module -----------------------------
+_READER = ("from scripts.game.behavior import build, read_requests\n"
+           "def compose(entity, obj):\n"
+           "    entity.behaviors.attach_all(build(read_requests("
+           "obj.properties)))\n")
+_MODULE_SPELLING = ("from scripts.game import behavior\n"
+                    "def compose(entity, obj):\n"
+                    "    requests = behavior.read_requests(obj.properties)\n"
+                    "    entity.behaviors.attach_all(behavior.build(requests))\n")
+_DOTTED_SPELLING = ("import scripts.game.behavior\n"
+                    "def compose(entity, obj):\n"
+                    "    requests = scripts.game.behavior.read_requests("
+                    "obj.properties)\n"
+                    "    entity.behaviors.attach_all(requests)\n")
+_SUBMODULE_SPELLING = ("from scripts.game.behavior.registry import "
+                       "read_requests\n"
+                       "def compose(entity, obj):\n"
+                       "    entity.behaviors.attach_all(read_requests("
+                       "obj.properties))\n")
+_OWN_READ = ("from scripts.game.behavior import build\n"
+             "class Loader:\n"
+             "    def read_requests(self, properties):\n"
+             "        return ()\n"
+             "    def compose(self, entity, obj):\n"
+             "        entity.behaviors.attach_all(\n"
+             "            build(self.read_requests(obj.properties)))\n")
+_IMPORT_ONLY = ("from scripts.game.behavior import read_requests\n"
+                "def compose(entity, obj):\n"
+                "    entity.behaviors.attach_all([])\n")
+_NAME_ONLY = ("def compose(entity, obj):\n"
+              "    entity.behaviors.attach_all(read_requests(obj.properties))\n")
+_IN_COMMENT = ("from scripts.game.behavior import read_requests\n"
+               "def compose(entity, obj):\n"
+               "    # one day, read_requests(obj.properties) goes here\n"
+               "    entity.behaviors.attach_all([])\n")
+_IN_DOCSTRING = ('from scripts.game.behavior import read_requests\n'
+                 'def compose(entity, obj):\n'
+                 '    """Calls read_requests(obj.properties), then attaches."""\n'
+                 '    entity.behaviors.attach_all([])\n')
+_READ_NO_ATTACH = ("from scripts.game.behavior import read_requests\n"
+                   "def compose(entity, obj):\n"
+                   "    return read_requests(obj.properties)\n")
+_ATTACH_ONLY = ("def compose(entity, requests):\n"
+                "    entity.behaviors.attach_all(requests)\n")
+_OWN_ATTACH = ("from scripts.game.behavior import read_requests\n"
+               "class Layer:\n"
+               "    def attach_all(self, items):\n"
+               "        pass\n"
+               "    def compose(self, obj):\n"
+               "        self.attach_all(read_requests(obj.properties))\n")
+
+# -- row 6: shapes of a gate -------------------------------------------------
+_GATE = ("class Renderer:\n"
+         "    def bind(self, tmx):\n"
+         "        self.collision_field = field_from_map(tmx)\n"
+         "    def gate(self, entity):\n"
+         "        entity.collision_field = self.collision_field\n")
+_SELF_ONLY = ("class Renderer:\n"
+              "    def bind(self, tmx):\n"
+              "        self.collision_field = field_from_map(tmx)\n"
+              "    def gate(self, entity):\n"
+              "        pass\n")
+_GATE_NESTED = ("class Renderer:\n"
+                "    def gate(self, record):\n"
+                "        record.entity.collision_field = self.collision_field\n")
+_GATE_COMMENT = ("class Renderer:\n"
+                 "    def gate(self, entity):\n"
+                 "        # entity.collision_field = self.collision_field\n"
+                 "        return None\n")
+_GATE_DOCSTRING = ('class Renderer:\n'
+                   '    def gate(self, entity):\n'
+                   '        """One day: entity.collision_field = self.field."""\n'
+                   '        return None\n')
+_GATE_COMPARED = ("class Renderer:\n"
+                  "    def gate(self, entity):\n"
+                  "        return entity.collision_field == self.collision_field\n")
+_GATE_ANNOTATED = ("class Body:\n"
+                   "    def __init__(self):\n"
+                   "        self.collision_field: object | None = None\n")
+
+# -- row 7: shapes of a binding table and of a loader ------------------------
+_JUMPS = {"jump": ["keyboard:space"], "left": ["keyboard:a"]}
+_NO_JUMP = {"left": ["keyboard:a"]}
+_UNKNOWN_KEY = {"jump": ["keyboard:spacebar"], "left": ["keyboard:a"]}
+_NO_BINDINGS: dict = {}
+
+
+class _DroppingManager(InputActionManager):
+    """A loader that builds every verb the table declares EXCEPT `jump`.
+
+    The mutation the row exists for, and the one it could not see while it
+    parsed the JSON: the file declares the verb, the manager does not hold it,
+    and `held("jump")` is an unguarded dict index that raises inside
+    `core_frame_update`.
+    """
+
+    def prepare_inputs(self, rebind=None):
+        super().prepare_inputs(rebind)
+        self.actions.pop("jump", None)
+        return self
+
+
+def _blind_reader(*_args, **_kwargs):
+    """A spawn read that returns nothing, whatever the object declared."""
+    return ()
+
+
+def _fixed_reader(*_args, **_kwargs):
+    """A spawn path that composes a list of its OWN, ignoring the object.
+
+    The shape no call scan can see: `read_requests` is called, a record comes
+    back FULL, and the token on it is not the token the author wrote. The spec
+    is this file's own unregistered probe rather than a second live token, so
+    the case still bites on a tree that registers exactly one behavior.
+    """
+    return (BehaviorRequest(spec=_SPY_SPEC, values={}, where="planted"),)
+
+
+ROW_KEYS = ("`GameEntity.%s` exists" % HOLDER,
+            "`GameEntity.core_frame_update` runs the drive",
+            "a behavior is registered",
+            "a declaration is turned into attached behaviors",
+            "a **tmx object's**",
+            "`GameEntity.%s` is assigned" % COLLISION_FIELD,
+            "a `jump` input action exists")
+
+CORPUS = [
+    # -- row 1: the holder --------------------------------------------------
+    (ROW_KEYS[0], True, {}, "the real `GameEntity`, constructed"),
+    (ROW_KEYS[0], False, {"entity_class": _NoHolder},
+     "the one attribute gone from `GameEntity.__init__`"),
+    (ROW_KEYS[0], False, {"entity_class": _ListHolder},
+     "`self.behaviors = []` -- the right name, the wrong type, and a "
+     "`hasattr` probe would have called it wired"),
+
+    # -- row 2: the drive ---------------------------------------------------
+    (ROW_KEYS[1], True, {}, "the real drive"),
+    (ROW_KEYS[1], False, {"entity_class": _DeadDrive},
+     "`core_frame_update` back to the `pass` its own cost text names"),
+    (ROW_KEYS[1], False, {"entity_class": _DoubleDrive},
+     "a drive that runs every behavior TWICE per frame -- double speed, and "
+     "a single-frame probe reports it as working"),
+    (ROW_KEYS[1], False, {"entity_class": _NoHolder},
+     "no holder at all: nothing to drive is not a drive that runs"),
+
+    # -- row 3: the registry ------------------------------------------------
+    (ROW_KEYS[2], True, {"registry": {"probe": _spec("probe")}},
+     "one behavior registered"),
+    (ROW_KEYS[2], False, {"registry": {}},
+     "`register` never writes the table"),
+
+    # -- row 4: a declaration read AND attached -----------------------------
+    (ROW_KEYS[3], True, {"sources": {"scripts/core/compose.py": _READER}},
+     "a production module that imports the read, calls it, and attaches"),
+    (ROW_KEYS[3], True,
+     {"sources": {"scripts/core/compose.py": _MODULE_SPELLING}},
+     "...the module-attribute spelling counts too"),
+    (ROW_KEYS[3], True,
+     {"sources": {"scripts/core/compose.py": _DOTTED_SPELLING}},
+     "...and so does `import scripts.game.behavior` spelled out in full"),
+    (ROW_KEYS[3], True,
+     {"sources": {"scripts/core/compose.py": _SUBMODULE_SPELLING}},
+     "...and the import from the module that DEFINES it, not the package"),
+    (ROW_KEYS[3], False, {"sources": {"scripts/core/compose.py": _OWN_READ}},
+     "THE NAMED DEFECT: a module with its own `read_requests` METHOD, "
+     "reached through no import -- which the bare `func.attr` match this "
+     "replaces counted as the whole wire"),
+    (ROW_KEYS[3], False, {"sources": {"scripts/core/compose.py": _IMPORT_ONLY}},
+     "the import kept, every use of it deleted"),
+    (ROW_KEYS[3], False, {"sources": {"scripts/core/compose.py": _NAME_ONLY}},
+     "the import deleted, the call left standing"),
+    (ROW_KEYS[3], False, {"sources": {"scripts/core/compose.py": _IN_COMMENT}},
+     "the only call lives in a COMMENT"),
+    (ROW_KEYS[3], False, {"sources": {"scripts/core/compose.py": _IN_DOCSTRING}},
+     "...or in a DOCSTRING, which is where three of this package's real "
+     "mentions live"),
+    (ROW_KEYS[3], False,
+     {"sources": {"scripts/core/compose.py": _READ_NO_ATTACH}},
+     "THE MISSING HALF: every list is read and NOTHING attaches one"),
+    (ROW_KEYS[3], False, {"sources": {"scripts/core/compose.py": _ATTACH_ONLY}},
+     "...and the mirror: something attaches, nothing reads a declaration"),
+    (ROW_KEYS[3], False, {"sources": {"scripts/core/compose.py": _OWN_ATTACH}},
+     "the read is real and the attach is the module's OWN `attach_all` "
+     "method, which is not the drive's holder"),
+    (ROW_KEYS[3], False,
+     {"sources": {"scripts/game/behavior/registry.py": _READER}},
+     "the only reader is inside the package that DEFINES the read"),
+    (ROW_KEYS[3], False, {"sources": {"tools/check_planted.py": _READER}},
+     "the whole wire lives in a CHECK, which is not production"),
+
+    # -- row 5: a tmx object's own property ---------------------------------
+    (ROW_KEYS[4], True,
+     {"sources": {"scripts/loaders/map_loader.py": _READER}},
+     "a loader that reads the declaration, and a real spawn that carries the "
+     "authored token onto the record"),
+    (ROW_KEYS[4], False, {"reader": _blind_reader},
+     "THE DRIVE: `read_requests` returns nothing, so the object's authored "
+     "list reaches no record -- the scan beside it still says yes"),
+    (ROW_KEYS[4], False, {"reader": _fixed_reader},
+     "...and the quieter one: the spawn path composes a FIXED list of its "
+     "own and never looks at the object, which no call scan can see"),
+    (ROW_KEYS[4], False,
+     {"sources": {"scripts/game/entity/player.py": _READER}},
+     "the reader moved out of the spawn layer: `scripts/game/` is not "
+     "`scripts/loaders/` or `scripts/core/`"),
+    (ROW_KEYS[4], False,
+     {"sources": {"scripts/loaders/map_loader.py": _OWN_READ}},
+     "the loader's own same-named method, reached through no import"),
+
+    # -- row 6: the collision gate ------------------------------------------
+    (ROW_KEYS[5], True, {"sources": {"scripts/core/renderer.py": _GATE}},
+     "the renderer hands its baked field to an entity"),
+    (ROW_KEYS[5], True, {"sources": {"scripts/core/renderer.py": _GATE_NESTED}},
+     "...and it counts when the entity is reached through a record"),
+    (ROW_KEYS[5], False, {"sources": {"scripts/core/renderer.py": _SELF_ONLY}},
+     "THE MUTATION THE REGEX SURVIVED: the hand-out deleted, the renderer's "
+     "OWN `self.collision_field` left standing -- every body ungated, and "
+     "the row said yes"),
+    (ROW_KEYS[5], False,
+     {"sources": {"scripts/core/renderer.py": _GATE_COMMENT}},
+     "the assignment lives in a COMMENT, which the regex counted"),
+    (ROW_KEYS[5], False,
+     {"sources": {"scripts/core/renderer.py": _GATE_DOCSTRING}},
+     "...or in a DOCSTRING, which it counted too"),
+    (ROW_KEYS[5], False,
+     {"sources": {"scripts/core/renderer.py": _GATE_COMPARED}},
+     "...or is not an assignment at all: `== ` satisfied the regex's `=`"),
+    (ROW_KEYS[5], False,
+     {"sources": {"scripts/game/entity/body.py": _GATE_ANNOTATED}},
+     "the annotated declaration does not count itself as its own consumer"),
+    (ROW_KEYS[5], False, {"sources": {"tools/check_planted.py": _GATE}},
+     "the only gate is in a CHECK, which is not production"),
+
+    # -- row 7: the input verb ----------------------------------------------
+    (ROW_KEYS[6], True, {"config": _JUMPS},
+     "a table declaring `jump`, LOADED through `prepare_inputs`"),
+    (ROW_KEYS[6], False, {"config": _NO_JUMP},
+     "no `jump` declared: an authoring gap"),
+    (ROW_KEYS[6], False, {"config": _NO_BINDINGS},
+     "no binding at all"),
+    (ROW_KEYS[6], False, {"config": _UNKNOWN_KEY},
+     "`jump` bound to a key that does not exist: `validate_bindings` refuses "
+     "the whole table, so no verb is pollable"),
+    (ROW_KEYS[6], False, {"config": _JUMPS, "manager": _DroppingManager},
+     "THE LOADER DROPS IT while the file still declares it -- the shape that "
+     "printed **yes** for as long as this row read the JSON"),
+]
+
+# The gate that makes the corpus a rule rather than a habit. Both halves: the
+# keys claim every row exactly once -- a renamed or an added row shows up here
+# as UNCLAIMED rather than as a silent hole -- and each key carries a case
+# that drives its row both ways.
+_LIVE = [what for what, _, _ in integration_rows()]
+expect("every integration row is claimed by exactly one corpus key",
+       sorted(next((k for k in ROW_KEYS if w.startswith(k)),
+                   "UNCLAIMED: " + w) for w in _LIVE),
+       sorted(ROW_KEYS))
+for _n, _key in enumerate(ROW_KEYS, 1):
+    expect("row %d has a corpus case driving it BOTH ways" % _n,
+           sorted({want for key, want, _, _ in CORPUS if key == _key}),
+           [False, True])
+
+for _key, _want, _kw, _label in CORPUS:
+    expect("row %d %s <- %s" % (ROW_KEYS.index(_key) + 1,
+                                "yes" if _want else "NO ", _label),
+           _row(integration_rows(**_kw), _key), _want)
+
+# The `no` cells are diagnostics, not just verdicts, and two of them have to
+# tell apart failures a reader would otherwise act on identically.
+expect_true("row 4's NO names the half that is missing, not just the row",
+            "NOTHING in production calls" in
+            _cost(integration_rows(
+                sources={"scripts/core/compose.py": _READ_NO_ATTACH}),
+                ROW_KEYS[3]))
+expect_true("row 7 tells an authoring gap from a broken loader",
+            "engine defect" in
+            _cost(integration_rows(config=_JUMPS, manager=_DroppingManager),
+                  ROW_KEYS[6]))
+expect_true("...and says the opposite thing when nobody declared the verb",
+            "one entry in `config/inputs.json`" in
+            _cost(integration_rows(config=_NO_JUMP), ROW_KEYS[6]))
+
+_TMP.cleanup()
+
+
+# ===========================================================================
+print("\n10. summary")
 # ===========================================================================
 print(f"\nassertions             : {len(asserted)}")
 print(f"registry at HEAD       : {len(BEHAVIOR_REGISTRY)} behavior(s)")

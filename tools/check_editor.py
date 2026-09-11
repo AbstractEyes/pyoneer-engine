@@ -586,6 +586,23 @@ try:
     # data/maps/starter.tmx.
     shutil.copy2(os.path.join(REPO, "data", "maps", "starter.tmx"),
                  os.path.join(workspace, "data", "maps", "test.tmx"))
+    # THE MAP'S LINKS COME WITH IT. The shipped hero carries
+    # `pyoneer_script="starter_greeting"`, and `GenrePack.validate` now
+    # resolves every per-object `pyoneer_` link, so a workspace holding the
+    # map and none of the documents it names is a project that genuinely
+    # would not boot -- and the two `problems() == []` rows below were
+    # asserting something false about their own fixture the moment that
+    # walk landed. Copying ONE file out of a project and calling the result
+    # a project is the fixture defect; the repair is to copy the half the
+    # map points at, not to filter the rule's output, which would delete
+    # the coverage while still printing PASS.
+    # Both halves, because the link chain is two deep: the object names a
+    # script, the script asks a scene variable, and only `scenes/` declares
+    # one. `tables/` is NOT copied -- this workspace authors its own below,
+    # and the shipped hero names no `pyoneer_actor`.
+    for subdir in ("scripts", "scenes"):
+        shutil.copytree(os.path.join(REPO, "data", "project", subdir),
+                        os.path.join(workspace, "data", "project", subdir))
     with open(os.path.join(workspace, "config", "maps.json"), "w",
               encoding="utf-8") as handle:
         json.dump({"data": [{"name": "test", "identifier": "test",
@@ -1370,6 +1387,136 @@ height="16" rotation="37.5" visible="0"/>
 
     # ---------------------------------------------------------------
     print()
+    print("declaring a capability on an EMPTY layer undoes byte-exactly")
+    # ---------------------------------------------------------------
+    # SIGHTING NINE, and the fourth copy of one line. `map.layer.unset` is
+    # the fourth place the editor deletes a tmx property, and the pass that
+    # put the guard on the other three enumerated "all four places" and
+    # missed this one on its own grep. `MapProperties.__delitem__` drops the
+    # `<properties>` container once it empties and `_remove_child` hands the
+    # whitespace back to the OWNER, so a layer the file wrote self-closing
+    # comes back with an open/close pair -- two lines of diff on a
+    # declare-then-undo that must leave none, and a map listed DIRTY after a
+    # no-op pair, because `MapDocument.changed` re-serialises and compares.
+    #
+    # Its own fixture, and the fixture is the point: a tile layer always
+    # carries `<data>`, so no layer of the shipped map can exercise this at
+    # all. Only an object group with no objects in it can -- which is every
+    # object layer between `map.layer.add` and the first object landing on
+    # it.
+    BARE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" \
+renderorder="right-down" width="2" height="2" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="4" nextobjectid="2">
+ <layer id="1" name="Floor" width="2" height="2">
+  <data encoding="csv">
+0,0,
+0,0
+</data>
+ </layer>
+ <objectgroup id="2" name="empty"/>
+ <objectgroup id="3" name="peopled">
+  <object id="1" name="here" x="0" y="0" width="16" height="16"/>
+ </objectgroup>
+</map>
+"""
+    bare_path = os.path.join(workspace, "data", "maps", "bare.tmx")
+    with open(bare_path, "wb") as handle:
+        handle.write(BARE)
+    with open(os.path.join(workspace, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": [
+            {"name": "test", "identifier": "test", "file": "data/maps/test.tmx"},
+            {"name": "rich", "identifier": "rich", "file": "data/maps/rich.tmx"},
+            {"name": "bare", "identifier": "bare", "file": "data/maps/bare.tmx"},
+        ]}, handle)
+
+    bare_session = Session.open(workspace, genre_id="topdown_rpg")
+    expect("the empty-layer fixture round-trips before any edit",
+           bare_session.project.map("bare").to_bytes() == BARE, True)
+
+    EMPTY_LAYER = Scope.parse("map:bare/layer:empty")
+    bare_session.run(Command("map.layer.set", EMPTY_LAYER,
+                             {"key": "depth", "value": 3}))
+    expect("the capability landed on the empty object layer",
+           bare_session.project.map("bare").object_layer("empty")
+           .properties.as_dict(), {"pyoneer_depth": 3})
+    expect("...which really did open the self-closing element up",
+           b'<objectgroup id="2" name="empty">'
+           in bare_session.project.map("bare").to_bytes(), True)
+    bare_session.undo()
+    expect("undo removes the declaration",
+           bare_session.project.map("bare").object_layer("empty")
+           .properties.as_dict(), {})
+    expect("AND THE BYTES COME BACK -- the element is self-closing again",
+           bare_session.project.map("bare").to_bytes() == BARE, True)
+    expect("...so a no-op pair does not leave the map listed dirty",
+           bare_session.project.dirty_maps(), [])
+
+    # The other half of the guard: it must fire ONLY for a layer with
+    # nothing left in it. A tile layer keeps its `<data>` and an object
+    # group keeps its objects, and blanking `text` on either would eat the
+    # indentation of the children that are still there.
+    for layer_name, kind in (("Floor", "a tile layer, which keeps its <data>"),
+                             ("peopled", "an object group with an object in it")):
+        scope = Scope.parse("map:bare/layer:%s" % layer_name)
+        bare_session.run(Command("map.layer.set", scope,
+                                 {"key": "renders", "value": False}))
+        bare_session.undo()
+        expect("set+undo on %s is byte-exact too" % kind,
+               bare_session.project.map("bare").to_bytes() == BARE, True)
+    expect("...and their children survived it",
+           (len(bare_session.project.map("bare").tile_layer("Floor").gids()),
+            len(bare_session.project.map("bare").object_layer("peopled")
+                .objects())), (4, 1))
+
+    print()
+    print("...and the remove twin refuses a key its inverse cannot write")
+    # The SAME shape one screenful up. `map.layer.set` declares
+    # `choices=tuple(_layer_keys())` and validates the capability; its
+    # inverse `map.layer.unset` declared `Param("key", str)` and nothing
+    # else, so unsetting any OTHER `pyoneer_`-named property returned an
+    # inverse that RAISES on the way back. Driven before the fix, on a
+    # layer carrying a hand-authored `pyoneer_nonsense`: the property was
+    # deleted, Ctrl+Z raised `must be one of [...]`, the value was gone and
+    # the history was emptied. `map.object.unset` learned this last pass;
+    # this is the same decision for the same reason -- a command whose
+    # inverse cannot run is worse than a capability that is missing.
+    FLOOR_BARE = Scope.parse("map:bare/layer:Floor")
+    stale = bare_session.project.map("bare").tile_layer("Floor")
+    stale.properties["pyoneer_nonsense"] = "x"
+    WITH_STALE = bare_session.project.map("bare").to_bytes()
+    expect_raises_naming(
+        "map.layer.unset refuses a pyoneer_ property that is not a declared "
+        "capability, because map.layer.set could not write it back",
+        PyoneerCommandApplyError,
+        lambda: bare_session.run(Command("map.layer.unset", FLOOR_BARE,
+                                         {"key": "nonsense"})),
+        "must be one of", "inverse is map.layer.set")
+    expect("...and the property it would have unmade is still there",
+           bare_session.project.map("bare").tile_layer("Floor")
+           .properties.as_dict().get("pyoneer_nonsense"), "x")
+    expect("...and the refusal touched nothing",
+           bare_session.project.map("bare").to_bytes() == WITH_STALE, True)
+    # AND IT STILL ALLOWS A LEGITIMATE ONE. A gate proved only to refuse is
+    # half an invariant.
+    bare_session.run(Command("map.layer.set", FLOOR_BARE,
+                             {"key": "depth", "value": 2}))
+    bare_session.run(Command("map.layer.unset", FLOOR_BARE, {"key": "depth"}))
+    expect("a declared capability still unsets, so the guard is a door and "
+           "not a wall",
+           "pyoneer_depth" in bare_session.project.map("bare")
+           .tile_layer("Floor").properties.as_dict(), False)
+    bare_session.undo()
+    bare_session.undo()
+    expect("...and both steps undo back to the planted fixture",
+           bare_session.project.map("bare").to_bytes() == WITH_STALE, True)
+    del stale.properties["pyoneer_nonsense"]
+    expect("...which the plant comes back out of, leaving the original bytes",
+           bare_session.project.map("bare").to_bytes() == BARE, True)
+
+    # ---------------------------------------------------------------
+    print()
     print("bad commands are refused before anything happens")
     # ---------------------------------------------------------------
     expect_raises("unknown verb", PyoneerCommandUnknownError,
@@ -1837,6 +1984,176 @@ height="16" rotation="37.5" visible="0"/>
 
 finally:
     shutil.rmtree(workspace, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
+print()
+print("a dropped table's FILE waits for the save, so undo can reach it")
+# --------------------------------------------------------------------------
+# `Project.drop_table` called `os.remove` INSIDE the command, so
+# `table.restore` -- the exact inverse `table.drop` returns and the history
+# offers as Ctrl+Z -- put the table back in memory and left the `.json`
+# deleted. Worse than a destructive verb with no inverse, because the
+# history says it can be taken back. The session was not even dirty
+# afterwards, so closing took the silent clean-close branch and committed a
+# deletion nobody confirmed.
+#
+# The fix is not invented here: `ScriptLibrary`'s docstring names this fault
+# by name as its own reason for deferring, so `Project` now keeps the same
+# `removed` set and unlinks at `save`. These rows drive the SESSION, never
+# `drop_table` directly -- calling the writer proves the writer works, which
+# was never in doubt.
+#
+# Its own workspace, with no maps at all, so a table assertion cannot borrow
+# a map's answer.
+TABLE_WS = tempfile.mkdtemp(prefix="pyoneer_drop_check_")
+LOOT_COLUMNS = [{"name": "price", "type": "int", "doc": "in gold", "default": 0}]
+try:
+    os.makedirs(os.path.join(TABLE_WS, "config"))
+    with open(os.path.join(TABLE_WS, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": []}, handle)
+
+    drop_session = Session.open(TABLE_WS, genre_id="topdown_rpg")
+    drop_project = drop_session.project
+    LOOT = Scope.parse("table:loot")
+    drop_session.run(Command("table.create", LOOT, {"columns": LOOT_COLUMNS}))
+    drop_session.run(Command("table.row.add", LOOT,
+                             {"id": "sword", "values": {"price": 12}}))
+    drop_session.save()
+    loot_path = drop_project.table_path("loot")
+    expect("the table is on disk before the drop", os.path.isfile(loot_path), True)
+    expect("...and the session is clean, so a close would not ask",
+           drop_project.dirty, False)
+
+    drop_session.run(Command("table.drop", LOOT, {"confirm": True}))
+    expect("the drop takes the table out of the session",
+           drop_project.has_table("loot"), False)
+    expect("AND LEAVES THE FILE ALONE -- the unlink waits for the save",
+           os.path.isfile(loot_path), True)
+    expect("...so the session is dirty and NAMES it, which is what makes the "
+           "close prompt fire instead of closing silently",
+           (drop_project.dirty_tables(), drop_project.dirty),
+           (["loot"], True))
+
+    expect("undo puts the table back", bool(drop_session.undo()), True)
+    expect("...with its rows", drop_project.table("loot").rows,
+           {"sword": {"price": 12}})
+    expect("...AND ITS FILE, which is the half a command cannot invert once "
+           "the unlink has happened", os.path.isfile(loot_path), True)
+    drop_session.save()
+    expect("...and a project opened fresh off that disk reads the rows back",
+           Project.load(TABLE_WS).table("loot").rows, {"sword": {"price": 12}})
+
+    # THE OTHER HALF. A deferred unlink that never unlinks is the opposite
+    # failure and would pass every row above: drop, SAVE, and the file must
+    # really be gone and stay gone across a reload.
+    drop_session.run(Command("table.drop", LOOT, {"confirm": True}))
+    written = drop_session.save()
+    expect("a drop that is SAVED really does delete the file",
+           os.path.isfile(loot_path), False)
+    expect("...and it is not reported as a file that was written",
+           [w for w in written if w.endswith("loot.json")], [])
+    expect("...and the session is clean again afterwards",
+           (drop_project.dirty_tables(), drop_project.dirty), ([], False))
+    expect("...and a fresh project does not find it",
+           Project.load(TABLE_WS).has_table("loot"), False)
+
+    # AND THE LISTING ASKS WHAT EXISTS. A table created and dropped without
+    # ever being saved has no file to unlink, so it is not a document "not
+    # on disk" and naming it would raise the close prompt over a file that
+    # never existed -- the same sentence `dirty_scripts` had to learn below.
+    drop_session.run(Command("table.create", LOOT, {"columns": LOOT_COLUMNS}))
+    expect("an unsaved table is dirty while it exists",
+           (drop_project.dirty_tables(), drop_project.dirty), (["loot"], True))
+    drop_session.run(Command("table.drop", LOOT, {"confirm": True}))
+    expect("...and dropping it leaves NOTHING to save and nothing to say",
+           (drop_project.dirty_tables(), drop_project.dirty), ([], False))
+    expect("...and the save it never needed writes no table",
+           [w for w in drop_session.save() if w.endswith("loot.json")], [])
+finally:
+    shutil.rmtree(TABLE_WS, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
+print()
+print("an undone creation leaves the session clean, not dirty forever")
+# --------------------------------------------------------------------------
+# `ScriptLibrary.delete` adds to `removed` unconditionally, including for a
+# document that was never on disk -- so `New... -> Ctrl+Z` left the session
+# permanently dirty and the close prompt offered to save a file the undo had
+# already taken away. Nothing was lost; the SENTENCE was false, in exactly
+# the direction `Project.dirty_scripts` was written to fix, with the
+# opposite sign.
+#
+# The prompt fires iff `session.dirty`, and the list it then prints is
+# `dirty_maps() + dirty_tables() + dirty_scripts()` -- so these rows compose
+# the same sentence `MainWindow.closeEvent` composes rather than naming a
+# widget, and a change to either half shows up here.
+SCRIPT_WS = tempfile.mkdtemp(prefix="pyoneer_undone_check_")
+SCRIPT_WS2 = tempfile.mkdtemp(prefix="pyoneer_kept_check_")
+
+
+def close_prompt(project):
+    """Exactly what `MainWindow.closeEvent` asks and then prints."""
+    return (project.dirty,
+            project.dirty_maps() + project.dirty_tables()
+            + project.dirty_scripts())
+
+
+try:
+    for root in (SCRIPT_WS, SCRIPT_WS2):
+        os.makedirs(os.path.join(root, "config"))
+        with open(os.path.join(root, "config", "maps.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump({"data": []}, handle)
+
+    SIGN = Scope.parse("script:signpost")
+
+    undone = Session.open(SCRIPT_WS, genre_id="topdown_rpg")
+    expect("a project with nothing authored would close silently",
+           close_prompt(undone.project), (False, []))
+    undone.run(Command("script.create", SIGN, {"title": "The signpost"}))
+    expect("authoring one raises the prompt and names it",
+           close_prompt(undone.project), (True, ["signpost"]))
+    expect("undo takes it back out of the library", bool(undone.undo()), True)
+    expect("AND THE SESSION IS CLEAN -- the prompt does not fire, and there "
+           "is no document left for it to name",
+           close_prompt(undone.project), (False, []))
+    library = event_script.scripts_of(undone.project)
+    expect("...which is true rather than forgotten: the library still holds "
+           "the id as removed, and there is no file under it",
+           (sorted(library.removed), library.names(),
+            os.path.isfile(library.path_for("signpost"))),
+           (["signpost"], [], False))
+
+    # THE POSITIVE CONTROL, in its own session so it cannot inherit an
+    # answer. A creation that is KEPT must still be dirty, or the row above
+    # passes because nothing is ever counted.
+    kept = Session.open(SCRIPT_WS2, genre_id="topdown_rpg")
+    kept.run(Command("script.create", SIGN, {"title": "The signpost"}))
+    expect("POSITIVE CONTROL: a creation that is KEPT still prompts",
+           close_prompt(kept.project), (True, ["signpost"]))
+    kept.save()
+    expect("...and one save clears it", close_prompt(kept.project), (False, []))
+
+    # AND THE CASE THE RULE MUST NOT EAT. A deletion of a document that IS
+    # on disk stays listed: nothing in memory is dirty, the `.json` is still
+    # there, and the save is what unlinks it. That is the row this listing
+    # was originally written for, and "ask what exists" must not answer it
+    # the other way.
+    kept.run(Command("script.delete", SIGN, {"confirm": True}))
+    expect("deleting a SAVED script is still listed, because its file is "
+           "still on disk", close_prompt(kept.project), (True, ["signpost"]))
+    expect("...and undoing that delete leaves a document that EXISTS, which "
+           "is dirty by its own flag rather than by the removed set",
+           (bool(kept.undo()), close_prompt(kept.project),
+            sorted(event_script.scripts_of(kept.project).removed)),
+           (True, (True, ["signpost"]), []))
+finally:
+    shutil.rmtree(SCRIPT_WS, ignore_errors=True)
+    shutil.rmtree(SCRIPT_WS2, ignore_errors=True)
+
 
 # --------------------------------------------------------------------------
 print()

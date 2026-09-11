@@ -228,6 +228,148 @@ def format_property(value: Any) -> tuple[str | None, str]:
     return None, str(value)
 
 
+# ---------------------------------------------------------------------------
+# The raw-XML door
+#
+# `MapObject.set` and `MapProperties.__setitem__` each refuse the names pytmx
+# cannot survive, one name at a time, at the moment a caller writes one. The
+# three `restore_*` verbs take a whole ELEMENT as text and hang its attributes
+# on the document verbatim, so until this door existed they walked past both
+# of those guards -- and `map.object.restore` is reachable from a script and
+# from the relay, which is the AI edit path this editor's whole design treats
+# as equal to a human's. A response bundle could smuggle in an attribute no
+# human control would accept.
+#
+# MEASURED on the unguarded verb, both halves:
+#
+#   <object ... pyoneer_script="smuggled"/>  was ACCEPTED. The attribute
+#     reached the file, pytmx loaded the map, and `obj.properties` -- the only
+#     place the engine ever looks -- came back `{}`, with the value hung on the
+#     object as a bare Python attribute instead. Law 7's failure shape written
+#     into a file: the write looks like it took and nothing reads it.
+#   the same name as an ATTRIBUTE and as a <property> was ACCEPTED too, and
+#     pytmx then raised `ValueError: Reserved names and duplicate names are
+#     not allowed` -- the WHOLE map unloadable, naming neither. Law 1's cost.
+#
+# So the refusal lives at the PARSE and nowhere else: every route that turns
+# authored text into elements comes through `_parse_restored_element`, which
+# is why adding a fourth restore verb cannot reopen this. Three copies of one
+# guard at three call sites is this repository's most-repeated defect shape,
+# and the pass before this one counted nine sightings of it.
+# ---------------------------------------------------------------------------
+
+# The element kinds pytmx casts XML attributes onto and then refuses a
+# shadowing `<property>` for: exactly the tags whose parser reaches
+# `TiledElement._set_properties`. MEASURED off the installed pytmx, and the
+# OMISSIONS carry as much weight as the members. A `<tile>` is deliberately
+# absent -- pytmx merges a tile's attributes and its properties into one
+# dict, so neither the silent half nor the fatal half can happen there, and
+# refusing it would refuse a legitimate `<tileset>` payload. So is a
+# `<property type="class">`'s own nested `<properties>`, whose members are set
+# on a `TiledClassType` that is checked against nothing; `findall` below is
+# direct children only, which is what leaves those alone.
+_PYTMX_CAST_TAGS = frozenset({
+    "map", "tileset", "group", "layer", "objectgroup", "object", "imagelayer",
+})
+
+
+def _refuse_smuggled_names(element: ElementTree.Element, verb: str,
+                           source: str | None) -> None:
+    """Raise unless every name in `element`'s subtree is one pytmx survives.
+
+    The subtree, not the top element: a restored `<objectgroup>` carries its
+    `<object>` children and a restored `<tileset>` carries its `<tile>`
+    children, so a smuggled name one level down is the same defect wearing a
+    parent.
+
+    The PREFIX rule is checked on every element, the collision rule only on
+    the tags pytmx casts attributes onto. That asymmetry is deliberate and it
+    costs nothing: Tiled writes no `pyoneer_` attribute anywhere, so the wider
+    rule cannot refuse a payload any authoring tool produces, and one rule
+    decidable with no lookup is the rule the next author will actually apply
+    -- the same reason `MapObject.set` refuses the prefix before it consults
+    anything.
+
+    REFUSES, never sanitises. Stripping the attribute would leave the author's
+    text and the document disagreeing about what was restored, which is the
+    same class of failure one layer along -- and for `map.*.restore` it would
+    break the inverse as well, since a command's undo has to put back the
+    bytes it took away and not an edited version of them.
+
+    Called BEFORE anything is appended to the document, so a refusal leaves
+    the bytes exactly as it found them. A guard that has already mutated the
+    tree is worse than no guard: the caller catches the exception, saves, and
+    ships the broken file anyway.
+    """
+    for owner in element.iter():
+        tag = owner.tag if isinstance(owner.tag, str) else "?"
+        for name in owner.attrib:
+            if not name.startswith(PREFIX):
+                continue
+            raise PyoneerConfigError(
+                f"{verb} was handed an <{tag}> carrying {name!r} as an XML "
+                f"ATTRIBUTE. A {PREFIX!r} name is a custom PROPERTY and never "
+                f"an attribute: on every element the engine reads, pytmx hangs "
+                f"an attribute on the element itself and leaves .properties -- "
+                f"the only place the engine looks -- empty, so the write "
+                f"reaches the file, the map still loads, and nothing reads it. "
+                f"It belongs in a <property name={name!r} ...> inside that "
+                f"element's <properties>, which is what "
+                f"map.object.property.set writes. Refused rather than "
+                f"stripped: an element quietly rewritten on the way in is not "
+                f"the element the caller serialized, and an undo that restores "
+                f"the value but not the bytes is not an inverse.",
+                source=source, element=tag)
+        if tag not in _PYTMX_CAST_TAGS:
+            continue
+        for container in owner.findall("properties"):
+            for entry in container.findall("property"):
+                name = entry.get("name", "")
+                carried = name in owner.attrib
+                if not carried and name not in RESERVED:
+                    continue
+                where = ("already carries %r as an XML attribute" % name
+                         if carried else
+                         "is a pytmx element, and %r is a name pytmx puts on "
+                         "one" % name)
+                remedy = (("Delete that attribute from the element -- nothing "
+                           "should have written it.")
+                          if name.startswith(PREFIX) else
+                          "Law 1's answer is the prefix: name it %s%s."
+                          % (PREFIX, name))
+                raise PyoneerConfigError(
+                    f"{verb} was handed an <{tag}> that {where}, so its "
+                    f"<property> of the same name makes the map unloadable: "
+                    f"pytmx sets every attribute on the element first and then "
+                    f"RAISES on any property that shadows one of its own names, "
+                    f"and it takes the WHOLE map with it, naming neither. "
+                    f"{remedy}",
+                    source=source, element=tag)
+
+
+def _parse_restored_element(xml: str, verb: str, kind: str,
+                            tags: tuple[str, ...],
+                            source: str | None) -> ElementTree.Element:
+    """The ONE door authored XML text enters this document through.
+
+    `fromstring` checks that the names are legal XML and nothing else, so all
+    three things a restored element has to be -- parseable, the tag this verb
+    restores, and free of any name pytmx cannot survive -- are settled here
+    rather than once per caller.
+    """
+    try:
+        parsed = ElementTree.fromstring(xml)
+    except ElementTree.ParseError as exc:
+        raise PyoneerConfigError(
+            "%s was handed text that is not %s: %s" % (verb, kind, exc),
+            source=source) from exc
+    if parsed.tag not in tags:
+        raise PyoneerConfigError(
+            "%s expects %s, got <%s>" % (verb, kind, parsed.tag), source=source)
+    _refuse_smuggled_names(parsed, verb, source)
+    return parsed
+
+
 class MapProperties:
     """Typed dict-like view over one element's `<properties>` child.
 
@@ -799,17 +941,16 @@ class ObjectLayer:
         child -- at `index` among its siblings, with only its indentation
         recomputed. That is what makes remove-then-restore byte-identical
         rather than approximately right.
+
+        VERBATIM is why the text goes through `_parse_restored_element`:
+        `map.object.restore` is reachable from a script and from the relay,
+        and its `Param` is raw XML, so it is the one route that could put a
+        name on the document that `MapObject.set` and
+        `MapProperties.__setitem__` both refuse.
         """
-        try:
-            parsed = ElementTree.fromstring(xml)
-        except ElementTree.ParseError as exc:
-            raise PyoneerConfigError(
-                "restore_object was handed text that is not an <object> "
-                "element: %s" % exc, source=self._document.path) from exc
-        if parsed.tag != "object":
-            raise PyoneerConfigError(
-                "restore_object expects an <object>, got <%s>" % parsed.tag,
-                source=self._document.path)
+        parsed = _parse_restored_element(
+            xml, "restore_object", "an <object> element", ("object",),
+            self._document.path)
 
         placeholder = self._document._append_child(self.element, "object", index)
         placeholder.attrib = dict(parsed.attrib)
@@ -1508,17 +1649,10 @@ class MapDocument:
 
     def restore_layer(self, payload: dict[str, Any]) -> str:
         """Put back a layer serialized by `serialize_layer`."""
-        xml = payload.get("xml") or ""
-        try:
-            parsed = ElementTree.fromstring(xml)
-        except ElementTree.ParseError as exc:
-            raise PyoneerConfigError(
-                "restore_layer was handed text that is not a layer element: "
-                "%s" % exc, source=self.path) from exc
-        if parsed.tag not in _LAYER_TAGS:
-            raise PyoneerConfigError(
-                "restore_layer expects one of %s, got <%s>"
-                % (list(_LAYER_TAGS), parsed.tag), source=self.path)
+        parsed = _parse_restored_element(
+            payload.get("xml") or "", "restore_layer",
+            "a layer element (one of %s)" % (list(_LAYER_TAGS),),
+            _LAYER_TAGS, self.path)
 
         group = payload.get("group") or None
         if group:
@@ -2392,17 +2526,9 @@ class MapDocument:
         payload also carries `first_gid`: it is the only key that addresses
         every tileset a map can hold.
         """
-        xml = payload.get("xml") or ""
-        try:
-            parsed = ElementTree.fromstring(xml)
-        except ElementTree.ParseError as exc:
-            raise PyoneerConfigError(
-                "restore_tileset was handed text that is not a <tileset> "
-                "element: %s" % exc, source=self.path) from exc
-        if parsed.tag != "tileset":
-            raise PyoneerConfigError(
-                "restore_tileset expects a <tileset>, got <%s>" % parsed.tag,
-                source=self.path)
+        parsed = _parse_restored_element(
+            payload.get("xml") or "", "restore_tileset",
+            "a <tileset> element", ("tileset",), self.path)
 
         placeholder = self._append_child(self.root, "tileset", payload.get("index"))
         placeholder.attrib = dict(parsed.attrib)
@@ -2487,6 +2613,41 @@ class MapDocument:
                 return own + own[len(outer):]
         return own + " "
 
+    def _separator_of(self, parent: ElementTree.Element,
+                      children: list[ElementTree.Element]) -> str | None:
+        """The whitespace this parent ALREADY puts in front of a child.
+
+        READ OFF THE FILE, NEVER COMPUTED, which is the same sentence
+        `__sibling_shape` is written under and the same one the append
+        branch of `_append_child` learned the hard way. `_child_indent`
+        infers a NEW child's indent from how much deeper the parent sits
+        than ITS parent -- the only answer available when the parent has no
+        children to copy -- and it is simply wrong whenever the file does
+        not step by that amount. Measured on the round-trip fixture, whose
+        `<layer>` is indented two and whose `<data>` is indented three:
+        giving that layer a property and taking it away again moved
+        `<data>` to four, one byte of diff on a no-op pair.
+
+        The candidates are the separators BETWEEN siblings: `parent.text`
+        sits in front of the first child, and each child's tail sits in
+        front of the next. The LAST child's tail is excluded on purpose --
+        that one is the whitespace before the parent's own closing tag and
+        is a step shallower.
+
+        A CHILDLESS PARENT STILL HAS AN ANSWER, and it is why this is
+        called on every path rather than only when siblings exist: with no
+        children the list is just `parent.text`, which is None for an
+        element the file wrote self-closing -- no answer, compute one --
+        and is the file's own separator for an element whose last child
+        was just removed, because `ObjectLayer.remove_object` puts that
+        text back. Restoring into an emptied layer therefore copies the
+        file's indent instead of recomputing it.
+        """
+        for candidate in [parent.text] + [c.tail for c in children[:-1]]:
+            if candidate and not candidate.strip() and "\n" in candidate:
+                return candidate
+        return None
+
     def _append_child(self, parent: ElementTree.Element, tag: str,
                       index: int | None = None) -> ElementTree.Element:
         """Insert a new element, indented to match its siblings."""
@@ -2495,11 +2656,22 @@ class MapDocument:
         child_indent = self._child_indent(parent)
         children = list(parent)
         position = len(children) if index is None else index
+        # ONE RULE, asked on every branch: the file's own spelling outranks
+        # the computed one wherever the file has one, and `_child_indent` is
+        # the fallback for a parent with nothing to copy. Three branches
+        # each computing their own answer is what put a one-byte diff on a
+        # no-op pair three different ways.
+        separator = self._separator_of(parent, children)
+        inner = separator if separator is not None else "\n" + child_indent
 
         if not children:
-            # First child: the parent may have been written self-closing.
-            if parent.text is None or not parent.text.strip():
-                parent.text = "\n" + child_indent
+            # First child: the parent may have been written self-closing,
+            # in which case there is nothing to copy and `inner` is the
+            # computed answer. When it was NOT -- an emptied object layer
+            # carries the text `remove_object` put back -- that is the
+            # file's own separator and it stays.
+            if separator is None:
+                parent.text = inner
             element.tail = "\n" + own_indent
             parent.append(element)
         elif position >= len(children):
@@ -2512,19 +2684,40 @@ class MapDocument:
             # Inheriting makes the pair exactly reversible.
             closing = children[-1].tail
             element.tail = closing if closing else "\n" + own_indent
-            children[-1].tail = "\n" + child_indent
+            children[-1].tail = inner
             parent.append(element)
         else:
-            element.tail = "\n" + child_indent
+            element.tail = inner
             parent.insert(position, element)
             if position == 0 and (parent.text is None or not parent.text.strip()):
-                parent.text = "\n" + child_indent
+                parent.text = inner
         self._parents[element] = parent
         return element
 
     def _remove_child(self, parent: ElementTree.Element,
                       element: ElementTree.Element) -> None:
-        """Remove an element and hand its trailing whitespace back."""
+        """Remove an element and hand its trailing whitespace back.
+
+        THE LAST CHILD OUT TURNS THE LIGHT OFF. `_append_child` writes
+        `parent.text` -- the whitespace in front of the first child -- the
+        moment an element gains one, so the inverse has to take it away
+        again or an element the file wrote self-closing comes back as an
+        open/close pair with a blank line between the tags. That is two
+        lines of diff nobody authored on a declare-then-undo, and it makes
+        `MapDocument.changed` report a map dirty after a no-op pair,
+        because `changed` re-serialises and compares BYTES.
+
+        This line lived at FOUR call sites in `editor/core/verbs.py`, each
+        with a comment saying it belonged here; the fourth was missed for a
+        whole pass by a grep that named the other three. It is one function
+        now, and the four copies are deleted -- which is the counter-move
+        CLAUDE.md's sibling-route warning prescribes.
+
+        The condition is the exact mirror of `_append_child`'s own: only a
+        WHITESPACE-ONLY text is cleared, so an element carrying real
+        content (a `<data>` csv payload, a multi-line `<property>` body) is
+        never touched no matter what is removed from it.
+        """
         children = list(parent)
         position = children.index(element)
         # The last child owns the whitespace in front of the closing tag, so
@@ -2533,6 +2726,8 @@ class MapDocument:
             children[position - 1].tail = element.tail
         parent.remove(element)
         self._parents.pop(element, None)
+        if not list(parent) and not (parent.text or "").strip():  #TAG:childless_parent_closes_itself
+            parent.text = None
 
     def _touch(self) -> None:
         self._touched = True
