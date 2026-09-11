@@ -66,6 +66,14 @@ class SceneManager:
 
         Duck-typed on `update(delta)`, which is the whole contract: a queue
         wrapper, a fade or a test double are all acceptable here.
+
+        EMPTIED BY `post_update` THE FRAME ITS OCCUPANT STOPS, if the
+        occupant answers `running` at all. So "this slot is occupied" means
+        "something is running here" and not "something ran here once" --
+        which is what it meant for a whole pass, at the cost of one finished
+        cutscene disabling event scripts for the rest of the session. An
+        occupant that does not answer `running` is never evicted and holds
+        the slot until somebody replaces it.
         """
 
     def __bind_renderer(self, renderer: LayerRenderer | None):
@@ -507,8 +515,35 @@ class SceneManager:
         #
         # `delta` is passed through unconverted: it is milliseconds/60 and
         # `SceneFlow.update` is what converts.
+        #
+        # AND THE TICKER IS WHAT EMPTIES THE SLOT. For a whole pass nothing
+        # anywhere cleared `flow` when its occupant stopped, so "the slot is
+        # occupied" quietly meant "a cutscene has played AT SOME POINT in
+        # this session", and every reader asking "is something running here"
+        # got the wrong answer for the rest of the session. Measured, on the
+        # narrative kit: one opening cutscene ended, and the next eight
+        # presses of `action` started no event script, said nothing and
+        # warned nothing -- ONE CUTSCENE DISABLED EVENT SCRIPTS PERMANENTLY.
+        # The caller's guard was corrected first, by testing liveness instead
+        # of identity; this is the other half, and it is the half that
+        # answers for every future reader of the slot rather than for one.
+        #
+        # `self.flow` is READ AGAIN after the tick rather than compared to
+        # the occupant captured before it: a flow is allowed to hand the slot
+        # on during its own `update` -- a queue wrapper starting the next
+        # step is the shape `flow`'s own docstring names -- and clearing a
+        # captured name would throw that successor away on the frame it
+        # arrived.
+        #
+        # `getattr(..., True)`, so an occupant that cannot say whether it is
+        # running is never evicted. The slot's contract is `update(delta)`
+        # and nothing else, which is what lets a fade or a test double sit
+        # here; demanding `running` would make this line invent a contract
+        # for objects the slot deliberately does not constrain.
         if self.flow is not None:
             self.flow.update(delta)
+            if not getattr(self.flow, "running", True):
+                self.flow = None
         self.reap()
 
     def inputs(self):

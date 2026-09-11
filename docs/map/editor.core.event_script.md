@@ -5,7 +5,7 @@
 
 > The event-script document -- the AUTHORING half of `data/project/scripts/`.
 
-`editor.core.event_script` · 803 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.event_script` · 832 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -41,6 +41,8 @@
   - What `key` holds on this node, an absent key reading as its default.
 - `editor/core/event_script.py:767` `scripts_of(project) -> ScriptLibrary` #TAG:scripts_of
   - The `ScriptLibrary` for one open project, made on first use.
+- `editor/core/event_script.py:806` `opened_scripts(project) -> 'ScriptLibrary | None'` #TAG:opened_scripts
+  - The library this project already has, or None if it never asked.
 
 ## Classes
 

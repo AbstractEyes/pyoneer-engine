@@ -372,10 +372,10 @@ of repetition.
 - **You will fix the route that ships and let its SIBLING route grow without
   the fix.** The move that looks complete is to repair the path the bug was
   reported on, add the guard, write the check, and stop -- the other path
-  spells the same property, so surely it was covered. **Six sightings**, and
-  the last two were found by DRIVING the code rather than by reading it, which
-  is why the count kept climbing after three passes of looking. Delete and
-  create. Canvas and tree. The map spawn and `SceneManager.spawn`, TWICE --
+  spells the same property, so surely it was covered. **Nine sightings**, and
+  the last five were found by DRIVING the code rather than by reading it,
+  which is why the count kept climbing after three passes of looking. Delete
+  and create. Canvas and tree. The map spawn and `SceneManager.spawn`, TWICE --
   `spawn_defaults` reached the map route alone, so every runtime body was
   anchored at the top of its head; then `pyoneer_script` reached the map route
   alone, so a runtime body naming an absent document was silently inert while
@@ -389,8 +389,24 @@ of repetition.
   two were repaired, a THIRD row of the same shape was still sitting in that
   sibling, reading `config/inputs.json` with `json.load` and printing **yes**
   for a verb the loader need never have registered.
+  And three more on 2026-09-11, one of which was CREATED by the previous
+  pass's own fix. `main.py`'s press guard was corrected to exempt a finished
+  flow -- but by IDENTITY, so it exempted our own finished run and not the
+  sibling kind, and one finished cutscene then disabled event scripts for the
+  rest of the session in silence. `map.object.action.unset` had carried
+  `if not list(found.element): found.element.text = None` since the day it was
+  written, with the reason in a comment, and `map.object.property.remove` one
+  screenful away had not, so declaring a script and pressing Ctrl+Z left two
+  lines of diff nobody authored. And `map.object.set` has declared
+  `choices=_OBJECT_ATTRIBUTES` since it was written while its inverse
+  `map.object.unset` declared `Param("key", str)` and nothing, so the verb
+  that could not WRITE `id` could DELETE it. Note what the three have in
+  common and the earlier six do not: all three pairs live in ONE file, two of
+  them within thirty lines of each other. Distance is not the cause.
   Counter-move, and it is not "grep harder": where the two routes share a
-  rule, make the shared half ONE FUNCTION and delete the copy. `script_of`
+  rule, make the shared half ONE FUNCTION and delete the copy -- or, where a
+  rule is a declared vocabulary, make both halves NAME THE SAME TUPLE, which
+  is what closed the ninth. `script_of`
   closed the fourth sighting that way, and the proof it worked is a single
   mutation -- `if False and script_id not in scripts` -- turning BOTH
   `tools/check_spawn_runtime.py` and `tools/check_script_runtime.py` red in

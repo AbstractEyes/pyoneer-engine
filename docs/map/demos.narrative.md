@@ -5,7 +5,7 @@
 
 > The game-side narrative kit: a dialogue box, a step adapter, and the wiring.
 
-`demos.narrative` · 197 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.narrative` · 219 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -48,7 +48,7 @@
 
 ### `class StoryGame(DemoGame)` #TAG:StoryGame
 
-`demos/narrative.py:138`–`193`
+`demos/narrative.py:138`–`215`
 
 > A `DemoGame` that also mounts a scene flow over a dialogue box.
 

@@ -887,6 +887,84 @@ _no_flow_manager, _ = build_manager()
 expect_no_raise("...and a manager with no flow post-updates fine",
                 lambda: _no_flow_manager.post_update(DELTA))
 
+# -- and the ticker is what EMPTIES the slot --------------------------------
+# THE MEASUREMENT THIS BLOCK EXISTS FOR. For a whole pass nothing anywhere
+# took a flow out of `SceneManager.flow` when it ended, so "the slot is
+# occupied" quietly meant "a cutscene has played AT SOME POINT", and
+# `main.py`'s press guard -- which asks exactly that question -- refused
+# every later press in silence: ONE FINISHED CUTSCENE DISABLED EVENT SCRIPTS
+# FOR THE REST OF THE SESSION. The guard was corrected to test liveness; this
+# is the other half, in the file that owns the slot, and it answers for every
+# future reader of it rather than for one caller.
+
+timing_out = SceneFlow([FlowStep("only", hold_ms=HOLD)], name="timing_out")
+timing_out.begin()
+tick_manager.flow = timing_out
+for _ in range(FRAMES - 1):
+    tick_manager.post_update(DELTA)
+expect("a RUNNING occupant is ticked and keeps the slot",
+       (timing_out.running, tick_manager.flow is timing_out), (True, True))
+tick_manager.post_update(DELTA)
+expect("...and the tick that runs it off its last beat takes it OUT of the "
+       "slot, so `occupied` means `running here`",
+       (timing_out.running, tick_manager.flow), (False, None))
+expect_no_raise("...and the frame after that, over the empty slot, is fine",
+                lambda: tick_manager.post_update(DELTA))
+
+
+class _Mute:
+    """An occupant that cannot say whether it is running.
+
+    The slot's whole contract is `update(delta)` -- `SceneManager.flow` names
+    a queue wrapper, a fade and a test double as legitimate occupants -- so
+    this is a shape the slot is REQUIRED to accept, not a hypothetical.
+    """
+
+    def __init__(self):
+        self.ticks = 0
+
+    def update(self, delta):
+        self.ticks += 1
+
+
+mute = _Mute()
+tick_manager.flow = mute
+tick_manager.post_update(DELTA)
+tick_manager.post_update(DELTA)
+expect("BOTH HALVES: an occupant that cannot answer `running` is never "
+       "evicted -- it is ticked, frame after frame, and keeps the slot",
+       (tick_manager.flow is mute, mute.ticks), (True, 2))
+
+
+class _HandsOn:
+    """A flow that puts its successor in the slot during its own update.
+
+    The queue-wrapper shape, and the reason the clear reads `self.flow` AGAIN
+    after the tick instead of comparing against the occupant it captured
+    before it: a flow is allowed to hand the slot on and stop in the same
+    breath, and clearing a captured name would throw the successor away on
+    the frame it arrived.
+    """
+
+    def __init__(self, manager, successor):
+        self.manager = manager
+        self.successor = successor
+        self.running = True
+
+    def update(self, delta):
+        self.running = False
+        self.manager.flow = self.successor
+
+
+successor = _Mute()
+handing = _HandsOn(tick_manager, successor)
+tick_manager.flow = handing
+tick_manager.post_update(DELTA)
+expect("a flow that hands the slot on DURING its own update keeps its "
+       "successor, even though the flow that handed it over stopped",
+       (tick_manager.flow is successor, handing.running), (True, False))
+tick_manager.flow = None
+
 
 # ===========================================================================
 print("\n9. the runtime vocabulary AGREES with the editor's, word for word")

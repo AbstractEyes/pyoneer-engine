@@ -96,6 +96,7 @@ from scripts.core.input import KEYBOARD                          # noqa: E402
 from scripts.core.spawn import SPAWN_REGISTRY                    # noqa: E402
 from scripts.game.behavior import BEHAVIOR_REGISTRY              # noqa: E402
 from scripts.game.behavior.base import ACTOR as ACTOR_PROPERTY   # noqa: E402
+from scripts.loaders import script_file                           # noqa: E402
 from scripts.loaders.table_file import actor_row, load_tables    # noqa: E402
 from scripts.game.flow.router import ANY_PAYLOAD                 # noqa: E402
 from scripts.game.flow.scene_flow import (ADVANCE_ACTION,        # noqa: E402
@@ -519,6 +520,8 @@ class SilentStory(StoryGame):
 
 WORKSPACE = tempfile.mkdtemp(prefix="pyoneer_prototype_")
 SHIPPED_MAPS_DIR = mapgen.MAPS_DIR
+SHIPPED_SOURCES = mapgen.SOURCES
+SHIPPED_SCRIPTS_DIR_FN = script_file.default_scripts_dir
 
 try:
     mapgen.MAPS_DIR = WORKSPACE
@@ -872,7 +875,178 @@ try:
 
     # =====================================================================
     print()
-    print("7. the loop's parts are where PROTOTYPE.md says they are")
+    print("7. the cutscene ends and the event-script route is still alive")
+    # =====================================================================
+    # THE SIBLING OCCUPANT OF THE ONE MODAL SLOT, DRIVEN END TO END. A game
+    # built on this kit has two things that want `SceneManager.flow`: the
+    # cutscene mounted here, and the event script `main.py` starts when a body
+    # carrying `pyoneer_script` is pressed. Nothing clears that slot when a
+    # flow ends -- a finished flow sits in it for the rest of the session,
+    # ticked to no effect -- so a guard asking "is the slot occupied" is
+    # really asking "has a cutscene ever played", and for one pass it did:
+    #
+    #     occupant is not None and occupant is not self.script_run  -> return
+    #
+    # exempted the starter's OWN finished run by identity and not the
+    # finished flow standing beside it, so ONE CUTSCENE DISABLED EVENT
+    # SCRIPTS PERMANENTLY, in silence, on every game built on this kit. Both
+    # halves are below and both are driven through the real key:
+    # `tools/check_script_runtime.py` owns the same rule over a duck, and this
+    # is the only place in the tree where the occupant is a REAL flow that a
+    # real narrative game mounted at boot.
+    #
+    # THE MAP AND THE SCRIPT ARE THIS CHECK'S OWN (law 4). `demos/maps/` is
+    # the author's canvas and `data/project/scripts/` is the author's project;
+    # the source is registered into `mapgen.SOURCES` and
+    # `default_scripts_dir` is redirected, both restored in the `finally`.
+    SCRIPT_ID = "prototype_signpost"
+    SCRIPT_SPEAKER = "Signpost"
+    SCRIPT_LINE = "THE SCRIPT ROUTE SURVIVED THE CUTSCENE."
+    SCRIPTED_MAP = "check_prototype_story"
+
+    scripts_dir = os.path.join(WORKSPACE, "project_scripts")
+    os.makedirs(scripts_dir, exist_ok=True)
+    with open(os.path.join(scripts_dir, SCRIPT_ID + ".json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({
+            "format": script_file.FORMAT,
+            "version": script_file.VERSION,
+            "id": SCRIPT_ID,
+            "title": "One line, so a press after the cutscene has something "
+                     "to show",
+            "loadouts": ["core"],
+            "pages": [{
+                "id": "only",
+                "trigger": "use",
+                "when": [],
+                "body": [{"id": "line", "do": "say",
+                          "who": SCRIPT_SPEAKER, "text": SCRIPT_LINE}],
+            }],
+        }, handle)
+    script_file.default_scripts_dir = lambda: scripts_dir
+
+    def scripted_story_source() -> str:
+        """The story map's hero, carrying a `pyoneer_script` as well.
+
+        Built from `mapgen`'s own helpers and constants so the object is the
+        shape the shipped demo maps place, and with NO `pyoneer_param_payload`
+        on it: payload routing is prove 4's claim and this section is about
+        the slot. With the payload gone both handlers sit on the same
+        (token, ANY_PAYLOAD) row, so one press reaches the flow AND the
+        starter -- which is what makes "the starter refused" a measurement
+        rather than an unrouted press.
+        """
+        width, height = mapgen.STORY_SIZE
+        art = [[mapgen.GRASS] * width for _ in range(height)]
+        return mapgen.build_tmx(width, height, art, None, [
+            mapgen._object(mapgen.STORY_HERO_ID, "hero", "GamePlayer",
+                           mapgen.STORY_HERO_SPAWN[0],
+                           mapgen.STORY_HERO_SPAWN[1],
+                           mapgen.SPRITE[0], mapgen.SPRITE[1],
+                           {"pyoneer_behaviors": ("", mapgen.STORY_BEHAVIORS),
+                            "pyoneer_script": ("", SCRIPT_ID)})])
+
+    mapgen.SOURCES = dict(SHIPPED_SOURCES,
+                          **{SCRIPTED_MAP: scripted_story_source})
+
+    class ScriptedStory(StoryGame):
+        """A cutscene over a body that also names an event script.
+
+        Two beats, both untimed, so the flow ends exactly when this section
+        presses it to the end and never underneath an assertion. Its
+        `ADVANCE_PAYLOAD` is the kit's own default, which is why the two
+        handlers meet on one routing key.
+        """
+
+        MAP_NAME = SCRIPTED_MAP
+        SCRIPT = (("open", "KEEPER: Stay a moment.", 0.0),
+                  ("shut", "KEEPER: Now the room is yours.", 0.0))
+
+    HELD.clear()
+    scripted = ScriptedStory(autostart=False)
+    scripted.begin(max_frames=1)
+    story_flow = scripted.story_flow
+    scripted_hero = scripted.entity_of(mapgen.STORY_HERO_ID)
+
+    expect("the scripted-story boot mounted its flow in the one slot",
+           (scripted.scene.flow is story_flow, story_flow.running),
+           (True, True))
+    expect("...and joined the same body to its event script",
+           [(entity is scripted_hero, script_id)
+            for entity, script_id in scripted.object_scripts],
+           [(True, SCRIPT_ID)])
+    expect("...so one press reaches the flow AND main.py's starter, on one row",
+           len(scripted.scene.actions.handlers_for(ADVANCE_ACTION,
+                                                   ANY_PAYLOAD)), 2)
+
+    # -- half one: while the cutscene is RUNNING, the press is the flow's ----
+    tap(scripted, "action")
+    expect("PROVE a press during the cutscene starts no script run",
+           scripted.script_run, None)
+    expect("...and the flow is undisturbed: it holds the slot and took the "
+           "press as its own advance",
+           (scripted.scene.flow is story_flow, story_flow.index), (True, 1))
+    expect("...and the script host built no box at all over the top of it",
+           scripted.dialogue.box, None)
+
+    # Pressed to the end rather than a counted number of times: how many beats
+    # the fixture has is the fixture's business, and a count here would go red
+    # for an edit to the lines rather than for an edit to the guard.
+    for _ in range(8):
+        if not story_flow.running:
+            break
+        tap(scripted, "action")
+    expect("the cutscene ran off its last beat and ended",
+           (story_flow.running, story_flow.done), (False, True))
+    expect("...and the slot it held is EMPTY, taken out by the same tick "
+           "that ran it off its last beat -- the half of the repair that "
+           "lives in the file owning the slot",
+           scripted.scene.flow, None)
+    expect("...and the agency came back to the hero",
+           scripted_hero.state.steerable, True)
+
+    # -- half two: THE DEFECT. The same body, the same key, one beat later ---
+    tap(scripted, "action")
+    expect("PROVE a press after the cutscene has finished starts the body's "
+           "event script",
+           (scripted.script_run is not None
+            and scripted.script_run.running), True)
+    expect("...over the document the MAP named",
+           getattr(scripted.script_run, "name", None), SCRIPT_ID)
+    expect("...and the run is what holds the slot now",
+           scripted.scene.flow is scripted.script_run, True)
+    expect("...and the authored line is on the script host's own box",
+           (scripted.dialogue.box.speaker, scripted.dialogue.box.line)
+           if scripted.dialogue.box is not None else None,
+           (SCRIPT_SPEAKER, SCRIPT_LINE))
+    expect("...and the finished flow was not restarted to get there -- it was "
+           "replaced because it had STOPPED, not because it was evicted",
+           (story_flow.running, story_flow.done), (False, True))
+
+    # -- half three: the LIVENESS half, with a real flow ---------------------
+    # `SceneManager.post_update` empties the slot now, so the two rows above
+    # would pass over an identity-only guard: an empty slot satisfies any
+    # version of it. The guard still has to hold on its own, and the reason is
+    # timing -- the press is answered in `inputs` and the clear runs after it,
+    # so a flow that ended earlier in the SAME frame is still sitting there
+    # when the guard reads it, and a manager nobody post-updates never clears
+    # at all. Put the finished flow back by hand and press again. This is the
+    # only place in the tree where that half is measured against a REAL
+    # `SceneFlow`; `tools/check_script_runtime.py` owns the duck that cannot
+    # answer `running`, which a real flow can never be.
+    scripted.script_run = None
+    scripted.scene.flow = story_flow
+    tap(scripted, "action")
+    expect("a FINISHED flow parked back in the slot does not hold the door "
+           "shut either: the guard tests LIVENESS, not emptiness",
+           scripted.script_run is not None and scripted.script_run.running,
+           True)
+    expect("...and it is the run, not the corpse, that holds the slot after",
+           scripted.scene.flow is scripted.script_run, True)
+
+    # =====================================================================
+    print()
+    print("8. the loop's parts are where PROTOTYPE.md says they are")
     # =====================================================================
     expect("the design template is a document on disk",
            os.path.isfile(os.path.join(ROOT, TEMPLATE_REL.replace("/", os.sep))),
@@ -964,6 +1138,8 @@ try:
 
 finally:
     mapgen.MAPS_DIR = SHIPPED_MAPS_DIR
+    mapgen.SOURCES = SHIPPED_SOURCES
+    script_file.default_scripts_dir = SHIPPED_SCRIPTS_DIR_FN
     HELD.clear()
     shutil.rmtree(WORKSPACE, ignore_errors=True)
 

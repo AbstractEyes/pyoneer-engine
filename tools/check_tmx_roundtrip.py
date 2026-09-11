@@ -51,6 +51,7 @@ import pytmx
 from config.managers.map_data import AssetMapManager, MapData, resolve_map_path
 from scripts.core.collision_runtime import SUBCELL, companion_subcell
 from scripts.core.errors import PyoneerConfigError
+from scripts.core.layer_profile import RESERVED
 from scripts.loaders.map_document import (
     MapDocument,
     format_property,
@@ -152,6 +153,33 @@ def brief(value) -> str:
     return text if len(text) <= 60 else text[:57] + "..."
 
 
+ONE_OF_EVERY_KIND = """<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="2" height="1" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="2">
+ <tileset firstgid="1" name="t" tilewidth="16" tileheight="16" tilecount="1" columns="1">
+  <image source="t.png" width="16" height="16"/>
+ </tileset>
+ <layer id="1" name="Floor" width="2" height="1">
+  <data encoding="csv">
+0,0
+</data>
+ </layer>
+ <objectgroup id="2" name="entity">
+  <object id="1" name="hero" type="GamePlayer" x="0" y="0" width="16" height="16"/>
+ </objectgroup>
+ <imagelayer id="3" name="back">
+  <image source="t.png" width="16" height="16"/>
+ </imagelayer>
+</map>
+"""
+"""One of every element kind pytmx can build, and nothing else.
+
+Not the section's own fixture and not a shipped map: what the two rows under
+it measure is which names PYTMX puts on an element, so the file only has to
+contain one of each. A map from `data/` here would be a law-4 claim about
+somebody's authoring rather than about the library.
+"""
+
+
 def expect(label, got, want):
     ok = got == want
     print(f"  {'ok  ' if ok else 'FAIL'} {label:<54} got={brief(got)} want={brief(want)}")
@@ -204,6 +232,24 @@ def raises_naming(label, exc_type, fn, *needles):
         return
     print(f"  FAIL {label:<54} did not raise")
     failures.append(label)
+
+
+def attempt(label, fn, want):
+    """`expect`, for a call that must SUCCEED -- it reports, never dies.
+
+    `expect(label, probe.set(...), want)` evaluates its argument before
+    the helper is entered, so a guard that wrongly refuses takes the whole
+    run down and every section below it loses its coverage. The rows that
+    exist to prove a refusal is not refusing everything are exactly the
+    rows most likely to raise, so those go through here.
+    """
+    try:
+        got = fn()
+    except Exception as exc:  # noqa: BLE001 - reporting tool
+        print(f"  FAIL {label:<54} raised {type(exc).__name__}: {exc}")
+        failures.append(label)
+        return
+    expect(label, got, want)
 
 
 def diff_span(left: bytes, right: bytes) -> tuple[int, int] | None:
@@ -406,6 +452,238 @@ try:
     expect("the round trip is byte identical again", document.to_bytes(), ORIGINAL)
     expect("removing it twice is False, not an exception",
            entity.remove_object(spawned.id), False)
+
+    # --------------------------------------------------------------------
+    print()
+    print("the attribute door and the property door refuse each other's names")
+    # --------------------------------------------------------------------
+    # WHY THIS SECTION EXISTS, measured before it was written: a `pyoneer_`
+    # name handed to MapObject.set became an XML ATTRIBUTE. The map still
+    # loaded, pytmx hung the value on the object as a plain Python attribute,
+    # `obj.properties` stayed empty -- and the engine reads `obj.properties`
+    # everywhere. A silent no-op wearing a successful write's clothes, which
+    # is law 7's failure shape. Then, the moment anyone wrote the real
+    # property through the correct door, the SAME name on both sides made
+    # pytmx raise and the whole map stop loading: law 1's stated cost,
+    # reached through a sanctioned writer.
+    #
+    # Both of those facts about pytmx are re-measured below rather than
+    # asserted, so the refusals cannot quietly become a test of nothing.
+    entity = document.object_layer("entity")
+    expect("the fixture is back to no objects", entity.objects(), [])
+    probe = entity.add_object(name="probe", type="player", x=16, y=16,
+                              width=16, height=16,
+                              properties={"pyoneer_behaviors": "topdown_move"})
+
+    # -- what the attribute path actually did, in pytmx's own words --------
+    # Written with element.set, DELIBERATELY around the model, because
+    # building the broken document is the only way to show the guards below
+    # guard something real rather than a branch nobody could reach.
+    silent_path = os.path.join(os.path.dirname(MAP_PATH), "_check_silent.tmx")
+    probe.element.set("pyoneer_script", "greeting")
+    document.save(silent_path)
+    try:
+        seen = list(pytmx.TiledMap(silent_path).get_layer_by_name("entity"))[0]
+        expect("a pyoneer_ ATTRIBUTE loads fine and is invisible as a property",
+               "pyoneer_script" in seen.properties, False)
+        expect("...pytmx hangs it on the object instead, where nothing looks",
+               getattr(seen, "pyoneer_script", None), "greeting")
+        expect("...while the same name through the property door IS a property",
+               "pyoneer_behaviors" in seen.properties, True)
+    finally:
+        os.remove(silent_path)
+
+    # And the fatal half: the same name on BOTH sides of one element.
+    fatal_path = os.path.join(os.path.dirname(MAP_PATH), "_check_fatal.tmx")
+    probe.element.set("pyoneer_behaviors", "topdown_move")
+    document.save(fatal_path)
+    try:
+        raises("an attribute shadowing a property makes the map unloadable",
+               ValueError, lambda: pytmx.TiledMap(fatal_path))
+        # The control. Without it the line above passes against any broken
+        # fixture, including one broken for an unrelated reason.
+        del probe.element.attrib["pyoneer_behaviors"]
+        del probe.element.attrib["pyoneer_script"]
+        document.save(fatal_path)
+        expect("...and with the attribute gone the same file loads",
+               len(list(pytmx.TiledMap(fatal_path).get_layer_by_name("entity"))), 1)
+    finally:
+        os.remove(fatal_path)
+
+    # -- half one: the three refusals at the attribute door ----------------
+    raises_naming("a pyoneer_ name is refused at the attribute door",
+                  PyoneerConfigError,
+                  lambda: probe.set("pyoneer_script", "greeting"),
+                  "pyoneer_script", "object.properties[", "map.object.property.set")
+    raises_naming("...including one already carried as a property",
+                  PyoneerConfigError,
+                  lambda: probe.set("pyoneer_behaviors", "topdown_move"),
+                  "pyoneer_behaviors", "object.properties[")
+    # A name that is not prefixed at all, so the collision rule is the only
+    # thing that can have fired.
+    probe.properties["depth"] = 50
+    raises_naming("a name already carried as a property is refused too",
+                  PyoneerConfigError, lambda: probe.set("depth", 9),
+                  "depth", "stops loading")
+    if "depth" in probe.properties:          # teardown, not an assertion
+        del probe.properties["depth"]
+    for bad in ("not a name", "", "1bad", 'quote"inside'):
+        raises_naming("an illegal XML attribute name is refused: %r" % (bad,),
+                      PyoneerConfigError, lambda b=bad: probe.set(b, 1),
+                      "legal XML attribute name")
+
+    # -- half two: a refusal must not have touched the document ------------
+    # A guard that raises after mutating the tree is worse than no guard:
+    # the caller catches the exception, saves, and ships the bytes anyway.
+    pristine = MapDocument.load(MAP_PATH)
+    victim = pristine.object_layer("entity").add_object(name="p", x=0, y=0)
+    baseline = pristine.to_bytes()
+    for bad_key in ("pyoneer_script", "not a name", "1bad"):
+        raises("refused, with the document already on the table: %r" % bad_key,
+               PyoneerConfigError, lambda b=bad_key: victim.set(b, "x"))
+    expect("a refused attribute write leaves the bytes alone",
+           pristine.to_bytes(), baseline)
+    expect("...and adds nothing to the element's attribute list",
+           sorted(victim.element.attrib), ["id", "name", "x", "y"])
+    spotless = MapDocument.load(MAP_PATH)
+    raises("the property door refuses without touching the document",
+           PyoneerConfigError,
+           lambda: spotless.properties.__setitem__("orientation", "x"))
+    expect("...the document still reports itself unchanged", spotless.changed, False)
+    expect("...and still serializes to the original bytes",
+           spotless.to_bytes(), ORIGINAL)
+    # In memory is not the claim that matters. The claim is that a caller
+    # who catches the refusal and saves anyway ships the file it opened.
+    refused_path = os.path.join(scratch, "after_refusal.tmx")
+    spotless.save(refused_path)
+    with open(refused_path, "rb") as handle:
+        expect("...and the file it WRITES after a refusal is the one it "
+               "loaded", handle.read(), ORIGINAL)
+
+    # -- half three: the legitimate attribute path is untouched ------------
+    # Without this, all of the above is satisfied by a method that refuses
+    # everything it is handed.
+    attempt("a built-in attribute still sets",
+            lambda: (probe.set("x", 96), probe.x)[1], 96.0)
+    expect("...and reaches the bytes as an attribute",
+           b'name="probe" type="player" x="96"' in document.to_bytes(), True)
+    for key, value, reader in (("y", 48, "y"), ("width", 32, "width"),
+                               ("gid", 7, "gid"), ("name", "renamed", "name"),
+                               ("type", "npc", "type"), ("rotation", 90, None),
+                               ("visible", 0, None), ("template", "a.tx", None)):
+        cast = {"y": float, "width": float, "gid": int}.get(reader, str)
+        attempt("set(%r) lands, and the reader agrees" % key,
+                lambda k=key, v=value, r=reader, c=cast:
+                (probe.set(k, v), getattr(probe, r) if r else c(v))[1],
+                cast(value))
+        expect("set(%r) wrote an attribute, not a property" % key,
+               (key in probe.element.attrib, key in probe.properties), (True, False))
+    # A colon and a hyphen are legal XML name characters, so an attribute a
+    # future Tiled invents still passes: the rule is the XML grammar, not a
+    # whitelist of names somebody has to keep up to date.
+    attempt("an unknown but legal name passes through",
+            lambda: (probe.set("tiled:some-future.attr", 1),
+                     probe.element.attrib.get("tiled:some-future.attr"))[1], "1")
+    attempt("the property door still takes the name the other one refused",
+            lambda: (probe.properties.__setitem__("pyoneer_script", "greeting"),
+                     probe.properties["pyoneer_script"])[1], "greeting")
+
+    # -- half four: the mirror, so neither door can build the collision ----
+    # On a THROWAWAY load, not on `document`: if this guard ever stops
+    # guarding, the write it lets through poisons the document for every
+    # section below, and the run dies somewhere with no relation to the
+    # thing that broke. A check whose failure mode is "something else",
+    # three hundred lines away, is a check nobody can act on.
+    mirror = MapDocument.load(MAP_PATH)
+    twin = mirror.object_layer("entity").add_object(name="twin", x=0, y=0)
+    raises_naming("a property named after an attribute on the SAME element "
+                  "is refused", PyoneerConfigError,
+                  lambda: twin.properties.__setitem__("name", "x"),
+                  "name", "unloadable", "pyoneer_name")
+    raises_naming("...on a tile layer too", PyoneerConfigError,
+                  lambda: mirror.tile_layer("Floor")
+                  .properties.__setitem__("width", 1),
+                  "width", "unloadable")
+    raises_naming("...and on the <map> element itself", PyoneerConfigError,
+                  lambda: mirror.properties.__setitem__("orientation", "x"),
+                  "orientation", "unloadable")
+    # Maps written before the attribute door was guarded still exist, and
+    # for one of those the advice "prefix it" would say
+    # pyoneer_pyoneer_script. So that branch says something else.
+    twin.element.set("pyoneer_legacy", "x")
+    raises_naming("...and a prefixed attribute is told to go, not to be "
+                  "prefixed twice", PyoneerConfigError,
+                  lambda: twin.properties.__setitem__("pyoneer_legacy", 1),
+                  "Delete that attribute")
+    # The refusal cannot be "every property name": these must still land.
+    attempt("an ordinary property name still writes",
+            lambda: (twin.properties.__setitem__("depth", 50),
+                     twin.properties["depth"])[1], 50)
+    attempt("...and on a layer as well",
+            lambda: (mirror.tile_layer("Floor")
+                     .properties.__setitem__("pyoneer_depth", 3),
+                     mirror.tile_layer("Floor").properties["pyoneer_depth"])[1], 3)
+
+    # -- half five: the fatal names that are NOT in `attrib` ---------------
+    # The residual hole BOTH doors shared until this pass, and the reason the
+    # attribute check alone was never enough. pytmx gives an object a default
+    # `rotation` and a layer a default `opacity` whether the file writes them
+    # or not, and `TiledTileLayer`/`TiledObjectGroup` subclass `list`, so
+    # `rotation`, `opacity` and `append` are fatal on elements whose `attrib`
+    # holds none of the three -- a guard reading only the element's own
+    # attributes sees nothing wrong with any of them. Measured before the
+    # guard existed: each one loaded to `ValueError` and took the whole map
+    # with it.
+    for owner_label, owner, fatal in (
+            ("an object", twin, ("rotation", "gid", "properties", "parent")),
+            ("a tile layer", mirror.tile_layer("Floor"),
+             ("opacity", "offsetx", "append", "index"))):
+        for reserved_name in fatal:
+            raises_naming(
+                "a pytmx name the element does NOT carry as an attribute is "
+                "refused on %s: %r" % (owner_label, reserved_name),
+                PyoneerConfigError,
+                lambda o=owner, n=reserved_name: o.properties.__setitem__(n, 1),
+                reserved_name, "unloadable")
+
+    # -- and that set is MEASURED off pytmx, never remembered --------------
+    # `RESERVED` was eleven names typed from memory in `editor/core/layers.py`
+    # and it was missing `rotation`, `gid` and every list method -- three of
+    # the four rows above. It is derived here from the library itself, over a
+    # fixture carrying one of every element kind, so a pytmx upgrade that adds
+    # an attribute turns THIS row red instead of turning somebody's map
+    # unloadable. Its own fixture, and a tiny one: what is under measurement
+    # is what pytmx puts on an element, not what any shipped map contains
+    # (law 4).
+    kinds_root = tempfile.mkdtemp(prefix="pyoneer_reserved_")
+    atexit.register(shutil.rmtree, kinds_root, ignore_errors=True)
+    kinds_path = os.path.join(kinds_root, "kinds.tmx")
+    with open(kinds_path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(ONE_OF_EVERY_KIND)
+    # The DEFAULT image loader, so nothing opens a file: the names on an
+    # element do not depend on whether its art is there, and a check that
+    # needed a real PNG here would be measuring the loader instead.
+    kinds = pytmx.TiledMap(kinds_path)
+    elements = ([kinds] + list(kinds.layers) + list(kinds.tilesets)
+                + list(kinds.objects))
+    expect("the fixture really carries one of every element kind, or the "
+           "two rows below are measuring a short list",
+           sorted({type(e).__name__ for e in elements}),
+           ["TiledImageLayer", "TiledMap", "TiledObject", "TiledObjectGroup",
+            "TiledTileLayer", "TiledTileset"])
+    derived = set()
+    for element in elements:
+        derived |= {n for n in dir(element) if not n.startswith("_")}
+    expect("`RESERVED` carries every name pytmx hangs on an element it has "
+           "loaded -- derived from the library, not remembered",
+           sorted(derived - RESERVED), [])
+    expect("...and carries nothing pytmx does not, so it cannot quietly grow "
+           "into a refusal of every property name",
+           sorted(RESERVED - derived), [])
+
+    # -- and the whole section undoes byte-exactly --------------------------
+    expect("removing the probe returns the original bytes",
+           (entity.remove_object(probe.id), document.to_bytes())[1], ORIGINAL)
 
     # --------------------------------------------------------------------
     print()

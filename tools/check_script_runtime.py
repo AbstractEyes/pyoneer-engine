@@ -48,6 +48,12 @@ every gate below is asserted in both directions:
                     AND the same body over an EMPTY slot still starts one,
                         and our own FINISHED run parked there is not treated
                         as somebody else's occupant
+    a RUNNING foreign flow refuses the press and is left undisturbed
+                    AND the same flow ONCE FINISHED refuses nothing: nothing
+                        anywhere clears that slot, so a guard asking "is it
+                        occupied" is really asking "has a cutscene ever
+                        played" and one opening scene disables every event
+                        script for the rest of the session
     a `pyoneer_script` naming an absent document RAISES, naming both
                     AND one naming a present document does not
     a scripted body with no `action_relay` WARNS, naming the token
@@ -707,6 +713,82 @@ expect("...and its steering was not given back under it",
 # `showing` answers None when no box was ever BUILT, which is the stronger
 # outcome and the one this refusal produces: nothing was said at all.
 expect("...and no line was put on screen", showing(occupied) or False, False)
+
+# THE SIBLING OCCUPANT, AND THE GUARD ABOVE ONCE LOCKED IT IN. A `_ForeignFlow`
+# cannot say whether it is running, so the rows above measure the conservative
+# half: an occupant that does not answer keeps the slot. The occupant that
+# really lands there DOES answer -- and it answers False for ever once it has
+# played, because NOTHING IN THE TREE CLEARS THAT SLOT WHEN A FLOW ENDS. The
+# guard used to exempt one finished occupant, its own run, by identity:
+#
+#     occupant is not None and occupant is not self.script_run  -> return
+#
+# so on any game that played one cutscene the press was refused silently for
+# the rest of the session. Measured on the narrative kit before this pair
+# existed: eight presses after the opening flow ended, `script_run` None every
+# time, nothing said and nothing warned. The finished flow had been filed as
+# hygiene rather than as a defect -- and it was, until a guard that was right
+# about its own occupant and blind to the sibling turned it into a lock-out.
+
+
+class _NarrativeFlow:
+    """An occupant that ANSWERS `running`, the way a real scene flow does.
+
+    Two states, and they are the two states a shipped cutscene really has:
+    running while it holds the player, and `running` False afterwards while
+    still sitting in the slot nobody empties. Named by shape rather than
+    imported for the reason `_ForeignFlow` gives -- main.py is the smoke
+    baseline and a check asserts it does not spell the demo package -- and
+    what is under test is the SLOT RULE, not any one flow class.
+    """
+
+    def __init__(self):
+        self.ticks = 0
+        self.running = True
+
+    def update(self, delta):
+        self.ticks += 1
+
+    def end(self):
+        """What running off the last beat does to the half the guard reads."""
+        self.running = False
+
+
+cutscene, _ = boot("cutscene", SCRIPTED_LIST, TALK_SCRIPT)
+cutscene_state = state_of(cutscene.player)
+cutscene_state.steerable = False        # what the flow's own hold would do
+narrative = _NarrativeFlow()
+cutscene.scene.flow = narrative
+ticks_before = narrative.ticks
+press(cutscene)
+expect("a press while a foreign flow is RUNNING starts no run",
+       cutscene.script_run, None)
+expect("...and the flow is undisturbed: it still holds the slot",
+       cutscene.scene.flow is narrative, True)
+expect("...and is still being ticked, frame after frame",
+       narrative.ticks > ticks_before, True)
+expect("...and its steering was not given back under it",
+       cutscene_state.steerable, False)
+expect("...and nothing was said over the top of it",
+       showing(cutscene) or False, False)
+# THE OTHER HALF, AND IT IS THE DEFECT: the same occupant, the same body, the
+# same key -- and the flow has ended. It is still in the slot, because nothing
+# takes it out.
+narrative.end()
+cutscene_state.steerable = True         # what the flow's own release gives back
+ticks_at_end = narrative.ticks
+press(cutscene)
+expect("...while a press after that flow has FINISHED starts one",
+       of(cutscene.script_run, "running"), True)
+expect("...over the document the map named",
+       of(cutscene.script_run, "name"), TALK_SCRIPT)
+expect("...and the run is what holds the slot now",
+       cutscene.scene.flow is cutscene.script_run, True)
+expect("...and the line really reached the screen", spoken(cutscene), "line one")
+expect("...and the finished flow, no longer in the slot, is ticked no more",
+       narrative.ticks, ticks_at_end)
+expect("...and the finished flow was never restarted to get there",
+       narrative.running, False)
 # THE OTHER HALF, and without it the rows above pass for a game that can never
 # start a script at all: the same body, the same key, an empty slot.
 occupied.scene.flow = None
@@ -716,10 +798,12 @@ expect("...while the SAME body over an empty slot starts one",
        occupied.script_run is not None, True)
 expect("...which is what now holds the slot",
        occupied.scene.flow is occupied.script_run, True)
-# AND OUR OWN FINISHED RUN IS NOT A FOREIGN OCCUPANT. It stays parked in the
-# slot when it ends -- nothing clears it -- so a guard that refused any
-# occupant would make the second press dead and cost the shipped script its
-# `if`'s second arm.
+# AND OUR OWN FINISHED RUN IS NOT AN OCCUPANT EITHER, and there are now TWO
+# reasons rather than one. The run stops, and `SceneManager.post_update` takes
+# a stopped occupant out of the slot on the very tick that stops it. Either
+# alone would carry the next press; the rows below drive the pair, because a
+# guard that refused any occupant would make the second press dead and cost
+# the shipped script's `if` its second arm.
 started = occupied.script_run
 # Pressed to the end rather than a counted number of times: how many nodes the
 # fixture script has is the fixture's business, and a count here would go red
@@ -729,11 +813,14 @@ for _ in range(8):
         break
     press(occupied)
 expect("the first run finished", of(started, "done"), True)
-expect("...and it is still parked in the slot",
-       occupied.scene.flow is started, True)
+expect("...and the slot it held is EMPTY again, taken out by the same tick "
+       "that ran it off the end: `occupied` means `running here`, never "
+       "`something ran here once`",
+       occupied.scene.flow, None)
 press(occupied)
-expect("...and the next press starts a fresh run over it anyway",
-       occupied.script_run is not started, True)
+expect("...and the next press starts a fresh run over the same variable "
+       "store, which is what lets the shipped script's `if` reach its "
+       "second arm", occupied.script_run is not started, True)
 
 # ---------------------------------------------------------------------------
 print()

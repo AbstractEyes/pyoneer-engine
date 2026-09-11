@@ -5,7 +5,7 @@
 
 > Per-layer capabilities, as declared data rather than inferred behaviour.
 
-`editor.core.layers` · 222 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.layers` · 230 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,41 +13,40 @@
 
 ## Module constants
 
-- `editor/core/layers.py:62` `RESERVED` #TAG:RESERVED
-- `editor/core/layers.py:102` `CAPABILITIES` #TAG:CAPABILITIES
-- `editor/core/layers.py:146` `BY_KEY` #TAG:layers.BY_KEY
-- `editor/core/layers.py:147` `BY_PROPERTY` #TAG:layers.BY_PROPERTY
+- `editor/core/layers.py:110` `CAPABILITIES` #TAG:CAPABILITIES
+- `editor/core/layers.py:154` `BY_KEY` #TAG:layers.BY_KEY
+- `editor/core/layers.py:155` `BY_PROPERTY` #TAG:layers.BY_PROPERTY
 
 ## Functions
 
-- `editor/core/layers.py:185` `read_profile(layer) -> LayerProfile` #TAG:read_profile
+- `editor/core/layers.py:193` `read_profile(layer) -> LayerProfile` #TAG:read_profile
   - Read a MapDocument TileLayer or ObjectLayer's declared capabilities.
-- `editor/core/layers.py:196` `validate_property(key: str, value: Any) -> Any` #TAG:validate_property
+- `editor/core/layers.py:204` `validate_property(key: str, value: Any) -> Any` #TAG:validate_property
   - Check one capability by key. Raises ValueError with a usable message.
-- `editor/core/layers.py:212` `describe_all() -> str` #TAG:layers.describe_all
+- `editor/core/layers.py:220` `describe_all() -> str` #TAG:layers.describe_all
   - Markdown for the generated request bundle.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class Capability` #TAG:Capability
 
-`editor/core/layers.py:69`–`99`
+`editor/core/layers.py:77`–`107`
 
 > One thing a layer can declare about itself.
 
-- `editor/core/layers.py:80` `@property property_name(self) -> str` #TAG:Capability.property_name
-- `editor/core/layers.py:83` `coerce(self, value: Any) -> Any` #TAG:Capability.coerce
+- `editor/core/layers.py:88` `@property property_name(self) -> str` #TAG:Capability.property_name
+- `editor/core/layers.py:91` `coerce(self, value: Any) -> Any` #TAG:Capability.coerce
   - Bring a tmx value to the declared type, or fall back to default.
 
 ### `@dataclass class LayerProfile` #TAG:layers.LayerProfile
 
-`editor/core/layers.py:155`–`182`
+`editor/core/layers.py:163`–`190`
 
 > Everything a layer declares about itself, with defaults filled in.
 
-- `editor/core/layers.py:161` `__getattr__(self, key: str) -> Any` #TAG:layers.LayerProfile.__getattr__
-- `editor/core/layers.py:167` `@property is_static(self) -> bool` #TAG:layers.LayerProfile.is_static
+- `editor/core/layers.py:169` `__getattr__(self, key: str) -> Any` #TAG:layers.LayerProfile.__getattr__
+- `editor/core/layers.py:175` `@property is_static(self) -> bool` #TAG:layers.LayerProfile.is_static
   - Static means "may be flattened into the map plane with its
-- `editor/core/layers.py:177` `@property declared(self) -> list[str]` #TAG:layers.LayerProfile.declared
-- `editor/core/layers.py:180` `as_properties(self) -> dict[str, Any]` #TAG:layers.LayerProfile.as_properties
+- `editor/core/layers.py:185` `@property declared(self) -> list[str]` #TAG:layers.LayerProfile.declared
+- `editor/core/layers.py:188` `as_properties(self) -> dict[str, Any]` #TAG:layers.LayerProfile.as_properties
   - The tmx property names and values this profile would write.

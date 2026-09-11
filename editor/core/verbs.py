@@ -1365,8 +1365,16 @@ def _object_set(project: Project, cmd: Command) -> Command | None:
     if previous == value:
         return None
 
-    found.element.set(attribute, value)
-    found._document._touch()
+    # THROUGH THE MODEL, not around it. `MapObject.set` refuses a
+    # `pyoneer_`-prefixed name, a name this object already carries as a
+    # `<property>` (which pytmx makes an unloadable map out of), and a name
+    # no XML parser would take back -- all three BEFORE it writes anything.
+    # This verb used to do `found.element.set(...)` plus a `_touch()` and so
+    # reached around every one of them: `choices=` stops the first and third
+    # at the door, and nothing at all stopped the second on a map somebody
+    # hand-wrote. A guard on the model that the one verb calling it bypasses
+    # is this repository's most-repeated shape, so the verb calls it.
+    found.set(attribute, value)
     if previous is None:
         return Command("map.object.unset", cmd.scope, {"key": attribute})
     return Command("map.object.set", cmd.scope,
@@ -1378,10 +1386,32 @@ def _object_set(project: Project, cmd: Command) -> Command | None:
     summary="Remove a built-in attribute entirely, rather than blanking it. "
             "The inverse of setting an attribute that was previously absent.",
     scopes=["map:*/layer:*/object:*"],
-    params=[Param("key", str, "which attribute to remove")],
+    params=[Param("key", str, "which attribute to remove",
+                  choices=_OBJECT_ATTRIBUTES)],
     destructive=True,
 )
 def _object_unset(project: Project, cmd: Command) -> Command | None:
+    """Remove one `<object>` attribute. THE ONLY DOOR THAT DELETES ONE.
+
+    IT DECLARES ITS SIBLING'S VOCABULARY, and it did not. `map.object.set`
+    has carried `choices=_OBJECT_ATTRIBUTES` since it was written; this
+    inverse carried `Param("key", str)` and nothing else, so the verb that
+    could not WRITE `id` could DELETE it -- and an object with no `id` is
+    addressable by no scope, restorable by no inverse and a different
+    document to every reader. The guard went on the write and the remove
+    twin grew without it: this pass's own shape, on a pair one screenful
+    apart. The two now name the SAME tuple, so they cannot drift.
+
+    A `pyoneer_`-NAMED ATTRIBUTE IS NOT REMOVABLE HERE, and that is a
+    decision rather than an omission. A map written before `MapObject.set`
+    refused to write one can still carry `<object pyoneer_script="...">`,
+    which is invisible to `obj.properties` and makes the map unloadable the
+    moment the real property is added -- so a door for deleting it would be
+    useful. It cannot be THIS door: the inverse of this verb is
+    `map.object.set`, nothing in the editor may write a `pyoneer_`-named
+    attribute back, and a command whose inverse cannot run is worse than a
+    capability that is missing. See `docs/NEXT.md`.
+    """
     found = _object(project, cmd.scope)
     key = cmd.args["key"]
     previous = found.element.attrib.pop(key, None)
@@ -1437,6 +1467,20 @@ def _object_property_remove(project: Project, cmd: Command) -> Command | None:
     if key not in existing:
         return None
     del found.properties[key]
+
+    # The SAME line `map.object.action.unset` carries, for the same measured
+    # reason, and this is where it was missing: `MapProperties.__delitem__`
+    # drops the `<properties>` container once it empties and `_remove_child`
+    # hands the whitespace back to the OWNER, so an `<object .../>` the file
+    # wrote self-closing comes back as `<object ...>\n   </object>`. Measured
+    # on a one-object fixture: declare `pyoneer_script` and undo, and the map
+    # gains two lines of diff that nobody authored. That is the gesture the
+    # object screen's `New...` makes, so it is not a corner -- and the guard
+    # existed one screenful away on the sibling verb the whole time.
+    # Belongs in `MapProperties.__delitem__`, which is in scripts/.
+    if not list(found.element):
+        found.element.text = None
+
     return Command("map.object.property.set", cmd.scope,
                    {"key": key, "value": existing[key]})
 
@@ -1881,12 +1925,20 @@ def _genre_set(project: Project, cmd: Command) -> Command | None:
 # one: an anchor that is not a sibling, an arm a node does not have, a body
 # on a `do` node, and a move into a node's own subtree.
 #
-# THE ONE UNWIRED SEAM. `ScriptLibrary` creates and deletes in memory and
-# writes at `save()`, per `docs/PLAN_SCENES.md` 2.5. `Project.save()` does
-# not call it yet and `Project.dirty` does not count it, because
-# `editor/core/project.py` belongs to another track. Two lines close it:
-#     written.extend(event_script.scripts_of(self).save())   in Project.save
-#     or event_script.scripts_of(self).dirty                 in Project.dirty
+# THE SEAM, WIRED, AND WHERE IT LIVES. `ScriptLibrary` creates and deletes
+# in memory and writes at `save()`, per `docs/PLAN_SCENES.md` 2.5. For a
+# whole pass `Project.save()` did not call it and `Project.dirty` did not
+# count it, so authoring a script through these verbs, pressing Ctrl+S and
+# closing wrote the MAP that names the script and never the script -- and
+# the next boot raised. All three halves are in `editor/core/project.py`
+# now, beside the map and table writes they belong with: `Project.save`
+# extends its own list with the library's, `Project.dirty_scripts` lists
+# what is not on disk (a DELETION included, which is why it is not just the
+# library's own `dirty_scripts()`), and `Project.dirty` is exactly
+# `bool(dirty_maps() + dirty_tables() + dirty_scripts())`, so the close
+# prompt's listing and the flag that raises it cannot disagree. That file
+# reaches this one through `event_script.opened_scripts`, deferred, because
+# the import runs the other way at import time (law 2's corollary).
 # --------------------------------------------------------------------------
 
 def _script_library(project: Project) -> script_module.ScriptLibrary:

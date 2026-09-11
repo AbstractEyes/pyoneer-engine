@@ -188,6 +188,28 @@ class StoryGame(DemoGame):
                                  self.ADVANCE_PAYLOAD)
         # One slot on the manager, not a list. `post_update` ticks it after
         # the scene fan-out returns, which is what advances a timed step.
+        #
+        # AND NOTHING USED TO TAKE IT BACK OUT, which is worth keeping
+        # written down because of what it cost. When this flow runs off its
+        # last beat it sets its own `running` False, closes its box and gives
+        # the steering back -- and it used to stay right here, ticked to no
+        # effect for the rest of the session, because `SceneFlow.update`
+        # returns on its first line when it is not running. Harmless for the
+        # flow; NOT harmless for whoever else read this slot, because "the
+        # slot is occupied" then meant "a cutscene has played at some
+        # point", which is a different question from the one a reader means
+        # to ask. That was not a theory: a guard on the event-script route
+        # read exactly that and refused every script press for the rest of
+        # the session once this flow finished -- one cutscene, and the game
+        # silently lost a whole subsystem.
+        #
+        # BOTH ENDS ARE CLOSED NOW. `SceneManager.post_update` takes a
+        # stopped occupant out of the slot on the tick that stops it, so this
+        # class needs no frame of its own in which to notice its own end; and
+        # `main.py::run_object_script`, the only other reader in the tree,
+        # asks whether the occupant is RUNNING rather than whether the slot
+        # is full, because the press is answered before the clear runs. A
+        # READER OF THIS SLOT STILL MUST ASK WHETHER THE OCCUPANT IS RUNNING.
         self.scene.flow = self.story_flow
         self.story_flow.begin()
         return bindable

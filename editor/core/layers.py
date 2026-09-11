@@ -22,15 +22,19 @@ NAMING
 Every key is prefixed `pyoneer_`. That is not decoration: pytmx RAISES
 ValueError and makes the whole map unloadable if a custom property collides
 with one of its own attribute names (`data`, `name`, `width`, `height`,
-`visible`, `opacity`, `offsetx`, `offsety`, `parent`, `properties`, `id`) --
-measured, and it does not warn or skip.
+`visible`, `opacity`, `rotation`, `append`, ...) -- measured, and it does not
+warn or skip. `RESERVED`, re-exported below, is the whole set.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-from scripts.core.layer_profile import KNOWN as ENGINE_KNOWN, PREFIX  # noqa: F401
+from scripts.core.layer_profile import (  # noqa: F401
+    KNOWN as ENGINE_KNOWN,
+    PREFIX,
+    RESERVED,
+)
 
 # The passability vocabulary. Defined ONCE, on the engine side, and re-exported
 # here because everything in `editor/` already imports these names from this
@@ -56,13 +60,17 @@ from scripts.core.collision_runtime import (  # noqa: F401
     mask_to_gid,
 )
 
-# pytmx attribute names a custom property may never shadow. Documented here
-# because the failure is total -- the map stops loading -- and silent until
-# it happens.
-RESERVED = frozenset({
-    "data", "name", "width", "height", "visible", "opacity",
-    "offsetx", "offsety", "parent", "properties", "id",
-})
+# `RESERVED` -- every pytmx attribute name a custom property may never shadow
+# -- is RE-EXPORTED from `scripts/core/layer_profile.py` in the import above,
+# not declared here. It was declared here, as eleven remembered names, while
+# the one module that could enforce it at the document door --
+# `scripts/loaders/map_document.py` -- was forbidden to read it (law 2), so
+# the fact sat on the wrong side of the boundary from the code that needed
+# it. It is also longer than eleven: pytmx gives an object a default
+# `rotation` and a layer a default `opacity` whether the file writes them or
+# not, and its layer classes subclass `list`, so `rotation`, `opacity` and
+# `append` are all fatal too. The set is measured off pytmx by
+# `tools/check_tmx_roundtrip.py` rather than remembered.
 
 
 @dataclass(frozen=True)

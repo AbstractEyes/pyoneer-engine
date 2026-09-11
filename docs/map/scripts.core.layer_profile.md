@@ -5,7 +5,7 @@
 
 > What a map layer declares about itself, read at load time.
 
-`scripts.core.layer_profile` · 156 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.layer_profile` · 211 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
@@ -21,27 +21,28 @@
 - `scripts/core/layer_profile.py:34` `KNOWN` #TAG:layer_profile.KNOWN
 - `scripts/core/layer_profile.py:37` `STATIC` #TAG:STATIC
 - `scripts/core/layer_profile.py:38` `DYNAMIC` #TAG:DYNAMIC
-- `scripts/core/layer_profile.py:71` `DEFAULT` #TAG:DEFAULT
+- `scripts/core/layer_profile.py:68` `RESERVED` #TAG:RESERVED
+- `scripts/core/layer_profile.py:126` `DEFAULT` #TAG:DEFAULT
 
 ## Functions
 
-- `scripts/core/layer_profile.py:74` `_number(properties: dict, key: str, fallback: float) -> float` #TAG:layer_profile._number
-- `scripts/core/layer_profile.py:86` `_flag(properties: dict, key: str, fallback: bool) -> bool` #TAG:layer_profile._flag
-- `scripts/core/layer_profile.py:93` `read(layer) -> LayerProfile` #TAG:layer_profile.read
+- `scripts/core/layer_profile.py:129` `_number(properties: dict, key: str, fallback: float) -> float` #TAG:layer_profile._number
+- `scripts/core/layer_profile.py:141` `_flag(properties: dict, key: str, fallback: bool) -> bool` #TAG:layer_profile._flag
+- `scripts/core/layer_profile.py:148` `read(layer) -> LayerProfile` #TAG:layer_profile.read
   - Read a pytmx layer's declared profile. Never raises.
-- `scripts/core/layer_profile.py:106` `read_properties(properties: dict) -> LayerProfile` #TAG:read_properties
+- `scripts/core/layer_profile.py:161` `read_properties(properties: dict) -> LayerProfile` #TAG:read_properties
   - The same reading, from a plain mapping rather than from a layer.
-- `scripts/core/layer_profile.py:137` `parallax_view(view, parallax: tuple[float, float], full_width: int, full_height: int)` #TAG:parallax_view
+- `scripts/core/layer_profile.py:192` `parallax_view(view, parallax: tuple[float, float], full_width: int, full_height: int)` #TAG:parallax_view
   - Where a parallaxed layer should sample from, clamped to its surface.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class LayerProfile` #TAG:layer_profile.LayerProfile
 
-`scripts/core/layer_profile.py:42`–`68`
+`scripts/core/layer_profile.py:97`–`123`
 
 > A layer's declared behaviour, with defaults already applied.
 
-- `scripts/core/layer_profile.py:54` `@property static(self) -> bool` #TAG:layer_profile.LayerProfile.static
+- `scripts/core/layer_profile.py:109` `@property static(self) -> bool` #TAG:layer_profile.LayerProfile.static
   - May this layer be flattened into the map plane with its neighbours?
-- `scripts/core/layer_profile.py:67` `@property parallaxed(self) -> bool` #TAG:layer_profile.LayerProfile.parallaxed
+- `scripts/core/layer_profile.py:122` `@property parallaxed(self) -> bool` #TAG:layer_profile.LayerProfile.parallaxed

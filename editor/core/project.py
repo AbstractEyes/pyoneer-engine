@@ -277,6 +277,30 @@ class DataTable:
 # The project
 # --------------------------------------------------------------------------
 
+def _opened_scripts(project: "Project"):
+    """The project's event-script library IF one was ever opened, else None.
+
+    THE DEFERRED IMPORT IS THE POINT, not an accident of tidiness.
+    `editor/core/event_script.py` imports `PROJECT_DIR` from this module at
+    import time, so this module cannot import it back at import time. The
+    import lives inside the call instead, which is also where it is cheap:
+    a project that never touches a script never pays for the module.
+
+    IT LOOKS THE LIBRARY UP AND NEVER MAKES ONE. `event_script.scripts_of`
+    CONSTRUCTS a library, and constructing one reads and parses every
+    `data/project/scripts/*.json` -- and RAISES on a malformed file. Calling
+    that from `dirty`, which the window asks on every title refresh and on
+    the way out, would turn a broken script file into an editor that cannot
+    close. So the three methods below ask only whether a library exists:
+    a project that HAS one saves it and counts it, and a project that never
+    asked has nothing in memory that could be dirty and nothing to write.
+    That is the same invariant the wire had while it lived in
+    `event_script.py` as a `__class__` swap, stated once instead of twice.
+    """
+    from editor.core import event_script          # deferred -- see above
+    return event_script.opened_scripts(project)
+
+
 class Project:
     """Everything the editor can address, rooted at a repo checkout."""
 
@@ -390,6 +414,32 @@ class Project:
     def dirty_tables(self) -> list[str]:
         return sorted(n for n, t in self.__tables.items() if t.dirty)
 
+    # -- event scripts -----------------------------------------------------
+
+    def dirty_scripts(self) -> list[str]:
+        """Every event script that is not on disk as the session has it.
+
+        A DELETION COUNTS, and that is why this is not just the library's
+        own `dirty_scripts()`. `script.delete` removes the document from
+        memory and remembers the id in `removed`; the `.json` is still on
+        disk and the save is what unlinks it. So a session whose only change
+        is a delete has nothing "dirty" and is still not on disk, and the
+        close prompt has to be able to say so.
+
+        THE INVARIANT THIS EXISTS TO KEEP: `dirty` is exactly
+        `bool(dirty_maps() + dirty_tables() + dirty_scripts())`, so the
+        prompt's LISTING and the flag that raises the prompt cannot
+        disagree. They did, for one pass, in the direction that is hardest
+        to notice -- `MainWindow.closeEvent` asked `session.dirty`, which
+        had learned about scripts, and then listed
+        `dirty_maps() + dirty_tables()`, which had not, so a script-only
+        session was told "0 documents have changes that are not on disk:"
+        and shown an empty list. Work was not lost; the sentence was.
+        """
+        library = _opened_scripts(self)
+        return [] if library is None else sorted(
+            set(library.dirty_scripts()) | set(library.removed))
+
     # -- genre -------------------------------------------------------------
 
     def set_genre(self, pack: GenrePack) -> GenrePack:
@@ -404,7 +454,25 @@ class Project:
     # -- persistence -------------------------------------------------------
 
     def save(self) -> list[str]:
-        """Write every dirty document. Returns the paths written."""
+        """Write every dirty document. Returns the paths written.
+
+        EVERY DOCUMENT KIND, and the third one was missing for a whole pass.
+        Maps and tables were written here and event scripts were not, so
+        `New... -> signpost -> Create`, `Ctrl+S`, close, run the game gave
+        `PyoneerAssetMissingError: event script 'signpost' not found` -- the
+        MAP half of a two-document transaction on disk and the SCRIPT half
+        never written. The loss is not "my work is gone" but "my game is
+        broken and the editor said nothing", and the corruption landed in
+        the file that DID save.
+
+        WHY NO CHECK SAW IT, which is the part worth keeping. Six callers of
+        `ScriptLibrary.save()` existed and all six were in `tools/`, each
+        reaching past the editor to call the writer directly. Calling the
+        writer proves the writer works, which was never in doubt; it is
+        structurally incapable of noticing that nothing else calls it. That
+        is why `tools/check_script_verbs.py` section 9 drives `Session.save()`
+        and `session.dirty` and never `library.save()`.
+        """
         written: list[str] = []
         os.makedirs(self.tables_dir, exist_ok=True)
 
@@ -428,11 +496,22 @@ class Project:
         with open(meta_path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(json.dumps(self.meta, indent=2, sort_keys=True) + "\n")
         written.append(meta_path)
+
+        library = _opened_scripts(self)
+        if library is not None:
+            written.extend(library.save())
         return written
 
     @property
     def dirty(self) -> bool:
-        return bool(self.dirty_maps() or self.dirty_tables())
+        """True while any document kind is off disk. A script is a document.
+
+        Read the three listings rather than asking each kind its own
+        question, so this and `MainWindow.closeEvent`'s listing are the same
+        sentence and cannot drift apart -- see `dirty_scripts`.
+        """
+        return bool(self.dirty_maps() or self.dirty_tables()
+                    or self.dirty_scripts())
 
     # -- loading -----------------------------------------------------------
 

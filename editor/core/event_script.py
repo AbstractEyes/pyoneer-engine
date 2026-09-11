@@ -779,10 +779,19 @@ def scripts_of(project) -> ScriptLibrary:
     is then refused for the reason it should be -- nothing declares it --
     rather than for a wiring reason the author cannot act on.
 
-    Held beside the project rather than on it, because `editor/core/project.py`
-    is not this track's file to change. The day it is, this becomes
-    `project.scripts`, `Project.save()` grows one line and `Project.dirty`
-    grows one term -- see the `script.*` section of `editor/core/verbs.py`.
+    Held BESIDE the project rather than on it, and the reason is law 2's
+    corollary rather than convenience: `editor/core/project.py` must not
+    import this module at import time, because this module imports it. The
+    project reaches a library the other way round -- `Project.save`,
+    `Project.dirty` and `Project.dirty_scripts` call `opened_scripts` below
+    through a deferred import -- so the wire is one direction and the
+    lookup is the other.
+
+    THIS IS THE ONLY DOOR THAT MAKES ONE. Anything that reaches a library
+    comes through here, so "a project has a library" and "a project saves
+    its scripts" cannot come apart: `Project.save` writes whatever library
+    exists, and a project that never asked has none, nothing dirty and
+    nothing to write, which is the same answer by a shorter road.
     """
     library = _LIBRARIES.get(project)
     if library is None:
@@ -794,9 +803,29 @@ def scripts_of(project) -> ScriptLibrary:
     return library
 
 
+def opened_scripts(project) -> "ScriptLibrary | None":
+    """The library this project already has, or None if it never asked.
+
+    `Project.save`, `Project.dirty` and `Project.dirty_scripts` call this
+    and never `scripts_of`, and the difference is the whole reason it
+    exists: `scripts_of` CONSTRUCTS, and constructing reads and parses every
+    `data/project/scripts/*.json` and RAISES on a malformed one. `dirty` is
+    asked on every window-title refresh and on the way out, so making it
+    construct would turn one broken script file into an editor that cannot
+    close -- and would do it at the exact moment the author is trying to
+    leave with their work.
+
+    A project with no library has nothing in memory that could be dirty and
+    nothing to write, so None and "an empty library" are the same answer and
+    the cheaper one is correct.
+    """
+    return _LIBRARIES.get(project)
+
+
 __all__ = [
     "ALWAYS_ON_A_PAGE", "CONTROL_KINDS", "NO_ANCHOR", "PAGE_DEFAULTS",
     "SCRIPTS_SUBDIR", "SCRIPT_TRIGGERS", "SETTABLE_PAGE_KEYS",
     "SETTABLE_SCRIPT_KEYS", "NodeSite", "ScriptDocument", "ScriptLibrary",
-    "edit", "node_value", "scripts_of", "settable_node_keys",
+    "edit", "node_value", "opened_scripts", "scripts_of",
+    "settable_node_keys",
 ]

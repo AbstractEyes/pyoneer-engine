@@ -1140,6 +1140,14 @@ class EditorWindow(QMainWindow):
         warning together. A refusal is not a failure -- "no, lose it" is an
         answer, and it closes.
 
+        THE LISTING AND THE FLAG ARE ONE SENTENCE. The question asked here
+        is raised by `session.dirty` and answered by three listings, so the
+        two have to be the same fact or the prompt lies. They were not, for
+        one pass: `dirty` learned about event scripts and the listing did
+        not. `Project.dirty` is composed from the same three listings now --
+        see `Project.dirty_scripts` -- which is why this reads three methods
+        instead of asking each document kind its own question here.
+
         It is also where the ARRANGEMENT is remembered. `__save_layout` runs
         on each of the two paths that really close and on neither of the two
         that do not, so a window held open by a failed save does not record
@@ -1157,7 +1165,17 @@ class EditorWindow(QMainWindow):
             event.accept()
             return
         project = self.session.project
-        unsaved = project.dirty_maps() + project.dirty_tables()
+        # ALL THREE KINDS, and the third was missing while `session.dirty`
+        # already knew about it: a session dirty ONLY because of an event
+        # script prompted correctly and then said "0 documents have changes
+        # that are not on disk:" over an empty list. Nothing was lost -- Yes
+        # saved the script too -- but the sentence was, which is the worse
+        # half of the pair to get wrong, because it is the one the author
+        # reads before deciding. `Project.dirty` is now exactly
+        # `bool(dirty_maps() + dirty_tables() + dirty_scripts())`, so this
+        # list is empty only when the branch above has already returned.
+        unsaved = (project.dirty_maps() + project.dirty_tables()
+                   + project.dirty_scripts())
         listing = "\n".join(f"  {name}" for name in unsaved)
         many = len(unsaved) != 1
         if self.confirm(

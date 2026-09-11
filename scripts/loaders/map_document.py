@@ -89,6 +89,7 @@ from dataclasses import dataclass
 from typing import Any, Iterator
 
 from scripts.core.errors import PyoneerAssetMissingError, PyoneerConfigError, warn_content
+from scripts.core.layer_profile import PREFIX, RESERVED
 from scripts.core.log import trace_assets
 
 
@@ -118,6 +119,24 @@ _DECLARATION_RE = re.compile(rb"\A(<\?xml[^>]*\?>)(\r\n|\r|\n)?")
 _DEFAULT_DECLARATION = b'<?xml version="1.0" encoding="UTF-8"?>'
 _CSV_TOKEN_RE = re.compile(r"\d+")
 _TRAILING_INDENT_RE = re.compile(r"[ \t]*\Z")
+
+# XML 1.0 (5th ed.) `Name`, transcribed from the grammar rather than guessed
+# at. `_serialize` interpolates an attribute name straight into the output
+# with no escaping -- an attribute NAME has no escape, unlike its value -- so
+# a name outside this production writes bytes that no XML parser can read
+# back, including this module's own loader. That is the one place a writer
+# can destroy the round-trip contract by writing, so the one door that takes
+# a caller-supplied name checks it here. Every other name this module emits
+# is a literal in this file or came back out of a parser that already
+# enforced the same production.
+_NAME_START = (
+    ":A-Z_a-z"
+    "\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u02ff\u0370-\u037d\u037f-\u1fff"
+    "\u200c-\u200d\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf"
+    "\ufdf0-\ufffd\U00010000-\U000effff"
+)
+_NAME_REST = _NAME_START + "\\-.0-9\u00b7\u0300-\u036f\u203f-\u2040"
+_XML_NAME_RE = re.compile("[%s][%s]*" % (_NAME_START, _NAME_REST))
 
 
 def _escape_text(text: str) -> str:
@@ -279,6 +298,54 @@ class MapProperties:
         return "MapProperties(%r)" % (self.as_dict(),)
 
     def __setitem__(self, name: str, value: Any) -> None:
+        """Write one custom property, typed.
+
+        The mirror of `MapObject.set`, and refusing the mirror refusal is
+        the whole reason this branch exists: pytmx casts an element's XML
+        attributes onto itself first and then RAISES on any `<property>`
+        whose name it now shadows, so `<layer name="Floor">` plus
+        `<property name="name">` is an unloadable map -- measured, for every
+        owner kind this view is used on. The collision is symmetric, so a
+        guard on the attribute door alone would leave the map exactly as
+        unloadable, which is this repository's most-repeated defect shape.
+
+        AND THE CLASS-LEVEL NAMES, which `attrib` cannot see. pytmx gives an
+        object a default `rotation` and a layer a default `opacity` whether
+        the file writes them or not, and `TiledTileLayer` subclasses `list`,
+        so `rotation`, `opacity` and `append` are all fatal on elements whose
+        `attrib` holds none of them. `RESERVED` in
+        `scripts/core/layer_profile.py` is that set, measured off pytmx by
+        `tools/check_tmx_roundtrip.py` rather than remembered, and the editor
+        RE-EXPORTS it from there (law 2's corollary: one home, not two).
+        It lived in `editor/core/layers.py` while this door had no guard at
+        all -- which meant the one module that could enforce it was the one
+        module forbidden to read it.
+
+        Unlike an attribute name, a property name needs no XML-name check:
+        it is written into an attribute VALUE (`<property name="...">`),
+        which `_escape_attribute` escapes, so a name no XML parser would
+        accept as an element name still round-trips here. Measured.
+        """
+        if name in self._owner.attrib or name in RESERVED:
+            tag = self._owner.tag
+            carried = name in self._owner.attrib
+            where = ("already carries %r as an XML attribute" % name
+                     if carried else
+                     "is a pytmx element, and %r is a name pytmx puts on one"
+                     % name)
+            if name.startswith(PREFIX):
+                remedy = ("Delete that attribute from the element -- nothing "
+                          "should have written it, and MapObject.set refuses "
+                          "a %r name now." % (PREFIX,))
+            else:
+                remedy = ("Law 1's answer is the prefix: name it %s%s."
+                          % (PREFIX, name))
+            raise PyoneerConfigError(
+                f"<{tag}> {where}, so a <property> of the same name makes the "
+                f"map unloadable: pytmx sets every attribute on the element "
+                f"first and then RAISES on any property that shadows one of "
+                f"its own names. {remedy}",
+                source=self._document.path, element=tag)
         type_name, text = format_property(value)
         entry = self._find(name)
         if entry is None:
@@ -552,6 +619,74 @@ class MapObject:
         return MapProperties(self._document, self.element)
 
     def set(self, key: str, value: Any) -> None:
+        """Write a built-in `<object>` XML ATTRIBUTE -- `x`, `y`, `name`, `gid`.
+
+        NOT the door for a custom property, and the distinction is not
+        cosmetic. `<object pyoneer_script="greeting">` and an `<object>`
+        carrying `<property name="pyoneer_script" .../>` are different
+        documents: pytmx casts every XML attribute onto the `TiledObject` as
+        a plain Python attribute and leaves `obj.properties` empty, and the
+        engine reads `obj.properties` everywhere. Measured -- the map still
+        loads, the write looks like it took, and nothing reads it. That is
+        law 7's failure shape written into a file.
+
+        The other half is law 1's stated cost arriving through a sanctioned
+        writer. pytmx sets the attributes FIRST and then refuses any
+        `<property>` whose name it now shadows, so the same call on a name
+        the object already carries as a property raises `ValueError:
+        Reserved names and duplicate names are not allowed` and the whole
+        map stops loading. Which half an author gets depends only on whether
+        the property has been written yet, so the silent write today is the
+        unloadable map the first time somebody uses the correct door.
+
+        Three refusals, and none of them is a table anyone has to keep:
+
+          1. a `pyoneer_`-prefixed name. The prefix MEANS custom property,
+             so it is decidable with no lookup at all. It refuses rather
+             than quietly rerouting to `.properties[...]`: two methods doing
+             one job is how the next author stops being able to tell which
+             one they used.
+          2. a name this element already carries as a `<property>` -- the
+             fatal collision above, read off the document rather than
+             guessed at.
+          3. a name outside `_XML_NAME_RE`, because `_serialize` writes an
+             attribute name with no escaping and a bad one produces bytes
+             this module's own loader cannot parse back. The ParseError
+             arrives at the next load, names a column, and names nothing
+             that would find the caller.
+
+        All three are checked BEFORE the write, so a refused call leaves the
+        document byte-identical -- a refusal that has already mutated the
+        tree is worse than none.
+
+        `MapProperties.__setitem__` refuses the mirror image, a property
+        named after an attribute the same element already carries, so
+        neither door can build the collision the other one is refusing.
+        """
+        if key.startswith(PREFIX):
+            raise PyoneerConfigError(
+                f"{key!r} starts with {PREFIX!r}, so it is a custom PROPERTY "
+                f"and never an <object> attribute. Written here it lands in "
+                f"the element's attribute list, where the engine never looks "
+                f"-- and makes the map unloadable the moment the real "
+                f"property is added. Write "
+                f"object.properties[{key!r}] = ... instead (the editor verb "
+                f"is map.object.property.set).",
+                source=self._document.path, object_id=self.id)
+        if key in self.properties:
+            raise PyoneerConfigError(
+                f"this object already carries {key!r} as a custom property, "
+                f"and pytmx RAISES on a map where an attribute and a property "
+                f"share a name -- the whole map stops loading, naming neither. "
+                f"Write object.properties[{key!r}] = ... instead, or delete "
+                f"the property first.",
+                source=self._document.path, object_id=self.id)
+        if _XML_NAME_RE.fullmatch(key) is None:
+            raise PyoneerConfigError(
+                f"{key!r} is not a legal XML attribute name, so the bytes it "
+                f"would write cannot be parsed back -- not by Tiled, not by "
+                f"pytmx, and not by MapDocument.load.",
+                source=self._document.path, object_id=self.id)
         self.element.set(key, _attribute_text(value))
         self._document._touch()
 

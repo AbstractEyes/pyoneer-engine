@@ -30,6 +30,10 @@ that nothing exercises is not exercised by playing the game either:
      every editor surface reaches a library through -- hands the library
      what `data/project/scenes/*.json` declares, so a script naming a
      variable can be opened by the editor and not only run by the game
+  8. the SAVE WIRE (section 9): authoring a script makes the SESSION dirty
+     and the editor's own save puts the `.json` on disk, so a map that
+     names a script and the script itself reach the disk together and the
+     next boot of the game finds what the map references
 
 EVERY ASSERTION IS A PAIR
 -------------------------
@@ -53,6 +57,17 @@ wiring hands over a schema and that the library opens whatever is on disk --
 so they survive a renamed script and die on a broken seam. Every tooth in
 that section is on a fixture built here.
 
+NEVER CALL THE WRITER YOU ARE TRYING TO PROVE IS CALLED
+------------------------------------------------------
+Section 6 calls `library.save()` on purpose: it is about what the writer
+WRITES. Section 9 is about whether anything calls it, so it never touches
+that method -- it drives `Session.save()` and `session.dirty`, the two
+things `MainWindow.save()` and `MainWindow.closeEvent` call and nothing
+else. The distinction is not pedantry: `ScriptLibrary.save()` had six
+callers in this tree and all six were in `tools/`, four of them in section
+6, while the editor called it nowhere and an authored script was lost on
+every close.
+
 No Qt. pygame arrives through `scripts.game.flow.ops`, which is what holds
 the op registry the node verbs validate against.
 """
@@ -72,6 +87,7 @@ from scripts.loaders import script_file as sf
 from editor.core import event_script
 from editor.core.commands import Command
 from editor.core.errors import PyoneerCommandApplyError
+from editor.core.project import Project
 from editor.core.scope import SCOPE_KINDS, Scope
 from editor.core.session import Session
 from scripts.game.flow import ops as op_registry
@@ -1048,6 +1064,288 @@ lib, refused = opened(DISAGREE, genre_id="topdown_rpg")
 expect("...and two that CONTRADICT are refused, naming both files",
        (lib is None, "one.json" in refused, "two.json" in refused),
        (True, True, True))
+
+# --------------------------------------------------------------------------
+section("9. the wire: the editor's own save writes the scripts too")
+# --------------------------------------------------------------------------
+# THE DEFECT THIS CLOSES WAS MEASURED BY PLAYING THE EDITOR, in four gestures:
+#
+#   object screen -> Script row -> New... -> id 'signpost' -> Create
+#   Ctrl+S        wrote ['starter.tmx', 'project.json']
+#   close         session.dirty was False, so the window took its "not dirty"
+#                 branch and closed with no prompt at all
+#   run the game  PyoneerAssetMissingError: event script 'signpost' not found
+#
+# One gesture and a Ctrl+S, and the shipped game no longer booted: the MAP
+# half of a two-document transaction reached the disk and the SCRIPT half did
+# not. Work lost, silently, and the corruption landed in a file that DID get
+# saved.
+#
+# WHY NOTHING IN THIS TREE SAW IT, AND WHY THESE ROWS LOOK LIKE THEY DO.
+# `ScriptLibrary.save()` had six callers and ALL SIX WERE IN `tools/` --
+# section 6 above is four of them. Calling the writer proves the WRITER
+# works, which was never in doubt; no number of such rows can see that
+# nothing ELSE calls it. So not one row below calls `library.save()`,
+# `library.dirty` or `Project.save`: they drive `Session.save()` and
+# `session.dirty`, which are exactly and only what `MainWindow.save()` and
+# `MainWindow.closeEvent` call. They assert the WIRE and never its address,
+# so they keep passing the day it moves into `Project` itself.
+
+WIRE_MAP = b"""<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" \
+renderorder="right-down" width="2" height="2" tilewidth="16" tileheight="16" \
+infinite="0" nextlayerid="3" nextobjectid="2">
+ <layer id="1" name="Floor" width="2" height="2">
+  <data encoding="csv">
+0,0,
+0,0
+</data>
+ </layer>
+ <objectgroup id="2" name="entity">
+  <object id="1" name="hero" class="GamePlayer" x="16" y="16" width="16" \
+height="16"/>
+ </objectgroup>
+</map>
+"""
+
+SIGNPOST = "signpost"
+SIGN_SCOPE = Scope.of(("script", SIGNPOST))
+HERO = Scope.parse("map:yard/layer:entity/object:1")
+
+
+def yard(**kw) -> str:
+    """A throwaway project holding one map with one object on it.
+
+    `project_at` builds the project; this adds the map and registers it, so
+    every row below runs on a fixture this file wrote (law 4). No tileset:
+    the object is what carries `pyoneer_script`, and a `<tileset>` would only
+    add art nobody looks at.
+    """
+    root = project_at(**kw)
+    os.makedirs(os.path.join(root, "data", "maps"))
+    with open(os.path.join(root, "data", "maps", "yard.tmx"), "wb") as handle:
+        handle.write(WIRE_MAP)
+    with open(os.path.join(root, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": [{"name": "yard", "identifier": "yard",
+                             "file": "data/maps/yard.tmx"}]}, handle)
+    return root
+
+
+def authored(root: str):
+    """The two-document transaction the object screen's `New...` sends.
+
+    One `session.run`, exactly as the window does it: the script is created
+    and the object that will run it is pointed at it in the same undoable
+    step. Returns the session.
+    """
+    editing = Session.open(root, genre_id="topdown_rpg")
+    editing.run([Command("script.create", SIGN_SCOPE,
+                         {"title": "The signpost"}),
+                 Command("map.object.property.set", HERO,
+                         {"key": sf.SCRIPT_PROPERTY, "value": SIGNPOST})])
+    return editing
+
+
+def boot(root: str):
+    """What the GAME does with what is on disk: (id, "") or (None, why).
+
+    `load_scripts` and `script_of` are the engine's own two -- the second is
+    THE one reader of `pyoneer_script`, the function both spawn routes call --
+    so this is the boot join and not a rehearsal of it. The map is re-read
+    from disk through a fresh project, because a document still open in the
+    editor is not evidence about a file.
+    """
+    project_dir = os.path.join(root, "data", "project")
+    scripts = sf.load_scripts(
+        os.path.join(project_dir, "scripts"),
+        variables=sf.load_vars(os.path.join(project_dir, "scenes")))
+    found = Session.open(root, genre_id="topdown_rpg").project
+    obj = found.map("yard").object_layer("entity").objects()[0]
+    try:
+        return sf.script_of(scripts, obj.properties.as_dict(),
+                            "tmx object id=%d on layer 'entity'" % obj.id), ""
+    except Exception as exc:                                    # noqa: BLE001
+        return None, str(exc)
+
+
+def basenames(paths) -> list[str]:
+    return sorted(os.path.basename(p) for p in paths)
+
+
+# -- the dirty half, isolated from the map so it cannot borrow its answer --
+
+WIRED = yard()
+made.append(WIRED)
+wired = Session.open(WIRED, genre_id="topdown_rpg")
+expect("a project with nothing authored is not dirty", wired.dirty, False)
+wired.run(Command("script.create", SIGN_SCOPE, {"title": "The signpost"}))
+expect("authoring a script ALONE makes the session dirty, so the close "
+       "prompt fires instead of the window closing silently",
+       (wired.dirty, wired.project.dirty_maps(), wired.project.dirty_tables()),
+       (True, [], []))
+# Measured while writing this row, which first asserted that undo CLEANS the
+# session. It does not, and the three document kinds do not agree about why:
+# `MapDocument.changed` re-serialises and compares bytes, so undoing a map
+# edit really does clean it, while a table's `dirty` and a script's are
+# sticky flags set at the mutation. A script created and undone therefore
+# leaves the session dirty until a save -- which then writes nothing for it
+# and clears. That is the conservative answer and it matches the neighbour a
+# script most resembles; the row pins which model is in force rather than
+# asserting the one it would prefer, because an undocumented disagreement
+# between two kinds is how the next pass loses an afternoon.
+expect("...undo does not clean it: a script's dirtiness is a FLAG set at "
+       "the mutation, like a table's, not the byte comparison a map's is",
+       (wired.undo() is not None, wired.dirty), (True, True))
+
+# -- the same transaction, undone, leaves the map byte-identical -----------
+# Not a detour from the wire: `New...` writes `pyoneer_script` onto an object
+# the file wrote SELF-CLOSING, and the inverse -- `map.object.property.remove`
+# -- empties the `<properties>` container that write created. Measured before
+# this row existed: the undo left `<object ...>\n   </object>` where the file
+# said `<object .../>`, two lines of diff on a declare-then-undo that must
+# leave none. The sibling verb one screenful away, `map.object.action.unset`,
+# had carried the guard for that since the day it was written, with the
+# reason in a comment; the property route grew without it. Sighting again.
+
+EXACT = yard()
+made.append(EXACT)
+exact = Session.open(EXACT, genre_id="topdown_rpg")
+with open(os.path.join(EXACT, "data", "maps", "yard.tmx"), "rb") as handle:
+    on_disk = handle.read()
+expect("the fixture's object is written self-closing, so the row has "
+       "something to get wrong", b'height="16"/>' in on_disk, True)
+exact.run([Command("script.create", SIGN_SCOPE, {"title": "The signpost"}),
+           Command("map.object.property.set", HERO,
+                   {"key": sf.SCRIPT_PROPERTY, "value": SIGNPOST})])
+expect("...the transaction really does change the map",
+       exact.project.map("yard").to_bytes() != on_disk, True)
+exact.undo()
+expect("...and one undo puts the map back BYTE for byte, self-closing "
+       "`<object/>` and all",
+       exact.project.map("yard").to_bytes(), on_disk)
+expect("...so the map is not dirty any more either, which is the other half "
+       "of the same fact: `MapDocument.changed` compares the bytes",
+       exact.project.dirty_maps(), [])
+
+
+# -- the save half, and no document kind left behind -----------------------
+
+wired.run([Command("script.create", SIGN_SCOPE, {"title": "The signpost"}),
+           Command("map.object.property.set", HERO,
+                   {"key": sf.SCRIPT_PROPERTY, "value": SIGNPOST})])
+script_path = os.path.join(WIRED, "data", "project", "scripts",
+                           "%s.json" % SIGNPOST)
+expect("nothing is on disk before the save", os.path.isfile(script_path),
+       False)
+written = wired.save()
+expect("ONE save writes the map, the script and project.json -- both halves "
+       "of the transaction reach the disk together",
+       basenames(written), ["project.json", "signpost.json", "yard.tmx"])
+expect("...and the session is clean afterwards, so the window closes "
+       "without asking", (wired.dirty, os.path.isfile(script_path)),
+       (False, True))
+expect("a second save writes no script, because nothing is dirty",
+       [p for p in wired.save() if os.path.basename(p).startswith(SIGNPOST)],
+       [])
+
+# -- the acceptance test: a fresh boot finds what the map names ------------
+
+expect("and the whole point: a fresh boot of the game finds the script the "
+       "map references", boot(WIRED), (SIGNPOST, ""))
+
+# -- the negative half: the exact defect, reproduced ------------------------
+# The map saved and the script not is not a hypothetical -- it is what the
+# editor did for a whole pass, so it is arranged here by hand: the map
+# document is written on its own, which is all `Project.save` did while
+# nothing wrote the library.
+
+LOST = yard()
+made.append(LOST)
+lost = authored(LOST)
+lost.project.map("yard").save()
+lost_id, lost_refusal = boot(LOST)
+expect("with the map saved and the script NOT, the boot REFUSES, naming the "
+       "script it cannot find",
+       (lost_id, SIGNPOST in lost_refusal, "event script" in lost_refusal),
+       (None, True, True))
+lost.save()
+expect("...and the positive control: the same project, saved through the "
+       "editor, boots", boot(LOST), (SIGNPOST, ""))
+
+# -- delete reaches the disk through the same save -------------------------
+
+lost_path = os.path.join(LOST, "data", "project", "scripts",
+                         "%s.json" % SIGNPOST)
+lost.run(Command("script.delete", SIGN_SCOPE, {"confirm": True}))
+expect("a delete leaves the file alone and makes the session dirty",
+       (os.path.isfile(lost_path), lost.dirty), (True, True))
+lost.save()
+expect("...and the editor's own save is what removes it",
+       (os.path.isfile(lost_path), lost.dirty), (False, False))
+lost.undo()
+lost.save()
+expect("...and undo plus one save puts the document back on disk",
+       (os.path.isfile(lost_path), lost.dirty), (True, False))
+
+# -- the listing and the flag are ONE sentence -----------------------------
+# The close prompt asks `session.dirty` and then lists what is unsaved, and
+# for one pass those were two different facts: `dirty` had learned about
+# event scripts and the listing had not, so a script-only session was told
+# "0 documents have changes that are not on disk:" over an empty list. Work
+# survived -- Yes saved the script too -- but the sentence the author reads
+# before deciding was false, which is the worse half of the pair to lose.
+#
+# `Project.dirty` is composed from `dirty_maps() + dirty_tables() +
+# dirty_scripts()` now, so the two cannot come apart. These rows drive the
+# three listings and the flag and never name where the code lives -- the
+# same rows passed while the wire was a `__class__` swap in
+# `event_script.py`, which is how that move was proved safe on the way to
+# its permanent home in `editor/core/project.py`.
+
+LISTED = yard()
+made.append(LISTED)
+listed = Session.open(LISTED, genre_id="topdown_rpg")
+expect("a project with nothing authored lists no script and is not dirty",
+       (listed.project.dirty_scripts(), listed.dirty), ([], False))
+listed.run(Command("script.create", SIGN_SCOPE, {"title": "The signpost"}))
+expect("an authored script is NAMED in the listing the close prompt shows",
+       (listed.project.dirty_scripts(), listed.dirty), ([SIGNPOST], True))
+expect("...and `dirty` is exactly those three listings, so the prompt and "
+       "the flag that raises it cannot disagree",
+       (listed.dirty, bool(listed.project.dirty_maps()
+                           + listed.project.dirty_tables()
+                           + listed.project.dirty_scripts())), (True, True))
+listed.save()
+expect("...and one save empties both halves of that sentence",
+       (listed.project.dirty_scripts(), listed.dirty), ([], False))
+listed.run(Command("script.delete", SIGN_SCOPE, {"confirm": True}))
+expect("A DELETION IS LISTED TOO, and it is the case the library's own "
+       "`dirty_scripts()` cannot see: the document is gone from memory so "
+       "nothing is dirty, the `.json` is still on disk, and the session is "
+       "still not saved",
+       (listed.project.dirty_scripts(), listed.dirty), ([SIGNPOST], True))
+
+# -- the project is still a plain project ----------------------------------
+# The anti-regression for the road not taken. The wire was a `Project`
+# subclass swapped in at `scripts_of` while `editor/core/project.py` belonged
+# to another track; both halves now live in `Project` itself, so an editor
+# project is a plain `Project` whether it has scripts or not, and a project
+# that never asks for a library is left exactly as it was found.
+
+UNASKED = project_at()
+made.append(UNASKED)
+unasked = Session.open(UNASKED, genre_id="topdown_rpg")
+expect("a project with scripts and a project without are both plain "
+       "`Project`s -- no subclass, no `__class__` swap",
+       (isinstance(wired.project, Project), type(wired.project) is Project,
+        type(unasked.project) is Project), (True, True, True))
+expect("...and a project that never asks for a library counts none and "
+       "writes none, so the wire costs a scriptless project nothing",
+       (unasked.project.dirty_scripts(),
+        [os.path.basename(q) for q in unasked.save()
+         if ("scripts" + os.sep) in q]), ([], []))
+
 
 for root in made:
     shutil.rmtree(root, ignore_errors=True)

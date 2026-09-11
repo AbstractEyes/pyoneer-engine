@@ -37,6 +37,61 @@ KNOWN: tuple[str, ...] = (DEPTH, MOTION, PARALLAX_X, PARALLAX_Y, OPACITY,
 STATIC = "static"
 DYNAMIC = "dynamic"
 
+# Every name a tmx custom PROPERTY may never take, on any element.        #TAG:pytmx_reserved_names
+#
+# THE OTHER HALF OF THE PREFIX RULE ABOVE, and the reason it lives beside
+# it: pytmx casts every XML ATTRIBUTE of an element onto the element as a
+# Python attribute FIRST, and only then checks each custom property with a
+# bare `hasattr`. So a `<property name="visible">` on a layer, a
+# `<property name="rotation">` on an object and a `<property name="append">`
+# on an object group all raise `ValueError: Reserved names and duplicate
+# names are not allowed` and the WHOLE MAP stops loading -- not that layer,
+# not that object.
+#
+# `rotation` and `append` are in that list for two different reasons, and
+# both are why this is not the short obvious set somebody types from memory.
+# `rotation` is an attribute pytmx gives every object a DEFAULT for, so it is
+# reserved on an object that does not carry it in its `attrib` at all;
+# `append` is there because `TiledTileLayer` and `TiledObjectGroup` subclass
+# `list`. A guard reading only the element's own attributes misses both.
+#
+# THE UNION across every element kind, deliberately, rather than one set per
+# kind: law 1 says an authored property is prefixed, so an unprefixed name is
+# already outside the sanctioned vocabulary and the strictest answer is the
+# useful one -- the refusal tells the author to prefix it, which is the thing
+# that was going to be true anyway.
+#
+# MEASURED, NOT REMEMBERED. `tools/check_tmx_roundtrip.py` loads a fixture
+# carrying one of every element kind and derives this set from pytmx itself,
+# name for name, so a pytmx upgrade that adds an attribute turns the suite
+# red instead of turning somebody's map unloadable.
+RESERVED = frozenset({
+    'add_layer', 'add_tileset', 'allow_duplicate_names', 'append',
+    'apply_transformations', 'as_points', 'background_color', 'clear',
+    'closed', 'color', 'columns', 'copy', 'count',
+    'custom_property_filename', 'custom_types', 'data', 'draworder',
+    'extend', 'filename', 'firstgid', 'from_xml_string',
+    'get_layer_by_name', 'get_object_by_id', 'get_object_by_name',
+    'get_tile_colliders', 'get_tile_gid', 'get_tile_image',
+    'get_tile_image_by_gid', 'get_tile_locations_by_gid',
+    'get_tile_properties', 'get_tile_properties_by_gid',
+    'get_tile_properties_by_layer', 'get_tileset_from_gid', 'gid',
+    'gidmap', 'height', 'hexsidelength', 'id', 'image', 'image_loader',
+    'imagemap', 'images', 'index', 'infinite', 'insert', 'invert_y',
+    'iter_data', 'layernames', 'layers', 'load_all_tiles', 'map_gid',
+    'map_gid2', 'margin', 'maxgid', 'name', 'nextlayerid', 'nextobjectid',
+    'objectgroups', 'objects', 'objects_by_id', 'objects_by_name',
+    'offset', 'offsetx', 'offsety', 'opacity', 'optional_gids',
+    'orientation', 'parent', 'parse_json', 'parse_xml', 'pop',
+    'properties', 'register_gid', 'register_gid_check_flags',
+    'reload_images', 'remove', 'renderorder', 'reverse', 'rotation',
+    'set_tile_properties', 'sort', 'source', 'spacing', 'staggeraxis',
+    'staggerindex', 'template', 'tile_properties', 'tilecount',
+    'tiledgidmap', 'tiledversion', 'tileheight', 'tiles', 'tilesets',
+    'tilewidth', 'trans', 'type', 'version', 'visible', 'visible_layers',
+    'visible_object_groups', 'visible_tile_layers', 'width', 'x', 'y',
+})
+
 
 @dataclass(frozen=True)
 class LayerProfile:

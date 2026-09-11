@@ -5,7 +5,7 @@
 
 > The editor window.
 
-`editor.ui.main_window` · 1717 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.main_window` · 1735 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -26,7 +26,7 @@
 
 ### `class EditorWindow(QMainWindow)` #TAG:EditorWindow
 
-`editor/ui/main_window.py:132`–`1716`
+`editor/ui/main_window.py:132`–`1734`
 
 - `editor/ui/main_window.py:133` `__init__(self, session)` #TAG:EditorWindow.__init__
 - `editor/ui/main_window.py:260` `__new_selection(self, scope: Scope) -> Selection` #TAG:EditorWindow.__new_selection
@@ -87,41 +87,41 @@
   - Write every dirty document. Returns how many, or None on failure.
 - `editor/ui/main_window.py:1115` `closeEvent(self, event) -> None` #TAG:EditorWindow.closeEvent
   - The only door out of the editor, and the one place work is lost.
-- `editor/ui/main_window.py:1176` `play(self) -> None` #TAG:EditorWindow.play
+- `editor/ui/main_window.py:1194` `play(self) -> None` #TAG:EditorWindow.play
   - Save, then launch the game as a subprocess. Not the runtime.
-- `editor/ui/main_window.py:1206` `open_database(self) -> None` #TAG:EditorWindow.open_database
-- `editor/ui/main_window.py:1216` `edit_object(self, scope: Scope) -> None` #TAG:EditorWindow.edit_object
+- `editor/ui/main_window.py:1224` `open_database(self) -> None` #TAG:EditorWindow.open_database
+- `editor/ui/main_window.py:1234` `edit_object(self, scope: Scope) -> None` #TAG:EditorWindow.edit_object
   - Open the entity editing screen on one object, or re-aim it.
-- `editor/ui/main_window.py:1256` `open_script(self, script_id: str='') -> None` #TAG:EditorWindow.open_script
+- `editor/ui/main_window.py:1274` `open_script(self, script_id: str='') -> None` #TAG:EditorWindow.open_script
   - Open the event screen, on a script or on the list of them.
-- `editor/ui/main_window.py:1282` `add_tileset(self) -> None` #TAG:EditorWindow.add_tileset
+- `editor/ui/main_window.py:1300` `add_tileset(self) -> None` #TAG:EditorWindow.add_tileset
   - Open the tile importer on the current map, without blocking it.
-- `editor/ui/main_window.py:1315` `__forget_tileset_import(self, *_args) -> None` #TAG:EditorWindow.__forget_tileset_import
-- `editor/ui/main_window.py:1318` `__refresh_tileset_import(self) -> None` #TAG:EditorWindow.__refresh_tileset_import
+- `editor/ui/main_window.py:1333` `__forget_tileset_import(self, *_args) -> None` #TAG:EditorWindow.__forget_tileset_import
+- `editor/ui/main_window.py:1336` `__refresh_tileset_import(self) -> None` #TAG:EditorWindow.__refresh_tileset_import
   - Tell the open importer what the map holds after this command.
-- `editor/ui/main_window.py:1330` `import_tileset(self, request) -> None` #TAG:EditorWindow.import_tileset
+- `editor/ui/main_window.py:1348` `import_tileset(self, request) -> None` #TAG:EditorWindow.import_tileset
   - One Add from the importer, as a command.
-- `editor/ui/main_window.py:1346` `tileset_facts(self, name: str) -> TilesetFacts` #TAG:EditorWindow.tileset_facts
+- `editor/ui/main_window.py:1364` `tileset_facts(self, name: str) -> TilesetFacts` #TAG:EditorWindow.tileset_facts
   - What the map knows about one tileset, for the palette's header menu.
-- `editor/ui/main_window.py:1401` `tileset_command(self, name: str, verb: str, args: dict) -> None` #TAG:EditorWindow.tileset_command
+- `editor/ui/main_window.py:1419` `tileset_command(self, name: str, verb: str, args: dict) -> None` #TAG:EditorWindow.tileset_command
   - One whole-tileset edit from the palette's header menu.
-- `editor/ui/main_window.py:1419` `switch_genre(self) -> None` #TAG:EditorWindow.switch_genre
-- `editor/ui/main_window.py:1438` `copy_art_brief(self) -> None` #TAG:EditorWindow.copy_art_brief
-- `editor/ui/main_window.py:1455` `open_settings(self) -> None` #TAG:EditorWindow.open_settings
-- `editor/ui/main_window.py:1463` `__on_setting_changed(self, key: str, value) -> None` #TAG:EditorWindow.__on_setting_changed
-- `editor/ui/main_window.py:1507` `set_snap_objects(self, on: bool) -> None` #TAG:EditorWindow.set_snap_objects
+- `editor/ui/main_window.py:1437` `switch_genre(self) -> None` #TAG:EditorWindow.switch_genre
+- `editor/ui/main_window.py:1456` `copy_art_brief(self) -> None` #TAG:EditorWindow.copy_art_brief
+- `editor/ui/main_window.py:1473` `open_settings(self) -> None` #TAG:EditorWindow.open_settings
+- `editor/ui/main_window.py:1481` `__on_setting_changed(self, key: str, value) -> None` #TAG:EditorWindow.__on_setting_changed
+- `editor/ui/main_window.py:1525` `set_snap_objects(self, on: bool) -> None` #TAG:EditorWindow.set_snap_objects
   - Store the snap preference and apply it. The View menu's handler.
-- `editor/ui/main_window.py:1520` `__apply_snap(self, on: bool) -> None` #TAG:EditorWindow.__apply_snap
+- `editor/ui/main_window.py:1538` `__apply_snap(self, on: bool) -> None` #TAG:EditorWindow.__apply_snap
   - Push it onto the mounted canvas.
-- `editor/ui/main_window.py:1532` `apply_theme(self, theme: Theme) -> None` #TAG:EditorWindow.apply_theme
+- `editor/ui/main_window.py:1550` `apply_theme(self, theme: Theme) -> None` #TAG:EditorWindow.apply_theme
   - Repaint the whole application, icons included.
-- `editor/ui/main_window.py:1549` `reveal(self, path: str, line: int | None=None, symbol: str | None=None) -> None` #TAG:EditorWindow.reveal
+- `editor/ui/main_window.py:1567` `reveal(self, path: str, line: int | None=None, symbol: str | None=None) -> None` #TAG:EditorWindow.reveal
   - Open a source file in the developer's IDE.
-- `editor/ui/main_window.py:1576` `ship(self) -> None` #TAG:EditorWindow.ship
-- `editor/ui/main_window.py:1606` `apply_response_dialog(self) -> None` #TAG:EditorWindow.apply_response_dialog
-- `editor/ui/main_window.py:1617` `apply_response(self, path: str) -> None` #TAG:EditorWindow.apply_response
+- `editor/ui/main_window.py:1594` `ship(self) -> None` #TAG:EditorWindow.ship
+- `editor/ui/main_window.py:1624` `apply_response_dialog(self) -> None` #TAG:EditorWindow.apply_response_dialog
+- `editor/ui/main_window.py:1635` `apply_response(self, path: str) -> None` #TAG:EditorWindow.apply_response
   - Apply a responder's command list, after that bundle's own gate.
-- `editor/ui/main_window.py:1677` `__watch_requests(self) -> None` #TAG:EditorWindow.__watch_requests
-- `editor/ui/main_window.py:1688` `__on_requests_changed(self, directory: str) -> None` #TAG:EditorWindow.__on_requests_changed
-- `editor/ui/main_window.py:1698` `__offer(self, path: str) -> None` #TAG:EditorWindow.__offer
+- `editor/ui/main_window.py:1695` `__watch_requests(self) -> None` #TAG:EditorWindow.__watch_requests
+- `editor/ui/main_window.py:1706` `__on_requests_changed(self, directory: str) -> None` #TAG:EditorWindow.__on_requests_changed
+- `editor/ui/main_window.py:1716` `__offer(self, path: str) -> None` #TAG:EditorWindow.__offer
   - A file appeared on disk. That is news, not a question.

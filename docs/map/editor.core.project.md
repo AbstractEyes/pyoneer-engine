@@ -5,7 +5,7 @@
 
 > The project document -- what the editor edits and the engine reads.
 
-`editor.core.project` · 469 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.project` · 548 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -21,6 +21,8 @@
 
 - `editor/core/project.py:81` `layer_tree(document) -> list[LayerNode]` #TAG:layer_tree
   - The map's layers as authored, nesting preserved.
+- `editor/core/project.py:280` `_opened_scripts(project: 'Project')` #TAG:_opened_scripts
+  - The project's event-script library IF one was ever opened, else None.
 
 ## Classes
 
@@ -65,31 +67,34 @@
 
 ### `class Project` #TAG:Project
 
-`editor/core/project.py:280`–`468`
+`editor/core/project.py:304`–`547`
 
 > Everything the editor can address, rooted at a repo checkout.
 
-- `editor/core/project.py:283` `__init__(self, root: str, pack: GenrePack, meta: dict[str, Any] | None=None)` #TAG:Project.__init__
-- `editor/core/project.py:295` `path(self, *parts: str) -> str` #TAG:Project.path
-- `editor/core/project.py:299` `@property project_dir(self) -> str` #TAG:Project.project_dir
-- `editor/core/project.py:303` `@property tables_dir(self) -> str` #TAG:Project.tables_dir
-- `editor/core/project.py:308` `__load_map_index(self) -> None` #TAG:Project.__load_map_index
-- `editor/core/project.py:317` `map_names(self) -> list[str]` #TAG:Project.map_names
-- `editor/core/project.py:320` `map_path(self, name: str) -> str` #TAG:Project.map_path
-- `editor/core/project.py:327` `map(self, name: str) -> MapDocument` #TAG:Project.map
+- `editor/core/project.py:307` `__init__(self, root: str, pack: GenrePack, meta: dict[str, Any] | None=None)` #TAG:Project.__init__
+- `editor/core/project.py:319` `path(self, *parts: str) -> str` #TAG:Project.path
+- `editor/core/project.py:323` `@property project_dir(self) -> str` #TAG:Project.project_dir
+- `editor/core/project.py:327` `@property tables_dir(self) -> str` #TAG:Project.tables_dir
+- `editor/core/project.py:332` `__load_map_index(self) -> None` #TAG:Project.__load_map_index
+- `editor/core/project.py:341` `map_names(self) -> list[str]` #TAG:Project.map_names
+- `editor/core/project.py:344` `map_path(self, name: str) -> str` #TAG:Project.map_path
+- `editor/core/project.py:351` `map(self, name: str) -> MapDocument` #TAG:Project.map
   - The editable document for a map, opened once and cached.
-- `editor/core/project.py:338` `dirty_maps(self) -> list[str]` #TAG:Project.dirty_maps
-- `editor/core/project.py:343` `__load_tables(self) -> None` #TAG:Project.__load_tables
-- `editor/core/project.py:360` `table_names(self) -> list[str]` #TAG:Project.table_names
-- `editor/core/project.py:363` `table(self, name: str) -> DataTable` #TAG:Project.table
-- `editor/core/project.py:371` `has_table(self, name: str) -> bool` #TAG:Project.has_table
-- `editor/core/project.py:374` `create_table(self, table: DataTable) -> DataTable` #TAG:Project.create_table
-- `editor/core/project.py:382` `drop_table(self, name: str) -> DataTable` #TAG:Project.drop_table
-- `editor/core/project.py:390` `dirty_tables(self) -> list[str]` #TAG:Project.dirty_tables
-- `editor/core/project.py:395` `set_genre(self, pack: GenrePack) -> GenrePack` #TAG:Project.set_genre
-- `editor/core/project.py:401` `problems(self) -> list` #TAG:Project.problems
-- `editor/core/project.py:406` `save(self) -> list[str]` #TAG:Project.save
+- `editor/core/project.py:362` `dirty_maps(self) -> list[str]` #TAG:Project.dirty_maps
+- `editor/core/project.py:367` `__load_tables(self) -> None` #TAG:Project.__load_tables
+- `editor/core/project.py:384` `table_names(self) -> list[str]` #TAG:Project.table_names
+- `editor/core/project.py:387` `table(self, name: str) -> DataTable` #TAG:Project.table
+- `editor/core/project.py:395` `has_table(self, name: str) -> bool` #TAG:Project.has_table
+- `editor/core/project.py:398` `create_table(self, table: DataTable) -> DataTable` #TAG:Project.create_table
+- `editor/core/project.py:406` `drop_table(self, name: str) -> DataTable` #TAG:Project.drop_table
+- `editor/core/project.py:414` `dirty_tables(self) -> list[str]` #TAG:Project.dirty_tables
+- `editor/core/project.py:419` `dirty_scripts(self) -> list[str]` #TAG:Project.dirty_scripts
+  - Every event script that is not on disk as the session has it.
+- `editor/core/project.py:445` `set_genre(self, pack: GenrePack) -> GenrePack` #TAG:Project.set_genre
+- `editor/core/project.py:451` `problems(self) -> list` #TAG:Project.problems
+- `editor/core/project.py:456` `save(self) -> list[str]` #TAG:Project.save
   - Write every dirty document. Returns the paths written.
-- `editor/core/project.py:434` `@property dirty(self) -> bool` #TAG:Project.dirty
-- `editor/core/project.py:440` `@classmethod load(cls, root: str, *, genre_id: str | None=None, genres_dir: str | None=None) -> 'Project'` #TAG:Project.load
+- `editor/core/project.py:506` `@property dirty(self) -> bool` #TAG:Project.dirty
+  - True while any document kind is off disk. A script is a document.
+- `editor/core/project.py:519` `@classmethod load(cls, root: str, *, genre_id: str | None=None, genres_dir: str | None=None) -> 'Project'` #TAG:Project.load
   - Open the project rooted at `root`.

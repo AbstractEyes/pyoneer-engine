@@ -3450,6 +3450,49 @@ try:
     del closing_session.save
     no_modals()
 
+    # SIX: THE LISTING AND THE FLAG ARE ONE SENTENCE. The prompt is RAISED
+    # by `session.dirty` and ANSWERED by a listing, and for one pass those
+    # were two different facts: `dirty` had learned that an event script is
+    # a document and the listing had not, so a session dirty only because of
+    # a script was told "0 documents have changes that are not on disk:"
+    # over an empty list. Nothing was lost -- Yes saved the script too --
+    # but the sentence the author reads BEFORE deciding was false, and that
+    # is the worse half of the pair to get wrong.
+    #
+    # The body is read for the NAMES it must carry and the count that must
+    # match them, never compared whole: pinning the wording here would make
+    # a rewrite look like a lost session, which is the trade the recorder
+    # above already refuses.
+    bodies: list[str] = []
+
+    def recording(reply):
+        def stub(_parent, _title, body):
+            bodies.append(body)
+            return reply
+        return stub
+
+    closing.show()
+    application.processEvents()
+    authored_script = closing.run(Command("script.create",
+                                          Scope.of(("script", "keeper")),
+                                          {"title": "The keeper"}))
+    expect("an event script authored through the window is a THIRD dirty "
+           "kind, beside the map and the table",
+           (bool(authored_script),
+            closing_session.project.dirty_scripts(),
+            closing_session.project.dirty_maps()),
+           (True, ["keeper"], ["closing"]))
+    at_ask.clear()
+    closing.confirm = recording(False)
+    closing.close()
+    expect("...and the close prompt NAMES it, beside the dirty map",
+           (len(bodies), "keeper" in bodies[-1], "closing" in bodies[-1]),
+           (1, True, True))
+    expect("...and COUNTS it: the number in the sentence is the length of "
+           "the listing printed under it, so `0 documents` over an empty "
+           "list cannot come back",
+           bodies[-1].startswith("2 documents have changes"), True)
+
     closing.confirm = lambda *a, **k: False     # teardown: close, write nothing
     closing.close()
     closing.deleteLater()

@@ -603,6 +603,29 @@ class MainGame:
         # who later adds a `pyoneer_param_payload` to that object still
         # reaches this; a route keyed to one payload string would go silent
         # the moment the map said something more specific.
+        #
+        # AND THE LIMIT OF THAT SENTENCE, MEASURED RATHER THAN ASSUMED.
+        # `ActionRouter` resolves most-specific-first, so the any-payload row
+        # is a FALLBACK: it is reached only while no route claims that exact
+        # (token, payload) pair. Adding a payload to the object is therefore
+        # free, as the sentence says -- and it stops being free the moment
+        # some OTHER route claims the same string, which the narrative kit
+        # does whenever a game sets its advance payload to the value its map
+        # writes on the body. Driven on exactly that shape, a hero carrying
+        # `pyoneer_param_payload` and a `pyoneer_script`:
+        #
+        #     handlers_for(interact_action, 'keeper') -> [SceneFlow.on_action]
+        #     handlers_for(interact_action, '')       -> [run_object_script]
+        #     eight presses                           -> script_run None, and
+        #                                                no warning anywhere
+        #
+        # The body is joined, the document is loaded, and the press can never
+        # reach it. NOT FIXABLE FROM THIS LINE: the resolution rule belongs to
+        # the router and the second route belongs to the kit, and the only
+        # wire this file could add instead -- one route per payload the map
+        # spells -- would be this module reading map content at wiring time,
+        # a larger claim than the one that is wrong. `read_object_scripts`'
+        # warning cannot see it either: that body carries both tokens.
         self.object_scripts = self.read_object_scripts()
         self.dialogue = ScriptDialogue(self)
         self.scene.actions.route(INTERACT_TOKEN, self.run_object_script)
@@ -763,11 +786,25 @@ class MainGame:
         reason the pick in `load_test_objects` gives: this module is the smoke
         baseline, and a check asserts it does not SPELL that package's name.)
 
-        A FLOW THAT IS NOT OURS IS NOT EVICTED. If `SceneManager.flow` holds
-        anything other than this game's own run -- a `SceneFlow` a narrative
+        A LIVE FLOW THAT IS NOT OURS IS NOT EVICTED, AND A FINISHED ONE DOES
+        NOT HOLD THE DOOR SHUT. If `SceneManager.flow` holds a RUNNING
+        occupant that is not this game's own run -- a `SceneFlow` a narrative
         kit started, say -- the press reaches nothing and the occupant keeps
-        the slot. See the guard itself for what testing the run instead of the
-        slot cost.
+        the slot. Once that occupant has stopped running it is furniture, and
+        the next press starts a run over it. The test is LIVENESS, not
+        identity, and not emptiness.
+
+        BOTH HALVES OF THAT REPAIR LANDED, in this order, and the second one
+        does not make the first redundant. `SceneManager.post_update` now
+        takes a stopped occupant OUT of the slot on the tick that stops it,
+        which answers for every future reader of that slot rather than for
+        this one caller. This guard still tests liveness rather than
+        emptiness, because the two are not the same instant: the press is
+        answered in `inputs`, and `post_update` runs after it, so a flow that
+        ended earlier in the SAME frame is still sitting there when this line
+        reads it. A manager nobody post-updates never empties the slot at
+        all. An empty slot and a slot holding a finished flow have to mean
+        the same thing here, and they do.
 
         A SECOND TRIGGER ARRIVING MID-RUN IS REFUSED AS A START AND SPENT AS
         THE ADVANCE. Not queued, and not dropped. Refused because
@@ -819,12 +856,42 @@ class MainGame:
         # other flow` went True -> False in one press and the evicted flow's
         # `update()` was never called again.
         #
-        # A FINISHED RUN OF OUR OWN IS NOT A FOREIGN OCCUPANT: it stays parked
-        # in the slot after `running` goes False, and the next press has to be
-        # able to start a fresh one over the same variable store -- which is
-        # what lets the shipped script's `if` reach its second arm.
+        # A FINISHED RUN OF OUR OWN IS NOT A FOREIGN OCCUPANT: the next press
+        # has to be able to start a fresh one over the same variable store --
+        # which is what lets the shipped script's `if` reach its second arm.
+        #
+        # AND A FINISHED FOREIGN FLOW IS NOT AN OCCUPANT AT ALL. This line
+        # once read `occupant is not self.script_run` and nothing else, which
+        # exempted exactly one kind of finished occupant -- our own -- and not
+        # the sibling kind. Nothing cleared `SceneManager.flow` when a flow
+        # ended, so on any game that played one cutscene the slot held a
+        # `SceneFlow` whose `running` was False for the rest of the session,
+        # and every later press was refused in silence: ONE CUTSCENE DISABLED
+        # EVENT SCRIPTS PERMANENTLY. Measured on the narrative kit -- eight
+        # presses after the opening flow ended started nothing, said nothing,
+        # warned nothing. The never-cleared finished flow had been filed as
+        # hygiene rather than as a defect, and it was, until a guard that was
+        # correct in isolation turned it into a lock-out. It is the clearest
+        # example in this tree of the shape the ACTIVE WARNINGS record: the
+        # guard was right about the occupant it was written against and wrong
+        # about the occupant standing beside it.
+        #
+        # `post_update` empties the slot now, so on the shipped loop this
+        # line usually reads None where it used to read a corpse -- and the
+        # liveness test stays anyway, because the two are not the same
+        # instant: this runs in `inputs`, the clear runs after, and a manager
+        # nobody post-updates never clears at all.
+        #
+        # `getattr(..., True)` and not `occupant.running`: the slot's contract
+        # is `update(delta)` and nothing else -- `SceneManager` names a queue
+        # wrapper, a fade and a test double as legitimate occupants -- so an
+        # occupant that cannot say whether it is running is treated as
+        # running. That refusal is the conservative half: it is the behaviour
+        # that shipped, it never evicts anybody, and it keeps this file from
+        # inventing a contract for an object it does not own.
         occupant = self.scene.flow
-        if occupant is not None and occupant is not self.script_run:
+        if (occupant is not None and occupant is not self.script_run
+                and getattr(occupant, "running", True)):
             return
         script_id = self.script_for(entity)
         if script_id is None:

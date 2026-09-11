@@ -3,7 +3,7 @@
 
 # `main.py` — tier 2 #TAG:main.py
 
-`main` · 971 lines · tier 1: [`../MAP.md`](../MAP.md)
+`main` · 1038 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -56,7 +56,7 @@
 
 ### `class MainGame` #TAG:MainGame
 
-`main.py:273`–`967`
+`main.py:273`–`1034`
 
 - `main.py:274` `__init__(self, autostart: bool=True)` #TAG:MainGame.__init__
 - `main.py:362` `prepare(self)` #TAG:MainGame.prepare
@@ -69,20 +69,20 @@
 - `main.py:537` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:MainGame.load_map
 - `main.py:544` `load_test_objects(self)` #TAG:MainGame.load_test_objects
   - Configure what the MAP spawned, and build nothing. #TAG:no_entity_is_built_here
-- `main.py:643` `load_config(self)` #TAG:MainGame.load_config
-- `main.py:654` `read_object_scripts(self) -> list[tuple]` #TAG:MainGame.read_object_scripts
+- `main.py:666` `load_config(self)` #TAG:MainGame.load_config
+- `main.py:677` `read_object_scripts(self) -> list[tuple]` #TAG:MainGame.read_object_scripts
   - (entity, script id) for every spawned body naming a `pyoneer_script`.
-- `main.py:734` `script_for(self, entity) -> str | None` #TAG:MainGame.script_for
+- `main.py:757` `script_for(self, entity) -> str | None` #TAG:MainGame.script_for
   - Which script `entity` names, or None. Searched by IDENTITY.
-- `main.py:746` `run_object_script(self, entity, fired) -> None` #TAG:MainGame.run_object_script
+- `main.py:769` `run_object_script(self, entity, fired) -> None` #TAG:MainGame.run_object_script
   - Start the fired body's event script -- or advance the one running.
-- `main.py:847` `load_renderer(self)` #TAG:MainGame.load_renderer
-- `main.py:890` `quit(self)` #TAG:MainGame.quit
-- `main.py:894` `begin(self, max_frames: int | None=None)` #TAG:MainGame.begin
+- `main.py:914` `load_renderer(self)` #TAG:MainGame.load_renderer
+- `main.py:957` `quit(self)` #TAG:MainGame.quit
+- `main.py:961` `begin(self, max_frames: int | None=None)` #TAG:MainGame.begin
   - Run the main loop.
-- `main.py:911` `tick(self) -> float` #TAG:MainGame.tick
+- `main.py:978` `tick(self) -> float` #TAG:MainGame.tick
   - Advance exactly one frame. Returns the delta time used.
-- `main.py:935` `handle_global_input(self)` #TAG:MainGame.handle_global_input
+- `main.py:1002` `handle_global_input(self)` #TAG:MainGame.handle_global_input
   - Application-level keys, handled before the scene sees anything.
-- `main.py:956` `toggle_window(self)` #TAG:MainGame.toggle_window
+- `main.py:1023` `toggle_window(self)` #TAG:MainGame.toggle_window
   - F1: show or hide the test window.

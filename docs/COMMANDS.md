@@ -222,7 +222,7 @@ Remove a built-in attribute entirely, rather than blanking it. The inverse of se
 
 | arg | type | required | meaning |
 |---|---|---|---|
-| `key` | str | yes | which attribute to remove |
+| `key` | str | yes | which attribute to remove One of ['name', 'type', 'class', 'width', 'height', 'gid', 'rotation', 'visible', 'template']. |
 
 ### `map.tile.fill`
 

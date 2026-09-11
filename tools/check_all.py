@@ -55,13 +55,17 @@ CHECKS = [
     ("action", "discrete verbs, cooldowns, the per-entity record, no bus"),
     ("lifecycle", "a body declares itself gone, and is really unbound, undrawn "
                   "and forgotten"),
-    ("flow", "action routing, the step sequencer, and the agency it gives back"),
+    ("flow", "action routing, the step sequencer, the agency it gives back, "
+             "and the one slot: the ticker takes a stopped occupant out and "
+             "never evicts one that cannot say whether it is running"),
     ("ops", "the event-script vocabulary: every gate the reader closes, "
             "and the step machine that runs what it lets through"),
     ("script_runtime", "the wire: a key press reaches a script -- the boot "
                        "reads data/project/scripts, a map's pyoneer_script "
-                       "joins to a spawned body, and one press of the action "
-                       "verb builds a ScriptRun in SceneManager's flow slot"),
+                       "joins to a spawned body, one press of the action verb "
+                       "builds a ScriptRun in SceneManager's flow slot, and a "
+                       "flow that has FINISHED holds that slot against "
+                       "nobody"),
     ("audio", "the two audio roots, the missing-card/missing-file split, "
               "the synthesised fallback pack, and the two play ops"),
     ("event_docs", "EVENTS.md is generated, and every runtime and "
@@ -84,9 +88,13 @@ CHECKS = [
               "line its own gate permits"),
     ("script_verbs", "the script.* verbs: exact inverses through nested elif "
                      "arms, id-only addressing, every refusal the reader "
-                     "would make at load, and the seam -- the editor opens "
-                     "every script the engine reads, in THIS project, because "
-                     "a scene document declares the variables both sides use"),
+                     "would make at load, the seam -- the editor opens every "
+                     "script the engine reads, in THIS project, because a "
+                     "scene document declares the variables both sides use -- "
+                     "and the SAVE WIRE: authoring a script makes the session "
+                     "dirty and the editor's own save puts the .json on disk, "
+                     "so a map that names a script and the script itself "
+                     "reach the disk together"),
     ("paint", "strokes, stamps, flood fill, one drag is one transaction"),
     ("autotile", "corner masks, terrain recovery, diagonal policy"),
     ("collision", "three-level resolution, .blitmask round trip, mask encoding"),

@@ -30,6 +30,7 @@ import atexit
 import importlib.util
 import json
 import os
+from xml.etree import ElementTree
 import shutil
 import sys
 import tempfile
@@ -1248,6 +1249,124 @@ height="16" rotation="37.5" visible="0"/>
     rich_session.undo()
     expect("undo restores the original class", rich_session.project.map("rich")
            .object_layer("entity").find(1).element.attrib.get("class"), "Chest")
+
+    print()
+    print("the remove twin has a vocabulary, and it is not `any string`")
+    # `map.object.set` has declared `choices=_OBJECT_ATTRIBUTES` since it was
+    # written; its inverse `map.object.unset` declared `Param("key", str)` and
+    # nothing else, so the verb that could not WRITE `id` could DELETE it --
+    # and an object with no `id` is addressable by no scope, restorable by no
+    # inverse, and a different document to every reader. The guard went on the
+    # write and the remove twin grew without it: the pass's own shape, on a
+    # pair one screenful apart.
+    BEFORE_UNSET = rich_session.project.map("rich").to_bytes()
+    for refused, why in (("id", "the one that unmakes the object"),
+                         ("x", "a position, moved by map.object.move"),
+                         ("pyoneer_script", "a property, not an attribute"),
+                         ("nonsense", "not an attribute at all"),
+                         ("", "not a name")):
+        expect_raises_naming(
+            "map.object.unset refuses %r -- %s" % (refused, why),
+            PyoneerCommandApplyError,
+            lambda key=refused: rich_session.run(
+                Command("map.object.unset", dot, {"key": key})),
+            "must be one of")
+    expect("...and five refusals later the map is byte-identical",
+           rich_session.project.map("rich").to_bytes() == BEFORE_UNSET, True)
+    expect("...and 'id' is still on the object it would have unmade",
+           "id" in rich_session.project.map("rich")
+           .object_layer("entity").find(3).element.attrib, True)
+    key_choices = {v.name: p.choices for v in all_verbs()
+                   for p in v.params
+                   if v.name in ("map.object.set", "map.object.unset")
+                   and p.name == "key"}
+    expect("the two halves of the pair declare the SAME vocabulary, off the "
+           "same tuple, so neither can drift from the other",
+           (key_choices.get("map.object.set"),
+            key_choices.get("map.object.unset"),
+            key_choices.get("map.object.set")
+            is key_choices.get("map.object.unset")),
+           (editor.core.verbs._OBJECT_ATTRIBUTES,
+            editor.core.verbs._OBJECT_ATTRIBUTES, True))
+
+    # THE OTHER HALF, because a verb that refused everything would satisfy
+    # every row above and be useless.
+    rich_session.run(Command("map.object.set", dot,
+                             {"key": "name", "value": "spot"}))
+    rich_session.run(Command("map.object.unset", dot, {"key": "name"}))
+    expect("a built-in attribute still unsets",
+           "name" in rich_session.project.map("rich")
+           .object_layer("entity").find(3).element.attrib, False)
+    rich_session.undo()
+    expect("...and undo puts the value back",
+           rich_session.project.map("rich").object_layer("entity")
+           .find(3).element.attrib.get("name"), "spot")
+    rich_session.undo()
+
+    # AND HERE IS A DEFECT, PINNED RATHER THAN PAPERED OVER. Measured while
+    # writing the row above, which first asserted byte-identity and went red:
+    # `ElementTree.Element.set` APPENDS, so an attribute removed from the
+    # middle of an element comes back at the END of the attribute list, and
+    # `map.object.unset` followed by undo restores the value and NOT the
+    # bytes. Every other inverse in this file is byte-exact, so this one is
+    # the odd one out rather than the rule. It is pinned the way it really
+    # behaves, so the day somebody fixes it this row goes red and gets
+    # rewritten -- which is the only way an undocumented wart ever becomes a
+    # decision. Repro and the shape of the fix are in `docs/NEXT.md`.
+    restored = rich_session.project.map("rich").to_bytes()
+    expect("unset + undo restores the VALUE but not the byte order: the "
+           "attribute comes back at the end of the element",
+           (restored == BEFORE_UNSET, b'name="spot"' in restored),
+           (False, False))
+    expect("...and it is only the ORDER that moved -- same attributes, same "
+           "values, same count",
+           sorted(rich_session.project.map("rich").object_layer("entity")
+                  .find(3).element.attrib.items()),
+           sorted(ElementTree.fromstring(
+               BEFORE_UNSET.decode("utf-8"))
+               .find(".//objectgroup[@name='entity']/object[@id='3']")
+               .attrib.items()))
+    # Put the fixture back BY HAND, because the wart is real and every
+    # section below this one compares bytes against a document this one
+    # would otherwise have left reordered.
+    _dot = rich_session.project.map("rich").object_layer("entity").find(3)
+    _dot.element.attrib.clear()
+    _dot.element.attrib.update(
+        ElementTree.fromstring(BEFORE_UNSET.decode("utf-8"))
+        .find(".//objectgroup[@name='entity']/object[@id='3']").attrib)
+    expect("...and writing the original order back by hand gives the "
+           "original bytes, which is the proof that ORDER was the whole "
+           "difference", rich_session.project.map("rich").to_bytes()
+           == BEFORE_UNSET, True)
+
+    # AND THE SETTER GOES THROUGH THE MODEL, not around it. `map.object.set`
+    # used to do `element.set(...)` plus a `_touch()`, which reached around
+    # every refusal `MapObject.set` makes. `choices=` covers two of the three
+    # from outside; the one it cannot cover is a name the object already
+    # carries as a `<property>` -- pytmx casts attributes onto the element
+    # first and then RAISES on any property that now shadows one, and the
+    # WHOLE MAP stops loading, naming neither. Only a hand-written map can be
+    # in that state, because the property door refuses to build it, so it is
+    # planted here by hand: that is exactly what the author who opens such a
+    # map is holding when they reach for this verb.
+    planted = rich_session.project.map("rich").object_layer("entity").find(3)
+    holder = ElementTree.SubElement(planted.element, "properties")
+    ElementTree.SubElement(holder, "property",
+                           {"name": "rotation", "value": "1"})
+    PLANTED = rich_session.project.map("rich").to_bytes()
+    expect_raises_naming(
+        "map.object.set refuses an attribute the object already carries as a "
+        "PROPERTY, which `choices=` cannot see and only the model knows",
+        PyoneerCommandApplyError,
+        lambda: rich_session.run(Command("map.object.set", dot,
+                                         {"key": "rotation", "value": "90"})),
+        "already carries", "rotation", "the whole map stops loading")
+    expect("...without touching the document",
+           rich_session.project.map("rich").to_bytes() == PLANTED, True)
+    planted.element.remove(holder)
+    expect("...and the planted collision comes back out, leaving the fixture "
+           "as it was found",
+           rich_session.project.map("rich").to_bytes() == BEFORE_UNSET, True)
 
     # ---------------------------------------------------------------
     print()
