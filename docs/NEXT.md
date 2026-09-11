@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the audio + map + queue pass: items 15, 16 and 17 are new, each carrying the grep that measured it that day. Item 15 is the fourth ACTIVE WARNING's shape again and is the most expensive of the three: an entire op vocabulary that no running game can reach. Items 1-14 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the spawn-funnel + boot-path pass, item 18 is new and carries the grep that measured it that day. It is a recorded DECISION rather than a task, in the shape of items 11 and 14: the rename it describes was possible in that pass and was deliberately not done, because three checks assert the two names as data and a partial rename is a red suite for the next reader. Items 1-17 were not re-measured in that pass and keep their own dates. -->
+<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the audio + map + queue pass: items 15, 16 and 17 are new, each carrying the grep that measured it that day. Item 15 is the fourth ACTIVE WARNING's shape again and is the most expensive of the three: an entire op vocabulary that no running game can reach. Items 1-14 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the spawn-funnel + boot-path pass, item 18 is new and carries the grep that measured it that day. It is a recorded DECISION rather than a task, in the shape of items 11 and 14: the rename it describes was possible in that pass and was deliberately not done, because three checks assert the two names as data and a partial rename is a red suite for the next reader. Items 1-17 were not re-measured in that pass and keep their own dates. On 2026-09-10, at the finalize of the reachability pass: items 10, 15, 16 and 17 are STRUCK THROUGH and each carries the command that now returns the opposite of what it recorded. Two of the four also record that their own prescription was measurably WRONG -- item 10's regex would have fired 13 times on this repository's render-queue and behavior tokens, and item 16's one-line repair reads the translated member and never touches the duplicates the branch was aimed at -- which is why they were retired rather than re-run. Item 17 landed in a different module than it prescribed, and says so. Items 1, 2, 4, 5, 7, 9, 13 and 18 were re-measured that day and kept: item 4's second command was CORRECTED (it was written in capitals the source does not use, so it returned 0 and read like the refusal had gone), item 7's `QUIT` count moved from 0 to 1 without the fact moving (the one hit is prose), and item 18's count GREW from 28 to 35 because the script wire added two more readers of both names. Items 19 and 20 are new: both were found by the pass that deleted item 16's dead branch, both are the same type-confusion shape, and one of them is live in a public accessor. Items 3, 6, 8, 11, 12 and 14 were not re-measured and keep their own dates. -->
 
 # Next — what is open, ranked, and the command that measured it
 
@@ -96,10 +96,13 @@ away from .tmx walks differently from the map it was converted from — the
 Paralax shape, one format later, and silent in the direction that looks like it
 works. Level one is the only level worth building here: a `.blitmap` has no
 companion layers either.
-Measured: `grep -rn "collision" scripts/loaders/` names `tileset_file.py`'s own
-field and nothing that opens it, and
-`grep -n "A NATIVE .blitmap ANSWERS None" scripts/core/collision_runtime.py`
-is the refusal that says so.
+Re-measured 2026-09-10, and one of the two commands below was CORRECTED
+rather than re-run: the second was written in capitals the source does not
+use, so it returned 0 and read like the refusal had gone.
+`grep -rn "\.collision" scripts/loaders/*.py` names `tileset_file.py`'s own
+field, its suffix guard and its writer -- four lines, none of them a reader --
+and `grep -n "A native .blitmap answers None" scripts/core/collision_runtime.py`
+returns **1**, which is the refusal that says so.
 
 **5. A tileset has a name and no internal structure.** A sheet of 768 tiles is
 one undifferentiated wall in the palette, and the terrain resolver already
@@ -168,6 +171,10 @@ the engine does not keep, and `USE` is the standing proof of what that costs.
 Do not add a member before a listener exists; delete or wire these.
 Anchor: `#TAG:post_dispose_unwired`. Measured by walking `scripts/` for each
 member name and counting references outside `scripts/core/event_types.py`.
+Re-measured 2026-09-10: `POST_DISPOSE` **0**, `PARENT_RESIZED` **0**,
+`WINDOW_FOCUS_GAINED` **0**, `QUIT` **1** -- and that one is PROSE, a sentence
+in `scripts/core/event_manager.py` saying what would have to be true before a
+consumer wanted it. Still no listener; the count moved and the fact did not.
 
 **8. The two silent-failure sites, in the order they will bite.**
 Both are described in `CLAUDE.md`'s *Known gaps*; the ranking is the addition:
@@ -194,25 +201,33 @@ button could not reach is the one that went.
   `grep -n "grid_step" editor/core/settings.py` names the file and the shape,
   and `grep -c "zoom" editor/core/settings.py` returns 0.
 
-**10. Nothing in the suite refuses a committed plaintext credential.**
-`scripts/tests/` was deleted this pass because one of its seven modules
-assigned a password in source. The deletion holds, and it has no teeth: not one
-check in the 54-row roster reads a tracked file looking for a credential, so
-re-adding that exact file is silently green across the whole suite. That is
-law 5's shape in its purest form — not a gate proved in one direction, but no
-gate at all. The fix is one new `tools/check_<name>.py` -- written as a
-placeholder here because `tools/check_docs.py` refuses a live document that
-names a check module the roster has not got, which is the same rule in the
-other direction -- walking `git ls-files` for
-`^\s*(password|api_key|secret|token)\s*=\s*["'][^"']{3,}["']` with an
-allow-list for the fixtures that legitimately spell those words, plus its
-roster row in `tools/check_all.py` in the SAME change (law 6). Cost: it is last
-here only because the one blob it would have caught is already reachable in
-published history and no check can unpublish it — a gate is still cheap, and
-the second occurrence will arrive with no warning at all.
-Measured 2026-09-03: `grep -rniE "api_key|apikey|credential|password|secret"
-tools/*.py` returns **0**, and the `git ls-files` sweep above returns **0**
-tracked files now and returned `scripts/tests/naitest.py` before the deletion.
+**~~10. Nothing in the suite refuses a committed plaintext credential.~~ --
+PAID OFF 2026-09-10.** `tools/check_secrets.py` is on the roster and walks
+`git ls-files` with two detectors of different kinds: a credential-shaped NAME
+bound to a non-trivial literal (Python files PARSED, so `self.api_key = ...`,
+dict keys, call keywords and an `os.environ.get(KEY, default)` whose committed
+default is the credential are all seen; every other tracked file gets a
+`name = value` line match, which is what reaches a `.json`, a `.env` or an
+`.ini`), and a high-entropy KEY-SHAPED literal even under an innocent name.
+A `Finding` stores the path, the line, the name and `len(value)` and NEVER the
+value, so no code path can print a secret into a CI log.
+**This entry's own prescription was measurably wrong and that is why it is
+being retired rather than re-run.** It named the regex
+`^\s*(password|api_key|secret|token)\s*=\s*["'][^"']{3,}["']`, and bare
+`token` in this repository is a render-queue `BlitToken` and a behavior token:
+13 hits over the tracked tree, all 13 false. Only the qualified spellings
+(`auth_token`, `access_token`, ...) are in the vocabulary, with two of the
+false shapes pinned as corpus negatives so the exemption cannot widen. Its
+measurement command inverts by design too -- `grep -rniE
+"api_key|apikey|credential|password|secret" tools/*.py` returns **70** now,
+because the check module is the thing that spells those words.
+Re-measured 2026-09-10: `.venv/Scripts/python.exe tools/check_secrets.py`
+reports 33 assertions, 422 tracked files swept, **0** findings. The two limits
+are stated in the module and are real: it cannot unpublish a blob already
+pushed (rotate the credential at the provider), and it does not scan history.
+THE SEAM STILL OPEN, and it is why this closure is not the whole job: there is
+no pre-commit hook, so the refusal lands at check time, after the commit
+exists. Command: `grep -rn "check_secrets" .githooks/ .git/hooks/` (today: 0).
 
 **11. The collision palette has a hard floor, so the split it insists on
 cannot be made small.** `#TAG:mask_palette_is_never_tabbed` says the mask dock
@@ -309,52 +324,64 @@ Measured 2026-09-04: `grep -n "hidden_layers" editor/ui/canvas.py` returns
 **10** lines, none of them inside `#TAG:MapCanvas.__commit_stroke`,
 `#TAG:MapCanvas.__commit_terrain` or `#TAG:MapCanvas.__commit_collision`.
 
-**15. The audio ops cannot be reached from a running game.** `scripts/core/audio.py`
-landed on 2026-09-04 with two roots, the missing-card / missing-file split and
-a synthesised fallback pack; `play_sound` and `play_music` are registered,
-`core`, `live`, and each has a runtime probe in `docs/EVENTS.md`. Nothing in
-the shipped game loads a script document, so the only caller either op has is
-a check constructing a `ScriptRun` directly. The demo therefore makes its noise
-through an ACTION ROUTE -- `#TAG:MainGame.play_interaction_sound`, wired to
-`interact_action` -- which is a second way to do what the op vocabulary was
-built for, and law 8 makes both permanent once something depends on either.
-This is the fourth ACTIVE WARNING exactly: complete, checked, and unreachable
-by the person who asked for it. The seam is one call to
-`script_file.load_scripts()` in the boot plus one `ScriptRun` started from a
-route, which is how `demos/narrative.py` already starts a `SceneFlow`; what it
-needs first is a decision about where a map names its scripts, because a `.tmx`
-and a `.blitmap` both declare no audio and no script anywhere.
-Measured 2026-09-04: `grep -rn "load_scripts\|load_script" main.py demos/`
-returns **0**; `grep -rln "pyoneer_script" data/maps/` returns **0**;
-`docs/EVENTS.md`'s reachability table reads `no` on four of its six rows.
+**~~15. The audio ops cannot be reached from a running game.~~ -- PAID OFF
+2026-09-10, and the shortcut was DELETED rather than left beside the real
+route.** `prepare_test_scene` reads `data/project/scripts/` beside the tables
+and before the map bind (absent is `{}` and silent, a document that will not
+parse RAISES naming the file, before a display exists). `pyoneer_script` on a
+tmx object joins by `(layer_name, object_id)` to a spawned body -- naming an
+absent document raises, and a scripted body missing `interact_action` /
+`action_relay` WARNS. `load_test_objects` routes the `action` verb to one
+handler that builds a `ScriptRun` into `SceneManager`'s flow slot; a mid-run
+press is refused as a START and spent as the ADVANCE, and both halves of that
+decision have their own assertion. `MainGame.play_interaction_sound` and
+`INTERACT_SOUND` are gone: two ways to make one noise is worse than one.
+THE GESTURE: `.venv/Scripts/python.exe main.py`, then press `e`.
+Re-measured 2026-09-10: `grep -rn "load_scripts\|load_script" main.py demos/`
+returns **3** where it returned 0; `grep -rln "pyoneer_script" data/maps/`
+returns **1** where it returned 0; `docs/EVENTS.md`'s reachability table reads
+`no` on **one** of six rows where it read `no` on four.
 
-**16. `pump_pyo`'s event-coalescing branch has never executed.**
-`last_event = PYO_QUEUE[-1]` then `if last_event is not None and last_event ==
-GameEventType.PYGAME` compares a `PyoneerEvent` INSTANCE to a `GameEventType`
-member, which is always False. So the coalescing path and the whole
-`__PROBLEM_EVENTS` macOS duplicate guard underneath it are dead code that reads
-like a live feature. It was left alone deliberately in the pass that found it:
-repairing it changes how many `PyoneerEvent`s a frame produces and therefore
-every dispatch count in the baseline, which is a behaviour change wearing a bug
-fix's clothes. Cost: nobody can tell, from reading it, that duplicate window
-events are NOT being coalesced on any platform. Fixing it is one line plus a
-field-by-field re-baseline, and it wants its own pass.
-Measured 2026-09-04:
-`grep -n "last_event == GameEventType.PYGAME" scripts/core/event_manager.py`
-returns **1**.
+**~~16. `pump_pyo`'s event-coalescing branch has never executed.~~ -- PAID
+OFF 2026-09-10 by DELETION, and this entry's proposed repair was measured and
+is WRONG.** The branch, `PyoneerEvent.append_event` and `__PROBLEM_EVENTS` are
+gone; `pump_pyo` is one unconditional append per fanned-out event and the
+whole measurement is in its docstring under `#TAG:no_event_pooling`.
+The repair this entry named -- `last_event.type == GameEventType.PYGAME` --
+reads the TRANSLATED member, so it is true only for events no member names: it
+folds an unrelated `WindowShown` and `TextInput` together and still never
+touches the `MOUSEMOTION` duplicates the branch was aimed at. Two more reasons
+it could not be repaired as written: `append_event`'s `self.event is not list`
+compares an instance to the `list` TYPE and always nests, and the pooled shape
+has NO consumer -- 27 sites read `event.event.<attr>` off a single pygame
+event, so a pooled event raises `AttributeError` at the first click.
+This entry also predicted a re-baseline. There was none: the branch was
+entered **0** times in 568 instrumented opportunities, so deleting it is
+arithmetically a no-op. `tools/smoke.py --frames 60` reported NO DRIFT before
+and after.
+Re-measured 2026-09-10: `grep -c "last_event == GameEventType.PYGAME"
+scripts/core/event_manager.py` returns **1**, and that one line is now the
+DOCSTRING recording why the fix above is wrong -- read it before re-filing.
 
-**17. `driven_record` is three lines of `main.py` copied into `demos/runtime.py`.**
-`main.py` picks the driven body out of `renderer.spawned_entities` by looking
-for the record whose resolved behaviors carry `PLAYER_TOKEN`; `demos/runtime.py`
-does the same thing under its own name. That file already does
-`from main import MainGame`, so the correct end state is one function in
-`main.py` imported by the demo -- the dependency already runs that way and
-`main.py` may not so much as SPELL the demo package's name
-(`tools/check_demos.py` asserts it). It is two edits in one change, because
-deleting `DemoGame.load_test_objects` (now nearly identical to its parent's)
-moves `check_demos`'s "overrides exactly the hooks it claims to" list.
-Measured 2026-09-04: `grep -n "driven_record" demos/runtime.py` returns
-**3**; `grep -n "PLAYER_TOKEN" main.py` returns **2**.
+**~~17. `driven_record` is three lines of `main.py` copied into
+`demos/runtime.py`.~~ -- PAID OFF 2026-09-10, in a DIFFERENT place than this
+entry prescribed.** The helper and `PLAYER_TOKEN` now live in
+`scripts/loaders/map_loader.py`, beside `SpawnedEntity` and `spawn_counts`,
+with `main.py` and `demos/runtime.py` both importing it and the demo package
+re-exporting the name so `from demos.runtime import driven_record` still
+works. This entry said "one function in `main.py` imported by the demo"; that
+would have made the ENGINE's own record query reachable only through the
+game's entry point, and law 2's corollary says shared logic lives in
+`scripts/` and the layer above re-exports it. `DemoGame.load_test_objects` was
+NOT deleted -- it and `MainGame`'s have genuinely diverged since the script
+wire landed -- so `check_demos`'s pinned overridden set is unmoved.
+Re-measured 2026-09-10: exactly **1** definition tree-wide (by AST, at
+`scripts/loaders/map_loader.py`), and **2** real call sites above it, both on
+the boot path. `grep -c "driven_record" demos/runtime.py` returns **4** and
+`grep -c "PLAYER_TOKEN" main.py` returns **4**; both counts are now imports,
+re-exports and uses rather than a second copy of the loop, which is why the
+raw counts are the wrong instrument and the AST one is in
+`tools/check_demo_map.py`.
 
 **18. `prepare_test_scene` and `load_test_objects` are named for a map that no
 longer exists.** They are `MainGame`'s two boot hooks and the extension points
@@ -372,10 +399,47 @@ whoever runs it next. It wants a pass that owns `main.py`, `demos/` and
 `tools/` together and does all of it in one commit, with
 `tools/gen_map.py --write` in the same change. `docs/history/` keeps the old
 names either way; an archive is supposed to.
-Measured 2026-09-04:
+STILL DEFERRED, and re-measured 2026-09-10 rather than carried: the finalize
+pass that owned the whole tree left it alone on purpose, because a rename is
+not a finalize and `demos/narrative.py` overriding `load_test_objects` with a
+`super()` call makes a partial rename strictly worse than none.
 `grep -rn "load_test_objects\|prepare_test_scene" --include=*.py --include=*.md .`
-returns **28** lines in **10** files once `docs/map/` and `docs/history/` are
-excluded, **5** of those files under `tools/`.
+returns **35** lines in **11** files once `docs/map/` and `docs/history/` are
+excluded, **6** of those files under `tools/` -- the count GREW, because the
+script wire added two more readers of both names.
+
+**19. `EventManager.get_pyo`'s two filtering arms are the SAME type-confusion
+bug item 16 just deleted, and this one is in the public accessor.** `elif event
+is int and event is not pygame.event.Event:` and `elif event is
+pygame.event.Event:` compare the ARGUMENT to the TYPE OBJECT, so both are
+constant False for every real argument and the function falls through to
+`return []`. Cost: the filtered form of the engine's own event accessor has
+never worked, and it fails by returning an empty list rather than raising --
+law 7's shape exactly. It is harmless only because the one live caller,
+`SceneManager`, passes no argument and takes the `event is None` path. That is
+also why it was left alone in the pass that found it: repairing it changes the
+return value for a form nothing calls, which is how an unreachable layer gets
+built. The honest fix is to decide whether the filtered form should exist at
+all -- if it should, it takes a real `isinstance` and a caller in the same
+change; if not, delete both arms and the parameter.
+Measured 2026-09-10: with one KEY_DOWN in `PYO_QUEUE`,
+`EventManager.get_pyo(pygame.KEYDOWN)` returns `[]`, silently, rather than the
+event. `grep -n "event is int\|event is pygame.event.Event"
+scripts/core/event_manager.py` returns **2**.
+
+**20. Two dead functions in `scripts/core/event_manager.py`, one of them
+wrong.** `PyoneerEvent.update_data` has zero callers anywhere and contains
+`self.data[key].core_frame_update(value)` where a dict merge was meant -- the
+fossil of a global rename of `update` to `core_frame_update` that caught a
+dict method. `EventManager.queue()` also has zero callers; it differs from
+`pump_pyo` only in appending without clearing, and it is covered by
+`tools/check_event_queue.py`, so deleting it is a check edit as well as a
+source one. Cost: low and real -- both read as live API, and the first would
+raise `AttributeError` the moment anybody believed it. Ranked here rather than
+higher because neither can bite a player; they bite the next reader.
+Measured 2026-09-10: `grep -rn "update_data" --include=*.py .` returns **1**
+(its own `def`), and `grep -rn "EventManager.queue()\|\.queue()" --include=*.py
+scripts/ main.py demos/` returns nothing outside that module.
 
 ## What is NOT on this list, and why
 

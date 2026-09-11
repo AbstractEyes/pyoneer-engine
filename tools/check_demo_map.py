@@ -41,6 +41,22 @@ every gate below is asserted in both directions:
                         the clamp provably came from the map
     the authored action chain reaches the scene's router on a press
                     AND does not fire again while the verb is still held
+                    AND that same press leaves a RUNNING script in the flow
+                        slot, which was empty before anything was touched
+                    AND `script_for` answers by identity: a stand-in that
+                        claims equality with the hero gets no script
+                    AND the route is registered in the hook a subclass
+                        OVERRIDES and NOT in the one it inherits by identity,
+                        read off main.py's parse tree -- the runtime row
+                        above passes either way
+    the driven-record pick is ONE function in `scripts/`, by a def count over
+    every .py in the tree, and BOTH boot paths call it
+                    AND the counter finds both defs in a source with two, and
+                        counts an import, an `__all__` entry and a call as
+                        none -- which is what makes the re-export safe
+                    AND the one function agrees with the adoption: it returns
+                        the record whose entity IS `main.py`'s player, and
+                        None once the token is taken off every record
     a map whose ADOPTED body lacks `player_input` warns once, naming that
     object, its layer and the token
                     AND a map whose adopted body HAS it warns not at all --
@@ -74,6 +90,7 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
 import ast
+import dataclasses
 import json
 import os
 import tempfile
@@ -116,6 +133,7 @@ from scripts.game.behavior import BEHAVIORS                       # noqa: E402
 from scripts.game.game_camera import GameCamera                  # noqa: E402
 from scripts.game.game_map import GameMap                        # noqa: E402
 from scripts.loaders.map_document import MapDocument              # noqa: E402
+from scripts.loaders.map_loader import driven_record              # noqa: E402
 
 import main as main_module                                        # noqa: E402
 from main import MainGame, feet_anchor                            # noqa: E402
@@ -346,6 +364,19 @@ bound = [entity
 expect("...and it is BOUND into an EntityLayer there, not merely built",
        driven[0].entity in bound, True)
 
+# THE OTHER HALF OF ROW ONE, and it was missing: this file's preamble has
+# promised since it was written that a name `config/maps.json` does not carry
+# RAISES, listing what it does, and nothing asserted it. "The shipped name
+# loads" passes just as well for a manager that loads anything you ask it
+# for, which is law 5's dominant shape -- a gate proved to let something
+# through and never proved to stop it. The fragments are derived, never
+# typed: the available list must name whatever `main.MAP_NAME` currently is.
+expect_raises("...and a name config/maps.json does not carry RAISES, listing "
+              "what it does",
+              PyoneerAssetMissingError,
+              lambda: game.assets.maps.load_assets("no_such_map_at_all"),
+              "no_such_map_at_all", main_module.MAP_NAME, "config/maps.json")
+
 # ---------------------------------------------------------------------------
 print()
 print("4. the spawn route carries the feet anchor to the map's body")
@@ -426,12 +457,44 @@ print("6. the authored action chain reaches the host, and it makes a noise")
 # ---------------------------------------------------------------------------
 # The map says `interact_action,action_relay`; `action_relay` CALLS
 # `entity.action_sink(entity, fired)`; `SceneManager` assigned its own
-# `ActionRouter` as that sink; `main.py` routed the token to
-# `play_interaction_sound`. This asserts the whole wire, at the seam a human
-# can see: a key press.
+# `ActionRouter` as that sink; `main.py` routes the token to the handler that
+# starts the fired body's event script. This asserts the whole wire, at the
+# seam a human can see: a key press.
 expect("main.py registered exactly one handler for the token",
        [entry for entry in game.scene.actions.routes
         if entry[0] == "interact_action"], [("interact_action", "", 1)])
+
+# WHERE it is registered, by AST, because the runtime row above passes either
+# way and the difference is invisible until somebody subclasses this game.
+# `run_object_script`'s docstring states the rule -- the route goes in the
+# hook a subclass OVERRIDES, never in the method a subclass INHERITS BY
+# IDENTITY -- and that sentence was wrong once already. Registered in the
+# inherited method, the shipped game's wiring is silently installed in every
+# game built on `MainGame`, including one whose map names no script at all.
+# Nothing in this tree asserted the placement; this is that assertion, and it
+# is both halves of it.
+
+
+def route_calls_in(method_name: str) -> int:
+    """How many `....route(...)` calls sit inside `MainGame.<method_name>`."""
+    owner = next(node for node in ast.walk(ast.parse(MAIN_SOURCE))
+                 if isinstance(node, ast.ClassDef) and node.name == "MainGame")
+    method = next((node for node in owner.body
+                   if isinstance(node, ast.FunctionDef)
+                   and node.name == method_name), None)
+    if method is None:
+        return -1                 # a missing method is not "zero routes"
+    return sum(1 for node in ast.walk(method)
+               if isinstance(node, ast.Call)
+               and isinstance(node.func, ast.Attribute)
+               and node.func.attr == "route")
+
+
+expect("...in the hook a subclass OVERRIDES, so a subclass does not inherit "
+       "the shipped game's wiring",
+       route_calls_in("load_test_objects"), 1)
+expect("...and NOT in the method a subclass inherits by identity",
+       route_calls_in("prepare_test_scene"), 0)
 
 # A SECOND handler rather than replacing the first, because `route` appends:
 # the real one still runs, and this one counts. Counting rather than reading
@@ -441,6 +504,13 @@ expect("main.py registered exactly one handler for the token",
 fired: list = []
 game.scene.actions.route("interact_action",
                          lambda entity, event: fired.append(event))
+
+# Read BEFORE the press, so the rows at the end of this section compare a
+# before against an after rather than asserting that a slot is full -- which
+# would also pass for a boot that filled it, and a script starting at boot is
+# a different defect wearing the same green tick.
+before_flow = game.scene.flow
+before_run = game.script_run
 
 hold(game, "action")            # a rising edge, because HELD was empty
 game.tick()
@@ -455,15 +525,49 @@ hold(game)
 game.tick()
 expect("...and releasing it does not fire either", len(fired), 1)
 
-# The sound end of the same wire. `locate` RAISES for a name neither audio
-# root holds, whether or not there is a card, so this row means the file was
-# really found -- on a silent machine too.
-expect("the sound main.py plays is a file one of the audio roots holds",
-       os.path.isfile(game.audio.locate(main_module.INTERACT_SOUND)), True)
-expect_raises("...and a name neither root holds RAISES rather than going quiet",
-              PyoneerAssetMissingError,
-              lambda: game.audio.locate("sfx/no_such_sound.wav"),
-              "sfx/no_such_sound.wav")
+# THE FAR END OF THE SAME WIRE, and it moved. This used to read the sound a
+# module constant in `main.py` named, because the demo's noise came from a
+# hard-wired handler; the noise comes through the script vocabulary now and
+# that constant is gone. The AUDIO claims -- that `play_sound` reached the
+# subsystem with the authored name, that the name resolves to a file, and
+# that one neither root holds raises -- belong to the check that owns the
+# script wire, which asserts all three over its own fixture.
+#
+# What is left here is the half NO fixture can cover, and it is this file's
+# whole reason to exist: that the SHIPPED game is on that wire. Contract, not
+# content -- no script id, no sound name, no line of dialogue is named below,
+# so renaming the shipped script or rewriting what it says cannot make this
+# red, and unwiring the press can.
+expect("nothing is parked in the flow slot before a key is touched",
+       (before_flow, before_run), (None, None))
+expect("...and the press the rows above measured left a run in it",
+       game.scene.flow is game.script_run and game.script_run is not None,
+       True)
+expect("...which is really running, not merely assigned",
+       game.script_run.running if game.script_run else None, True)
+expect("...and the shipped hero is a body that names a script",
+       game.script_for(driven[0].entity) is not None, True)
+
+
+class _Impostor:
+    """Equal to everything, identical to nothing. The teeth on `script_for`.
+
+    `script_for` documents that it searches by IDENTITY and never by `==`,
+    because a reaped body's address is reusable and an entity that defined
+    equality would answer for a DIFFERENT body's row. An `==` implementation
+    would hand this the hero's script id; identity hands it None.
+    """
+
+    def __eq__(self, other):                      # noqa: D105
+        return True
+
+    def __hash__(self):                           # noqa: D105
+        return 0
+
+
+expect("...and a stand-in that claims equality with it gets no script, "
+       "because the search is by identity",
+       game.script_for(_Impostor()), None)
 
 # ---------------------------------------------------------------------------
 print()
@@ -637,6 +741,148 @@ expect("...and the adopted body is the one carrying the token",
        True)
 expect("...and THIS one does move when the same verb is held for the same "
        "number of frames", walked(driven_game), True)
+
+# ---------------------------------------------------------------------------
+print()
+print("8. the driven-record pick is ONE function, called by both boot paths")
+# ---------------------------------------------------------------------------
+# WHY THIS IS ASSERTED BY AST AND NOT BY IMPORTING IT. Importing proves the
+# name resolves; it cannot prove a SECOND implementation is not sitting in
+# another file doing the same job under the same rule. That is exactly what
+# was here: `main.py` picked the driven body with a three-line `next(...)`
+# and the demo boot path picked its camera target with its own copy of the
+# same loop. Law 2's corollary is that shape at package scale, and it was
+# paid once at 425 DUPLICATE LINES, so the assertion that matters is a count
+# over the whole tree rather than a successful import.
+#
+# The direction is forced and is asserted too: the one definition must be in
+# `scripts/`. The demo package imports `main`, `main` may not spell the demo
+# package's name at all (`tools/check_demos.py` owns that row, because this
+# module is the smoke baseline), so the engine is the ONLY package both
+# callers may name. A shared helper that landed in either of the other two
+# would be a copy waiting to happen.
+
+HELPER = "driven_record"
+SKIP_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".idea", ".vs"}
+
+
+def python_sources() -> list[str]:
+    """Every .py file in the working tree, repo-relative, sorted."""
+    found: list[str] = []
+    for root, dirs, names in os.walk(REPO):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        for name in sorted(names):
+            if name.endswith(".py"):
+                found.append(os.path.relpath(os.path.join(root, name), REPO)
+                             .replace("\\", "/"))
+    return found
+
+
+def function_defs(source: str, name: str) -> int:
+    """How many `def name(...)` this source DEFINES.
+
+    A definition, never a mention: an `import name`, an `__all__` entry and a
+    call are all the name appearing without anything being defined, and a
+    grep could not tell those apart -- which is the whole reason the re-export
+    this change leaves behind is safe.
+    """
+    return sum(1 for node in ast.walk(ast.parse(source))
+               if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and node.name == name)
+
+
+defining: list[str] = []
+for relative in python_sources():
+    with open(os.path.join(REPO, relative), encoding="utf-8") as handle:
+        try:
+            count = function_defs(handle.read(), HELPER)
+        except SyntaxError:
+            # A file this interpreter cannot parse defines nothing as far as
+            # this walk is concerned, and whichever check owns that file owns
+            # the syntax error. Swallowing it here would be wrong only if it
+            # could hide a copy, and a copy that does not parse is not one.
+            continue
+        if count:
+            defining.extend([relative] * count)
+
+# The teeth on the WALK, before the count that rests on it. "Exactly one
+# definition" would also be satisfied by a walk that never reached the two
+# files a copy would most likely be in, which is the failure mode of every
+# tree scan: it passes loudest when it is looking at nothing.
+SEEN = set(python_sources())
+expect("the walk reaches both boot paths, so a copy in either is in scope",
+       {"main.py", "demos/runtime.py"} <= SEEN, True)
+expect("...and it skips nothing it should not: it sees the engine half too",
+       "scripts/loaders/map_loader.py" in SEEN, True)
+
+expect("exactly one file in the tree DEFINES it", len(defining), 1)
+expect("...and it is in the engine half, which is the only package both "
+       "callers may name",
+       defining[0].startswith("scripts/") if defining else None, True)
+
+# The teeth on the counter. Without these, "exactly one" passes for a walker
+# that finds nothing at all, and "one" would be indistinguishable from a
+# tree where the function had been deleted outright.
+TWO_DEFS = """
+def driven_record(records):
+    return None
+
+
+class Keeper:
+    def driven_record(self, records):
+        return records
+"""
+NO_DEFS = """
+from somewhere import driven_record
+
+__all__ = ["driven_record"]
+result = driven_record([])
+"""
+expect("...and the counter finds BOTH of a source that defines it twice",
+       function_defs(TWO_DEFS, HELPER), 2)
+expect("...and counts an import, an __all__ entry and a CALL as zero "
+       "definitions, which is what makes a re-export safe",
+       function_defs(NO_DEFS, HELPER), 0)
+
+# BOTH CALLERS CALL IT, read off their parse trees by the same detector
+# section 2 already falsified above -- it counts a Call and ignores an
+# annotation, which is what stops `driven: Record | None` reading as use.
+with open(os.path.join(REPO, "demos", "runtime.py"), encoding="utf-8") as handle:
+    DEMO_SOURCE = handle.read()
+
+expect("main.py calls it rather than carrying its own copy of the loop",
+       entity_constructions(MAIN_SOURCE, {HELPER}), [HELPER])
+expect("...and so does the demo boot path",
+       entity_constructions(DEMO_SOURCE, {HELPER}), [HELPER])
+expect("...and neither of them still defines one",
+       (function_defs(MAIN_SOURCE, HELPER),
+        function_defs(DEMO_SOURCE, HELPER)), (0, 0))
+
+# AND IT IS THE SAME OBJECT AT RUN TIME, not merely the same name in three
+# files. The AST rows above cannot see a module that re-binds the name to
+# something else after importing it; this row cannot see a duplicate
+# definition. Together they close both.
+import demos.runtime as demo_runtime                              # noqa: E402
+from scripts.loaders import map_loader                            # noqa: E402
+
+expect("the demo package re-exports the engine's function, not a lookalike",
+       demo_runtime.driven_record is map_loader.driven_record, True)
+expect("...and main.py holds that same object too",
+       main_module.driven_record is map_loader.driven_record, True)
+expect("...and the token it reads is the engine's one spelling",
+       main_module.PLAYER_TOKEN is map_loader.PLAYER_TOKEN, True)
+
+# WHAT IT ANSWERS, on the shipped boot, in both directions. The positive is
+# that the function and `main.py`'s adoption agree -- a shared helper that
+# picked a DIFFERENT record than the game adopts would pass every row above.
+expect("it picks the body the shipped game adopted as the player",
+       driven_record(game.renderer.spawned_entities).entity is game.player,
+       True)
+expect("...and returns None once the driving token is taken away, so the "
+       "token is really what it reads",
+       driven_record([dataclasses.replace(record, behaviors=())
+                      for record in game.renderer.spawned_entities]), None)
+expect("...and returns None for nothing at all", driven_record([]), None)
 
 # ---------------------------------------------------------------------------
 print()

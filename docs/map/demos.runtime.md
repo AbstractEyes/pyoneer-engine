@@ -5,33 +5,31 @@
 
 > The demo boot path, extracted once so a demo is not a copy of main.py.
 
-`demos.runtime` · 167 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.runtime` · 164 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    config.managers.map_data demos.mapgen main scripts.game.game_camera scripts.game.game_map
+    config.managers.map_data demos.mapgen main scripts.game.game_camera scripts.game.game_map scripts.loaders.map_loader
 
 ## Functions
 
-- `demos/runtime.py:50` `driven_record(records)` #TAG:driven_record
-  - The spawned record that carries `player_input`, or None.
-- `demos/runtime.py:147` `parse_args(argv=None) -> argparse.Namespace` #TAG:runtime.parse_args
-- `demos/runtime.py:158` `run(game_class, argv=None) -> int` #TAG:run
+- `demos/runtime.py:144` `parse_args(argv=None) -> argparse.Namespace` #TAG:runtime.parse_args
+- `demos/runtime.py:155` `run(game_class, argv=None) -> int` #TAG:run
   - Boot one demo class from the command line. The whole of a demo's main.
 
 ## Classes
 
 ### `class DemoGame(MainGame)` #TAG:DemoGame
 
-`demos/runtime.py:66`–`144`
+`demos/runtime.py:63`–`141`
 
 > A game that is a map plus two class attributes.
 
-- `demos/runtime.py:77` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:DemoGame.load_map
+- `demos/runtime.py:74` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:DemoGame.load_map
   - Register this demo's map with the asset manager, then load it.
-- `demos/runtime.py:103` `load_test_objects(self)` #TAG:DemoGame.load_test_objects
+- `demos/runtime.py:100` `load_test_objects(self)` #TAG:DemoGame.load_test_objects
   - Configure what the MAP spawned, and build nothing.
-- `demos/runtime.py:130` `@property spawned(self)` #TAG:DemoGame.spawned
+- `demos/runtime.py:127` `@property spawned(self)` #TAG:DemoGame.spawned
   - Every record the map spawned, in document order.
-- `demos/runtime.py:134` `entity_of(self, object_id: int)` #TAG:DemoGame.entity_of
+- `demos/runtime.py:131` `entity_of(self, object_id: int)` #TAG:DemoGame.entity_of
   - The entity spawned for the tmx `<object id="N">`, or None.

@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L0 -->
-<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29. The first two KNOWN GAPS bullets were re-measured on 2026-09-03: README's three false gap claims and its stale check count are gone, so that bullet now names only the structural half it still owns, and the BEHAVIORS preamble bullet gained the second lie found in the same preamble that day. Also on 2026-09-03, at the finalize of the repair pass: the `map.tileset.grow`/`.rename` gap is struck through with the grep that closed it, and the fourth ACTIVE WARNING sighting was put into the past tense without being deleted. On 2026-09-04, at the finalize of the audio + map + queue pass: LAW 11 CHANGED SUBJECT -- the author's private test.tmx canvas was retired ON HIS EXPLICIT INSTRUCTION and replaced by the shipped data/maps/starter.tmx, so law 11 now protects that file and the baseline, with its reasons re-measured against the new map (byte-exact round trip under both LF and CRLF); law 4 gained the second instance that cost this pass; the query playbook gained an audio row and re-measured EVENTS.md's reachability count; The constants gained the two asset-root pairs and the shipped map; and KNOWN GAPS gained the audio-unreachable bullet. The ladder's level-0 cost was re-measured at ~9.7k -->
+<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29. The first two KNOWN GAPS bullets were re-measured on 2026-09-03: README's three false gap claims and its stale check count are gone, so that bullet now names only the structural half it still owns, and the BEHAVIORS preamble bullet gained the second lie found in the same preamble that day. Also on 2026-09-03, at the finalize of the repair pass: the `map.tileset.grow`/`.rename` gap is struck through with the grep that closed it, and the fourth ACTIVE WARNING sighting was put into the past tense without being deleted. On 2026-09-04, at the finalize of the audio + map + queue pass: LAW 11 CHANGED SUBJECT -- the author's private test.tmx canvas was retired ON HIS EXPLICIT INSTRUCTION and replaced by the shipped data/maps/starter.tmx, so law 11 now protects that file and the baseline, with its reasons re-measured against the new map (byte-exact round trip under both LF and CRLF); law 4 gained the second instance that cost this pass; the query playbook gained an audio row and re-measured EVENTS.md's reachability count; The constants gained the two asset-root pairs and the shipped map; and KNOWN GAPS gained the audio-unreachable bullet. The ladder's level-0 cost was re-measured at ~9.7k. On 2026-09-10, at the finalize of the reachability pass: the query playbook's EVENTS row was re-measured and INVERTED -- all six reachability rows read `yes` now, where four read `no`, because a scripted event runs when a human presses a key; the KNOWN GAPS audio bullet is struck through with the greps that closed it, and the action-route shortcut it named was deleted rather than left beside the real route; and one anchor was added, `#TAG:no_event_pooling`, for the measurement that justified deleting a branch that had never executed. Nothing else in this file was re-measured in that pass and every other claim keeps its own date. -->
 
 # Pyoneer — read this first
 
@@ -180,7 +180,7 @@ topic, different layers, and different files.
 |---|---|
 | "what exists" · "where does X live" · "is there already a function for this" | [`docs/MAP.md`](docs/MAP.md) — GENERATED tier 1, then one tier-2 file |
 | "what does this behavior do" · "how do I make it move" · "add a behavior" | [`docs/BEHAVIORS.md`](docs/BEHAVIORS.md) — GENERATED; trust its **measured integration table** over any prose, including its own preamble |
-| "what can a script DO" · "what ops exist" · "what may I write in a `do`" · "does that op actually run" | [`docs/EVENTS.md`](docs/EVENTS.md) — GENERATED, and it makes no hand-written claim about the code at all: its runtime and reachability columns are measured on every run, and today four of six reachability rows read `no` |
+| "what can a script DO" · "what ops exist" · "what may I write in a `do`" · "does that op actually run" | [`docs/EVENTS.md`](docs/EVENTS.md) — GENERATED, and it makes no hand-written claim about the code at all: its runtime and reachability columns are measured on every run, and today ALL SIX reachability rows read `yes` for the first time -- four of them flipped on 2026-09-10. A row that goes back to `no` is a wire somebody broke, not a feature nobody built yet |
 | "how do I make a noise" · "where does audio come from" · "why is it silent" · "what am I allowed to ship" | [`data/audio/CREDITS.md`](data/audio/CREDITS.md) for the two shipped assets and their licences; `#TAG:scripts/core/audio.py` for the two roots and the missing-card / missing-file split; [`docs/EVENTS.md`](docs/EVENTS.md) for the two play ops |
 | "my entity does not move" · "nothing happens when I press a key" · "it falls forever" · "it raises at load" · "I painted collision and nothing blocks" | [`docs/DIAGNOSE.md`](docs/DIAGNOSE.md) |
 | "what can I place on an object layer" · "what goes in `type=`" · "why does my layer not draw" · "what key is bound to what" | [`docs/PLACEABLE.md`](docs/PLACEABLE.md) — GENERATED |
@@ -480,16 +480,21 @@ Each address below is a tag, so it stays true when the code moves.
   drives a real right-click, a real `QAction.trigger()` and a real undo. The
   sighting itself stays recorded in ACTIVE WARNINGS above, because that list
   is a record of repetition and closing an instance does not unmake it.
-- **Nothing but a script can make a noise, and no script runs.** The audio
-  subsystem landed on 2026-09-04 -- `#TAG:scripts/core/audio.py`, two roots,
-  the card/file split, `play_sound` and `play_music` as core ops -- and
-  nothing in the shipped game loads a script document, so the two ops are
-  reachable only from a check calling the interpreter. Measured:
-  `grep -rn "load_scripts" main.py demos/` returns nothing. A `.tmx` and a
-  `.blitmap` declare no audio anywhere either, so the demo makes its noise
-  through an ACTION ROUTE (`#TAG:MainGame.play_interaction_sound`) rather
-  than through the vocabulary that was built for it. That is the ACTIVE
-  WARNING shape above, recorded rather than hidden.
+- **~~Nothing but a script can make a noise, and no script runs~~ -- paid
+  off, and the shortcut it named was deleted rather than left beside the
+  real route.** The boot reads `data/project/scripts/` beside the tables and
+  before the map bind; `pyoneer_script` on a tmx object joins to a spawned
+  body; one press of the `action` verb builds a `ScriptRun` in
+  `SceneManager`'s flow slot. So the demo's chime now comes THROUGH the
+  vocabulary -- `play_sound` blaming `starter_greeting page 'greeting' node
+  'chime'` -- and `MainGame.play_interaction_sound`, the action route that
+  stood in for it, is gone: two ways to make one noise is worse than one.
+  Measured 2026-09-10: `grep -rn "load_scripts" main.py` returns a hit where
+  it returned nothing, `grep -rn "pyoneer_script" data/` names the shipped
+  hero, and `tools/check_script_runtime.py` drives the real keyboard through
+  the real relay. THE GESTURE: `.venv/Scripts/python.exe main.py`, press
+  `e`. A `.blitmap` still declares no audio anywhere, which is the part of
+  this bullet that did not move.
 - **`tools/` is not in the code map**, deliberately — a check module is read
   whole or not at all. So `grep -rn "#TAG:"` answers nothing about the check
   suite; [`docs/CHECKS.md`](docs/CHECKS.md) is the index for that half of the
@@ -559,4 +564,5 @@ probably renamed.
 #TAG:MASK_DOMAIN :: tuple(range(STAR + 1))
 #TAG:BRUSH_DOMAIN :: MASK_DOMAIN + (NO_DATA,)
 #TAG:CROP_DIR :: CROP_DIR = "tilesets"
+#TAG:no_event_pooling :: identity and is CONSTANT FALSE
 ```

@@ -66,9 +66,31 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator, Mapping, Optional, Sequence, Tuple, Union
 
 from scripts.core.errors import PyoneerAssetMissingError, PyoneerConfigError
+from scripts.core.layer_profile import PREFIX
 from scripts.core.log import trace_assets
 from scripts.game.behavior.base import PARAM_TYPES, TOKEN, BehaviorParam
 from scripts.game.flow import ops as op_registry
+
+SCRIPT_PROPERTY: str = PREFIX + "script"
+"""The tmx object property naming the event script that object runs.
+
+THE ONE DECLARATION. A FILE FORMAT string, minted by `docs/PLAN_SCENES.md`
+4.6 and permanent under law 8, so both halves of the seam must spell it the
+same way forever: `editor/ui/script_editor.py` WRITES it onto an object and
+`main.py` READS it at boot to join a spawned body to its document. It lived
+in both files for a day, which is law 2's corollary -- shared logic lives in
+`scripts/` and the editor re-exports it -- and this is where that debt was
+paid.
+
+Here, and not in `scripts/core/layer_profile.py`, because that module's
+`KNOWN` tuple is the LAYER vocabulary and a check asserts the editor declares
+exactly it; this is an OBJECT property, like `BEHAVIORS` and `ACTOR`, which
+live beside the code that reads them for the same reason.
+
+Composed from the imported `PREFIX` and never retyped (law 1): pytmx raises
+and makes the whole map unloadable if a custom property shadows one of its
+own attribute names.
+"""
 
 FORMAT: str = "pyoneer.script"
 """The `format` key every event script opens with. A FILE FORMAT string."""

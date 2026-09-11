@@ -17,13 +17,22 @@ from scripts.game.entity.game_player import GamePlayer
 from config.managers.animation_data import DataAnimationCategory
 from config.managers.core_asset_manager import CoreAssetManager
 from scripts.core.audio import AudioManager
-from scripts.core.errors import PyoneerConfigError, warn_content
+from scripts.core.errors import (PyoneerAssetMissingError, PyoneerConfigError,
+                                 warn_content)
 from scripts.core.input import InputActionManager
 from scripts.game.behavior import BEHAVIORS
 from scripts.game.entity.game_animation import GameAnimationHandler
 from scripts.core.scene.scene_manager import SceneManager
 from scripts.core.component import GameComponent
+from scripts.core.ui.anchor import Anchor
+from scripts.core.ui.widget.text import TextComponent
 from scripts.core.ui.widget.containers.window import GameWindow
+from scripts.game.flow.interpreter import ScriptRun
+from scripts.loaders.map_loader import (PLAYER_TOKEN, as_document,
+                                        driven_record,
+                                        has_tmx_document)
+from scripts.loaders.script_file import (SCRIPT_PROPERTY, VarStore,
+                                         load_scripts, read_vars)
 from scripts.loaders.table_file import load_tables
 from scripts.game.demo_window import DemoWindow
 
@@ -54,22 +63,60 @@ drawn depths, a passability companion that blocks, and an object layer whose
 Python in this file that builds an entity -- see `load_test_objects`.
 """
 
-PLAYER_TOKEN: str = "player_input"
-"""The behavior token that means "the human drives this one".
+INTERACT_TOKEN: str = "interact_action"
+"""The behavior token whose firing starts an object's event script.
 
-Which object is the player is answered from its COMPOSITION rather than from
-a flag: no class, no `pyoneer_player` property, no boolean. Two objects of
-the same type built from the same config differ by this one string, and the
-one carrying it is the one the camera follows.
+The token, never the input verb. `interact_action` is what a tmx object's
+`pyoneer_behaviors` list spells and what `ActionFired.name` carries, and
+`ActionRouter` is keyed by it -- routing the verb `action` instead would key
+nothing, which is the mistake `ActionRouter.route` raises about by name.
 """
 
-INTERACT_SOUND: str = "sfx/chime.wav"
-"""What `interact_action` plays, named the way an authored sound is named.
+RELAY_TOKEN: str = "action_relay"
+"""The behavior that CALLS the sink. Named so a diagnostic can require it.
 
-Root-free, exactly as `scripts/core/audio.py` takes it: `data/sound/` is
-looked at first and `data/audio/` -- the shipped pack -- answers when the
-author has put nothing there.
+`interact_action` only RECORDS a firing into the entity's action record;
+`action_relay` at order 90 is what hands it to `entity.action_sink`. An
+object carrying the first and not the second produces firings nothing ever
+reads, which looks exactly like a script that does not work.
 """
+
+# `SCRIPT_PROPERTY` is IMPORTED, not declared: the string `pyoneer_script` is
+# a file-format name under law 8 and the editor writes what this file reads,
+# so it has exactly one declaration, in `scripts/loaders/script_file.py`
+# beside the reader of the documents it names. It is re-exported here because
+# a reader who has the boot open expects to find the property it joins on.
+
+SCENE_VARS: dict[str, dict] = {
+    "greeted": {
+        "type": "bool",
+        "default": False,
+        "doc": "Whether the starter script has already introduced itself "
+               "once this session. Its two values are the two arms of the "
+               "script's `if`, so both are reachable by pressing the "
+               "action key twice.",
+    },
+}
+"""The variable schema the shipped scene declares. A SCENE owns this.
+
+`docs/PLAN_SCENES.md` 2.1 is explicit that a scene owns its variable schema
+-- it is what lets a typo raise before a frame runs -- and the scene document
+that would carry it has no reader: there is no `scripts/loaders/scene_file.py`
+in this tree. So the shipped game declares its one scene's schema at the one
+place that names its one map, three lines above, and it MOVES to
+`data/project/scenes/starter.json` the day that loader exists.
+
+Read through `read_vars`, which is the same function a scene reader will
+call, so the declaration is judged now exactly as it will be judged then: a
+missing `default` raises here, not later, because reading a variable is TOTAL
+at run time and that is what moves every failure to load.
+"""
+
+DIALOGUE_BOUNDS: Rect = Rect(120, 400, 560, 120)
+"""Where a `say` line is shown. Bottom-ish and wide, like every dialogue box."""
+
+DIALOGUE_LAYER: str = "UI_LAYER_1"
+"""Which UI layer the dialogue box is bound into when one is first needed."""
 
 
 def feet_anchor(animation_config: DataAnimationCategory) -> tuple[float, float]:
@@ -110,6 +157,144 @@ def feet_anchor(animation_config: DataAnimationCategory) -> tuple[float, float]:
     return (first.width / 2.0, float(first.height - 1))
 
 
+class ScriptBox(GameWindow):
+    """A `GameWindow` holding one line of dialogue. That is the whole widget.
+
+    Derives `GameWindow` rather than wrapping one so `open()` and `close()`
+    stay the inherited pair -- `visible`/`active` up, and
+    `visible`/`active`/focus down. A wrapper that reimplements them is how a
+    closed dialogue box goes on swallowing clicks in the rectangle it used to
+    occupy.
+
+    CONSTRUCTED CLOSED, and that is not cosmetic: rendering is gated on
+    `visible`, so a closed box queues no `BlitToken` at all. Measured on the
+    shipped map, 60 frames: 37 blit tokens with the box bound and closed,
+    which is the baseline to the token, and 43 while a line is open.
+
+    `who` goes in the header and `text` in the body, which is the only home
+    `say`'s two arguments have in a one-line box.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("header_text", "")
+        kwargs.setdefault("resizable", False)
+        kwargs.setdefault("visible", False)
+        kwargs.setdefault("active", False)
+        super().__init__(*args, **kwargs)
+        self.line_text: TextComponent | None = None
+        self._line: str = ""
+
+    def build_content(self):
+        """Build the line of text. Called by `GameWindow` once chrome exists.
+
+        Content belongs here rather than in `__init__`: `world_bounds` is not
+        final until the component has a parent and has been prepared, so a
+        child sized in the constructor is sized against the wrong rectangle.
+        """
+        self.line_text = TextComponent(
+            parent=self, depth=2,
+            bounds=Rect(10, self.header_height + 8,
+                        self.local_bounds.width - 20,
+                        self.local_bounds.height - self.header_height - 16),
+            text=self._line,
+            center=False,
+            auto_fit=True)
+        self.line_text.anchor = Anchor.ALL
+        self.bind_component("line_text", self.line_text)
+
+    @property
+    def line(self) -> str:
+        """The sentence currently shown. Assigning repaints it."""
+        return self._line
+
+    @line.setter
+    def line(self, value: str) -> None:
+        self._line = str(value)
+        # Buffered until the chrome exists, because a caller may set the line
+        # before the box has been bound and therefore prepared.
+        if self.line_text is not None:
+            self.line_text.text = self._line
+
+    @property
+    def speaker(self) -> str:
+        """Who is talking, shown in the header. Empty is narration."""
+        return self.text
+
+    @speaker.setter
+    def speaker(self, value: str) -> None:
+        self.text = str(value)
+        if self.header_text is not None:
+            self.header_text.text = self.text
+
+
+class ScriptDialogue:
+    """The `say` host: two duck-typed methods, and a box built on FIRST USE.
+
+    `ScriptRun` asks a host for exactly `say_open(who, text)` and
+    `say_close()` -- named once in `scripts/game/flow/interpreter.py` as
+    `SAY_OPEN` and `SAY_CLOSE` -- and a host missing either RAISES naming the
+    method, because a `say` that showed nothing would be a line of dialogue
+    the player never sees and no complaint.
+
+    LAZY, AND THAT IS THE WHOLE REASON THIS IS A CLASS. `tools/smoke.py`
+    injects no input, so no script ever starts under it; a box built only
+    when a line is first spoken is therefore invisible to the frame
+    instrument, where a box bound at boot moves four baseline fields at once.
+    Measured on the shipped map: binding one at boot takes `ui_roots` from
+    `["DemoWindow@100"]` to two roots, `ui_component_total` from 124 up, and
+    both dispatch censuses with it -- all four while the box is CLOSED and
+    drawing nothing, because a census counts the tree and not the pixels.
+
+    Binding here is safe for the same reason `SceneManager.post_update` gives
+    at the flow slot itself: `say_open` is reached from `flow.update`, which
+    runs AFTER `core_frame_update_post` has returned, so opening a window
+    cannot mutate a list something is iterating. Binding from the action
+    route instead would do exactly that -- `action_relay` calls the sink from
+    inside the entity's own frame update.
+
+    Binding through `SceneManager.bind` also PREPARES the box: `UILayer.bind`
+    calls `core_lifecycle_prepare` on what it is handed, which is what builds
+    the chrome and runs `build_content`. A box merely appended to the scene
+    would never be prepared and would draw nothing, which is the failure this
+    paragraph exists to stop someone re-discovering.
+    """
+
+    __slots__ = ("game", "box")
+
+    def __init__(self, game: "MainGame"):
+        self.game = game
+        self.box: ScriptBox | None = None
+        """The dialogue box, or None until a script has said something."""
+
+    def require_box(self) -> ScriptBox:
+        """The box, building and binding it the first time one is asked for."""
+        if self.box is None:
+            self.box = ScriptBox(bounds=Rect(DIALOGUE_BOUNDS))
+            self.game.scene.bind(DIALOGUE_LAYER, self.box)
+        return self.box
+
+    def say_open(self, who: str, text: str) -> None:
+        """Show one line. Called on the frame a `say` node is entered."""
+        box = self.require_box()
+        box.speaker = who
+        box.line = text
+        box.open()
+
+    def say_close(self) -> None:
+        """Hide the line. Called on the frame the `say` completes.
+
+        The only closer, and it is sufficient: a `say` node BLOCKS the run
+        while it waits for the advance, so no other node -- `stop` included --
+        can execute while a line is on screen. A box left open is therefore an
+        exception escaping mid-run, which is not a state to paper over.
+
+        Tolerates never having opened, so a host handed to a run that says
+        nothing is not a special case.
+        """
+        if self.box is not None:
+            self.box.close()
+
+
 # houses the global game state
 class MainGame:
     def __init__(self, autostart: bool = True):
@@ -137,6 +322,47 @@ class MainGame:
         """
         self.window: DemoWindow | None = None
         """The test window. F1 toggles it; the close button hides it."""
+        self.scripts: dict = {}
+        """Every `data/project/scripts/*.json`, keyed by id. Read at boot.
+
+        ONE registry, and it is the loader's own return value rather than a
+        class wrapping it: `load_scripts()` already answers "every script this
+        project declares", and `ScriptRun` takes that same mapping as its
+        `scripts=` argument so a `call` resolves through the dict the boot
+        read and not through a second copy.
+
+        HERE rather than on the renderer beside `tables` and `spawn_defaults`,
+        and the difference is who reads it: those two are read INSIDE
+        `scripts/` -- the map bind hands them to `spawn_objects` -- while
+        nothing in `scripts/` opens a script document. A slot on a class that
+        never touches it would be a monkey-patched attribute, which is worse
+        than an honest one here.
+        """
+        self.script_vars: VarStore | None = None
+        """The live value of every variable `SCENE_VARS` declares.
+
+        Built ONCE at boot, never per run, which is what makes the shipped
+        script's `if` reach both arms: the second press reads what the first
+        press `set`.
+        """
+        self.script_run: ScriptRun | None = None
+        """The run currently in `SceneManager.flow`, or the last one to finish."""
+        self.dialogue: ScriptDialogue | None = None
+        """The `say` host. Its box is not built until a line is spoken."""
+        self.object_scripts: list[tuple] = []
+        """(entity, script id) for every spawned body carrying `pyoneer_script`.
+
+        A LIST searched by identity, not a dict keyed by `id(entity)`: a
+        reaped body's address can be reused by the next allocation, and a
+        stale row under a recycled key would start the wrong conversation.
+        """
+        self.map_data = None
+        """The parsed map, kept so the object scripts can be re-read.
+
+        `SpawnedEntity` carries `object_id` and `layer_name` and NOT the
+        object's properties, so the only way back to `pyoneer_script` is the
+        document -- which is exactly what those two fields are for.
+        """
         #self.test_entity = None
         self.input: InputActionManager | None = None
         self.audio: AudioManager | None = None
@@ -170,6 +396,20 @@ class MainGame:
     def prepare_test_scene(self):
         self.scene = SceneManager(self)
         game_camera, game_map = self.load_map()
+        # Off the GameMap rather than out of `load_map`, and the difference is
+        # inheritance: `load_map` is a HOOK -- the sibling demo runtime
+        # overrides it, and so does any game booting a map of its own -- so an
+        # assignment inside it is one every subclass silently drops, and the
+        # symptom is a map whose `pyoneer_script` properties are simply never
+        # seen. This line is in the method a subclass inherits by identity, so
+        # it cannot be lost that way. Measured: written the other way first,
+        # and the fixture boot in this change's own check found it.
+        #
+        # (Described by shape rather than by path, as the pick in
+        # `load_test_objects` already is: this module is the smoke baseline,
+        # and a check asserts main.py does not so much as SPELL that
+        # package's name.)
+        self.map_data = game_map.tmx_data
         self.scene.add_scene(MAP_NAME, GameScene(MAP_NAME))
         self.scene.set_scene(MAP_NAME)
         self.scene.bind("renderer", self.renderer)
@@ -183,6 +423,19 @@ class MainGame:
         # data/project/tables/ and returns an EMPTY set when the directory is
         # absent, so a clone with no Database boots identically.
         self.renderer.tables = load_tables()
+        # The scripts, on the same rule as the tables and for the same
+        # reason: an absent `data/project/scripts/` is an empty mapping and
+        # not an error, so a clone with no scripted events boots identically,
+        # while a document that fails to PARSE raises here -- naming the file,
+        # before a display exists, before a frame has run and before anybody's
+        # agency has been taken. A script skipped for a stray comma would be a
+        # keeper who silently does nothing, which is indistinguishable from a
+        # keeper the author has not written yet.
+        #
+        # BEFORE the map bind, so a broken script cannot be reported after a
+        # world has already been built around it.
+        self.script_vars = VarStore(read_vars(SCENE_VARS, "main.SCENE_VARS"))
+        self.scripts = load_scripts(variables=self.script_vars.schema)
         self.scene.bind("MAP", game_map)
         # AFTER the map, because that bind is what spawns and binds the map's
         # objects; this hook only configures what already exists.
@@ -327,23 +580,18 @@ class MainGame:
         """
         bindable_objects: list[tuple[str | int,
                                      PyoneerGameObject | GameEntity | GamePlayer | GameComponent]] = []
-        # WHICH OBJECT IS THE PLAYER, answered from the composition. The
-        # records carry RESOLVED `BehaviorRequest`s, so the token is compared
-        # against the registry's own spelling (`spec.name`) and not against a
-        # substring of the raw property -- which would also match a future
-        # `player_input_recorder`.
-        #
-        # The demo boot path owns a second copy of this three-line pick, as
-        # `driven_record`. It imports THIS module already, so the two should
-        # become one import in that direction; they are kept apart today only
-        # because that file belongs to another change. (Named by shape rather
-        # than by path on purpose: the demo suite asserts this file does not
-        # so much as SPELL that package's name, because it is the smoke
-        # baseline and the dependency runs one way.)
+        # WHICH OBJECT IS THE PLAYER, answered from the composition -- and
+        # answered by ONE function, in `scripts/`, that the demo boot path
+        # calls too. It used to be this three-line `next(...)` here and a
+        # second copy under another name over there, which is law 2's
+        # corollary at small scale; the corollary was paid once at 425
+        # duplicate lines. The direction the import runs is forced and is the
+        # reason the shared half is in the engine rather than here: that
+        # package imports THIS module, and a check asserts this file does not
+        # so much as SPELL its name, because this module is the smoke
+        # baseline and the dependency runs one way.
         records = list(self.renderer.spawned_entities)
-        driven = next((record for record in records
-                       if any(request.spec.name == PLAYER_TOKEN
-                              for request in record.behaviors)), None)
+        driven = driven_record(records)
         # Fall back to the first spawned entity so a map with no driven object
         # still gives the camera something to follow. Both may be None on a
         # map with an empty object layer, and `handle_global_input` guards
@@ -368,7 +616,9 @@ class MainGame:
         # who later adds a `pyoneer_param_payload` to that object still
         # reaches this; a route keyed to one payload string would go silent
         # the moment the map said something more specific.
-        self.scene.actions.route("interact_action", self.play_interaction_sound)
+        self.object_scripts = self.read_object_scripts()
+        self.dialogue = ScriptDialogue(self)
+        self.scene.actions.route(INTERACT_TOKEN, self.run_object_script)
         #for i in range(0, 5):
             #bindable_objects.append( (100,
             #    WidgetDrawableGroup(state=WidgetStateInteractive(
@@ -414,38 +664,167 @@ class MainGame:
         self.audio = AudioManager().prepare(self.assets.config.get('audio'))
         # more config loading happens here in the future
 
-    def play_interaction_sound(self, entity, fired) -> None:
-        """Make a noise when a body's `interact_action` fires.
+    def read_object_scripts(self) -> list[tuple]:
+        """(entity, script id) for every spawned body naming a `pyoneer_script`.
+
+        THE READER THE EDITOR HAS BEEN WRITING FOR. `editor/ui/script_editor.py`
+        has been able to put that property on an object for as long as it has
+        existed, and until this method nothing in a running game opened the
+        document it named -- the capability complete, checked, and unreachable
+        by the person who asked for it.
+
+        Re-reads the .tmx because `SpawnedEntity` carries `object_id` and
+        `layer_name` and NOT the object's properties. Those two fields exist
+        so a downstream error can name the `<object>` that produced an entity,
+        and joining on them here is the same use: the pair addresses the
+        authored object, and the document answers what it declared.
+
+        A map that is not a .tmx declares no object scripts, and that is the
+        TRUTH rather than a fallback -- a native `.blitmap` has no property
+        store this could read, so there is nothing to fail to find.
+
+        RAISES for a `pyoneer_script` naming a document that is not there,
+        listing what is, exactly as `actor_row` raises for a `pyoneer_actor`
+        naming an absent row. Skipping it would leave an object that looks
+        scripted and is silently inert, which is the shape law 8 exists to
+        refuse.
+
+        WARNS -- and does not raise -- for a body whose script can never
+        start, because that is unusable authored content and not a contract
+        violation: a map edited halfway is a normal state, and an engine that
+        refused to load it would take the editor down with the author still
+        working in it. NARROW, on `warn_undriven_player`'s rule: only a body
+        that actually spawned and actually names a script is named, because an
+        untyped region marker carrying one is waiting for the `enter`/`exit`
+        route, which is a different wire and is not built.
+        """
+        if self.map_data is None or not has_tmx_document(self.map_data):
+            return []
+        document = as_document(self.map_data)
+        declared: dict[tuple, str] = {}
+        for layer_name in document.object_layer_names():
+            for obj in document.object_layer(layer_name).objects():
+                named = obj.properties.get(SCRIPT_PROPERTY)
+                if named:
+                    declared[(layer_name, obj.id)] = str(named)
+        pairs: list[tuple] = []
+        for record in self.renderer.spawned_entities:
+            script_id = declared.get((record.layer_name, record.object_id))
+            if script_id is None:
+                continue
+            if script_id not in self.scripts:
+                raise PyoneerAssetMissingError(
+                    "event script", script_id, available=sorted(self.scripts),
+                    asked_by="tmx object id=%d on layer %r via %s"
+                             % (record.object_id, record.layer_name,
+                                SCRIPT_PROPERTY))
+            tokens = {request.spec.name for request in record.behaviors}
+            missing = [token for token in (INTERACT_TOKEN, RELAY_TOKEN)
+                       if token not in tokens]
+            if missing:
+                warn_content(
+                    "the map's <object id=%d> on layer %r names the event "
+                    "script %r in %s, and its %s list is missing %s -- so "
+                    "nothing will ever start it. %r is what records the "
+                    "firing and %r is what CALLS the scene's router with it; "
+                    "without both, pressing the action key reaches nothing "
+                    "and the script looks like it does not work. Present: %s."
+                    % (record.object_id, record.layer_name, script_id,
+                       SCRIPT_PROPERTY, BEHAVIORS,
+                       ", ".join(repr(token) for token in missing),
+                       INTERACT_TOKEN, RELAY_TOKEN,
+                       ", ".join(sorted(tokens)) or "<none>"))
+            pairs.append((record.entity, script_id))
+        return pairs
+
+    def script_for(self, entity) -> str | None:
+        """Which script `entity` names, or None. Searched by IDENTITY.
+
+        Never `==`: an entity that defined equality would answer for a
+        DIFFERENT body's row, which is the same trap `SceneManager` documents
+        at `__forget_spawn_record` and at `GameScene.unbind`.
+        """
+        for candidate, script_id in self.object_scripts:
+            if candidate is entity:
+                return script_id
+        return None
+
+    def run_object_script(self, entity, fired) -> None:
+        """Start the fired body's event script -- or advance the one running.
 
         An `ActionRouter` handler: `(entity, fired)` is what `action_relay`
-        passes, so this needs no adapter. Registered in `load_test_objects`,
-        and NOT in `prepare_test_scene` -- this sentence said the latter for
-        a while, and following it reproduces a real failure. The reason is
-        the one written at the registration itself: a subclass INHERITS
-        `prepare_test_scene` by identity and OVERRIDES `load_test_objects`,
-        so a route registered in the caller is the shipped game's wiring
-        silently installed in every game built on this class. Measured by
-        moving it there: three of `tools/check_prototype.py`'s assertions go
-        red, because the narrative kit's router then carries this game's
-        route alongside its own. `tools/check_demo_map.py` stays green
-        through the whole mistake -- it boots THIS class and no subclass of
-        it, so nothing it looks at can see the difference. Do not read that
-        PASS as permission.
+        passes, so this needs no adapter. THE WHOLE WIRE, and every link of it
+        already existed:
 
-        (And do not name the sibling suite here: this module is the smoke
+            press `action` -> `interact_action` records ActionFired
+                           -> `action_relay` CALLS entity.action_sink
+                           -> SceneManager.actions picks this handler
+                           -> ScriptRun(...) and SceneManager.flow = it
+
+        Zero changes to `SceneManager`, zero to `GameScene`, zero new
+        `GameEventType` members, zero contact with the event bus. The flow
+        slot is duck-typed on `update(delta)` and a `ScriptRun` fits it -- the
+        same slot, and the same one line, the sibling narrative kit uses to
+        start a `SceneFlow`. (Named by shape rather than by path for the
+        reason the pick in `load_test_objects` gives: this module is the smoke
+        baseline, and a check asserts it does not SPELL that package's name.)
+
+        A SECOND TRIGGER ARRIVING MID-RUN IS REFUSED AS A START AND SPENT AS
+        THE ADVANCE. Not queued, and not dropped. Refused because
+        `SceneManager.flow` is ONE slot on purpose: a narrative flow is modal,
+        it takes the player's steering, and two runs would each restore the
+        agency the other had already changed -- the second `release` would put
+        back the first `hold`'s recorded value and strand the body. Not queued
+        because a queue has to decide which run is next, nothing in this tree
+        owns that decision, and an unreachable class shipped early is this
+        repository's signature defect rather than a head start. Spent as the
+        advance because that is what the key press MEANS while a line is on
+        screen: `ScriptRun.on_action` reads neither of its arguments, exactly
+        as `SceneFlow.on_action` does, since which action advances a run is
+        the router's decision and re-testing the token here would be a second
+        copy of the routing rule.
+
+        A run that has FINISHED is not running, so the next press starts a
+        fresh one over the same variable store -- which is what lets the
+        shipped script's `if` reach its second arm.
+
+        Registered in `load_test_objects`, and NOT in `prepare_test_scene`:
+        a subclass INHERITS that method by identity and OVERRIDES this one, so
+        a route registered in the caller is the shipped game's wiring silently
+        installed in every game built on this class. (And do not name the
+        sibling suite that measures it here: this module is the smoke
         baseline, so a check asserts main.py does not so much as SPELL that
-        package's name -- writing the path of its check file in this
-        docstring turns that check red, which is how this paragraph was
-        first written and then measured.)
+        package's name.)
 
-        Unguarded on purpose. `self.audio` is assigned in `load_config`,
-        which runs before any scene exists, so a None here is a WIRING bug and
-        an AttributeError naming it is the correct report -- where a silent
-        `return` would be indistinguishable from a machine with no sound card,
-        which is the one case `play_sound` already answers truthfully with
-        False. A missing FILE raises, deliberately, on a silent machine too.
+        Begins with `trigger="use"`, which is the trigger kind route A IS:
+        `enter`, `exit` and `stay` are region triggers, reached by proximity,
+        and that is a wire nothing in `scripts/` reads. The firing's payload
+        is passed through, so a page declaring one answers only its own
+        interaction while a page declaring none answers any -- the rule
+        `ActionRouter` spells as `ANY_PAYLOAD`, written once on each side
+        rather than as a second convention.
         """
-        self.audio.play_sound(INTERACT_SOUND)
+        running = self.script_run
+        if running is not None and running.running:
+            running.on_action(entity, fired)
+            return
+        script_id = self.script_for(entity)
+        if script_id is None:
+            return
+        run = ScriptRun(self.scripts[script_id],
+                        variables=self.script_vars,
+                        bodies=[record.entity
+                                for record in self.renderer.spawned_entities],
+                        host=self.dialogue,
+                        scripts=self.scripts,
+                        name=script_id)
+        # Zero passing pages is not an error and starts nothing: a keeper with
+        # nothing to say today is a real idiom. Leaving the flow slot alone in
+        # that case matters -- a run that never began, parked in the slot,
+        # would be ticked by `post_update` for ever to no effect.
+        if run.begin(trigger="use", payload=getattr(fired, "payload", "")):
+            self.script_run = run
+            self.scene.flow = run
 
     def load_renderer(self):
         bounds = self.assets.config.get('theme').get("window")["bounds"]

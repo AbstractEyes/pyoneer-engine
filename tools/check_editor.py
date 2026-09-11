@@ -235,23 +235,33 @@ atexit.register(shutil.rmtree, GENRE_FIXTURES, ignore_errors=True)
 _fixture_serial = 0
 
 
-def fixture_pack(*layers):
+def fixture_pack(*layers, **top):
     """Write a throwaway pack; return a thunk that LOADS it.
 
     A thunk rather than a loaded pack, because half of what is asserted here
     is that loading REFUSES -- and a helper that loaded eagerly could only
     ever exercise the half that succeeds, which is the exact one-sided shape
     law 5 is about.
+
+    `**top` writes top-level manifest keys beside `layers`. The thunk carries
+    the generated pack id as `.genre_id`, because a refusal that has to name
+    the PACK cannot be asserted against an id the caller never saw.
     """
     global _fixture_serial
     _fixture_serial += 1
     identifier = f"fixture{_fixture_serial}"
     root = os.path.join(GENRE_FIXTURES, identifier)
     os.makedirs(root)
+    manifest = {"id": identifier, "title": "Fixture", "layers": list(layers)}
+    manifest.update(top)
     with open(os.path.join(root, "genre.json"), "w", encoding="utf-8") as handle:
-        json.dump({"id": identifier, "title": "Fixture",
-                   "layers": list(layers)}, handle)
-    return lambda: genre_module.load(identifier, GENRE_FIXTURES)
+        json.dump(manifest, handle)
+
+    def thunk():
+        return genre_module.load(identifier, GENRE_FIXTURES)
+
+    thunk.genre_id = identifier
+    return thunk
 
 
 def entity_layer(**extra):
@@ -349,6 +359,153 @@ expect("a class declared with an EMPTY list is a real answer, not silence",
        fixture_pack(entity_layer(object_classes=[
            {"type": "GamePlayer", "behaviors": []}]))()
        .object_class("entity", "GamePlayer").behaviors, ())
+
+# --------------------------------------------------------------------------
+print()
+print("event_loadouts: a pack GRANTS a script vocabulary, or says nothing")
+# --------------------------------------------------------------------------
+# `event_loadouts` is the pack's grant of op vocabularies to the scripts
+# authored under it. Everything here runs against fixture packs in a temp
+# directory (law 4), except the one block that deliberately asserts about the
+# shipped packs and says why.
+import dataclasses                                              # noqa: E402
+
+from scripts.game.flow import ops as op_registry                # noqa: E402
+
+# -- the parse: three states, and two of them are not the same state -------
+expect("a pack declaring a known loadout loads, and the grant is readable",
+       fixture_pack(event_loadouts=["core"])().event_loadouts, ("core",))
+expect("a pack declaring NO event_loadouts still loads, and is SILENT",
+       fixture_pack()().event_loadouts, None)
+expect("...and silence is not the empty grant: [] is a real answer",
+       fixture_pack(event_loadouts=[])().event_loadouts, ())
+
+# The refusal, and the positive control law 5 asks for in the same breath:
+# the control proves the load path is REACHED and that the key being present
+# is not itself the fault, so the raise below can only be about the NAME.
+_unknown = fixture_pack(event_loadouts=["topdown_rpg"])
+expect_raises_naming(
+    "a loadout no registered op claims is refused at pack load",
+    PyoneerGenreError, _unknown,
+    "topdown_rpg", _unknown.genre_id, "event_loadouts", "core")
+_control = fixture_pack(event_loadouts=["core"])
+expect("POSITIVE CONTROL: the same pack with a KNOWN name loads",
+       _control().event_loadouts, ("core",))
+
+expect_raises_naming(
+    "the same loadout twice is refused",
+    PyoneerGenreError, fixture_pack(event_loadouts=["core", "core"]),
+    "'core'", "twice")
+expect_raises_naming(
+    "event_loadouts as a bare string is refused, not split into letters",
+    PyoneerGenreError, fixture_pack(event_loadouts="core"),
+    "event_loadouts", "JSON array")
+expect_raises_naming(
+    "an explicit null is refused -- it is neither silence nor a grant",
+    PyoneerGenreError, fixture_pack(event_loadouts=None),
+    "event_loadouts", "JSON array")
+expect_raises_naming(
+    "a non-string entry is refused",
+    PyoneerGenreError, fixture_pack(event_loadouts=[7]),
+    "event_loadouts", "int")
+
+# -- grants(): both halves, including the compatibility half ---------------
+_granting = fixture_pack(event_loadouts=["core"])()
+_nothing = fixture_pack(event_loadouts=[])()
+_silent = fixture_pack()()
+expect("a granting pack grants what it names, and nothing else",
+       (_granting.grants("core"), _granting.grants("topdown_rpg")),
+       (True, False))
+expect("an EMPTY grant refuses even core -- it means what it says",
+       _nothing.grants("core"), False)
+expect("a SILENT pack grants everything, which is yesterday's behaviour",
+       (_silent.grants("core"), _silent.grants("anything_at_all")),
+       (True, True))
+
+# -- granted_registry(): the one seam a picker needs, narrowed both ways ---
+# A fake table with TWO loadouts, because a table that only ever holds `core`
+# cannot tell narrowing from doing nothing at all.
+_real = op_registry.OP_REGISTRY["say"]
+ALIEN = dataclasses.replace(_real, name="alien_op", loadout="not_granted")
+FAKE = dict(op_registry.OP_REGISTRY)
+FAKE[ALIEN.name] = ALIEN
+expect("the fake table really does hold two loadouts",
+       sorted(op_registry.loadouts(FAKE)), ["core", "not_granted"])
+expect("a granted loadout's ops SURVIVE the narrowing",
+       "say" in _granting.granted_registry(FAKE), True)
+expect("...and an ungranted loadout's ops are GONE from it",
+       "alien_op" in _granting.granted_registry(FAKE), False)
+expect("an empty grant narrows the table to nothing",
+       dict(_nothing.granted_registry(FAKE)), {})
+expect("a SILENT pack hands the table back by IDENTITY, not as a copy",
+       _silent.granted_registry(FAKE) is FAKE, True)
+expect("...and with no argument it answers the live registry",
+       _silent.granted_registry() is op_registry.OP_REGISTRY, True)
+
+# -- the shipped packs -----------------------------------------------------
+# Deliberately a claim about `editor/genres/`, for the same reason the
+# object_classes block above makes one: a pack granting a name the registry
+# does not know RAISES at pack load, so that pack's whole genre would be
+# unopenable in the editor. The assertion is on the JUDGE's answer, not on
+# which names the packs happen to have chosen.
+for pack_id in packs:
+    pack = genre_module.load(pack_id)
+    expect(f"{pack_id}: declares a grant rather than staying silent",
+           pack.event_loadouts is not None, True)
+    expect(f"{pack_id}: and every name in it is one the registry knows",
+           [l for l in pack.event_loadouts
+            if l not in op_registry.loadouts()], [])
+
+# --------------------------------------------------------------------------
+print()
+print("...and the grant reaches a human through the Problems list")
+# --------------------------------------------------------------------------
+# The soft half, asserted through `Session.problems()` -- the exact call
+# `editor/ui/docks.py` makes to fill the Problems dock. A grant nothing above
+# it can read is the defect this repository keeps paying for, so the wire is
+# what is asserted here, not the parser.
+from editor.core import event_script                            # noqa: E402
+
+GRANT_WS = tempfile.mkdtemp(prefix="pyoneer_grant_check_")
+try:
+    os.makedirs(os.path.join(GRANT_WS, "config"))
+    with open(os.path.join(GRANT_WS, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": []}, handle)
+    # A shipped genre is the only thing `Project.load` can open by id; it is
+    # scaffolding and nothing below asserts anything about it -- every
+    # assertion runs against a fixture pack swapped in by `set_genre`.
+    grant_session = Session.open(GRANT_WS, genre_id="topdown_rpg")
+    grant_project = grant_session.project
+    event_script.scripts_of(grant_project).create(
+        event_script.ScriptDocument(id="greeter", title="Greeter",
+                                    loadouts=["core"]))
+
+    grant_project.set_genre(_nothing)
+    refused = [p for p in grant_session.problems() if p.scope.kind == "script"]
+    expect("a script asking for a loadout the pack withholds is REPORTED",
+           len(refused), 1)
+    expect("...as a soft rule, because a half-built project may run ahead",
+           refused[0].severity if refused else None, "soft")
+    expect("...addressed at the script, so the dock can jump to it",
+           str(refused[0].scope) if refused else None, "script:greeter")
+    _said = str(refused[0]) if refused else ""
+    expect("...naming the script, the loadout, the pack and a fix",
+           [n for n in ("greeter", "'core'", _nothing.id, "event_loadouts")
+            if n not in _said], [])
+
+    # The other half. Same project, same script, same call -- only the grant
+    # differs, so a green here cannot come from the walk silently not running.
+    grant_project.set_genre(_granting)
+    expect("POSITIVE CONTROL: granted, the same script reports nothing",
+           [p for p in grant_session.problems() if p.scope.kind == "script"],
+           [])
+    grant_project.set_genre(_silent)
+    expect("and a SILENT pack reports nothing either -- silence stays silent",
+           [p for p in grant_session.problems() if p.scope.kind == "script"],
+           [])
+finally:
+    shutil.rmtree(GRANT_WS, ignore_errors=True)
 
 # --------------------------------------------------------------------------
 print()

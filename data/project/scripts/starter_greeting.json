@@ -1,0 +1,73 @@
+{
+  "format": "pyoneer.script",
+  "version": 1,
+  "id": "starter_greeting",
+  "title": "What the shipped demo says when you press the action key",
+  "loadouts": ["core"],
+  "pages": [
+    {
+      "id": "greeting",
+      "note": "The first page whose `when` all pass is the one that runs, and this one's is empty, so it is the fallback and the only page. The branch inside it is where the two answers live, because a second page would answer the same press with a different body and this script wants one conversation with two moods.",
+      "trigger": "use",
+      "when": [],
+      "body": [
+        {
+          "id": "take_the_reins",
+          "do": "hold",
+          "steerable": false,
+          "note": "steerable only. Clearing `enabled_inputs` as well would silence the action behaviors, and the action key is this conversation's own continue button -- that is how a dialogue locks itself out of advancing."
+        },
+        {
+          "id": "chime",
+          "do": "play_sound",
+          "sound": "sfx/chime.wav",
+          "note": "The noise the demo makes, made through the script vocabulary. It used to come from a hard-wired handler in main.py."
+        },
+        {
+          "id": "first_time_or_not",
+          "if": [{"var": "greeted", "is": false}],
+          "note": "Both arms are reachable from the keyboard: the `then` arm sets `greeted`, so a second press of the action key -- after this run has finished and released -- takes the `else`.",
+          "then": [
+            {
+              "id": "hello_1",
+              "do": "say",
+              "who": "Pyoneer",
+              "text": "You pressed action. A script is running."
+            },
+            {
+              "id": "hello_2",
+              "do": "say",
+              "who": "Pyoneer",
+              "text": "A hold node has your steering. Try walking."
+            },
+            {
+              "id": "hello_3",
+              "do": "say",
+              "who": "Pyoneer",
+              "text": "Press action once more and I hand it back."
+            },
+            {
+              "id": "remember",
+              "do": "set",
+              "var": "greeted",
+              "to": true
+            }
+          ],
+          "else": [
+            {
+              "id": "again_1",
+              "do": "say",
+              "who": "Pyoneer",
+              "text": "Second time: greeted is true, so this is the else arm."
+            }
+          ]
+        },
+        {
+          "id": "hand_it_back",
+          "do": "release",
+          "note": "Gives back exactly what `hold` recorded, never `true`. A run that ended any other way would release on its own, because a script that stranded a player unable to walk is the worst failure the interpreter can have."
+        }
+      ]
+    }
+  ]
+}

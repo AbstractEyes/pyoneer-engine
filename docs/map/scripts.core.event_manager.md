@@ -3,7 +3,7 @@
 
 # `scripts/core/event_manager.py` — tier 2 #TAG:scripts/core/event_manager.py
 
-`scripts.core.event_manager` · 229 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.core.event_manager` · 254 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -14,34 +14,33 @@
 - `scripts/core/event_manager.py:12` `QUEUE` #TAG:QUEUE
 - `scripts/core/event_manager.py:13` `PYO_QUEUE` #TAG:PYO_QUEUE
 - `scripts/core/event_manager.py:14` `FRAME_DELTA` #TAG:FRAME_DELTA
-- `scripts/core/event_manager.py:21` `DEVICE_EVENTS` #TAG:DEVICE_EVENTS
+- `scripts/core/event_manager.py:16` `DEVICE_EVENTS` #TAG:DEVICE_EVENTS
 
 ## Functions
 
-- `scripts/core/event_manager.py:63` `fans_out(event: pygame.event.Event) -> bool` #TAG:fans_out
+- `scripts/core/event_manager.py:58` `fans_out(event: pygame.event.Event) -> bool` #TAG:fans_out
   - Whether this pygame event becomes a `PyoneerEvent` for the scene tree.
-- `scripts/core/event_manager.py:137` `update(delta: float=pygame.time.Clock().tick(60) / 1000)` #TAG:update
-- `scripts/core/event_manager.py:146` `queue()` #TAG:queue
+- `scripts/core/event_manager.py:132` `update(delta: float=pygame.time.Clock().tick(60) / 1000)` #TAG:update
+- `scripts/core/event_manager.py:141` `queue()` #TAG:queue
   - Queues another event to the next frame's pyo queue.
-- `scripts/core/event_manager.py:157` `get(event: pygame.event.EventType | int | None=None, consume: bool=False) -> list[pygame.event.Event] | pygame.event.Event | None` #TAG:get
-- `scripts/core/event_manager.py:175` `pump_pyo()` #TAG:pump_pyo
-- `scripts/core/event_manager.py:199` `get_pyo(event: pygame.event.Event | int | None=None, consume: bool=False) -> list[PyoneerEvent] | PyoneerEvent` #TAG:get_pyo
+- `scripts/core/event_manager.py:152` `get(event: pygame.event.EventType | int | None=None, consume: bool=False) -> list[pygame.event.Event] | pygame.event.Event | None` #TAG:get
+- `scripts/core/event_manager.py:170` `pump_pyo()` #TAG:pump_pyo
+  - Rebuild `PYO_QUEUE` from `QUEUE`: ONE `PyoneerEvent` per fanned-out event.
+- `scripts/core/event_manager.py:224` `get_pyo(event: pygame.event.Event | int | None=None, consume: bool=False) -> list[PyoneerEvent] | PyoneerEvent` #TAG:get_pyo
 
 ## Classes
 
 ### `class PyoneerEvent` #TAG:PyoneerEvent
 
-`scripts/core/event_manager.py:72`–`134`
+`scripts/core/event_manager.py:67`–`129`
 
 > The Pyoneer event class.
 
-- `scripts/core/event_manager.py:74` `__init__(self, event_type: GameEventType, py_event: pygame.event.Event | list[pygame.event.Event] | None=None, data: Optional[dict]=None, handled: bool=False, trickle: bool=False, sender: any=None)` #TAG:PyoneerEvent.__init__
-- `scripts/core/event_manager.py:95` `handle(self)` #TAG:PyoneerEvent.handle
+- `scripts/core/event_manager.py:69` `__init__(self, event_type: GameEventType, py_event: pygame.event.Event | None=None, data: Optional[dict]=None, handled: bool=False, trickle: bool=False, sender: any=None)` #TAG:PyoneerEvent.__init__
+- `scripts/core/event_manager.py:96` `handle(self)` #TAG:PyoneerEvent.handle
   - Marks the event as handled.
-- `scripts/core/event_manager.py:99` `append_event(self, event: pygame.event.Event)` #TAG:PyoneerEvent.append_event
-  - Appends a pygame event to the event list.
-- `scripts/core/event_manager.py:105` `update_data(self, data: dict)` #TAG:PyoneerEvent.update_data
+- `scripts/core/event_manager.py:100` `update_data(self, data: dict)` #TAG:PyoneerEvent.update_data
   - Appends data to the event data.
-- `scripts/core/event_manager.py:115` `__translate(self) -> GameEventType` #TAG:PyoneerEvent.__translate
+- `scripts/core/event_manager.py:110` `__translate(self) -> GameEventType` #TAG:PyoneerEvent.__translate
   - Naturally these are pygame events, so we need to convert them to the appropriate pyoneer event type.
-- `scripts/core/event_manager.py:133` `__str__(self)` #TAG:PyoneerEvent.__str__
+- `scripts/core/event_manager.py:128` `__str__(self)` #TAG:PyoneerEvent.__str__

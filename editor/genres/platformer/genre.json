@@ -3,6 +3,7 @@
   "title": "2D side-scrolling platformer",
   "summary": "Gravity, jumping, solid tiles you stand on, hazards you do not. Side-on camera that follows the player horizontally.",
   "docks": ["map", "layers", "objects", "tables", "problems", "manifest", "history"],
+  "event_loadouts": ["core"],
   "layers": [
     {
       "name": "Paralax",

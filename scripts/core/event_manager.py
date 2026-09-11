@@ -13,11 +13,6 @@ QUEUE: list[pygame.event.Event] = []
 PYO_QUEUE: list[PyoneerEvent] = []
 FRAME_DELTA: float = 0.0
 
-__PROBLEM_EVENTS: list[int] = [
-    pygame.MOUSEBUTTONDOWN,
-    pygame.MOUSEBUTTONUP,
-] # these events are problematic on macOS, and duplicates should be ignored
-
 DEVICE_EVENTS: frozenset[int] = frozenset({
     pygame.AUDIODEVICEADDED,
     pygame.AUDIODEVICEREMOVED,
@@ -73,15 +68,21 @@ class PyoneerEvent:
     """The Pyoneer event class."""
     def __init__(self,
                  event_type: GameEventType,
-                 py_event: pygame.event.Event | list[pygame.event.Event] | None = None,
+                 py_event: pygame.event.Event | None = None,
                  data: Optional[dict] = None,
                  handled: bool = False,
                  trickle: bool = False,
                  sender: any = None):
         self.type: GameEventType = event_type
         """The type of event, from the GameEventType enum."""
-        self.event: pygame.event.Event | list[pygame.event.Event] | None = py_event
-        """The pygame event that this Pyoneer event is based on, can pool matching events in sequence."""
+        self.event: pygame.event.Event | None = py_event
+        """The ONE pygame event this Pyoneer event is based on, or None.
+
+        Never a list. The `list` arm this annotation used to advertise was
+        never inhabitable: `__translate` below reads `self.event.type`, so a
+        list handed to this constructor raises `AttributeError` before the
+        object exists. See `pump_pyo` for what was removed and why.
+        """
         self.data: dict[str, any] = data
         """The specific set data associated with the event, if any."""
         self.handled: bool = handled
@@ -95,12 +96,6 @@ class PyoneerEvent:
     def handle(self):
         """Marks the event as handled."""
         self.handled = True
-
-    def append_event(self, event: pygame.event.Event):
-        """Appends a pygame event to the event list."""
-        if self.event is not list:
-            self.event = [self.event]
-        self.event.append(event)
 
     def update_data(self, data: dict):
         """Appends data to the event data."""
@@ -173,6 +168,48 @@ def get(event: pygame.event.EventType | int | None = None, consume: bool = False
 
 
 def pump_pyo():
+    """Rebuild `PYO_QUEUE` from `QUEUE`: ONE `PyoneerEvent` per fanned-out event.
+
+    One in, one out, in order, and identity is kept -- the i-th pyo event's
+    `.event` IS the `QUEUE` entry it was built from. There is no pooling and
+    no de-duplication here, on any platform.
+
+    WHY THERE IS NOT, MEASURED 2026-09-10. This function used to open with
+    `last_event = PYO_QUEUE[-1]`, then `if last_event is not None and
+    last_event == GameEventType.PYGAME:`, and under that branch a second
+    pygame event was folded into the previous `PyoneerEvent` by
+    `append_event`, with a `__PROBLEM_EVENTS` list skipping duplicate macOS
+    mouse-button events. It read like a live feature. It had never run once:
+    `last_event` is a `PyoneerEvent` and `GameEventType.PYGAME` is a `tuple`
+    subclass, `PyoneerEvent` declares no `__eq__`, so the comparison falls to
+    identity and is CONSTANT FALSE. Instrumented against  #TAG:no_event_pooling
+    every member of the enum and over queues of 2, 8, 50 and 500 identical
+    events: 568 opportunities, 0 entries.
+
+    IT WAS DELETED RATHER THAN REPAIRED, because each of the three repairs is
+    worse than the hole:
+
+      * `last_event.type == GameEventType.PYGAME` -- the one-line fix
+        `docs/NEXT.md` item 16 proposes -- reads the TRANSLATED member, so it
+        is true only for events NO member names. Measured: it folds an
+        unrelated `WindowShown` and `TextInput` into one event, and still
+        never touches the `MOUSEMOTION` / `MOUSEBUTTONDOWN` duplicates the
+        branch was aimed at, because those translate away from `PYGAME`.
+      * `append_event` nested on its second call: `self.event is not list`
+        compares an instance to the `list` TYPE and is always true, so three
+        pooled events produced `[[e1, e2], e3]`.
+      * and the pooled shape has no consumer anywhere. 27 sites in `scripts/`
+        read `event.event.<attr>` -- `.pos`, `.key`, `.button`, `.x` -- off a
+        single pygame event, and the two places that do accept a list
+        (`GameComponent.mark_event_handled` and `MouseBehavior`'s callback
+        walker) take a list of `PyoneerEvent`s, never a `PyoneerEvent` holding
+        a list. A pooled event raises `AttributeError` at the first click.
+
+    So what was removed is a claim about this engine that was not true. A real
+    macOS duplicate guard is a DE-DUPLICATION -- drop the second event, never
+    pool it -- it changes what a frame contains, and it belongs to whoever can
+    measure it on macOS.
+    """
     global PYO_QUEUE
     global QUEUE
     PYO_QUEUE.clear()
@@ -181,19 +218,7 @@ def pump_pyo():
         # DEVICE_EVENTS. It is still in QUEUE for anyone who polls for it.
         if not fans_out(event):
             continue
-
-        # make a Pyoneer event from the pygame event
-        last_event = PYO_QUEUE[-1] if len(PYO_QUEUE) > 0 else None
-        if last_event is not None and last_event == GameEventType.PYGAME:
-            # if the last pyo_queue event type matches this type, append the PyoneerEvent
-            if __PROBLEM_EVENTS.__contains__(event.type):
-                # check for problem events
-                continue
-            last_event.append_event(event)
-        else:
-            pyo_event = PyoneerEvent(GameEventType.PYGAME, event, {}, False)
-            PYO_QUEUE.append(pyo_event)
-    pass
+        PYO_QUEUE.append(PyoneerEvent(GameEventType.PYGAME, event, {}, False))
 
 
 def get_pyo(event: pygame.event.Event | int | None = None, consume: bool = False) -> list[PyoneerEvent] | PyoneerEvent:

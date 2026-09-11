@@ -58,6 +58,10 @@ CHECKS = [
     ("flow", "action routing, the step sequencer, and the agency it gives back"),
     ("ops", "the event-script vocabulary: every gate the reader closes, "
             "and the step machine that runs what it lets through"),
+    ("script_runtime", "the wire: a key press reaches a script -- the boot "
+                       "reads data/project/scripts, a map's pyoneer_script "
+                       "joins to a spawned body, and one press of the action "
+                       "verb builds a ScriptRun in SceneManager's flow slot"),
     ("audio", "the two audio roots, the missing-card/missing-file split, "
               "the synthesised fallback pack, and the two play ops"),
     ("event_docs", "EVENTS.md is generated, and every runtime and "
@@ -66,9 +70,12 @@ CHECKS = [
     ("window_close", "visibility cascade, F1 toggle, typing suppresses movement"),
     ("window_events", "os window events translate, route, and still fan out"),
     ("event_queue", "the OS queue: the translation table built both ways, "
-                    "hardware hotplug kept out of the fan-out, and a boot "
-                    "dispatch report that names the type that moved"),
-    ("editor", "scopes, command stream, exact undo, genre rules, requests"),
+                    "hardware hotplug kept out of the fan-out, a boot "
+                    "dispatch report that names the type that moved, and the "
+                    "queue shape -- one pyo event per fanned-out pygame "
+                    "event, never a container"),
+    ("editor", "scopes, command stream, exact undo, genre rules, the pack's "
+               "op-loadout grant, requests"),
     ("relay", "one scope's vocabulary and no more, and now ENFORCED: the "
               "slice is exactly what the address accepts, a response reaching "
               "past the declared addresses is refused whole before its first "
@@ -107,9 +114,10 @@ CHECKS = [
     ("object_editor", "the entity editing screen: one window re-aimed, the "
                       "field still in flight committed on the way out, and "
                       "the snap preference reaching the canvas"),
-    ("script_editor", "the event screen: the picker IS the registry, a pick "
-                      "opens the op's own derived form, and a branching "
-                      "script built by hand alone really runs"),
+    ("script_editor", "the event screen: the picker IS the registry narrowed "
+                      "to what the genre grants, a pick opens the op's own "
+                      "derived form, and a branching script built by hand "
+                      "alone really runs"),
     ("hierarchy", "the tree behaves like a tree: a double-click centres the "
                   "canvas on an object, a right-click menu greys what it "
                   "cannot do and says why in its own label, and cut/copy/"
@@ -125,8 +133,9 @@ CHECKS = [
                   "worked example boots"),
     ("demo_map", "the shipped map IS the shipped game: it boots, its object "
                  "layer produces the driven body at its type's depth with a "
-                 "feet anchor, its passability refuses a step, and main.py "
-                 "builds no entity"),
+                 "feet anchor, its passability refuses a step, main.py builds "
+                 "no entity, the driven-record pick is one shared function, "
+                 "and the action route sits in the overridable hook"),
     ("art_tilesets", "the generated terrain and clutter sheets: every corner "
                      "mask's occupancy, every tile inside its own cell, and "
                      "no pixel read from a file"),
@@ -139,6 +148,10 @@ CHECKS = [
                     "walk poses, no frame overhanging its cell, every mask "
                     "edge marked only where it blocks, a seamless join, and "
                     "no pixel read from a file"),
+    ("secrets", "no tracked file carries a plaintext credential: a "
+                "credential-shaped name bound to a real literal, a "
+                "high-entropy key under an innocent name, and an "
+                "os.environ read never flagged"),
     ("docs", "the doc spine: navigation, #TAG anchors, the generated code map, "
              "fact drift"),
 ]

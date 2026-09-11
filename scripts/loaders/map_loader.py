@@ -58,6 +58,29 @@ from scripts.game.behavior import BehaviorRequest, read_requests
 from scripts.loaders.map_document import MapDocument, MapObject
 from scripts.loaders.table_file import ProjectTables, actor_row
 
+PLAYER_TOKEN: str = "player_input"
+"""The behavior token that means "the human drives this one".
+
+Which object is the player is answered from its COMPOSITION rather than from
+a flag: no class, no `pyoneer_player` property, no boolean. Two objects of
+the same type built from the same config differ by this one string, and the
+one carrying it is the one the camera follows.
+
+HERE, in the engine half, and not in the boot file that used to own it. It
+is read by `driven_record` below, by `main.py`'s adoption and by its
+undriven-player diagnostic, and by the demo boot path -- three readers in
+two packages, which is law 2's corollary asking for one spelling. The demo
+package imports `main`, so a constant living there would have made the
+engine's own record query depend on the game's entry point.
+
+A FILE FORMAT string under law 8: it is what a `.tmx` object's
+`pyoneer_behaviors` list spells, so it is stable once referenced and never
+renamed. The registry's own declaration of it is the `name=` line in
+`scripts/game/behavior/input.py`, and this constant is compared against
+`BehaviorRequest.spec.name` -- the resolved spelling -- so the two cannot
+drift into agreeing by accident.
+"""
+
 
 @dataclass(frozen=True)
 class SpawnedEntity:
@@ -294,3 +317,39 @@ def spawn_counts(spawned: Iterable[SpawnedEntity]) -> dict[str, int]:
     for item in spawned:
         counts[item.type_name] = counts.get(item.type_name, 0) + 1
     return counts
+
+
+def driven_record(spawned: Iterable[SpawnedEntity]) -> SpawnedEntity | None:
+    """The spawned record that carries `PLAYER_TOKEN`, or None.
+
+    "Which object is the player", answered from the composition rather than
+    from a flag. A query over what `spawn_objects` returned, in the shape
+    `spawn_counts` above already has: it reads records and builds nothing, so
+    it is drivable without a scene, a renderer or a display.
+
+    `SpawnedEntity.behaviors` holds RESOLVED `BehaviorRequest`s, so the token
+    is compared against `spec.name` -- the registry's own spelling -- and not
+    against a substring of the raw property, which would also match a future
+    `player_input_recorder`.
+
+    ONE DEFINITION, TWO CALLERS, AND THAT IS THE WHOLE REASON IT IS HERE.
+    The boot path picks its player this way and the demo boot path picked its
+    camera target the same way under its own name, which is law 2's corollary
+    at three lines -- the corollary that was paid once at 425 duplicate
+    lines. The copy is gone and both callers call this. The direction is the
+    engine's: `demos/` imports `main`, `main` imports `scripts/`, and nothing
+    in `scripts/` may name either, so the shared half can only live here.
+
+    Returns None rather than raising, and for both empty cases: a map whose
+    object layer places nobody, and one whose objects are all undriven. That
+    is a real authored state -- a cutscene map, a title screen -- and the
+    callers each decide what to do about it. `main.py` additionally WARNS
+    when the body it adopted is not this one, which is the diagnostic half
+    this query deliberately does not carry: a query that complained could not
+    be used to ask a question.
+    """
+    for record in spawned:
+        if any(request.spec.name == PLAYER_TOKEN
+               for request in record.behaviors):
+            return record
+    return None

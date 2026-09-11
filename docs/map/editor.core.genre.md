@@ -5,86 +5,95 @@
 
 > Genre packs -- the rules that make a request short.
 
-`editor.core.genre` · 512 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.genre` · 663 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    editor.core.errors editor.core.scope scripts.core.errors scripts.game.behavior
+    editor.core editor.core.errors editor.core.scope scripts.core.errors scripts.game.behavior scripts.game.flow
 
 ## Module constants
 
-- `editor/core/genre.py:51` `GENRES_DIR` #TAG:GENRES_DIR
+- `editor/core/genre.py:56` `GENRES_DIR` #TAG:GENRES_DIR
+- `editor/core/genre.py:59` `EVENT_LOADOUTS` #TAG:EVENT_LOADOUTS
 
 ## Functions
 
-- `editor/core/genre.py:300` `available(directory: str | None=None) -> list[str]` #TAG:genre.available
+- `editor/core/genre.py:414` `available(directory: str | None=None) -> list[str]` #TAG:genre.available
   - Ids of every pack on disk.
-- `editor/core/genre.py:310` `load(genre_id: str, directory: str | None=None) -> GenrePack` #TAG:load
-- `editor/core/genre.py:327` `_build(genre_id: str, root: str, raw: dict, path: str) -> GenrePack` #TAG:genre._build
-- `editor/core/genre.py:377` `_layer(item: dict, path: str) -> GenreLayer` #TAG:_layer
-- `editor/core/genre.py:398` `_object_classes(item: dict, layer_name: str, kind: str, allowed: tuple[str, ...], path: str) -> tuple[GenreObjectClass, ...]` #TAG:_object_classes
+- `editor/core/genre.py:424` `load(genre_id: str, directory: str | None=None) -> GenrePack` #TAG:load
+- `editor/core/genre.py:441` `_build(genre_id: str, root: str, raw: dict, path: str) -> GenrePack` #TAG:genre._build
+- `editor/core/genre.py:492` `_event_loadouts(raw: dict, genre_id: str, path: str) -> tuple[str, ...] | None` #TAG:_event_loadouts
+  - Parse `event_loadouts`, the op vocabularies this pack GRANTS.
+- `editor/core/genre.py:528` `_layer(item: dict, path: str) -> GenreLayer` #TAG:_layer
+- `editor/core/genre.py:549` `_object_classes(item: dict, layer_name: str, kind: str, allowed: tuple[str, ...], path: str) -> tuple[GenreObjectClass, ...]` #TAG:_object_classes
   - Parse `layers[].object_classes[]`, and draw the one line that matters.
-- `editor/core/genre.py:439` `_object_class(entry: Any, layer_name: str, allowed: tuple[str, ...], path: str) -> GenreObjectClass` #TAG:_object_class
-- `editor/core/genre.py:480` `_table(item: dict, path: str) -> GenreTable` #TAG:_table
-- `editor/core/genre.py:505` `_first_duplicate(names: list[str]) -> str | None` #TAG:_first_duplicate
+- `editor/core/genre.py:590` `_object_class(entry: Any, layer_name: str, allowed: tuple[str, ...], path: str) -> GenreObjectClass` #TAG:_object_class
+- `editor/core/genre.py:631` `_table(item: dict, path: str) -> GenreTable` #TAG:_table
+- `editor/core/genre.py:656` `_first_duplicate(names: list[str]) -> str | None` #TAG:_first_duplicate
 
 ## Classes
 
 ### `@dataclass(frozen=True) class GenreField` #TAG:GenreField
 
-`editor/core/genre.py:64`–`80`
+`editor/core/genre.py:77`–`93`
 
 > One column of a data table.
 
-- `editor/core/genre.py:74` `@property python_type(self) -> type` #TAG:GenreField.python_type
-- `editor/core/genre.py:77` `coerced_default(self) -> Any` #TAG:GenreField.coerced_default
+- `editor/core/genre.py:87` `@property python_type(self) -> type` #TAG:GenreField.python_type
+- `editor/core/genre.py:90` `coerced_default(self) -> Any` #TAG:GenreField.coerced_default
 
 ### `@dataclass(frozen=True) class GenreTable` #TAG:GenreTable
 
-`editor/core/genre.py:84`–`97`
+`editor/core/genre.py:97`–`110`
 
 > One data table the genre expects the project to keep.
 
-- `editor/core/genre.py:93` `field(self, name: str) -> GenreField | None` #TAG:GenreTable.field
+- `editor/core/genre.py:106` `field(self, name: str) -> GenreField | None` #TAG:GenreTable.field
 
 ### `@dataclass(frozen=True) class GenreObjectClass` #TAG:GenreObjectClass
 
-`editor/core/genre.py:101`–`127`
+`editor/core/genre.py:114`–`140`
 
 > One class on an object layer, and the behavior list a NEW one starts with.
 
-- `editor/core/genre.py:125` `@property behaviors_text(self) -> str` #TAG:GenreObjectClass.behaviors_text
+- `editor/core/genre.py:138` `@property behaviors_text(self) -> str` #TAG:GenreObjectClass.behaviors_text
   - The canonical `pyoneer_behaviors` value, from the engine's own formatter.
 
 ### `@dataclass(frozen=True) class GenreLayer` #TAG:GenreLayer
 
-`editor/core/genre.py:131`–`148`
+`editor/core/genre.py:144`–`161`
 
 > One map layer the genre expects, and what it means.
 
-- `editor/core/genre.py:144` `object_class(self, object_type: str) -> GenreObjectClass | None` #TAG:GenreLayer.object_class
+- `editor/core/genre.py:157` `object_class(self, object_type: str) -> GenreObjectClass | None` #TAG:GenreLayer.object_class
 
 ### `@dataclass(frozen=True) class GenrePack` #TAG:GenrePack
 
-`editor/core/genre.py:152`–`281`
+`editor/core/genre.py:165`–`395`
 
 > A loaded genre pack.
 
-- `editor/core/genre.py:167` `layer(self, name: str) -> GenreLayer | None` #TAG:GenrePack.layer
-- `editor/core/genre.py:173` `table(self, name: str) -> GenreTable | None` #TAG:GenrePack.table
-- `editor/core/genre.py:179` `object_class(self, layer: str, object_type: str) -> GenreObjectClass | None` #TAG:GenrePack.object_class
+- `editor/core/genre.py:194` `layer(self, name: str) -> GenreLayer | None` #TAG:GenrePack.layer
+- `editor/core/genre.py:200` `table(self, name: str) -> GenreTable | None` #TAG:GenrePack.table
+- `editor/core/genre.py:206` `object_class(self, layer: str, object_type: str) -> GenreObjectClass | None` #TAG:GenrePack.object_class
   - What a new `object_type` on `layer` starts as, if the pack says.
-- `editor/core/genre.py:192` `@property required_layers(self) -> tuple[GenreLayer, ...]` #TAG:GenrePack.required_layers
-- `editor/core/genre.py:196` `@property template_dir(self) -> str | None` #TAG:GenrePack.template_dir
-- `editor/core/genre.py:202` `is_layer_required(self, name: str) -> bool` #TAG:GenrePack.is_layer_required
-- `editor/core/genre.py:206` `is_field_required(self, table: str, field_name: str) -> bool` #TAG:GenrePack.is_field_required
-- `editor/core/genre.py:215` `validate(self, project: Any) -> list['RuleViolation']` #TAG:GenrePack.validate
+- `editor/core/genre.py:220` `grants(self, loadout: str) -> bool` #TAG:GenrePack.grants
+  - May a script under this pack draw on `loadout`?
+- `editor/core/genre.py:231` `granted_registry(self, registry: Mapping[str, op_registry.OpSpec] | None=None) -> Mapping[str, op_registry.OpSpec]` #TAG:GenrePack.granted_registry
+  - The op table narrowed to what this pack grants.
+- `editor/core/genre.py:261` `@property required_layers(self) -> tuple[GenreLayer, ...]` #TAG:GenrePack.required_layers
+- `editor/core/genre.py:265` `@property template_dir(self) -> str | None` #TAG:GenrePack.template_dir
+- `editor/core/genre.py:271` `is_layer_required(self, name: str) -> bool` #TAG:GenrePack.is_layer_required
+- `editor/core/genre.py:275` `is_field_required(self, table: str, field_name: str) -> bool` #TAG:GenrePack.is_field_required
+- `editor/core/genre.py:284` `validate(self, project: Any) -> list['RuleViolation']` #TAG:GenrePack.validate
   - Everything wrong with `project` under this genre, none of it fatal.
-- `editor/core/genre.py:222` `__check_layers(self, project: Any) -> Iterable['RuleViolation']` #TAG:GenrePack.__check_layers
-- `editor/core/genre.py:264` `__check_tables(self, project: Any) -> Iterable['RuleViolation']` #TAG:GenrePack.__check_tables
+- `editor/core/genre.py:292` `__check_layers(self, project: Any) -> Iterable['RuleViolation']` #TAG:GenrePack.__check_layers
+- `editor/core/genre.py:334` `__check_scripts(self, project: Any) -> Iterable['RuleViolation']` #TAG:GenrePack.__check_scripts
+  - Every script asking for a vocabulary this pack does not grant.
+- `editor/core/genre.py:378` `__check_tables(self, project: Any) -> Iterable['RuleViolation']` #TAG:GenrePack.__check_tables
 
 ### `@dataclass(frozen=True) class RuleViolation` #TAG:RuleViolation
 
-`editor/core/genre.py:285`–`293`
+`editor/core/genre.py:399`–`407`
 
-- `editor/core/genre.py:291` `__str__(self) -> str` #TAG:RuleViolation.__str__
+- `editor/core/genre.py:405` `__str__(self) -> str` #TAG:RuleViolation.__str__

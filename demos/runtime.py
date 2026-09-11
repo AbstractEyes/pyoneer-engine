@@ -43,24 +43,21 @@ from config.managers.map_data import MapData
 from main import MainGame
 from scripts.game.game_camera import GameCamera
 from scripts.game.game_map import GameMap
+from scripts.loaders.map_loader import driven_record
 
 from demos.mapgen import ensure_map
 
-
-def driven_record(records):
-    """The spawned record that carries `player_input`, or None.
-
-    "Which object is the player", answered from the composition rather than
-    from a flag. `SpawnedEntity.behaviors` holds RESOLVED `BehaviorRequest`s,
-    so the token is compared against `spec.name` -- the registry's own
-    spelling -- and not against a substring of the raw property, which would
-    also match `player_input_recorder`.
-    """
-    for record in records:
-        if any(request.spec.name == "player_input"
-               for request in record.behaviors):
-            return record
-    return None
+# RE-EXPORTED, NOT REIMPLEMENTED. This file used to carry its own copy of the
+# three-line pick -- same rule, same token, a second spelling of it -- which
+# is law 2's corollary at small scale, and that corollary was paid once at
+# 425 duplicate lines. The one definition is in `scripts/`, the engine half,
+# because that is the only package BOTH callers may name: this module already
+# imports `main`, and `main` may not spell this package's name at all
+# (`tools/check_demos.py` asserts it, because main.py is the smoke baseline).
+#
+# The name stays exported here so a demo and a check still say
+# `from demos.runtime import driven_record`, which is the editor-re-exports
+# shape the corollary prescribes, one package down.
 
 
 class DemoGame(MainGame):

@@ -3,6 +3,7 @@
   "title": "Top-down RPG",
   "summary": "Tile-based overhead world, characters with stats, inventory and equipment. Matches the layer layout the shipped data/maps/starter.tmx declares.",
   "docks": ["map", "layers", "objects", "tables", "problems", "manifest", "history"],
+  "event_loadouts": ["core"],
   "layers": [
     {
       "name": "Paralax",

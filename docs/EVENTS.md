@@ -218,11 +218,11 @@ Each row is measured from the parse tree of the tree above this layer, not from 
 | the wire | at this commit | what it takes |
 | --- | --- | --- |
 | an op registry exists and is populated | **yes** | 10 op(s) in `core` |
-| a genre pack GRANTS a loadout (`event_loadouts`) | no | one array in a pack's `genre.json`, validated through `ops.validate_loadouts`. no pack declares the key, and `editor/core/genre.py` does not parse it |
-| an editor module reaches the op registry (the PICKER) | **yes** | reached by `editor/core/event_script.py`, `editor/core/verbs.py`, `editor/ui/script_editor.py` |
-| a script document is read from disk in production | no | `script_file.load_scripts()` called from the game's boot |
-| a `ScriptRun` is constructed outside the checks | no | one `ScriptRun(...)` and one `manager.actions.route(...)`, which is how `demos/narrative.py` already starts a `SceneFlow` |
-| a script document exists under `data/project/scripts` | no | no `.json` there yet; the reader treats a missing directory as no scripts rather than an error |
+| a genre pack GRANTS a loadout (`event_loadouts`) | **yes** | one array in a pack's `genre.json`, validated through `ops.validate_loadouts`. granted by platformer, topdown_rpg |
+| an editor module reaches the op registry (the PICKER) | **yes** | reached by `editor/core/event_script.py`, `editor/core/genre.py`, `editor/core/verbs.py`, `editor/ui/script_editor.py` |
+| a script document is read from disk in production | **yes** | read in `main.py` |
+| a `ScriptRun` is constructed outside the checks | **yes** | constructed in `main.py` |
+| a script document exists under `data/project/scripts` | **yes** | 1 file(s): starter_greeting.json |
 
 ## The loadouts
 

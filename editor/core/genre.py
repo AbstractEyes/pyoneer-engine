@@ -14,6 +14,10 @@ A genre pack supplies the difference *once*. It declares:
   tables   what data this genre keeps (actors, weapons, levels, ...)
   docks    which editor panels are relevant, so the UI is not a wall of
            tools for a genre you are not making
+  loadouts which op vocabularies a script authored under this genre may
+           draw on -- `event_loadouts`, a grant of NAMES and never of an op
+           list, because the membership of a loadout is written once, in the
+           specs, and a pack repeating it is a second home for that fact
   rules    a markdown document that conditions the responding model --
            naming conventions, where engine code for this genre goes, what
            it must not touch
@@ -38,7 +42,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from editor.core.errors import (
     PyoneerGenreError,
@@ -47,9 +51,18 @@ from editor.core.errors import (
 from editor.core.scope import Scope
 from scripts.core.errors import PyoneerError
 from scripts.game.behavior import registry as behavior_registry
+from scripts.game.flow import ops as op_registry
 
 GENRES_DIR = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "genres")
+
+EVENT_LOADOUTS: str = "event_loadouts"
+"""The `genre.json` key naming the op vocabularies this pack GRANTS.
+
+A FILE FORMAT string under law 8, spelled once here and nowhere else in
+this module, so the packs on disk and the parser cannot drift apart by a
+typo that reads as a pack simply staying silent.
+"""
 
 _FIELD_TYPES: dict[str, type] = {
     "int": int, "float": float, "str": str, "bool": bool,
@@ -161,6 +174,20 @@ class GenrePack:
     docks: tuple[str, ...] = ()
     rules_markdown: str = ""
     art_brief: str = ""
+    event_loadouts: tuple[str, ...] | None = None
+    """Which op vocabularies a script authored under this pack may use.
+
+    THREE STATES, and the difference between two of them is the whole
+    compatibility promise:
+
+      None   the pack is SILENT. Every pack that shipped before one filled
+             this in is silent, and silence grants everything, so a pack
+             that never mentions the key behaves exactly as it did.
+      ()     the pack grants NOTHING. A deliberate statement -- this genre
+             does not script -- and not the same fact as silence.
+      (...)  the names it grants, as authored, already judged by
+             `ops.validate_loadouts` at pack load.
+    """
 
     # -- lookups -----------------------------------------------------------
 
@@ -187,6 +214,48 @@ class GenrePack:
         """
         found = self.layer(layer)
         return found.object_class(object_type) if found else None
+
+    # -- what a script authored here may say --------------------------------
+
+    def grants(self, loadout: str) -> bool:
+        """May a script under this pack draw on `loadout`?
+
+        A silent pack answers True to everything, which is not generosity:
+        it is the only answer that leaves a pack written before this key
+        existed behaving the way it did yesterday.
+        """
+        if self.event_loadouts is None:
+            return True
+        return loadout in self.event_loadouts
+
+    def granted_registry(
+            self, registry: Mapping[str, op_registry.OpSpec] | None = None,
+    ) -> Mapping[str, op_registry.OpSpec]:
+        """The op table narrowed to what this pack grants.
+
+        THE ONE SEAM A PICKER NEEDS. An op table is what every reader of the
+        vocabulary already takes -- `ops.loadouts`, `ops.ops_in`,
+        `ScriptDocument.commit`, the script editor's own palette -- so
+        narrowing the TABLE offers the grant to all of them at once, and
+        none of them grows a second opinion about membership.
+
+        A silent pack returns the table it was handed, unchanged and by
+        identity, so wiring this in cannot change what a pack that does not
+        declare the key already shows.
+
+        KNOW THIS BEFORE WIRING IT TO A READER: a pack granting `()` narrows
+        to an EMPTY table, and a reader that judges documents against an
+        empty table refuses every op in every script it opens. That is the
+        truth about such a pack -- this genre does not script -- but it is a
+        sentence a window has to say for itself ("this genre grants no
+        scripting") rather than let a library report as ten broken ops.
+        """
+        table = op_registry.OP_REGISTRY if registry is None else registry
+        if self.event_loadouts is None:
+            return table
+        allowed = set(self.event_loadouts)
+        return {name: spec for name, spec in table.items()
+                if spec.loadout in allowed}
 
     @property
     def required_layers(self) -> tuple[GenreLayer, ...]:
@@ -217,6 +286,7 @@ class GenrePack:
         found: list[RuleViolation] = []
         found.extend(self.__check_layers(project))
         found.extend(self.__check_tables(project))
+        found.extend(self.__check_scripts(project))
         return found
 
     def __check_layers(self, project: Any) -> Iterable["RuleViolation"]:
@@ -260,6 +330,50 @@ class GenrePack:
                             Scope.of(("map", map_name), ("layer", layer.name)),
                             f"{count} objects of class {kind!r}; this genre "
                             f"expects at most one")
+
+    def __check_scripts(self, project: Any) -> Iterable["RuleViolation"]:
+        """Every script asking for a vocabulary this pack does not grant.
+
+        This is where the grant reaches a human. It is a SOFT rule and it is
+        deliberately soft: `event_loadouts` is a statement about where a
+        script is meant to run, and a half-written project is allowed to
+        have a script ahead of the pack that will grant it. The engine is
+        the hard half -- `ops.check_loadout` raises at script load -- so
+        making this raise too would only move the same refusal earlier and
+        stop an author mid-sentence.
+
+        A SILENT pack yields nothing at all, which is the same promise
+        `_object_classes` makes about a missing key.
+        """
+        if self.event_loadouts is None:
+            return
+        # Imported here rather than at module scope: `editor.core.event_script`
+        # imports `editor.core.project`, which imports THIS module, so a
+        # top-level import would be a cycle.
+        from editor.core import event_script
+
+        try:
+            library = event_script.scripts_of(project)
+        except Exception as exc:                       # unreadable library
+            yield RuleViolation(
+                "hard", Scope.of("project"),
+                f"event scripts could not be read: {exc}")
+            return
+        granted = (", ".join(repr(l) for l in self.event_loadouts)
+                   or "no loadout at all")
+        for script_id in library.names():
+            document = library.document(script_id)
+            for loadout in document.loadouts:
+                if self.grants(loadout):
+                    continue
+                yield RuleViolation(
+                    "soft", Scope.of(("script", script_id)),
+                    f"script {script_id!r} declares the {loadout!r} op "
+                    f"loadout, which the {self.id!r} pack does not grant "
+                    f"-- it grants {granted}",
+                    fix=f'add "{loadout}" to this pack\'s '
+                        f"{EVENT_LOADOUTS}, or use an op from a loadout it "
+                        f"already grants")
 
     def __check_tables(self, project: Any) -> Iterable["RuleViolation"]:
         for declared in self.tables:
@@ -371,7 +485,44 @@ def _build(genre_id: str, root: str, raw: dict, path: str) -> GenrePack:
         docks=tuple(raw.get("docks", [])),
         rules_markdown=rules,
         art_brief=art,
+        event_loadouts=_event_loadouts(raw, genre_id, path),
     )
+
+
+def _event_loadouts(raw: dict, genre_id: str,
+                    path: str) -> tuple[str, ...] | None:
+    """Parse `event_loadouts`, the op vocabularies this pack GRANTS.
+
+    ABSENT IS NOT AN ERROR, and absent is not the same as empty. A pack that
+    never writes the key returns `None` and grants everything, because that
+    is what every pack that shipped before this parser existed did; a pack
+    that writes `[]` grants nothing, and means it. An explicit JSON `null`
+    is neither, and is refused below with the rest of the nonsense.
+
+    PRESENT AND UNKNOWN IS AN ERROR, loudly, at pack load -- the same timing
+    and the same reason as `_object_classes` on an unregistered behavior
+    token. A loadout exists because an op declares it, so a pack granting a
+    name no op claims is granting a vocabulary that does not exist, and
+    every script authored under it would be judged against nothing.
+
+    The judge is `ops.validate_loadouts` -- the ENGINE's own, not a second
+    copy -- for the same reason `_object_class` calls
+    `behavior_registry.validate_list`: a list this accepts has to be a list
+    the reader accepts, and two implementations of one rule disagree in
+    silence.
+    """
+    if EVENT_LOADOUTS not in raw:
+        return None
+    try:
+        return op_registry.validate_loadouts(
+            raw[EVENT_LOADOUTS], where=f"genre pack {genre_id!r}")
+    except PyoneerError as exc:
+        detail = getattr(exc, "message", None) or str(exc)
+        raise PyoneerGenreError(
+            f"genre pack {genre_id!r} declares an {EVENT_LOADOUTS} the "
+            f"engine refuses, so every script authored under this pack "
+            f"would be judged against a vocabulary that does not exist: "
+            f"{detail}", path=path) from exc
 
 
 def _layer(item: dict, path: str) -> GenreLayer:

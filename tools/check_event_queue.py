@@ -1,6 +1,6 @@
 """Verify the OS event queue: what translates, what fans out, what is reported.
 
-Three things, and they are three because the change they guard was three
+Four things, and they are four because the changes they guard were four
 things:
 
   1. TRANSLATION.  `PyoneerEvent.__translate` used to linear-scan every
@@ -31,6 +31,20 @@ things:
      an INDEPENDENT count of every listener invocation during boot says, and
      every key is a real event-type name. That equality is the proof the
      REPORT changed and the BEHAVIOUR did not.
+
+  4. THE QUEUE SHAPE.  `pump_pyo` used to open a coalescing branch on
+     `last_event == GameEventType.PYGAME`, comparing a `PyoneerEvent`
+     INSTANCE to an enum member, which is constant False. That branch, its
+     `append_event` pooling and its `__PROBLEM_EVENTS` macOS duplicate guard
+     were deleted as a claim about this engine that was never true. Both
+     halves are here. The behaviour that REMAINS is proved unchanged by
+     running the deleted function verbatim beside the shipped one over a
+     corpus and comparing event for event -- with the old branch instrumented,
+     so the agreement is shown to come from the branch never firing and not
+     from a corpus that never offered it one. And the invariant that REPLACES
+     it -- a `PyoneerEvent.event` is one pygame event, never a container -- is
+     asserted against the attribute names the real consumers in `scripts/`
+     actually read, discovered from their AST rather than recited here.
 
 Nothing here pins an absolute dispatch count or anything about the map on
 disk: every engine-scale number is a comparison between two runs in this
@@ -367,6 +381,236 @@ expect_empty("no injected event changed the frame",
               for label, report in (("base", base), ("devices", devices),
                                     ("others", others))
               if report["frame_hash"] != first["frame_hash"]])
+
+
+# ===========================================================================
+print("\n4. the queue shape: one in, one out, and the branch that never ran")
+# ===========================================================================
+import ast                                                       # noqa: E402
+
+
+def expect_raises(label, exc, thunk):
+    try:
+        got = thunk()
+    except exc as err:
+        print(f"  ok   {label:<58} {type(err).__name__}: {err}")
+        return
+    except Exception as err:  # noqa: BLE001 -- the wrong exception is a failure
+        print(f"  FAIL {label:<58} raised {type(err).__name__}: {err}")
+        failures.append(label)
+        return
+    print(f"  FAIL {label:<58} returned {got!r}")
+    failures.append(label)
+
+
+EventManager.QUEUE = []
+EventManager.PYO_QUEUE.clear()
+
+# --- the deleted code, verbatim ------------------------------------------
+# Reproduced exactly as it stood, including the `__contains__` call, so the
+# comparison below is against the real previous function and not a tidier
+# retelling of it. `branch_entries` counts every time the coalescing branch
+# was entered; it is the number that decides whether the deletion was
+# behaviour-preserving or a behaviour change wearing a bug fix's clothes.
+LEGACY_PROBLEM_EVENTS: list[int] = [
+    pygame.MOUSEBUTTONDOWN,
+    pygame.MOUSEBUTTONUP,
+]
+branch_entries = 0
+
+
+def legacy_append_event(pyo_event, event):
+    if pyo_event.event is not list:
+        pyo_event.event = [pyo_event.event]
+    pyo_event.event.append(event)
+
+
+def legacy_pump(queue: list) -> list:
+    global branch_entries
+    out: list = []
+    for event in queue:
+        if not EventManager.fans_out(event):
+            continue
+        last_event = out[-1] if len(out) > 0 else None
+        if last_event is not None and last_event == GameEventType.PYGAME:
+            branch_entries += 1
+            if LEGACY_PROBLEM_EVENTS.__contains__(event.type):
+                continue
+            legacy_append_event(last_event, event)
+        else:
+            out.append(PyoneerEvent(GameEventType.PYGAME, event, {}, False))
+    return out
+
+
+def ev(code, **attrs):
+    return pygame.event.Event(code, attrs)
+
+
+MOTION = dict(pos=(1, 2), rel=(0, 0), buttons=(0, 0, 0))
+CLICK = dict(pos=(1, 2), button=1, touch=False)
+KEY = dict(key=pygame.K_a, mod=0, unicode="a", scancode=4)
+
+# Every queue shape the branch could possibly have wanted: adjacent
+# duplicates of a translated code, of an untranslated code, of the two codes
+# __PROBLEM_EVENTS named, a flood, and a mixture with a filtered device event
+# sitting between two duplicates.
+CORPUS: dict[str, list] = {
+    "empty": [],
+    "one motion": [ev(pygame.MOUSEMOTION, **MOTION)],
+    "2 adjacent MOUSEBUTTONDOWN": [ev(pygame.MOUSEBUTTONDOWN, **CLICK)] * 2,
+    "2 adjacent MOUSEBUTTONUP": [ev(pygame.MOUSEBUTTONUP, **CLICK)] * 2,
+    "8 adjacent MOUSEMOTION": [ev(pygame.MOUSEMOTION, **MOTION)] * 8,
+    "2 adjacent USEREVENT (untranslated)": [ev(pygame.USEREVENT)] * 2,
+    "3 unrelated untranslated": [ev(pygame.USEREVENT),
+                                 ev(pygame.WINDOWSHOWN),
+                                 ev(pygame.TEXTINPUT, text="x")],
+    "50 adjacent KEYDOWN": [ev(pygame.KEYDOWN, **KEY)] * 50,
+    "500 motion flood": [ev(pygame.MOUSEMOTION, **MOTION)] * 500,
+    "alternating down/up": [ev(pygame.MOUSEBUTTONDOWN, **CLICK),
+                            ev(pygame.MOUSEBUTTONUP, **CLICK)] * 4,
+    "device event between duplicates": [
+        ev(pygame.MOUSEMOTION, **MOTION),
+        ev(pygame.AUDIODEVICEADDED, which=0, iscapture=0),
+        ev(pygame.MOUSEMOTION, **MOTION),
+    ],
+}
+OPPORTUNITIES = sum(max(len([e for e in q if EventManager.fans_out(e)]) - 1, 0)
+                    for q in CORPUS.values())
+
+
+def shipped_pump(queue: list) -> list:
+    EventManager.QUEUE = list(queue)
+    EventManager.PYO_QUEUE.clear()
+    EventManager.pump_pyo()
+    return list(EventManager.PYO_QUEUE)
+
+
+def queued_pump(queue: list) -> list:
+    EventManager.QUEUE = list(queue)
+    EventManager.PYO_QUEUE.clear()
+    EventManager.queue()
+    return list(EventManager.PYO_QUEUE)
+
+
+def shape(events: list) -> list:
+    """What a consumer can actually see: the member, and WHICH pygame event."""
+    return [(pyo.type.name, id(pyo.event), type(pyo.event).__name__)
+            for pyo in events]
+
+
+# THE EQUALITY THAT MAKES THE DELETION SAFE: for every input that reaches it,
+# the function that remains produces what the deleted one did -- same count,
+# same member, same pygame event object, same order.
+expect_empty("the deletion changed nothing the old code would have produced",
+             [f"{label}: shipped={shape(shipped_pump(q))} "
+              f"legacy={shape(legacy_pump(q))}"
+              for label, q in CORPUS.items()
+              if shape(shipped_pump(q)) != shape(legacy_pump(q))])
+
+# ...and the agreement is not an artefact of a corpus that never gave the old
+# branch a chance. It was offered one on every event after the first.
+expect("the corpus offered the deleted branch many chances",
+       OPPORTUNITIES > 500, True)
+expect("and it entered on none of them", branch_entries, 0)
+
+# WHY it entered on none: the condition compared an instance to an enum
+# member, and `PyoneerEvent` declares no `__eq__`, so it was constant False.
+expect("PyoneerEvent declares no __eq__",
+       "__eq__" in PyoneerEvent.__dict__, False)
+sample = PyoneerEvent(GameEventType.PYGAME, ev(pygame.MOUSEMOTION, **MOTION))
+expect_empty("no GameEventType member equals a PyoneerEvent instance",
+             [member.name for member in GameEventType if sample == member])
+# The other half, so "always False" is not this harness being broken: the
+# comparison the branch MEANT to make does distinguish members.
+expect("but comparing the event's TYPE does distinguish",
+       [member.name for member in GameEventType if sample.type == member],
+       ["MOUSE_MOTION"])
+# And the one-line repair docs/NEXT.md item 16 proposes is not one: an
+# instance's `.type` is the TRANSLATED member, so `== PYGAME` is true only
+# for an event no member names -- never for the mouse duplicates the branch
+# was aimed at. Both halves, in one pair.
+expect("the proposed repair is false for the events it was aimed at",
+       PyoneerEvent(GameEventType.PYGAME,
+                    ev(pygame.MOUSEBUTTONDOWN, **CLICK)).type
+       == GameEventType.PYGAME, False)
+expect("and true for unrelated events it would have folded together",
+       PyoneerEvent(GameEventType.PYGAME, ev(pygame.WINDOWSHOWN)).type
+       == GameEventType.PYGAME, True)
+
+# --- the invariant that replaces the branch -------------------------------
+# A PyoneerEvent carries ONE pygame event. Never a container. This is the
+# assertion that goes red the day pooling is re-added.
+expect_empty("a pumped event never holds a container",
+             [f"{label}[{i}]={type(pyo.event).__name__}"
+              for label, q in CORPUS.items()
+              for i, pyo in enumerate(shipped_pump(q))
+              if not isinstance(pyo.event, pygame.event.Event)])
+expect_empty("and EventManager.queue() agrees",
+             [f"{label}[{i}]={type(pyo.event).__name__}"
+              for label, q in CORPUS.items()
+              for i, pyo in enumerate(queued_pump(q))
+              if not isinstance(pyo.event, pygame.event.Event)])
+expect_empty("one pyo event per fanned-out pygame event",
+             [f"{label}: {len(shipped_pump(q))} != "
+              f"{len([e for e in q if EventManager.fans_out(e)])}"
+              for label, q in CORPUS.items()
+              if len(shipped_pump(q))
+              != len([e for e in q if EventManager.fans_out(e)])])
+expect_empty("in order, and the SAME object, not a copy",
+             [label for label, q in CORPUS.items()
+              if [id(pyo.event) for pyo in shipped_pump(q)]
+              != [id(e) for e in q if EventManager.fans_out(e)]])
+
+EventManager.QUEUE = []
+EventManager.PYO_QUEUE.clear()
+
+# The container shape is not merely unused -- the PYGAME constructor refuses
+# it, because __translate reads self.event.type. Both halves: one event in,
+# the translated member out.
+expect_raises("a list handed to the PYGAME constructor raises",
+              AttributeError,
+              lambda: PyoneerEvent(GameEventType.PYGAME,
+                                   [ev(pygame.MOUSEMOTION, **MOTION)] * 2))
+expect("one event handed to it translates",
+       PyoneerEvent(GameEventType.PYGAME,
+                    ev(pygame.MOUSEMOTION, **MOTION)).type,
+       GameEventType.MOUSE_MOTION)
+
+# --- WHY pooling was impossible, measured off the real consumers ----------
+# Every `<something>.event.<attr>` in scripts/, found by walking the AST
+# rather than recited here, so this cannot go stale when a consumer moves.
+read_attrs: set[str] = set()
+sites = 0
+for folder, _dirs, files in os.walk(os.path.join(_bootstrap.REPO_ROOT,
+                                                 "scripts")):
+    for filename in files:
+        if not filename.endswith(".py"):
+            continue
+        path = os.path.join(folder, filename)
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read(), path)
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Attribute)
+                    and isinstance(node.value, ast.Attribute)
+                    and node.value.attr == "event"
+                    and isinstance(node.value.value, ast.Name)
+                    and "event" in node.value.value.id.lower()
+                    and node.attr != "type"):
+                read_attrs.add(node.attr)
+                sites += 1
+
+expect("scripts/ really does read a single event's attributes",
+       sites >= 20, True)
+expect("and the attribute names were found, not assumed",
+       bool(read_attrs), True)
+# A single event answers every one of them; a pooled list answers none. That
+# is the whole reason the branch could not be finished as it was written.
+single = ev(pygame.MOUSEBUTTONDOWN, **{name: 0 for name in sorted(read_attrs)})
+expect_empty("a single event answers every attribute they read",
+             [name for name in sorted(read_attrs) if not hasattr(single, name)])
+expect_empty("a pooled list answers none of them",
+             [name for name in sorted(read_attrs)
+              if hasattr([single, single], name)])
 
 
 print()

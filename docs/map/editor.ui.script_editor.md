@@ -5,199 +5,202 @@
 
 > The event screen: pages, an indented command list, a picker, and the box.
 
-`editor.ui.script_editor` · 2390 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.ui.script_editor` · 2425 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    editor.core editor.core.commands editor.core.inspect editor.core.scope editor.ui.ask editor.ui.fields editor.ui.prompt scripts.core.layer_profile scripts.game.flow scripts.loaders.script_file
+    editor.core editor.core.commands editor.core.inspect editor.core.scope editor.ui.ask editor.ui.fields editor.ui.prompt scripts.game.flow scripts.loaders.script_file
 
 ## Module constants
 
-- `editor/ui/script_editor.py:191` `SCRIPT` #TAG:SCRIPT
-- `editor/ui/script_editor.py:206` `NOTHING_YET` #TAG:NOTHING_YET
-- `editor/ui/script_editor.py:208` `NO_SCRIPTS` #TAG:NO_SCRIPTS
-- `editor/ui/script_editor.py:215` `NO_PAGES` #TAG:NO_PAGES
-- `editor/ui/script_editor.py:223` `NO_PAGE_SELECTED` #TAG:NO_PAGE_SELECTED
-- `editor/ui/script_editor.py:225` `NO_NODE_SELECTED` #TAG:NO_NODE_SELECTED
-- `editor/ui/script_editor.py:233` `CONDITIONS_ARE_BUILT` #TAG:CONDITIONS_ARE_BUILT
-- `editor/ui/script_editor.py:239` `NO_CONDITIONS` #TAG:NO_CONDITIONS
-- `editor/ui/script_editor.py:244` `ASK_HERE` #TAG:ASK_HERE
-- `editor/ui/script_editor.py:251` `PROBE_PAGE` #TAG:PROBE_PAGE
-- `editor/ui/script_editor.py:252` `PROBE_NODE` #TAG:PROBE_NODE
-- `editor/ui/script_editor.py:257` `PAGE_BODY` #TAG:PAGE_BODY
+- `editor/ui/script_editor.py:190` `SCRIPT` #TAG:SCRIPT
+- `editor/ui/script_editor.py:208` `NOTHING_YET` #TAG:NOTHING_YET
+- `editor/ui/script_editor.py:210` `NO_SCRIPTS` #TAG:NO_SCRIPTS
+- `editor/ui/script_editor.py:217` `NO_PAGES` #TAG:NO_PAGES
+- `editor/ui/script_editor.py:225` `NO_PAGE_SELECTED` #TAG:NO_PAGE_SELECTED
+- `editor/ui/script_editor.py:227` `NO_NODE_SELECTED` #TAG:NO_NODE_SELECTED
+- `editor/ui/script_editor.py:235` `CONDITIONS_ARE_BUILT` #TAG:CONDITIONS_ARE_BUILT
+- `editor/ui/script_editor.py:241` `NO_CONDITIONS` #TAG:NO_CONDITIONS
+- `editor/ui/script_editor.py:246` `ASK_HERE` #TAG:ASK_HERE
+- `editor/ui/script_editor.py:253` `PROBE_PAGE` #TAG:PROBE_PAGE
+- `editor/ui/script_editor.py:254` `PROBE_NODE` #TAG:PROBE_NODE
+- `editor/ui/script_editor.py:259` `PAGE_BODY` #TAG:PAGE_BODY
 
 ## Functions
 
-- `editor/ui/script_editor.py:273` `value_words(value: Any) -> str` #TAG:value_words
+- `editor/ui/script_editor.py:275` `value_words(value: Any) -> str` #TAG:value_words
   - One argument value as words rather than as JSON.
-- `editor/ui/script_editor.py:293` `condition_words(condition: Any) -> str` #TAG:condition_words
+- `editor/ui/script_editor.py:295` `condition_words(condition: Any) -> str` #TAG:condition_words
   - `{"var": "coins", "at_least": 100}` drawn as `coins at_least 100`.
-- `editor/ui/script_editor.py:309` `when_words(conditions: Any) -> str` #TAG:when_words
+- `editor/ui/script_editor.py:311` `when_words(conditions: Any) -> str` #TAG:when_words
   - A whole `when` list. Empty always passes, and says so.
-- `editor/ui/script_editor.py:317` `node_words(node: dict, table) -> str` #TAG:node_words
+- `editor/ui/script_editor.py:319` `node_words(node: dict, table) -> str` #TAG:node_words
   - One row of the command list: the op, then its arguments in words.
-- `editor/ui/script_editor.py:341` `seed_for(spec) -> dict` #TAG:seed_for
+- `editor/ui/script_editor.py:343` `seed_for(spec) -> dict` #TAG:seed_for
   - The arguments a newly picked op starts with, from its OWN example.
-- `editor/ui/script_editor.py:367` `one_line(text: str, *, limit: int=240) -> str` #TAG:one_line
+- `editor/ui/script_editor.py:369` `one_line(text: str, *, limit: int=240) -> str` #TAG:one_line
   - A reader's refusal on one line, for a label that has room for one.
-- `editor/ui/script_editor.py:379` `mint(taken, prefix: str) -> str` #TAG:mint
+- `editor/ui/script_editor.py:381` `mint(taken, prefix: str) -> str` #TAG:mint
   - The first `prefix<n>` no page and no node in this document claims.
-- `editor/ui/script_editor.py:394` `refusal_for(document, node: dict, *, variables, registry) -> str` #TAG:refusal_for
+- `editor/ui/script_editor.py:396` `refusal_for(document, node: dict, *, variables, registry) -> str` #TAG:refusal_for
   - `""` if the reader would accept this node here, else its refusal.
-- `editor/ui/script_editor.py:426` `refusal_for_when(document, conditions, *, variables, registry) -> str` #TAG:refusal_for_when
+- `editor/ui/script_editor.py:428` `refusal_for_when(document, conditions, *, variables, registry) -> str` #TAG:refusal_for_when
   - `""` if the reader would accept this `when` list, else its refusal.
-- `editor/ui/script_editor.py:452` `argument_value(raw: Any) -> Any` #TAG:argument_value
+- `editor/ui/script_editor.py:454` `argument_value(raw: Any) -> Any` #TAG:argument_value
   - What an author typed into a row whose type nothing declares.
 
 ## Classes
 
 ### `class ArgumentForm(QWidget)` #TAG:ArgumentForm
 
-`editor/ui/script_editor.py:481`–`660`
+`editor/ui/script_editor.py:483`–`662`
 
 > One `Field` per row, an Insert button, and a place for a refusal.
 
-- `editor/ui/script_editor.py:503` `__init__(self, parent: QWidget | None=None)` #TAG:ArgumentForm.__init__
-- `editor/ui/script_editor.py:543` `open(self, title: str, rows, *, note: str='', ok_label: str='Insert') -> None` #TAG:ArgumentForm.open
+- `editor/ui/script_editor.py:505` `__init__(self, parent: QWidget | None=None)` #TAG:ArgumentForm.__init__
+- `editor/ui/script_editor.py:545` `open(self, title: str, rows, *, note: str='', ok_label: str='Insert') -> None` #TAG:ArgumentForm.open
   - Show these rows. Replaces whatever was in it.
-- `editor/ui/script_editor.py:578` `__editor_for(self, entry: Field) -> QWidget` #TAG:ArgumentForm.__editor_for
-- `editor/ui/script_editor.py:615` `values(self) -> dict` #TAG:ArgumentForm.values
+- `editor/ui/script_editor.py:580` `__editor_for(self, entry: Field) -> QWidget` #TAG:ArgumentForm.__editor_for
+- `editor/ui/script_editor.py:617` `values(self) -> dict` #TAG:ArgumentForm.values
   - What is in the form right now, typed by each row's kind.
-- `editor/ui/script_editor.py:637` `labels(self) -> list[str]` #TAG:ArgumentForm.labels
+- `editor/ui/script_editor.py:639` `labels(self) -> list[str]` #TAG:ArgumentForm.labels
   - Every row label, in order. What a check reads.
-- `editor/ui/script_editor.py:641` `keys(self) -> list[str]` #TAG:ArgumentForm.keys
-- `editor/ui/script_editor.py:646` `refuse(self, message: str) -> None` #TAG:ArgumentForm.refuse
+- `editor/ui/script_editor.py:643` `keys(self) -> list[str]` #TAG:ArgumentForm.keys
+- `editor/ui/script_editor.py:648` `refuse(self, message: str) -> None` #TAG:ArgumentForm.refuse
   - Say why this cannot be inserted, and keep the form open.
-- `editor/ui/script_editor.py:655` `accept(self) -> None` #TAG:ArgumentForm.accept
-- `editor/ui/script_editor.py:658` `cancel(self) -> None` #TAG:ArgumentForm.cancel
+- `editor/ui/script_editor.py:657` `accept(self) -> None` #TAG:ArgumentForm.accept
+- `editor/ui/script_editor.py:660` `cancel(self) -> None` #TAG:ArgumentForm.cancel
 
 ### `class OpPicker(QWidget)` #TAG:OpPicker
 
-`editor/ui/script_editor.py:667`–`874`
+`editor/ui/script_editor.py:669`–`876`
 
 > Every registered op as a button, grouped by loadout, badged.
 
-- `editor/ui/script_editor.py:683` `__init__(self, parent: QWidget | None=None)` #TAG:OpPicker.__init__
-- `editor/ui/script_editor.py:731` `op_names(self) -> list[str]` #TAG:OpPicker.op_names
+- `editor/ui/script_editor.py:685` `__init__(self, parent: QWidget | None=None)` #TAG:OpPicker.__init__
+- `editor/ui/script_editor.py:733` `op_names(self) -> list[str]` #TAG:OpPicker.op_names
   - Exactly the ops this picker is offering, sorted.
-- `editor/ui/script_editor.py:735` `rebuild(self, table, *, declared, refusal) -> None` #TAG:OpPicker.rebuild
+- `editor/ui/script_editor.py:737` `rebuild(self, table, *, declared, refusal) -> None` #TAG:OpPicker.rebuild
   - Draw one button per registered op. `refusal(name) -> str`.
-- `editor/ui/script_editor.py:801` `__heading(self, text: str) -> QLabel` #TAG:OpPicker.__heading
-- `editor/ui/script_editor.py:807` `__grid(self) -> tuple[QGridLayout, QWidget]` #TAG:OpPicker.__grid
-- `editor/ui/script_editor.py:814` `__button(self, spec, refusal: str) -> QPushButton` #TAG:OpPicker.__button
+- `editor/ui/script_editor.py:803` `__heading(self, text: str) -> QLabel` #TAG:OpPicker.__heading
+- `editor/ui/script_editor.py:809` `__grid(self) -> tuple[QGridLayout, QWidget]` #TAG:OpPicker.__grid
+- `editor/ui/script_editor.py:816` `__button(self, spec, refusal: str) -> QPushButton` #TAG:OpPicker.__button
   - One op. Badged with its loadout, marked when it does not run.
-- `editor/ui/script_editor.py:839` `__say_blocked(self) -> None` #TAG:OpPicker.__say_blocked
+- `editor/ui/script_editor.py:841` `__say_blocked(self) -> None` #TAG:OpPicker.__say_blocked
   - List every greyed op with the reader's reason, permanently.
-- `editor/ui/script_editor.py:858` `__filter(self) -> None` #TAG:OpPicker.__filter
+- `editor/ui/script_editor.py:860` `__filter(self) -> None` #TAG:OpPicker.__filter
   - Hide what does not match, and hide a heading with nothing under
 
 ### `class ScriptEditor(QMainWindow)` #TAG:ScriptEditor
 
-`editor/ui/script_editor.py:881`–`2382`
+`editor/ui/script_editor.py:883`–`2417`
 
 > One event script at a time, and every change is a `script.*` verb.
 
-- `editor/ui/script_editor.py:895` `__init__(self, session, script_id: str='', parent: QWidget | None=None)` #TAG:ScriptEditor.__init__
-- `editor/ui/script_editor.py:1108` `__heading(self, text: str) -> QLabel` #TAG:ScriptEditor.__heading
-- `editor/ui/script_editor.py:1113` `__button_row(self, column, entries) -> dict[str, QPushButton]` #TAG:ScriptEditor.__button_row
-- `editor/ui/script_editor.py:1131` `@property script_id(self) -> str` #TAG:ScriptEditor.script_id
-- `editor/ui/script_editor.py:1135` `@property scope(self) -> Scope` #TAG:ScriptEditor.scope
+- `editor/ui/script_editor.py:897` `__init__(self, session, script_id: str='', parent: QWidget | None=None)` #TAG:ScriptEditor.__init__
+- `editor/ui/script_editor.py:1110` `__heading(self, text: str) -> QLabel` #TAG:ScriptEditor.__heading
+- `editor/ui/script_editor.py:1115` `__button_row(self, column, entries) -> dict[str, QPushButton]` #TAG:ScriptEditor.__button_row
+- `editor/ui/script_editor.py:1133` `@property script_id(self) -> str` #TAG:ScriptEditor.script_id
+- `editor/ui/script_editor.py:1137` `@property scope(self) -> Scope` #TAG:ScriptEditor.scope
   - The script scope, or the project when none is open.
-- `editor/ui/script_editor.py:1144` `set_script(self, script_id: str) -> None` #TAG:ScriptEditor.set_script
+- `editor/ui/script_editor.py:1146` `set_script(self, script_id: str) -> None` #TAG:ScriptEditor.set_script
   - Aim this window at another script. ONE window, re-aimed.
-- `editor/ui/script_editor.py:1160` `@property library(self)` #TAG:ScriptEditor.library
+- `editor/ui/script_editor.py:1162` `@property library(self)` #TAG:ScriptEditor.library
   - The project's script library, or None when it will not load.
-- `editor/ui/script_editor.py:1176` `@property registry(self)` #TAG:ScriptEditor.registry
-- `editor/ui/script_editor.py:1182` `@property document(self)` #TAG:ScriptEditor.document
-- `editor/ui/script_editor.py:1191` `refresh(self) -> None` #TAG:ScriptEditor.refresh
+- `editor/ui/script_editor.py:1178` `@property registry(self)` #TAG:ScriptEditor.registry
+  - The op table this window offers, NARROWED to the project's genre.
+- `editor/ui/script_editor.py:1196` `@property grants_nothing(self) -> bool` #TAG:ScriptEditor.grants_nothing
+  - The pack withholds every loadout, so this genre does not script.
+- `editor/ui/script_editor.py:1207` `@property document(self)` #TAG:ScriptEditor.document
+- `editor/ui/script_editor.py:1216` `refresh(self) -> None` #TAG:ScriptEditor.refresh
   - Rebuild the whole screen from the document.
-- `editor/ui/script_editor.py:1215` `@staticmethod __silence(body: QWidget) -> None` #TAG:ScriptEditor.__silence
+- `editor/ui/script_editor.py:1240` `@staticmethod __silence(body: QWidget) -> None` #TAG:ScriptEditor.__silence
   - A form that has been replaced does not speak again.
-- `editor/ui/script_editor.py:1229` `__refresh(self) -> None` #TAG:ScriptEditor.__refresh
-- `editor/ui/script_editor.py:1259` `__title(self) -> str` #TAG:ScriptEditor.__title
-- `editor/ui/script_editor.py:1265` `__footer(self) -> str` #TAG:ScriptEditor.__footer
-- `editor/ui/script_editor.py:1274` `__fill_scripts(self, names) -> None` #TAG:ScriptEditor.__fill_scripts
-- `editor/ui/script_editor.py:1285` `__fill_pages(self, document) -> None` #TAG:ScriptEditor.__fill_pages
-- `editor/ui/script_editor.py:1304` `current_page(self) -> dict | None` #TAG:ScriptEditor.current_page
-- `editor/ui/script_editor.py:1313` `current_node(self) -> dict | None` #TAG:ScriptEditor.current_node
-- `editor/ui/script_editor.py:1324` `__fill_tree(self, document, page) -> None` #TAG:ScriptEditor.__fill_tree
-- `editor/ui/script_editor.py:1337` `__draw_body(self, parent, into: str, arm: str, body) -> None` #TAG:ScriptEditor.__draw_body
-- `editor/ui/script_editor.py:1371` `__stamp(self, item, node_id: str, into: str, arm: str, kind: str) -> None` #TAG:ScriptEditor.__stamp
-- `editor/ui/script_editor.py:1378` `__walk(self)` #TAG:ScriptEditor.__walk
-- `editor/ui/script_editor.py:1386` `tree_rows(self) -> list[dict]` #TAG:ScriptEditor.tree_rows
+- `editor/ui/script_editor.py:1254` `__refresh(self) -> None` #TAG:ScriptEditor.__refresh
+- `editor/ui/script_editor.py:1294` `__title(self) -> str` #TAG:ScriptEditor.__title
+- `editor/ui/script_editor.py:1300` `__footer(self) -> str` #TAG:ScriptEditor.__footer
+- `editor/ui/script_editor.py:1309` `__fill_scripts(self, names) -> None` #TAG:ScriptEditor.__fill_scripts
+- `editor/ui/script_editor.py:1320` `__fill_pages(self, document) -> None` #TAG:ScriptEditor.__fill_pages
+- `editor/ui/script_editor.py:1339` `current_page(self) -> dict | None` #TAG:ScriptEditor.current_page
+- `editor/ui/script_editor.py:1348` `current_node(self) -> dict | None` #TAG:ScriptEditor.current_node
+- `editor/ui/script_editor.py:1359` `__fill_tree(self, document, page) -> None` #TAG:ScriptEditor.__fill_tree
+- `editor/ui/script_editor.py:1372` `__draw_body(self, parent, into: str, arm: str, body) -> None` #TAG:ScriptEditor.__draw_body
+- `editor/ui/script_editor.py:1406` `__stamp(self, item, node_id: str, into: str, arm: str, kind: str) -> None` #TAG:ScriptEditor.__stamp
+- `editor/ui/script_editor.py:1413` `__walk(self)` #TAG:ScriptEditor.__walk
+- `editor/ui/script_editor.py:1421` `tree_rows(self) -> list[dict]` #TAG:ScriptEditor.tree_rows
   - Every drawn row as data: depth, text, and the address it carries.
-- `editor/ui/script_editor.py:1409` `__select_node(self, node_id: str) -> None` #TAG:ScriptEditor.__select_node
-- `editor/ui/script_editor.py:1416` `insertion_target(self) -> tuple[str, str, str]` #TAG:ScriptEditor.insertion_target
+- `editor/ui/script_editor.py:1444` `__select_node(self, node_id: str) -> None` #TAG:ScriptEditor.__select_node
+- `editor/ui/script_editor.py:1451` `insertion_target(self) -> tuple[str, str, str]` #TAG:ScriptEditor.insertion_target
   - Where the next picked command goes: `(into, arm, after)`.
-- `editor/ui/script_editor.py:1453` `__describe_document(self, document) -> Inspection` #TAG:ScriptEditor.__describe_document
-- `editor/ui/script_editor.py:1471` `__loadout_field(self, scope, declared, loadout: str) -> Field` #TAG:ScriptEditor.__loadout_field
-- `editor/ui/script_editor.py:1489` `__describe_page(self, document, page) -> Inspection` #TAG:ScriptEditor.__describe_page
-- `editor/ui/script_editor.py:1545` `__describe_node(self, document) -> Inspection` #TAG:ScriptEditor.__describe_node
-- `editor/ui/script_editor.py:1591` `__node_field(self, spec, key: str, value: Any, setter) -> Field` #TAG:ScriptEditor.__node_field
+- `editor/ui/script_editor.py:1488` `__describe_document(self, document) -> Inspection` #TAG:ScriptEditor.__describe_document
+- `editor/ui/script_editor.py:1506` `__loadout_field(self, scope, declared, loadout: str) -> Field` #TAG:ScriptEditor.__loadout_field
+- `editor/ui/script_editor.py:1524` `__describe_page(self, document, page) -> Inspection` #TAG:ScriptEditor.__describe_page
+- `editor/ui/script_editor.py:1580` `__describe_node(self, document) -> Inspection` #TAG:ScriptEditor.__describe_node
+- `editor/ui/script_editor.py:1626` `__node_field(self, spec, key: str, value: Any, setter) -> Field` #TAG:ScriptEditor.__node_field
   - One editable argument, typed by the op's OWN declaration.
-- `editor/ui/script_editor.py:1631` `condition_note(self) -> str` #TAG:ScriptEditor.condition_note
+- `editor/ui/script_editor.py:1666` `condition_note(self) -> str` #TAG:ScriptEditor.condition_note
   - What the builder can do right now, in the READER's own words.
-- `editor/ui/script_editor.py:1673` `refusal_for_op(self, document, name: str) -> str` #TAG:ScriptEditor.refusal_for_op
+- `editor/ui/script_editor.py:1708` `refusal_for_op(self, document, name: str) -> str` #TAG:ScriptEditor.refusal_for_op
   - `""` if this op can be added to this document, else the reason.
-- `editor/ui/script_editor.py:1687` `create_script(self) -> None` #TAG:ScriptEditor.create_script
+- `editor/ui/script_editor.py:1722` `create_script(self) -> None` #TAG:ScriptEditor.create_script
   - Ask for an id, then `script.create`.
-- `editor/ui/script_editor.py:1724` `delete_script(self) -> None` #TAG:ScriptEditor.delete_script
-- `editor/ui/script_editor.py:1733` `add_page(self) -> None` #TAG:ScriptEditor.add_page
-- `editor/ui/script_editor.py:1748` `remove_page(self) -> None` #TAG:ScriptEditor.remove_page
-- `editor/ui/script_editor.py:1757` `move_page(self, delta: int) -> None` #TAG:ScriptEditor.move_page
-- `editor/ui/script_editor.py:1777` `variable_names(self) -> tuple[str, ...]` #TAG:ScriptEditor.variable_names
+- `editor/ui/script_editor.py:1759` `delete_script(self) -> None` #TAG:ScriptEditor.delete_script
+- `editor/ui/script_editor.py:1768` `add_page(self) -> None` #TAG:ScriptEditor.add_page
+- `editor/ui/script_editor.py:1783` `remove_page(self) -> None` #TAG:ScriptEditor.remove_page
+- `editor/ui/script_editor.py:1792` `move_page(self, delta: int) -> None` #TAG:ScriptEditor.move_page
+- `editor/ui/script_editor.py:1812` `variable_names(self) -> tuple[str, ...]` #TAG:ScriptEditor.variable_names
   - Every variable a scene has declared, or none when none has.
-- `editor/ui/script_editor.py:1789` `argument_fields(self, do: str, node: dict | None=None) -> list[Field]` #TAG:ScriptEditor.argument_fields
+- `editor/ui/script_editor.py:1824` `argument_fields(self, do: str, node: dict | None=None) -> list[Field]` #TAG:ScriptEditor.argument_fields
   - The form for one op, DERIVED from what that op declares.
-- `editor/ui/script_editor.py:1831` `condition_fields(self, current: dict | None=None) -> list[Field]` #TAG:ScriptEditor.condition_fields
+- `editor/ui/script_editor.py:1866` `condition_fields(self, current: dict | None=None) -> list[Field]` #TAG:ScriptEditor.condition_fields
   - The form for ONE condition: a variable, a comparator, a value.
-- `editor/ui/script_editor.py:1864` `pick_op(self, do: str) -> None` #TAG:ScriptEditor.pick_op
+- `editor/ui/script_editor.py:1899` `pick_op(self, do: str) -> None` #TAG:ScriptEditor.pick_op
   - A picked command opens ITS OWN FORM. Nothing is inserted yet.
-- `editor/ui/script_editor.py:1897` `__form_note(self, spec) -> str` #TAG:ScriptEditor.__form_note
-- `editor/ui/script_editor.py:1906` `close_form(self) -> None` #TAG:ScriptEditor.close_form
+- `editor/ui/script_editor.py:1932` `__form_note(self, spec) -> str` #TAG:ScriptEditor.__form_note
+- `editor/ui/script_editor.py:1941` `close_form(self) -> None` #TAG:ScriptEditor.close_form
   - Put the picker back. Called by Cancel and by every accept.
-- `editor/ui/script_editor.py:1912` `open_picker_here(self) -> str` #TAG:ScriptEditor.open_picker_here
+- `editor/ui/script_editor.py:1947` `open_picker_here(self) -> str` #TAG:ScriptEditor.open_picker_here
   - Show the picker for the row the author just activated.
-- `editor/ui/script_editor.py:1925` `__on_form_accepted(self, values: dict) -> None` #TAG:ScriptEditor.__on_form_accepted
-- `editor/ui/script_editor.py:1937` `__arguments(self, do: str, values: dict) -> dict` #TAG:ScriptEditor.__arguments
+- `editor/ui/script_editor.py:1960` `__on_form_accepted(self, values: dict) -> None` #TAG:ScriptEditor.__on_form_accepted
+- `editor/ui/script_editor.py:1972` `__arguments(self, do: str, values: dict) -> dict` #TAG:ScriptEditor.__arguments
   - The form's answers as the `args` a verb takes.
-- `editor/ui/script_editor.py:1957` `insert_node(self, do: str, into: str, arm: str, after: str, values: dict) -> None` #TAG:ScriptEditor.insert_node
+- `editor/ui/script_editor.py:1992` `insert_node(self, do: str, into: str, arm: str, after: str, values: dict) -> None` #TAG:ScriptEditor.insert_node
   - Accepting the form is what inserts the node. One command.
-- `editor/ui/script_editor.py:1989` `edit_node(self) -> None` #TAG:ScriptEditor.edit_node
+- `editor/ui/script_editor.py:2024` `edit_node(self) -> None` #TAG:ScriptEditor.edit_node
   - Reopen THE SAME form on the selected command, populated.
-- `editor/ui/script_editor.py:2007` `apply_node_edit(self, node_id: str, values: dict) -> None` #TAG:ScriptEditor.apply_node_edit
+- `editor/ui/script_editor.py:2042` `apply_node_edit(self, node_id: str, values: dict) -> None` #TAG:ScriptEditor.apply_node_edit
   - One `script.node.set` per key that actually changed.
-- `editor/ui/script_editor.py:2049` `__condition_list(self, values: dict) -> list` #TAG:ScriptEditor.__condition_list
+- `editor/ui/script_editor.py:2084` `__condition_list(self, values: dict) -> list` #TAG:ScriptEditor.__condition_list
   - The one condition a filled form describes, as a list of records.
-- `editor/ui/script_editor.py:2064` `__condition_owner(self, target: str)` #TAG:ScriptEditor.__condition_owner
+- `editor/ui/script_editor.py:2099` `__condition_owner(self, target: str)` #TAG:ScriptEditor.__condition_owner
   - `(kind, id, the current when list)` for "page" or "node".
-- `editor/ui/script_editor.py:2077` `add_condition(self, target: str) -> None` #TAG:ScriptEditor.add_condition
+- `editor/ui/script_editor.py:2112` `add_condition(self, target: str) -> None` #TAG:ScriptEditor.add_condition
   - Open the condition builder for a page or for a control node.
-- `editor/ui/script_editor.py:2095` `apply_condition(self, target: str, owner_id: str, values: dict) -> None` #TAG:ScriptEditor.apply_condition
-- `editor/ui/script_editor.py:2127` `remove_condition(self, target: str) -> None` #TAG:ScriptEditor.remove_condition
+- `editor/ui/script_editor.py:2130` `apply_condition(self, target: str, owner_id: str, values: dict) -> None` #TAG:ScriptEditor.apply_condition
+- `editor/ui/script_editor.py:2162` `remove_condition(self, target: str) -> None` #TAG:ScriptEditor.remove_condition
   - Take the LAST condition off. Exactly invertible, like an arm.
-- `editor/ui/script_editor.py:2150` `anchor_sentence(self) -> str` #TAG:ScriptEditor.anchor_sentence
+- `editor/ui/script_editor.py:2185` `anchor_sentence(self) -> str` #TAG:ScriptEditor.anchor_sentence
   - Where the next command would land, in the VERBS' own words.
-- `editor/ui/script_editor.py:2167` `ask_here(self) -> str | None` #TAG:ScriptEditor.ask_here
+- `editor/ui/script_editor.py:2202` `ask_here(self) -> str | None` #TAG:ScriptEditor.ask_here
   - Send one request carrying THIS insertion point. Returns its path.
-- `editor/ui/script_editor.py:2196` `remove_node(self) -> None` #TAG:ScriptEditor.remove_node
-- `editor/ui/script_editor.py:2205` `move_node(self, delta: int) -> None` #TAG:ScriptEditor.move_node
-- `editor/ui/script_editor.py:2224` `add_arm(self) -> None` #TAG:ScriptEditor.add_arm
+- `editor/ui/script_editor.py:2231` `remove_node(self) -> None` #TAG:ScriptEditor.remove_node
+- `editor/ui/script_editor.py:2240` `move_node(self, delta: int) -> None` #TAG:ScriptEditor.move_node
+- `editor/ui/script_editor.py:2259` `add_arm(self) -> None` #TAG:ScriptEditor.add_arm
   - Give the selected `if` one more else-if arm.
-- `editor/ui/script_editor.py:2242` `remove_arm(self) -> None` #TAG:ScriptEditor.remove_arm
-- `editor/ui/script_editor.py:2257` `__sync_buttons(self, document, page) -> None` #TAG:ScriptEditor.__sync_buttons
+- `editor/ui/script_editor.py:2277` `remove_arm(self) -> None` #TAG:ScriptEditor.remove_arm
+- `editor/ui/script_editor.py:2292` `__sync_buttons(self, document, page) -> None` #TAG:ScriptEditor.__sync_buttons
   - Enable only what can act, and say why in the tooltip when not.
-- `editor/ui/script_editor.py:2297` `report(self, message: str) -> None` #TAG:ScriptEditor.report
-- `editor/ui/script_editor.py:2301` `notify(self, message: str, *, seconds: float=8.0) -> None` #TAG:ScriptEditor.notify
+- `editor/ui/script_editor.py:2332` `report(self, message: str) -> None` #TAG:ScriptEditor.report
+- `editor/ui/script_editor.py:2336` `notify(self, message: str, *, seconds: float=8.0) -> None` #TAG:ScriptEditor.notify
   - Say something without stopping the hand. Always remembered.
-- `editor/ui/script_editor.py:2306` `commit_in_flight(self) -> bool` #TAG:ScriptEditor.commit_in_flight
+- `editor/ui/script_editor.py:2341` `commit_in_flight(self) -> bool` #TAG:ScriptEditor.commit_in_flight
   - Push the field the author is still inside into the document.
-- `editor/ui/script_editor.py:2326` `closeEvent(self, event) -> None` #TAG:ScriptEditor.closeEvent
-- `editor/ui/script_editor.py:2332` `__on_pick_script(self, current, _previous) -> None` #TAG:ScriptEditor.__on_pick_script
-- `editor/ui/script_editor.py:2337` `__on_pick_page(self, current, _previous) -> None` #TAG:ScriptEditor.__on_pick_page
-- `editor/ui/script_editor.py:2344` `__on_pick_node(self, current, _previous) -> None` #TAG:ScriptEditor.__on_pick_node
-- `editor/ui/script_editor.py:2357` `__send(self, command) -> None` #TAG:ScriptEditor.__send
+- `editor/ui/script_editor.py:2361` `closeEvent(self, event) -> None` #TAG:ScriptEditor.closeEvent
+- `editor/ui/script_editor.py:2367` `__on_pick_script(self, current, _previous) -> None` #TAG:ScriptEditor.__on_pick_script
+- `editor/ui/script_editor.py:2372` `__on_pick_page(self, current, _previous) -> None` #TAG:ScriptEditor.__on_pick_page
+- `editor/ui/script_editor.py:2379` `__on_pick_node(self, current, _previous) -> None` #TAG:ScriptEditor.__on_pick_node
+- `editor/ui/script_editor.py:2392` `__send(self, command) -> None` #TAG:ScriptEditor.__send
   - One command out, then a rebuild. Refusals are the window's.
-- `editor/ui/script_editor.py:2362` `__on_command(self, command: Any) -> None` #TAG:ScriptEditor.__on_command
+- `editor/ui/script_editor.py:2397` `__on_command(self, command: Any) -> None` #TAG:ScriptEditor.__on_command
   - One edit from a form, on its way to the one mutation point.
-- `editor/ui/script_editor.py:2379` `__forward(self, name: str) -> None` #TAG:ScriptEditor.__forward
+- `editor/ui/script_editor.py:2414` `__forward(self, name: str) -> None` #TAG:ScriptEditor.__forward

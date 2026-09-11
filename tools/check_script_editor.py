@@ -983,6 +983,46 @@ try:
 
     expect("nothing modal through any gesture in this file", modals(), [])
 
+    # ------------------------------------------------------------------
+    section("11. the genre pack's op grant reaches this window")
+    # ------------------------------------------------------------------
+    # `GenrePack.granted_registry` narrows an op table to a pack's
+    # `event_loadouts`. It landed with zero callers in `editor/ui/`, which is
+    # this repository's signature defect -- a capability nobody can reach.
+    # Both halves below: the grant WIDENS to the whole table for the shipped
+    # pack, and it really NARROWS when the pack withholds, with the window
+    # saying so in its own sentence instead of reporting every op as unknown.
+    from dataclasses import replace as _replace                     # noqa: E402
+    from scripts.game.flow import ops as _ops                       # noqa: E402
+
+    _pack = session.project.genre
+    expect("the shipped pack grants `core`, so the window sees every op",
+           sorted(screen.registry), sorted(_ops.OP_REGISTRY))
+    expect("...and says nothing about scripting being off",
+           screen.grants_nothing, False)
+
+    _held = session.project.genre
+    try:
+        session.project.genre = _replace(_pack, event_loadouts=())
+        expect("a pack that grants NOTHING narrows the window's table to "
+               "nothing", dict(screen.registry), {})
+        expect("...and the window knows to say so for itself",
+               screen.grants_nothing, True)
+        screen.refresh()
+        settle()
+        expect("...and it is the pack's statement on screen, not ten broken "
+               "ops", ("grants no op loadouts" in screen.problem.text(),
+                       screen.problem.isVisible()), (True, True))
+
+        session.project.genre = _replace(_pack, event_loadouts=None)
+        expect("a SILENT pack is unchanged -- the table back by identity",
+               screen.registry is _ops.OP_REGISTRY
+               or sorted(screen.registry) == sorted(_ops.OP_REGISTRY), True)
+        expect("...and a silent pack says nothing either",
+               screen.grants_nothing, False)
+    finally:
+        session.project.genre = _held
+
     window.close()
     entity.close()
     screen.close()

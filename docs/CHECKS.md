@@ -17,7 +17,7 @@ have been written, passed, and never run by the suite. A check that
 did not run has proved nothing, which is why an absent optional
 dependency reports `SKIP` and never `PASS`.
 
-61 checks:
+63 checks:
 
 | check | roster line | module says |
 |---|---|---|
@@ -50,13 +50,14 @@ dependency reports `SKIP` and never `PASS`.
 | `lifecycle` | a body declares itself gone, and is really unbound, undrawn and forgotten | Verify entity control: a body declares itself gone, and is really removed. |
 | `flow` | action routing, the step sequencer, and the agency it gives back | Verify scene and GUI flow: where a firing goes, and what step we are on. |
 | `ops` | the event-script vocabulary: every gate the reader closes, and the step machine that runs what it lets through | Verify the event-script vocabulary: what it refuses, and what it runs. |
+| `script_runtime` | the wire: a key press reaches a script -- the boot reads data/project/scripts, a map's pyoneer_script joins to a spawned body, and one press of the action verb builds a ScriptRun in SceneManager's flow slot | Boot a game whose MAP names an event script, and press the action key. |
 | `audio` | the two audio roots, the missing-card/missing-file split, the synthesised fallback pack, and the two play ops | Verify the audio subsystem: the roots, the split, the pack, the ops. |
 | `event_docs` | EVENTS.md is generated, and every runtime and reachability row in it was measured, not claimed | Generate `docs/EVENTS.md`, and prove it cannot describe an op that does not run. |
 | `window` | drag, close, focus, visibility matrix | Verify GameWindow drag, close and focus behaviour with synthetic input.""" |
 | `window_close` | visibility cascade, F1 toggle, typing suppresses movement | Close/reopen, visibility cascade, and text-capture gating. |
 | `window_events` | os window events translate, route, and still fan out | Verify that OS window events translate, route, and still fan out. |
-| `event_queue` | the OS queue: the translation table built both ways, hardware hotplug kept out of the fan-out, and a boot dispatch report that names the type that moved | Verify the OS event queue: what translates, what fans out, what is reported. |
-| `editor` | scopes, command stream, exact undo, genre rules, requests | Verify the editor's headless core. |
+| `event_queue` | the OS queue: the translation table built both ways, hardware hotplug kept out of the fan-out, a boot dispatch report that names the type that moved, and the queue shape -- one pyo event per fanned-out pygame event, never a container | Verify the OS event queue: what translates, what fans out, what is reported. |
+| `editor` | scopes, command stream, exact undo, genre rules, the pack's op-loadout grant, requests | Verify the editor's headless core. |
 | `relay` | one scope's vocabulary and no more, and now ENFORCED: the slice is exactly what the address accepts, a response reaching past the declared addresses is refused whole before its first command runs, a bundle may declare a second address and ship its verbs too, and every worked example a bundle prints is a line its own gate permits | Verify the scoped relay -- the piecemeal door between the author and an AI. |
 | `script_verbs` | the script.* verbs: exact inverses through nested elif arms, id-only addressing, and every refusal the reader would make at load | Verify the `script.*` verbs: what they write, what they refuse, what undo |
 | `paint` | strokes, stamps, flood fill, one drag is one transaction | Verify the tile-painting logic. |
@@ -71,16 +72,17 @@ dependency reports `SKIP` and never `PASS`.
 | `actions_panel` | trigger authoring, action verbs, exact inverses | Assert the authoring surfaces for map events and the collision tileset. |
 | `behavior_ui` | behavior checklist from the registry, refusals at authoring time, exact undo | The editor's behavior surface: the checklist, the refusals, the undo. |
 | `object_editor` | the entity editing screen: one window re-aimed, the field still in flight committed on the way out, and the snap preference reaching the canvas | The entity editing screen: what it shows, what it emits, what it saves. |
-| `script_editor` | the event screen: the picker IS the registry, a pick opens the op's own derived form, and a branching script built by hand alone really runs | The event screen: what it offers, what it inserts, and what it can build. |
+| `script_editor` | the event screen: the picker IS the registry narrowed to what the genre grants, a pick opens the op's own derived form, and a branching script built by hand alone really runs | The event screen: what it offers, what it inserts, and what it can build. |
 | `hierarchy` | the tree behaves like a tree: a double-click centres the canvas on an object, a right-click menu greys what it cannot do and says why in its own label, and cut/copy/paste is one command and one undo | The hierarchy tree as a CONTROL: double-click, right-click, cut/copy/paste. |
 | `editor_ui` | panels build, canvas edits are commands, a palette click in collision mode masks the tile, responses apply | Drive the editor's Qt window offscreen and assert it holds together. |
 | `palette` | every tileset stacked in one scroll, a stamp clamped to the sheet it started in, a selection addressed by name so no command can move it, and an import that crops the region it was shown into a grid the engine cuts the same way | The stacked tile palette, and importing a tileset by selecting a region. |
 | `demos` | three prototype games boot headless and answer injected input | Boot every demo headless, drive it with injected input, and assert what it |
 | `prototype` | the design form resolves against the registries, and its worked example boots | Resolve every field the design template names, then boot its worked example. |
-| `demo_map` | the shipped map IS the shipped game: it boots, its object layer produces the driven body at its type's depth with a feet anchor, its passability refuses a step, and main.py builds no entity | Boot the SHIPPED game and assert the map is what produces it. |
+| `demo_map` | the shipped map IS the shipped game: it boots, its object layer produces the driven body at its type's depth with a feet anchor, its passability refuses a step, main.py builds no entity, the driven-record pick is one shared function, and the action route sits in the overridable hook | Boot the SHIPPED game and assert the map is what produces it. |
 | `art_tilesets` | the generated terrain and clutter sheets: every corner mask's occupancy, every tile inside its own cell, and no pixel read from a file | Verify the generated tilesets: corner occupancy, containment, provenance. |
 | `art` | the shipped pack: every sheet on disk at its builder's size, the tracked bytes reproducible twice over, the engine loading each one, resolve_art ordering the two roots both ways, and git ignoring the licensed root but not the pack | Verify the shipped art pack: it is there, it is reproducible, it loads. |
 | `art_sprites` | the generated character sheets, mask palette and parallax band: the declared frame grid, four distinct walk poses, no frame overhanging its cell, every mask edge marked only where it blocks, a seamless join, and no pixel read from a file | Verify the generated sprites, mask palette and parallax background. |
+| `secrets` | no tracked file carries a plaintext credential: a credential-shaped name bound to a real literal, a high-entropy key under an innocent name, and an os.environ read never flagged | Refuse a plaintext credential in a TRACKED file. |
 | `docs` | the doc spine: navigation, #TAG anchors, the generated code map, fact drift | Verify the documentation SPINE, and generate the parts that can be generated. |
 
 `tools/smoke.py` runs after the roster and is not a check: it

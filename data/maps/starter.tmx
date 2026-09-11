@@ -349,6 +349,7 @@
    <object id="1" name="hero" type="GamePlayer" x="660" y="400" width="44" height="64">
     <properties>
      <property name="pyoneer_behaviors" value="player_input,attack_action,interact_action,pause_action,topdown_move,animation_drive,action_relay,lifecycle_mark"/>
+     <property name="pyoneer_script" value="starter_greeting"/>
     </properties>
    </object>
   </objectgroup>

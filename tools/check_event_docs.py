@@ -330,10 +330,21 @@ SKIP_DIRS = {".git", "__pycache__", ".venv", "docs", "data"}
 
 
 def python_files(*roots):
-    """Every tracked-looking .py under `roots`, repo-relative and sorted."""
+    """Every tracked-looking .py under `roots`, repo-relative and sorted.
+
+    A root may be a DIRECTORY or a single .py FILE. The file form exists
+    because `main.py` is the game's boot and sits under no package: while
+    this walker took directories only, the two rows below that describe what
+    the boot does could not see the one file that does it, and both printed
+    `no` for months after the wire landed. A reachability table blind to the
+    file that closes the gap is worse than no table.
+    """
     found = []
     for root in roots:
         base = os.path.join(ROOT, root)
+        if os.path.isfile(base) and base.endswith(".py"):
+            found.append(os.path.relpath(base, ROOT).replace("\\", "/"))
+            continue
         for folder, dirs, names in os.walk(base):
             dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
             for name in sorted(names):
@@ -435,12 +446,15 @@ def scripts_on_disk():
 def reach_rows():
     """(the wire, whether it exists, what it takes) -- every one derived."""
     editor_reach = importers("scripts.game.flow.ops", "editor")
-    started = constructors("ScriptRun", "scripts", "demos", "editor")
+    # `main.py` is named alongside the packages because it IS the game's boot
+    # and belongs to no package. Two rows below describe something only that
+    # file can do; scanning directories alone made them structurally unable
+    # to report it.
+    production = ("scripts", "demos", "editor", "main.py")
+    started = constructors("ScriptRun", *production)
     defines = ("scripts/loaders/script_file.py",)
-    read = (constructors("load_script", "scripts", "demos", "editor",
-                         exclude=defines)
-            + constructors("load_scripts", "scripts", "demos", "editor",
-                           exclude=defines))
+    read = (constructors("load_script", *production, exclude=defines)
+            + constructors("load_scripts", *production, exclude=defines))
     granted, parsed = packs_granting()
     on_disk = scripts_on_disk()
     return [
@@ -662,6 +676,18 @@ expect("the constructor scan finds THIS file's own ScriptRun(...)",
        "tools/check_event_docs.py" in constructors("ScriptRun", "tools"), True)
 expect("...and finds nothing for a name nothing calls",
        constructors("ScriptRunnerFactory", "tools", "scripts"), [])
+# A root may be a single FILE, and it had to become one: `main.py` is the
+# game's boot, belongs to no package, and is the ONLY file that can satisfy
+# the two production rows. While the walker took directories only, those rows
+# were structurally unable to report a wire that already existed. Both halves:
+# the file form finds the file, and it does not quietly widen to its folder.
+expect("a single .py file is a valid scan root, so the boot is visible",
+       python_files("main.py"), ["main.py"])
+expect("...and naming that file does NOT drag in its whole directory",
+       [p for p in python_files("main.py") if p != "main.py"], [])
+expect("the boot really is what the production scan sees it as",
+       ("main.py" in constructors("load_scripts", "main.py"),
+        "main.py" in constructors("ScriptRun", "main.py")), (True, True))
 
 
 # ===========================================================================

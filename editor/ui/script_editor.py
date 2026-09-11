@@ -184,17 +184,19 @@ from editor.ui.ask import ask_form
 from editor.ui.fields import InspectionView
 from editor.ui.prompt import PromptStrip
 
-from scripts.core.layer_profile import PREFIX
 from scripts.game.flow import ops as op_registry
-from scripts.loaders.script_file import COMPARATORS
+from scripts.loaders.script_file import COMPARATORS, SCRIPT_PROPERTY
 
-SCRIPT: str = PREFIX + "script"
+SCRIPT: str = SCRIPT_PROPERTY
 """The tmx object property naming the event script an object runs.
 
-A FILE FORMAT string, minted by `docs/PLAN_SCENES.md` 4.6 and permanent
-under law 8. Composed from the imported `PREFIX` and never retyped, because
-pytmx raises and makes the whole map unloadable if a custom property shadows
-one of its own attribute names.
+RE-EXPORTED, never composed here. A FILE FORMAT string, minted by
+`docs/PLAN_SCENES.md` 4.6 and permanent under law 8, so the window that
+WRITES it and the boot that READS it must spell it identically forever. It
+was composed independently on both sides for a day; law 2's corollary says
+shared logic lives in `scripts/` and the editor re-exports it, so the one
+declaration is `script_file.SCRIPT_PROPERTY` and this name is an alias kept
+because the rest of this file reads better for it.
 
 It needs no verb of its own: `map.object.property.set` already writes it,
 already has an exact inverse, and already refuses a reserved name.
@@ -1174,9 +1176,32 @@ class ScriptEditor(QMainWindow):
 
     @property
     def registry(self):
+        """The op table this window offers, NARROWED to the project's genre.
+
+        One property, because every reader in this window already goes
+        through it -- the picker, the loadout toggles, the node words, the
+        refusals -- so narrowing here gives them all the same answer and
+        none of them grows a second opinion about membership.
+
+        A pack that does not declare `event_loadouts` is silent and gets the
+        table back by identity, which is why wiring this in changed nothing
+        for either shipped pack.
+        """
         library = self.library
         table = getattr(library, "registry", None)
-        return op_registry.OP_REGISTRY if table is None else table
+        base = op_registry.OP_REGISTRY if table is None else table
+        return self.session.project.genre.granted_registry(base)
+
+    @property
+    def grants_nothing(self) -> bool:
+        """The pack withholds every loadout, so this genre does not script.
+
+        Said as one sentence by `__refresh` rather than left to surface as
+        every op in every document reading as unknown. An empty grant is a
+        STATEMENT a pack makes, and a window that renders it as ten broken
+        ops is reporting the author's own decision back at them as damage.
+        """
+        return bool(op_registry.OP_REGISTRY) and not self.registry
 
     @property
     def document(self):
@@ -1230,6 +1255,16 @@ class ScriptEditor(QMainWindow):
         library = self.library
         names = library.names() if library is not None else []
         self.__fill_scripts(names)
+
+        if self.grants_nothing:
+            # The pack's own statement, in the window's words. Said BEFORE
+            # the document is drawn, because the alternative is a tree full
+            # of ops reported as unknown for a reason that is not a typo.
+            self.report(
+                "The '%s' genre grants no op loadouts, so scripting is off "
+                "for this project. Add a loadout name to this pack's "
+                "event_loadouts to turn it back on."
+                % self.session.project.genre.id)
 
         document = self.document
         self.empty.setVisible(document is None)
