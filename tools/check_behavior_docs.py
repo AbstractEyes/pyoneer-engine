@@ -66,6 +66,7 @@ from editor.core.genre import (GenreField, GenreLayer, GenreObjectClass,
                                GenrePack, GenreTable)
 from scripts.core import collision_runtime, layer_profile
 from scripts.core.event_manager import PyoneerEvent
+from scripts.core.input import InputActionManager
 from scripts.core.event_types import GameEventType
 from scripts.core.spawn import SPAWN_REGISTRY
 from scripts.game.behavior import (ACTOR, BEHAVIOR_REGISTRY, BEHAVIORS,
@@ -576,9 +577,45 @@ def _assigns_collision_field() -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
+_INPUT_DECLARED: list[str] = []
+"""Verbs `config/inputs.json` declares that the LOADER did not register."""
+
+
 def _input_actions() -> tuple[str, ...]:
+    """Every verb a REAL `InputActionManager` ends up holding. Not the JSON.
+
+    THE ONE ROW IN THIS TABLE THAT MEASURED A FILE. It read `config/inputs.json`
+    with `json.load` and reported the key set, so the cell printed **yes** for a
+    verb that the loader never registered -- and an unregistered verb is exactly
+    the failure the row exists to warn about, because `held()` is an unguarded
+    dict index that raises inside `core_frame_update` and kills the frame for
+    every sibling in the scene bucket (law 10).
+
+    The sibling instrument next door, `tools/check_event_docs.py`, had two rows
+    of that shape and both were repaired in the pass before this one: the fix
+    there was to LOAD the thing rather than parse the file beside it. This is
+    the same fix. `prepare_inputs` is what the boot calls, `validate_bindings`
+    runs inside it, and a binding the loader refuses now takes the row to `no`
+    where it used to be reported as a working wire.
+
+    The file is still opened, for one reason: to tell "the author declared no
+    `jump`" apart from "the author declared one and the LOADER dropped it",
+    which is the difference between an authoring gap and a broken engine. The
+    second is reported in the cell.
+    """
     with open(INPUTS_PATH, encoding="utf-8") as handle:
-        return tuple(sorted(json.load(handle)))
+        config = json.load(handle)
+    try:
+        loaded = tuple(sorted(
+            InputActionManager().prepare_inputs(dict(config)).actions))
+    except Exception:                                      # noqa: BLE001
+        # A refusal here is the loader doing its job loudly, and it means no
+        # verb is pollable at all -- so the honest answer is the empty tuple.
+        return ()
+    for name in sorted(config):
+        if name not in loaded and name not in _INPUT_DECLARED:
+            _INPUT_DECLARED.append(name)
+    return loaded
 
 
 def integration_rows() -> list[tuple[str, bool, str]]:
@@ -619,10 +656,15 @@ def integration_rows() -> list[tuple[str, bool, str]]:
          if not gated else "assigned in " + ", ".join("`%s`" % g for g in gated)),
         ("a `jump` input action exists",
          "jump" in actions,
-         "one entry in `config/inputs.json`; `held()`/`pressed()` are "
-         "unguarded dict indexes, so the behavior and the binding are ONE "
-         "change" if "jump" not in actions else
-         "`config/inputs.json` binds " + ", ".join("`%s`" % a for a in actions)),
+         ("`config/inputs.json` declares `jump` and the loader did NOT "
+          "register it, so polling the verb raises inside the frame -- that "
+          "is an engine defect, not a missing binding"
+          if "jump" in _INPUT_DECLARED else
+          "one entry in `config/inputs.json`; `held()`/`pressed()` are "
+          "unguarded dict indexes, so the behavior and the binding are ONE "
+          "change") if "jump" not in actions else
+         "`prepare_inputs` registered " + ", ".join("`%s`" % a
+                                                    for a in actions)),
     ]
 
 

@@ -83,8 +83,10 @@ CHECKS = [
               "its verbs too, and every worked example a bundle prints is a "
               "line its own gate permits"),
     ("script_verbs", "the script.* verbs: exact inverses through nested elif "
-                     "arms, id-only addressing, and every refusal the reader "
-                     "would make at load"),
+                     "arms, id-only addressing, every refusal the reader "
+                     "would make at load, and the seam -- the editor opens "
+                     "every script the engine reads, in THIS project, because "
+                     "a scene document declares the variables both sides use"),
     ("paint", "strokes, stamps, flood fill, one drag is one transaction"),
     ("autotile", "corner masks, terrain recovery, diagonal policy"),
     ("collision", "three-level resolution, .blitmask round trip, mask encoding"),
@@ -150,8 +152,10 @@ CHECKS = [
                     "no pixel read from a file"),
     ("secrets", "no tracked file carries a plaintext credential: a "
                 "credential-shaped name bound to a real literal, a "
-                "high-entropy key under an innocent name, and an "
-                "os.environ read never flagged"),
+                "high-entropy key under an innocent name, a provider token "
+                "or connection URL whatever it is called, the same three over "
+                "json, xml and prose as well as python, and an os.environ "
+                "read never flagged"),
     ("docs", "the doc spine: navigation, #TAG anchors, the generated code map, "
              "fact drift"),
 ]

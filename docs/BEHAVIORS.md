@@ -452,7 +452,7 @@ Every row below is measured, not declared: the drive row is produced by construc
 | a declaration is turned into attached behaviors somewhere | **yes** | done in `scripts/core/scene/scene_manager.py`, `scripts/game/entity/game_player.py`, `scripts/loaders/map_loader.py` |
 | a **tmx object's** `pyoneer_behaviors` property is read when it spawns | **yes** | read in `scripts/core/scene/scene_manager.py`, `scripts/loaders/map_loader.py` |
 | `GameEntity.collision_field` is assigned in production | **yes** | assigned in `scripts/core/renderer.py` |
-| a `jump` input action exists | **yes** | `config/inputs.json` binds `action`, `attack`, `down`, `jump`, `left`, `pause`, `right`, `sprint`, `up` |
+| a `jump` input action exists | **yes** | `prepare_inputs` registered `action`, `attack`, `down`, `jump`, `left`, `pause`, `right`, `sprint`, `up` |
 
 ## What each genre pack declares
 

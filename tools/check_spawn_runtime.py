@@ -14,6 +14,10 @@ until an author noticed an entity missing, or drawn behind a wall:
     a spawned entity is bound into the SCENE too, so it actually updates
     a RUNTIME spawn is constructed from the same `spawn_defaults` the map
         spawn is, so both routes stand on the same pixel of the sprite
+    a RUNTIME spawn reads EVERY per-object `pyoneer_` property the map route
+        reads -- behaviors, params, actor, depth and script -- so a body
+        naming a script that is not there RAISES on this route as it does on
+        that one, AND one naming a real script is JOINED to it
 
 WHAT "ONE REGROUP" IS MEASURED AS, AND WHY IT IS NOT A REGROUP COUNT
 --------------------------------------------------------------------
@@ -65,6 +69,7 @@ from scripts.core.errors import (PyoneerAssetMissingError,
 from scripts.core.renderer import (EntityLayer, LayerRenderer, MapComposite,
                                    MapLayer)
 from scripts.core.scene.game_scene import GameScene
+from scripts.core.scene import scene_manager as scene_manager_module
 from scripts.core.scene.scene_manager import SceneManager
 from scripts.core.spawn import DEFAULT_OBJECT_DEPTH, SPAWN_REGISTRY, register
 from scripts.game.behavior import BEHAVIOR_REGISTRY
@@ -853,6 +858,229 @@ try:
                          properties={"pyoneer_behaviors": "platformer_move"})
     expect("a runtime spawn naming no row still gets the declared default",
            bare.behaviors.get("platformer_move").move_speed, default_speed)
+
+    # ------------------------------- and the fifth property of the family
+    print()
+    print("a runtime spawn reads pyoneer_script, as a map object does")
+    # THE FOURTH SIGHTING OF ONE SHAPE, and the reason this section is phrased
+    # as a roster rather than as a feature. `pyoneer_script` arrived on the map
+    # route and `SceneManager.spawn` did not learn it, while the method's own
+    # docstring went on claiming that a runtime spawn and an authored one
+    # "cannot disagree". Measured before the fix:
+    #
+    #     absent script id, SPAWN route: NO RAISE, entity built
+    #     absent script id, MAP route:   RAISED: event script ... not found
+    #
+    # Same property, same shaped mapping, one route loud and one silent.
+    #
+    # THE HOST IS THIS CHECK'S OWN (law 4). The shipped project's scripts are a
+    # DATA FILE; what is under test is that the manager reads whatever mapping
+    # the host is holding, so the mapping here is sentinel objects under names
+    # this repository does not contain.
+    class _ScriptHost:
+        """A host carrying the two attributes the boot assigns."""
+
+        screen = None
+
+        def __init__(self, scripts):
+            self.scripts = scripts
+            self.object_scripts = []
+
+    GOOD_SCRIPT = "fixture_greeting"
+    ABSENT_SCRIPT = "no_such_document_at_all"
+
+    script_host = _ScriptHost({GOOD_SCRIPT: object()})
+    scripted = SceneManager(script_host)
+    scripted.add_scene("scripted", GameScene("scripted"))
+    scripted.set_scene("scripted")
+    scripted_renderer = LayerRenderer(SCREEN)
+    scripted.bind("renderer", scripted_renderer)
+    scripted.bind("camera", GameCamera(pygame.Vector2(128, 128),
+                                       pygame.Rect(0, 0, 128, 128), scale=1))
+
+    def bound_bodies(renderer) -> int:
+        return sum(len(layer.entities)
+                   for layers in entity_layers(renderer).values()
+                   for layer in layers)
+
+    talker = scripted.spawn("Probe", (0.0, 0.0), depth=50,
+                            properties={"pyoneer_script": GOOD_SCRIPT})
+    expect("a Python-built body naming a real script is JOINED to it",
+           [(entity is talker, script_id)
+            for entity, script_id in script_host.object_scripts],
+           [(True, GOOD_SCRIPT)])
+    # The join is the half that makes the guard worth having: a raise alone
+    # would leave a runtime body that names a REAL script still unable to run
+    # it, which is the capability-without-a-caller shape this tree keeps paying
+    # for.
+    expect("...and it was bound, so the guard is not a refusal",
+           any(held is talker
+               for layers in entity_layers(scripted_renderer).values()
+               for layer in layers for held in layer.entities), True)
+
+    # NAMING NONE IS UNTOUCHED, exactly as a spawn naming no actors row is.
+    # Without this the join above could be a list that is never empty.
+    silent = scripted.spawn("Probe", (0.0, 0.0), depth=50,
+                            properties={"pyoneer_behaviors": "platformer_move"})
+    expect("a runtime spawn naming no script joins nothing",
+           len(script_host.object_scripts), 1)
+    expect("...and is built anyway", silent is not None, True)
+    # AND AN EMPTY STRING IS "NAMES NONE", not the id "". That is what the
+    # editor writes when an author clears the field, and it is the map route's
+    # own falsy test spelled the same way -- read as an id it would raise on a
+    # property that says exactly nothing.
+    # WRAPPED, and not for tidiness: a reader that read "" as the id "" raises
+    # right here, and an uncaught raise would stop this section dead instead of
+    # naming the row that broke. Measured -- narrowing the falsy test to
+    # `is None` took this file to a traceback with zero FAIL lines, which reads
+    # as "the check is broken" rather than as "the guard is gone".
+    try:
+        blank = scripted.spawn("Probe", (0.0, 0.0), depth=50,
+                               properties={"pyoneer_script": ""})
+        blank_built = blank is not None
+    except PyoneerAssetMissingError as exc:
+        blank_built = "RAISED %s" % str(exc).splitlines()[0]
+    expect("an EMPTY pyoneer_script names nothing rather than naming ''",
+           (blank_built, len(script_host.object_scripts)), (True, 1))
+
+    # THE OTHER HALF, and the one that was missing on this route entirely.
+    bound_before = bound_bodies(scripted_renderer)
+    expect_raises("an absent script id raises on the SPAWN route too, naming "
+                  "the spawn and listing what exists",
+                  PyoneerAssetMissingError,
+                  lambda: scripted.spawn(
+                      "Probe", (0.0, 0.0), depth=50,
+                      properties={"pyoneer_script": ABSENT_SCRIPT}),
+                  "event script", repr(ABSENT_SCRIPT), GOOD_SCRIPT,
+                  "SceneManager.spawn", "pyoneer_script")
+    expect("...BEFORE the bind, so a body naming a missing script never "
+           "reaches a layer", bound_bodies(scripted_renderer), bound_before)
+    expect("...and nothing was joined by the attempt",
+           len(script_host.object_scripts), 1)
+
+    # THE SAME MESSAGE SHAPE AS THE MAP ROUTE -- and now literally the same
+    # sentence, because there is one reader. It was two for a pass: the map
+    # route grew `pyoneer_script` first, this route learned it second and
+    # could not call that reader (it lives in the game module, which
+    # `scripts/` may not import), so it carried a copy of the falsy test, the
+    # kind string, the rendered `available:` list and the `asked_by` key. What
+    # is pinned below is what the copy had to keep; what is pinned in "one
+    # reader, not two spellings" further down is that there is no copy left.
+    # The other end of the pair is driven for real in `tools/check_demos.py`,
+    # which boots a map whose object names an absent script and asserts the
+    # MAP route still raises.
+    try:
+        scripted.spawn("Probe", (0.0, 0.0), depth=50,
+                       properties={"pyoneer_script": ABSENT_SCRIPT})
+        runtime_message = "<did not raise>"
+    except PyoneerAssetMissingError as exc:
+        runtime_message = str(exc)
+    map_shaped = str(PyoneerAssetMissingError(
+        "event script", ABSENT_SCRIPT, available=[GOOD_SCRIPT],
+        asked_by="tmx object id=1 on layer 'entity' via pyoneer_script"))
+    expect("the two routes' messages differ only in whom they blame",
+           runtime_message.splitlines()[0], map_shaped.splitlines()[0])
+    expect("...and both blame somebody, through the same context key",
+           ("asked_by=" in runtime_message, "asked_by=" in map_shaped),
+           (True, True))
+
+    # EMPTY IS AN AUTHORING ERROR; ABSENT IS A WIRING ERROR. The same split
+    # `actor_row` draws, and the two messages have to differ or the answer to
+    # "why did this raise" points at the wrong half of the tree.
+    empty_host = _ScriptHost({})
+    empty = SceneManager(empty_host)
+    empty.add_scene("empty", GameScene("empty"))
+    empty.set_scene("empty")
+    empty.bind("renderer", LayerRenderer(SCREEN))
+    expect_raises("a project with NO scripts is an authoring error, and says "
+                  "so", PyoneerAssetMissingError,
+                  lambda: empty.spawn(
+                      "Probe", (0.0, 0.0), depth=50,
+                      properties={"pyoneer_script": GOOD_SCRIPT}),
+                  "event script", "<none loaded>")
+    # `runtime` above is driven by `_HostStub`, which carries neither
+    # attribute -- so it is exactly the host nobody wired.
+    expect_raises("a host carrying no script table at all is a WIRING error, "
+                  "and names the attribute", PyoneerConfigError,
+                  lambda: runtime.spawn(
+                      "Probe", (0.0, 0.0), depth=50,
+                      properties={"pyoneer_script": GOOD_SCRIPT}),
+                  "`scripts` mapping", "load_scripts", "pyoneer_script")
+
+    # ONE MAPPING, READ AT SPAWN TIME. A copy taken when the manager was built
+    # would pass everything above and drift the moment the boot assigned the
+    # table -- which it does, after the manager exists. Same claim, and the
+    # same reason, as `spawn_defaults` below.
+    expect("SceneManager keeps no script table of its own to drift",
+           hasattr(scripted, "scripts"), False)
+    script_host.scripts = {GOOD_SCRIPT: object(), "arrived_later": object()}
+    late_talker = scripted.spawn("Probe", (0.0, 0.0), depth=50,
+                                 properties={"pyoneer_script": "arrived_later"})
+    expect("...it reads the host's mapping at spawn, never a copy of it",
+           script_host.object_scripts[-1:], [(late_talker, "arrived_later")])
+
+    # AND THE ROW COMES OUT AGAIN. `despawn` already makes three removals;
+    # without a fourth the join list holds a strong reference to every reaped
+    # body for the life of the scene, and an identity search still answers for
+    # a body that is gone.
+    expect("despawn drops the script row", scripted.despawn(talker), True)
+    expect("...leaving every OTHER body's row alone",
+           [script_id for _entity, script_id in script_host.object_scripts],
+           ["arrived_later"])
+    expect("...and a body that never had a row despawns as it always did",
+           scripted.despawn(silent), True)
+
+    # ------------------------------- one reader, not two agreeing spellings
+    print()
+    print("both pyoneer_script routes call ONE reader")
+    # THE DEBT THE SECTION ABOVE USED TO STATE. Pinning that two messages
+    # RENDER the same today is the weakest possible form of "they cannot
+    # disagree": it passes for two copies that happen to agree this morning,
+    # and the half that drifts is never the happy path, it is the refusal. So
+    # the claim here is structural -- one function, called by both routes.
+    #
+    # THE RUNTIME ROUTE IS DRIVEN, not read: a spy replaces the name
+    # `scene_manager` resolves and the spawn must go through it. An AST scan
+    # alone would pass for a module that imports the reader and still raises
+    # its own refusal three lines later.
+    seen: list[tuple] = []
+    real_reader = scene_manager_module.script_of
+
+    def _spy(scripts, properties, where):
+        seen.append((scripts, dict(properties), where))
+        return real_reader(scripts, properties, where)
+
+    scene_manager_module.script_of = _spy
+    try:
+        spied = scripted.spawn("Probe", (0.0, 0.0), depth=50,
+                               properties={"pyoneer_script": "arrived_later"})
+    finally:
+        scene_manager_module.script_of = real_reader
+    expect("the runtime route reads pyoneer_script THROUGH script_of",
+           [(table is script_host.scripts, props.get("pyoneer_script"),
+             "SceneManager.spawn" in where)
+            for table, props, where in seen],
+           [(True, "arrived_later", True)])
+    expect("...and still joined the body it read for",
+           script_host.object_scripts[-1][0] is spied, True)
+    scripted.despawn(spied)
+
+    # THE MAP ROUTE, which this file may not boot -- it is `main.py`, and
+    # booting a display-owning game here would double this check's runtime for
+    # a claim `tools/check_script_runtime.py` already drives end to end. What
+    # is asserted instead is the half that check cannot see: that main.py owns
+    # no SECOND refusal. A re-fork would put `PyoneerAssetMissingError(` back
+    # into that module, and this row is what goes red when it does.
+    with open(os.path.join(_bootstrap.REPO_ROOT, "main.py"),
+              encoding="utf-8") as handle:
+        boot_tree = ast.parse(handle.read())
+    boot_calls = [node.func.id for node in ast.walk(boot_tree)
+                  if isinstance(node, ast.Call)
+                  and isinstance(node.func, ast.Name)]
+    expect("the map route calls the same reader",
+           boot_calls.count("script_of") >= 1, True)
+    expect("...and raises no event-script refusal of its own any more",
+           boot_calls.count("PyoneerAssetMissingError"), 0)
 
     # ------------------- and the SAME slot for its constructor arguments
     print()

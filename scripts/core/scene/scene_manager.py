@@ -20,13 +20,14 @@ from scripts.game.entity.game_entity import GameEntity
 from scripts.game.flow.router import ActionRouter
 from scripts.game.game_camera import GameCamera
 from scripts.game.game_map import GameMap
+from scripts.loaders.script_file import SCRIPT_PROPERTY, script_of
 from scripts.loaders.table_file import actor_row
 
 from scripts.core.depth import OBJECT_CONVERTER, OBJECT_DEPTH, MAP_DEPTH
 
 import scripts.core.event_manager as EventManager
 from scripts.core.event_manager import PyoneerEvent
-from scripts.core.errors import PyoneerSceneError
+from scripts.core.errors import PyoneerConfigError, PyoneerSceneError
 
 
 class SceneManager:
@@ -143,13 +144,37 @@ class SceneManager:
               **kwargs: Any) -> Any:
         """Construct, place, compose and bind one entity. The inverse of despawn.
 
-        `properties` is a tmx-object-shaped mapping -- `pyoneer_behaviors` and
-        `pyoneer_param_*` -- read through the SAME `read_requests` a
-        map-spawned object goes through, so a runtime spawn and an authored
-        one cannot disagree about what a token means. `pyoneer_actor` is read
-        through the same `actor_row` as well, so the full ladder applies:
-        the properties' own `pyoneer_param_*`, then the actors row, then each
-        parameter's declared default.
+        `properties` is a tmx-object-shaped mapping, and the claim this
+        method makes is that EVERY per-object `pyoneer_` property the map
+        route reads is read here too, so a runtime spawn and an authored one
+        cannot disagree. The family has FIVE members and this is the whole
+        roster, enumerated rather than described, because the last time it
+        was described in prose a new member shipped on ONE route only and the
+        prose went on reading as though it had not:
+
+            `pyoneer_behaviors`   `read_requests`, the SAME function
+            `pyoneer_param_*`     `read_requests` -> `resolve_params`, same
+            `pyoneer_actor`       `actor_row`, the SAME function
+            `pyoneer_depth`       `resolve_depth`, the SAME function -- and
+                                  only when the caller named no `depth=`,
+                                  since an explicit argument wins here as it
+                                  does in `__constructor_arguments`
+            `pyoneer_script`      `script_of`, through `__join_script` below
+                                  -- the same function the map route calls,
+                                  since the pass that wrote this roster owed a
+                                  shared reader and the next one wrote it
+
+        So the full parameter ladder applies: the properties' own
+        `pyoneer_param_*`, then the actors row, then each parameter's
+        declared default.
+
+        The fifth row was a copy for one pass and is not one now. The map
+        route's reader lives in the game module and `scripts/` may not import
+        that -- it is the smoke baseline and the dependency runs the other way
+        -- so the shared half went where the property NAME already lives:
+        `scripts.loaders.script_file.script_of`, which both routes call the
+        way both call `actor_row`. `tools/check_spawn_runtime.py` pins that
+        they are one function and not two agreeing spellings.
 
         The constructor arguments come from the renderer's `spawn_defaults`,
         the SAME dict `spawn_objects` applies to a map-placed object, merged
@@ -189,10 +214,96 @@ class SceneManager:
             # half-composed would present as a physics bug rather than as an
             # authoring error.
             entity.behaviors.attach_all(build_behaviors(requests))
+        # BEFORE the bind, and one step earlier than the map route can manage:
+        # the map join has to run after `bind("MAP", ...)` because the spawn
+        # RECORDS are what it joins on, while this route holds the object and
+        # its properties in one hand. Earlier is strictly better for the same
+        # reason `attach_all` sits above the bind -- a body naming a script
+        # that is not there never reaches a layer -- and the observable is the
+        # same: a raise naming the object and listing what does exist.
+        self.__join_script(entity, props, where)
         self.bind(resolve_depth(type_name, props,
                                 class_name=type(entity).__name__, where=where)
                   if depth is None else depth, entity)
         return entity
+
+    def __join_script(self,
+                      entity: Any,
+                      properties: Mapping[str, Any],
+                      where: str) -> str | None:
+        """Join a runtime-spawned body to the event script it names.
+
+        THE FIFTH MEMBER OF THE `pyoneer_` FAMILY, and the one that arrived on
+        the map route alone. Measured before this existed: the same property,
+        the same shaped mapping, and an absent script id raised `event script
+        'x' not found` through the map bind while `SceneManager.spawn` built
+        the entity and said nothing -- so a projectile, an NPC or a summon
+        carrying `pyoneer_script` was silently inert, which is the shape law 8
+        refuses and the shape a map object has been protected from since the
+        property existed.
+
+        Returns the script id it joined, or None for a body that names none.
+        A body naming none is untouched, exactly as `__actor_row` leaves a
+        spawn that names no row untouched.
+
+        THE TABLE IS THE HOST'S, NOT A SECOND ONE OF THIS MANAGER'S OWN, on
+        `__constructor_arguments`'s rule one layer up: the scripts are read
+        once at boot, before the map is bound, and both routes must read that
+        one mapping or a runtime body would resolve `greeting` against a table
+        the authored body beside it never saw. `self.game` is the slot because
+        that is where the boot puts them -- the renderer carries
+        `spawn_defaults` and `tables` and does not carry these -- and it is
+        read AT SPAWN TIME rather than copied when the manager was built, so a
+        script table assigned after construction is the one a spawn resolves
+        against.
+
+        ABSENT AND EMPTY ARE DIFFERENT MISTAKES, as they are in `actor_row`,
+        and `script_of` is where that split is drawn for both routes: a host
+        with no `scripts` attribute at all is a WIRING error naming the
+        attribute, while a table that is merely EMPTY is an AUTHORING error
+        listing what does exist. The one refusal still spelled HERE is the
+        other attribute -- a host holding a script table and no
+        `object_scripts` list can read the document and has nowhere to record
+        it -- which `script_of` cannot raise, because the map route fills that
+        list at a different moment and the shared reader returns an id rather
+        than performing a join.
+
+        THE JOIN IS THE HALF THAT MAKES THE RAISE WORTH HAVING. Adding the
+        guard and not the row would leave a runtime body that names a REAL
+        script still unable to run it -- the capability complete, checked, and
+        unreachable by the person who asked for it, which is this
+        repository's signature defect. The row goes into the same list the map
+        join fills, so the host's identity search answers for an authored body
+        and a Python-built one alike.
+
+        NOT WARNED ABOUT HERE: a body naming a script and missing the
+        `interact_action` / `action_relay` tokens. The map route warns about
+        that, deliberately, because on a map those two tokens are the ONLY
+        wire from a key press to the run. A runtime caller holds the entity it
+        just built and can route the firing itself, so the same warning would
+        fire on a legitimate pattern -- and the two token names are the game
+        module's own constants, which this package may not import. Stated
+        rather than left to be discovered.
+        """
+        # THE SHARED READER, and not a copy of it any more. `script_of` does
+        # the falsy test, the absent/empty split and both refusals; the map
+        # route in the game module calls the same function with its own
+        # `where`, so the two messages differ only in whom they blame.
+        script_id = script_of(getattr(self.game, "scripts", None),
+                              properties, where)
+        if script_id is None:
+            return None
+        joined = getattr(self.game, "object_scripts", None)
+        if joined is None:
+            raise PyoneerConfigError(
+                "%s declares %s=%r and its host game carries no "
+                "`object_scripts` list, so the document can be read and not "
+                "joined. The boot assigns it beside `scripts` before the map "
+                "is bound -- the map join fills it -- and the two are the one "
+                "pair the map spawn and `SceneManager.spawn` both read."
+                % (where, SCRIPT_PROPERTY, script_id))
+        joined.append((entity, script_id))
+        return script_id
 
     def __constructor_arguments(self,
                                 type_name: str,
@@ -279,6 +390,28 @@ class SceneManager:
         renderer.spawned_entities = kept
         return True
 
+    def __forget_script_row(self, game_object) -> bool:
+        """Drop `game_object`'s row from the host's object/script join list.
+
+        Identity, never equality, on `__forget_spawn_record`'s rule and for
+        its reason: `list.remove` uses `==`, and an entity that defined it
+        would take a DIFFERENT body's row out -- which for this list means a
+        live body silently losing its script.
+
+        A host with no such list has nothing to forget and that is not an
+        error: the same `getattr` shape `__join_script` uses, so a manager
+        driven by a test double or by a game that never loaded a script
+        despawns exactly as it did before this existed.
+        """
+        joined = getattr(self.game, "object_scripts", None)
+        if not joined:
+            return False
+        kept = [row for row in joined if row[0] is not game_object]
+        if len(kept) == len(joined):
+            return False
+        joined[:] = kept
+        return True
+
     def despawn(self, game_object: PyoneerGameObject) -> bool:
         """Take a bound object out of the scene AND out of the renderer.
 
@@ -308,6 +441,13 @@ class SceneManager:
         # outlive the two bindings: an entity already taken out of the layer
         # by hand would otherwise leave its row behind forever.
         forgotten = self.__forget_spawn_record(game_object)
+        # The FOURTH removal, and it is unconditional for the same reason the
+        # third is. `__join_script` puts a row in the host's join list and the
+        # map bind puts one there for every authored body, so without this a
+        # despawned entity stays reachable from that list for the life of the
+        # scene -- a strong reference to a reaped body, and an identity search
+        # that still answers for it.
+        self.__forget_script_row(game_object)
         if not (removed_from_scene or removed_from_render or forgotten):
             return False
         behaviors = getattr(game_object, "behaviors", None)

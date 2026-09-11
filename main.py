@@ -17,8 +17,7 @@ from scripts.game.entity.game_player import GamePlayer
 from config.managers.animation_data import DataAnimationCategory
 from config.managers.core_asset_manager import CoreAssetManager
 from scripts.core.audio import AudioManager
-from scripts.core.errors import (PyoneerAssetMissingError, PyoneerConfigError,
-                                 warn_content)
+from scripts.core.errors import PyoneerConfigError, warn_content
 from scripts.core.input import InputActionManager
 from scripts.game.behavior import BEHAVIORS
 from scripts.game.entity.game_animation import GameAnimationHandler
@@ -32,7 +31,7 @@ from scripts.loaders.map_loader import (PLAYER_TOKEN, as_document,
                                         driven_record,
                                         has_tmx_document)
 from scripts.loaders.script_file import (SCRIPT_PROPERTY, VarStore,
-                                         load_scripts, read_vars)
+                                         load_scripts, load_vars, script_of)
 from scripts.loaders.table_file import load_tables
 from scripts.game.demo_window import DemoWindow
 
@@ -86,31 +85,6 @@ reads, which looks exactly like a script that does not work.
 # so it has exactly one declaration, in `scripts/loaders/script_file.py`
 # beside the reader of the documents it names. It is re-exported here because
 # a reader who has the boot open expects to find the property it joins on.
-
-SCENE_VARS: dict[str, dict] = {
-    "greeted": {
-        "type": "bool",
-        "default": False,
-        "doc": "Whether the starter script has already introduced itself "
-               "once this session. Its two values are the two arms of the "
-               "script's `if`, so both are reachable by pressing the "
-               "action key twice.",
-    },
-}
-"""The variable schema the shipped scene declares. A SCENE owns this.
-
-`docs/PLAN_SCENES.md` 2.1 is explicit that a scene owns its variable schema
--- it is what lets a typo raise before a frame runs -- and the scene document
-that would carry it has no reader: there is no `scripts/loaders/scene_file.py`
-in this tree. So the shipped game declares its one scene's schema at the one
-place that names its one map, three lines above, and it MOVES to
-`data/project/scenes/starter.json` the day that loader exists.
-
-Read through `read_vars`, which is the same function a scene reader will
-call, so the declaration is judged now exactly as it will be judged then: a
-missing `default` raises here, not later, because reading a variable is TOTAL
-at run time and that is what moves every failure to load.
-"""
 
 DIALOGUE_BOUNDS: Rect = Rect(120, 400, 560, 120)
 """Where a `say` line is shown. Bottom-ish and wide, like every dialogue box."""
@@ -339,7 +313,7 @@ class MainGame:
         than an honest one here.
         """
         self.script_vars: VarStore | None = None
-        """The live value of every variable `SCENE_VARS` declares.
+        """The live value of every variable the scene documents declare.
 
         Built ONCE at boot, never per run, which is what makes the shipped
         script's `if` reach both arms: the second press reads what the first
@@ -434,7 +408,20 @@ class MainGame:
         #
         # BEFORE the map bind, so a broken script cannot be reported after a
         # world has already been built around it.
-        self.script_vars = VarStore(read_vars(SCENE_VARS, "main.SCENE_VARS"))
+        # THE SCHEMA COMES OFF DISK, and this line is what a Python dict
+        # three hundred rows above it used to be. `main.SCENE_VARS`'s own
+        # docstring promised it "MOVES to `data/project/scenes/starter.json`
+        # the day that loader exists" -- the loader exists, so it moved. The
+        # editor reads the same directory through `scripts_of`, which is the
+        # whole point: while the schema lived here, the game could run a
+        # script the editor could not open, because the editor cannot import
+        # this module and had nothing else to read.
+        #
+        # Absent is silent, on `load_tables`' and `load_scripts`' rule: a
+        # project with no scene document declares no variables, and a script
+        # that then names one raises NAMING THE DIRECTORY a declaration would
+        # have been read from.
+        self.script_vars = VarStore(load_vars())
         self.scripts = load_scripts(variables=self.script_vars.schema)
         self.scene.bind("MAP", game_map)
         # AFTER the map, because that bind is what spawns and binds the map's
@@ -687,7 +674,9 @@ class MainGame:
         listing what is, exactly as `actor_row` raises for a `pyoneer_actor`
         naming an absent row. Skipping it would leave an object that looks
         scripted and is silently inert, which is the shape law 8 exists to
-        refuse.
+        refuse. That refusal is not spelled here: it is `script_of`, the
+        reader `SceneManager.spawn` also calls, so the guard this route grew
+        first cannot differ from the one the runtime route grew second.
 
         WARNS -- and does not raise -- for a body whose script can never
         start, because that is unusable authored content and not a contract
@@ -701,23 +690,28 @@ class MainGame:
         if self.map_data is None or not has_tmx_document(self.map_data):
             return []
         document = as_document(self.map_data)
-        declared: dict[tuple, str] = {}
+        # The PROPERTIES, not the id read out of them: `script_of` does the
+        # falsy test and both refusals, and it is the same function
+        # `SceneManager.spawn` calls -- so the runtime route and this one
+        # cannot drift apart in what they accept or in how they blame. It
+        # lives in `scripts/loaders/script_file.py` beside the property name
+        # for the reason law 2's corollary gives: shared logic goes down, and
+        # this module may not be imported by anything it shares with.
+        declared: dict[tuple, dict] = {}
         for layer_name in document.object_layer_names():
             for obj in document.object_layer(layer_name).objects():
-                named = obj.properties.get(SCRIPT_PROPERTY)
-                if named:
-                    declared[(layer_name, obj.id)] = str(named)
+                declared[(layer_name, obj.id)] = obj.properties
         pairs: list[tuple] = []
         for record in self.renderer.spawned_entities:
-            script_id = declared.get((record.layer_name, record.object_id))
+            properties = declared.get((record.layer_name, record.object_id))
+            if properties is None:
+                continue
+            script_id = script_of(
+                self.scripts, properties,
+                "tmx object id=%d on layer %r" % (record.object_id,
+                                                  record.layer_name))
             if script_id is None:
                 continue
-            if script_id not in self.scripts:
-                raise PyoneerAssetMissingError(
-                    "event script", script_id, available=sorted(self.scripts),
-                    asked_by="tmx object id=%d on layer %r via %s"
-                             % (record.object_id, record.layer_name,
-                                SCRIPT_PROPERTY))
             tokens = {request.spec.name for request in record.behaviors}
             missing = [token for token in (INTERACT_TOKEN, RELAY_TOKEN)
                        if token not in tokens]
@@ -769,6 +763,12 @@ class MainGame:
         reason the pick in `load_test_objects` gives: this module is the smoke
         baseline, and a check asserts it does not SPELL that package's name.)
 
+        A FLOW THAT IS NOT OURS IS NOT EVICTED. If `SceneManager.flow` holds
+        anything other than this game's own run -- a `SceneFlow` a narrative
+        kit started, say -- the press reaches nothing and the occupant keeps
+        the slot. See the guard itself for what testing the run instead of the
+        slot cost.
+
         A SECOND TRIGGER ARRIVING MID-RUN IS REFUSED AS A START AND SPENT AS
         THE ADVANCE. Not queued, and not dropped. Refused because
         `SceneManager.flow` is ONE slot on purpose: a narrative flow is modal,
@@ -807,6 +807,24 @@ class MainGame:
         running = self.script_run
         if running is not None and running.running:
             running.on_action(entity, fired)
+            return
+        # THE SLOT IS THE THING THAT IS MODAL, and testing the run instead of
+        # the slot is the guard reading the wrong variable. `SceneManager.flow`
+        # holds ONE flow; the paragraph above refuses a second run because two
+        # would each restore the agency the other changed -- and a `SceneFlow`
+        # sitting in that slot is exactly the sibling it cites, so starting
+        # over the top of one silently evicted it, never ticked it again, and
+        # stranded the body under its `hold` with no way to release. Measured
+        # on the shipped class before this line existed: `scene.flow is the
+        # other flow` went True -> False in one press and the evicted flow's
+        # `update()` was never called again.
+        #
+        # A FINISHED RUN OF OUR OWN IS NOT A FOREIGN OCCUPANT: it stays parked
+        # in the slot after `running` goes False, and the next press has to be
+        # able to start a fresh one over the same variable store -- which is
+        # what lets the shipped script's `if` reach its second arm.
+        occupant = self.scene.flow
+        if occupant is not None and occupant is not self.script_run:
             return
         script_id = self.script_for(entity)
         if script_id is None:

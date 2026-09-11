@@ -253,6 +253,7 @@ ROSTER_BLURBS = {blurb: name for name, blurb in ROSTER}
 from scripts.core.depth import (  # noqa: E402
     LAYER_NAME_ALIASES, MAP_DEPTH, OBJECT_CONVERTER, OBJECT_DEPTH)
 from scripts.core.layer_profile import PREFIX  # noqa: E402
+from scripts.core.input import InputActionManager  # noqa: E402
 from scripts.core.spawn import SPAWN_REGISTRY  # noqa: E402
 from scripts.game.behavior.base import ACTOR, BEHAVIORS, PARAM_PREFIX  # noqa: E402
 from scripts.game.behavior.registry import BEHAVIOR_REGISTRY  # noqa: E402
@@ -840,6 +841,20 @@ expect("CLAUDE.md does not enumerate the registry (that is BEHAVIORS.md's job)",
 expect("CLAUDE.md lists exactly the bound input verbs",
        sorted(v for v in INPUT_VERBS
               if re.search(rf"(?<![a-z_]){re.escape(v)}(?![a-z_])", BOOT_TEXT)),
+       sorted(INPUT_VERBS))
+# AND THE FILE IS WHAT THE LOADER ACTUALLY REGISTERS. Without this row, both
+# the line above and `docs/PLACEABLE.md`'s input-verb table are claims about a
+# JSON file wearing a claim about the engine: PLACEABLE says in its own words
+# that "a behavior polling a verb that is not here raises at attach", which is
+# only true while `prepare_inputs` registers every verb the file declares.
+# `held()` is an unguarded dict index (law 10), so a verb the loader dropped is
+# a KeyError inside `core_frame_update` that kills the frame for every sibling
+# in the bucket -- and a document listing it would be pointing the reader at
+# the crash. This is the same repair `tools/check_behavior_docs.py`'s `jump`
+# row and two of `tools/check_event_docs.py`'s reachability rows just took: the
+# fix for "a row measuring a data file" is to LOAD the thing.
+expect("...and the loader really registers every verb that file declares",
+       sorted(InputActionManager().prepare_inputs(dict(INPUT_VERBS)).actions),
        sorted(INPUT_VERBS))
 expect("CLAUDE.md names the spawnable types and no others",
        sorted(n for n in set(SPAWN_REGISTRY) | set(OBJECT_CONVERTER)

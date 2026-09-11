@@ -5,7 +5,7 @@
 
 > The demo boot path, extracted once so a demo is not a copy of main.py.
 
-`demos.runtime` · 164 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.runtime` · 203 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,23 +13,23 @@
 
 ## Functions
 
-- `demos/runtime.py:144` `parse_args(argv=None) -> argparse.Namespace` #TAG:runtime.parse_args
-- `demos/runtime.py:155` `run(game_class, argv=None) -> int` #TAG:run
+- `demos/runtime.py:183` `parse_args(argv=None) -> argparse.Namespace` #TAG:runtime.parse_args
+- `demos/runtime.py:194` `run(game_class, argv=None) -> int` #TAG:run
   - Boot one demo class from the command line. The whole of a demo's main.
 
 ## Classes
 
 ### `class DemoGame(MainGame)` #TAG:DemoGame
 
-`demos/runtime.py:63`–`141`
+`demos/runtime.py:84`–`180`
 
 > A game that is a map plus two class attributes.
 
-- `demos/runtime.py:74` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:DemoGame.load_map
+- `demos/runtime.py:95` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:DemoGame.load_map
   - Register this demo's map with the asset manager, then load it.
-- `demos/runtime.py:100` `load_test_objects(self)` #TAG:DemoGame.load_test_objects
-  - Configure what the MAP spawned, and build nothing.
-- `demos/runtime.py:127` `@property spawned(self)` #TAG:DemoGame.spawned
+- `demos/runtime.py:121` `load_test_objects(self)` #TAG:DemoGame.load_test_objects
+  - Inherit the shipped game's hook whole, then put its debug window away.
+- `demos/runtime.py:166` `@property spawned(self)` #TAG:DemoGame.spawned
   - Every record the map spawned, in document order.
-- `demos/runtime.py:131` `entity_of(self, object_id: int)` #TAG:DemoGame.entity_of
+- `demos/runtime.py:170` `entity_of(self, object_id: int)` #TAG:DemoGame.entity_of
   - The entity spawned for the tmx `<object id="N">`, or None.

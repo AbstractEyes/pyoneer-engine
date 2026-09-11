@@ -12,6 +12,27 @@ inherited unchanged, since a demo wants the arguments `main.py` hands a
 you find yourself copying a method out of `MainGame` into this file, the
 method wanted a hook and the hook is the change.
 
+AND `load_test_objects` CALLS `super()`, WHICH IS THE WHOLE OF THAT RULE.
+It did not, for as long as it existed, and the cost was measured rather than
+argued:
+
+    MainGame  scripts=1  object_scripts=1  dialogue=True   routes=(('interact_action', '', 1),)
+    DemoGame  scripts=1  object_scripts=0  dialogue=False  routes=()
+
+The boot reads `data/project/scripts/` either way -- that happens in
+`prepare_test_scene`, which a subclass inherits BY IDENTITY -- so every demo
+paid to load every script and then could not run one, because the join, the
+`say` host and the action route all live in the hook a demo overrides. Worse
+than the missing feature: both of the map route's guards live there too, so a
+demo map's `pyoneer_script` naming a document that is not there RAISED in the
+shipped game and was SILENT in a demo. That is law 7's exact failure shape on
+the route a new author is likeliest to copy. `demos/narrative.py` already
+called `super()` and inherited the hole through this class, so this one call
+fixes both.
+
+What the override still exists to do is one deliberate subtraction, spelled
+out below: the shipped game's debug window is put away on arrival.
+
 `DemoGame` supplies the ONE value a `.tmx` object has no way to say:
 
   the camera target    derived from the composition -- the entity carrying
@@ -98,28 +119,46 @@ class DemoGame(MainGame):
         return camera, GameMap(map_data)
 
     def load_test_objects(self):
-        """Configure what the MAP spawned, and build nothing.
+        """Inherit the shipped game's hook whole, then put its debug window away.
 
-        `MainGame.prepare_test_scene` calls this AFTER `bind("MAP", ...)`, so
-        `renderer.spawned_entities` is already populated. Returning an empty
-        list is the point: every entity in a demo comes from the .tmx.
+        SUPER FIRST, AND SUPER FOR EVERYTHING. `MainGame.load_test_objects`
+        picks the camera target out of the composition, joins every spawned
+        body to the `pyoneer_script` it names, builds the `say` host and
+        registers the one action route -- and this class used to do only the
+        first of those, in three lines copied out of that method. Two costs,
+        both real:
 
-        It configures NO entity attributes. The collision anchor used to be
-        reassigned here, per record, after the map had already built them;
-        it now arrives through `spawn_arguments()` at construction, so this
-        method only picks the camera's target.
+        * the copy itself. It was the same rule, the same `driven_record`
+          call and the same fallback, spelled twice, which is law 2's
+          corollary at small scale -- and that corollary has already been
+          paid once here at 425 duplicate lines.
+        * everything the copy did not copy. A demo loaded every event script
+          at boot and could never start one, and the two guards the map route
+          carries were absent, so a demo map naming an absent script built a
+          body that looked scripted and was inert. Deleting the copy restores
+          all four in one line.
+
+        Returning what `super()` returns, unfiltered: a demo builds no entity
+        of its own -- every body comes from the .tmx -- but the bindable list
+        is the parent's to fill and swallowing it would be this class deciding
+        what the shipped hook is allowed to bind.
+
+        THE ONE SUBTRACTION, and it is deliberate rather than inherited by
+        accident. `MainGame` binds a 400x400 `DemoWindow` holding a focusable
+        `TextBox`, and a focused text box SUPPRESSES MOVEMENT: one stray click
+        on the most clickable thing on screen and every key a demo is
+        demonstrating does nothing, with no message and no way back but F1. A
+        demo exists to show one map and one behavior list working, so the
+        window arrives CLOSED. `close()` clears both `visible` and `active`,
+        so it neither draws nor eats input, and F1 -- `MainGame.toggle_window`,
+        inherited by identity -- still opens it. Subtracting it here rather
+        than not binding it at all keeps that toggle working and keeps this
+        class out of the business of re-implementing the hook.
         """
-        records = list(self.renderer.spawned_entities)
-        driven = driven_record(records)
-        # Fall back to the first spawned entity so the camera has something to
-        # follow on a map with no driven object, and so `main.py`'s arrow-key
-        # handler -- which dereferences `self.player` unconditionally -- has an
-        # entity rather than a None. An empty object layer leaves both None.
-        followed = driven or (records[0] if records else None)
-        if followed is not None:
-            self.player = followed.entity
-            self.scene.camera.attach_target(followed.entity)
-        return []
+        bindable = super().load_test_objects()
+        if self.window is not None:
+            self.window.close()
+        return bindable
 
     # ------------------------------------------------------------ reporting
 

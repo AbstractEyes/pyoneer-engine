@@ -35,6 +35,11 @@ let something through and never proved to stop it:
                     AND does not touch a present one
     no second impl      `DemoGame` INHERITS main.py's spine by identity
                     AND overrides exactly the two hooks it claims to
+    the script wire     a demo boot reaches main.py's OWN join, say host and
+                        action route -- by identity, not by resemblance --
+                        and a scripted demo body really runs its document
+                    AND a demo map naming an absent script RAISES at boot
+                        rather than building a body that looks scripted
 
 THE MAPS THIS CHECK READS ARE ITS OWN
 --------------------------------------
@@ -54,6 +59,8 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
 import hashlib
+import inspect
+import json
 import os
 import shutil
 import sys
@@ -86,12 +93,14 @@ pygame.key.get_pressed = lambda: _FakeKeys()   # noqa: E731
 
 from scripts.core import blitpool                                # noqa: E402
 from scripts.core.collision_runtime import EDGE_INSET            # noqa: E402
-from scripts.core.errors import PyoneerConfigError               # noqa: E402
+from scripts.core.errors import (PyoneerAssetMissingError,       # noqa: E402
+                                 PyoneerConfigError)
 from scripts.core.event_manager import PyoneerEvent              # noqa: E402
 from scripts.core.event_types import GameEventType               # noqa: E402
 from scripts.core.input import KEYBOARD                          # noqa: E402
 from scripts.game.behavior import BEHAVIOR_REGISTRY              # noqa: E402
 from scripts.game.entity.game_player import GamePlayer           # noqa: E402
+from scripts.loaders import script_file                          # noqa: E402
 
 from main import MainGame                                        # noqa: E402
 
@@ -266,6 +275,8 @@ def summary(game) -> dict:
 
 WORKSPACE = tempfile.mkdtemp(prefix="pyoneer_demos_")
 SHIPPED_MAPS_DIR = mapgen.MAPS_DIR
+SHIPPED_SOURCES = mapgen.SOURCES
+SHIPPED_SCRIPTS_DIR_FN = script_file.default_scripts_dir
 CONFIG_MAPS = os.path.join(_bootstrap.REPO_ROOT, "config", "maps.json")
 with open(CONFIG_MAPS, "rb") as _handle:
     CONFIG_MAPS_BEFORE = _handle.read()
@@ -796,8 +807,209 @@ try:
            mentions_demos(os.path.join(_bootstrap.REPO_ROOT, "demos")) != [],
            True)
 
+    # =====================================================================
+    print()
+    print("10. a demo boots main.py's script wire: the join, the say host "
+          "and the action route")
+    # =====================================================================
+    # THE DEFECT THIS SECTION EXISTS FOR, measured before it was fixed:
+    #
+    #     MainGame  scripts=1 object_scripts=1 dialogue=True  routes=(('interact_action','',1),)
+    #     DemoGame  scripts=1 object_scripts=0 dialogue=False routes=()
+    #
+    # `prepare_test_scene` is inherited BY IDENTITY and is what reads
+    # `data/project/scripts/`, so every demo paid to load every script; the
+    # join, the `say` host and the one action route all live in
+    # `load_test_objects`, which `DemoGame` overrode WITHOUT calling super().
+    # So a demo could never run a script it had already loaded -- and both of
+    # the map route's guards were absent on that route, which means a demo
+    # map's `pyoneer_script` naming a document that is not there produced a
+    # body that looked scripted and was silently inert. Law 7's failure shape
+    # on the route a new author is likeliest to copy.
+    #
+    # THE SCRIPTS AND THE MAPS BELOW ARE THIS CHECK'S OWN (law 4).
+    # `data/project/scripts/` is the author's project exactly as
+    # `demos/maps/` is the author's canvas, and a check that read either
+    # would be asserting what a DATA FILE contains. `default_scripts_dir` is
+    # redirected at a generated directory and restored in the `finally`, and
+    # the three fixture maps are registered into `mapgen.SOURCES` and removed
+    # the same way.
+    FIXTURE_SCRIPT = "demo_greeting"
+    FIXTURE_LINE = "THE DEMO ROUTE REACHED A SCRIPT."
+    FIXTURE_SPEAKER = "Fixture"
+    ABSENT_SCRIPT = "no_such_document_at_all"
+
+    scripts_dir = os.path.join(WORKSPACE, "project_scripts")
+    os.makedirs(scripts_dir, exist_ok=True)
+    with open(os.path.join(scripts_dir, FIXTURE_SCRIPT + ".json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({
+            "format": script_file.FORMAT,
+            "version": script_file.VERSION,
+            "id": FIXTURE_SCRIPT,
+            "title": "One line, so a demo press has something to show",
+            "loadouts": ["core"],
+            "pages": [{
+                "id": "only",
+                "trigger": "use",
+                "when": [],
+                "body": [{"id": "line", "do": "say",
+                          "who": FIXTURE_SPEAKER, "text": FIXTURE_LINE}],
+            }],
+        }, handle)
+    script_file.default_scripts_dir = lambda: scripts_dir
+
+    def _grid_of(width, height):
+        return [[mapgen.GRASS] * width for _ in range(height)]
+
+    def scripted_source(script_id: str, behaviors: str):
+        """One hero on a bare map, carrying `pyoneer_script=script_id`.
+
+        Built from `mapgen`'s own helpers and geometry, so the object is the
+        same shape the shipped demo maps place and nothing here is a second
+        spelling of the tmx.
+        """
+        width, height = mapgen.TOPDOWN_SIZE
+
+        def source() -> str:
+            return mapgen.build_tmx(
+                width, height, _grid_of(width, height), None,
+                [mapgen._object(
+                    mapgen.TOPDOWN_HERO_ID, "hero", "GamePlayer",
+                    mapgen.TOPDOWN_HERO_SPAWN[0], mapgen.TOPDOWN_HERO_SPAWN[1],
+                    mapgen.SPRITE[0], mapgen.SPRITE[1],
+                    {"pyoneer_behaviors": ("", behaviors),
+                     "pyoneer_script": ("", script_id)})])
+        return source
+
+    TALKER_BEHAVIORS = (mapgen.TOPDOWN_BEHAVIORS
+                        + ",interact_action,action_relay")
+    mapgen.SOURCES = dict(
+        SHIPPED_SOURCES,
+        check_talker=scripted_source(FIXTURE_SCRIPT, TALKER_BEHAVIORS),
+        check_absent=scripted_source(ABSENT_SCRIPT, TALKER_BEHAVIORS),
+        check_mute=scripted_source(FIXTURE_SCRIPT, mapgen.TOPDOWN_BEHAVIORS))
+
+    class TalkerDemo(DemoGame):
+        MAP_NAME = "check_talker"
+
+    class AbsentScriptDemo(DemoGame):
+        MAP_NAME = "check_absent"
+
+    class MuteDemo(DemoGame):
+        MAP_NAME = "check_mute"
+
+    # -- half one: the wire is there, and it is MAIN.PY'S, not a lookalike --
+    talker, talker_warnings = boot(TalkerDemo)
+    talker_hero = talker.entity_of(mapgen.TOPDOWN_HERO_ID)
+    expect("a demo boot loaded the script table",
+           sorted(talker.scripts), [FIXTURE_SCRIPT])
+    expect("...and JOINED the body that names one, which is what was missing",
+           [(entity is talker_hero, script_id)
+            for entity, script_id in talker.object_scripts],
+           [(True, FIXTURE_SCRIPT)])
+    expect("...so the host's identity search answers for it",
+           talker.script_for(talker_hero), FIXTURE_SCRIPT)
+    # IDENTITY, not resemblance. A demo that grew its own dialogue host and
+    # its own handler would satisfy "there is a host" and "there is a route"
+    # while being the second implementation this file exists to refuse.
+    expect("the `say` host a demo got is main.py's ScriptDialogue",
+           type(talker.dialogue).__module__, "main")
+    routed = talker.scene.actions.handlers_for("interact_action")
+    expect("exactly one handler is on the token, with any payload",
+           len(routed), 1)
+    # Reported as data rather than indexed, so the mutation that empties the
+    # route above fails THIS line too instead of raising an IndexError and
+    # taking every assertion below it with it.
+    expect("...and it IS main.py's own run_object_script, bound to this game",
+           [(handler.__func__ is MainGame.run_object_script,
+             handler.__self__ is talker) for handler in routed],
+           [(True, True)])
+    expect("a scripted demo map warns about nothing",
+           [w for w in talker_warnings if FIXTURE_SCRIPT in w], [])
+
+    # -- and it RUNS: the press a demo author would make ---------------------
+    def spoken(game):
+        """(speaker, line) for whatever box the host built, or None.
+
+        Through `getattr`, so the mutation that removes the host entirely
+        FAILS these lines rather than raising and taking the rest of the
+        section with it.
+        """
+        box = getattr(game.dialogue, "box", None)
+        return None if box is None else (box.speaker, box.line)
+
+    expect("nothing is running before the key goes down",
+           (talker.script_run, spoken(talker)), (None, None))
+    hold(talker, "action")
+    advance(talker, 1)
+    expect("one press starts the run", talker.script_run is not None
+           and talker.script_run.running, True)
+    expect("...and the line is on screen, from this check's own document",
+           spoken(talker), (FIXTURE_SPEAKER, FIXTURE_LINE))
+    expect("...and the run is in the scene's one flow slot, being ticked",
+           talker.scene.flow is talker.script_run, True)
+    hold(talker)
+    advance(talker, 1)
+    hold(talker, "action")
+    advance(talker, 1)
+    expect("a second press advances it to the end rather than starting a "
+           "second run", getattr(talker.script_run, "running", None), False)
+    hold(talker)
+
+    # -- the other half of "the route is installed": a demo with NO script --
+    # The route and the host are unconditional -- they are the shipped game's
+    # wiring and a demo inherits it whole -- while the JOIN is a pure function
+    # of what the map declares. Without this pair, "object_scripts is [x]"
+    # above could be a list that is never empty.
+    expect("a demo map declaring no script still gets the host and the route",
+           (type(topdown.dialogue).__module__,
+            len(topdown.scene.actions.handlers_for("interact_action"))),
+           ("main", 1))
+    expect("...and joins nothing, so the join reads the map and not the class",
+           topdown.object_scripts, [])
+
+    # -- half two: the guards came with it -----------------------------------
+    # THE TEETH. Before the super() call these two were silent on the demo
+    # route and loud on the shipped one -- the same property, the same
+    # document, two answers.
+    expect_raises("a demo map naming an absent script RAISES at boot, naming "
+                  "the object", PyoneerAssetMissingError,
+                  lambda: AbsentScriptDemo(autostart=False),
+                  ABSENT_SCRIPT, "id=%d" % mapgen.TOPDOWN_HERO_ID,
+                  script_file.SCRIPT_PROPERTY, FIXTURE_SCRIPT)
+    mute, mute_warnings = boot(MuteDemo)
+    scripted_warnings = [w for w in mute_warnings if FIXTURE_SCRIPT in w]
+    expect("a scripted demo body missing the two tokens WARNS, once",
+           len(scripted_warnings), 1)
+    expect("...naming both tokens and the object it is on",
+           [fragment for fragment in ("interact_action", "action_relay",
+                                      "id=%d" % mapgen.TOPDOWN_HERO_ID)
+            if not any(fragment in text for text in scripted_warnings)], [])
+    expect("...and it is a WARNING: the body still spawned and still joined",
+           mute.script_for(mute.entity_of(mapgen.TOPDOWN_HERO_ID)),
+           FIXTURE_SCRIPT)
+
+    # -- the copy is gone, which is the other reason super() is the fix -----
+    # `load_test_objects` used to carry main.py's three-line camera pick
+    # verbatim. That is law 2's corollary at small scale, and the corollary
+    # has already been paid here at 425 duplicate lines.
+    hook = inspect.getsource(DemoGame.load_test_objects)
+    expect("DemoGame's hook CALLS the shipped one",
+           "super().load_test_objects()" in hook, True)
+    expect("...and no longer re-spells its camera pick",
+           "driven_record(" in hook, False)
+    expect("...while main.py's hook is still where that pick lives",
+           "driven_record(" in inspect.getsource(MainGame.load_test_objects),
+           True)
+    expect("the one thing the demo hook still decides is the debug window",
+           (talker.window is not None, getattr(talker.window, "visible", None),
+            getattr(talker.window, "active", None)), (True, False, False))
+
 finally:
     mapgen.MAPS_DIR = SHIPPED_MAPS_DIR
+    mapgen.SOURCES = SHIPPED_SOURCES
+    script_file.default_scripts_dir = SHIPPED_SCRIPTS_DIR_FN
     HELD.clear()
     shutil.rmtree(WORKSPACE, ignore_errors=True)
 
@@ -805,4 +1017,5 @@ print()
 if failures:
     print(f"FAILED ({len(failures)} of {asserted}):", failures)
     sys.exit(1)
-print(f"PASS -- {asserted} assertions, three demos booted and driven")
+print(f"PASS -- {asserted} assertions, five demos booted and driven, "
+      "one refused to boot")

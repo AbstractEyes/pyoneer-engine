@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the audio + map + queue pass: items 15, 16 and 17 are new, each carrying the grep that measured it that day. Item 15 is the fourth ACTIVE WARNING's shape again and is the most expensive of the three: an entire op vocabulary that no running game can reach. Items 1-14 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the spawn-funnel + boot-path pass, item 18 is new and carries the grep that measured it that day. It is a recorded DECISION rather than a task, in the shape of items 11 and 14: the rename it describes was possible in that pass and was deliberately not done, because three checks assert the two names as data and a partial rename is a red suite for the next reader. Items 1-17 were not re-measured in that pass and keep their own dates. On 2026-09-10, at the finalize of the reachability pass: items 10, 15, 16 and 17 are STRUCK THROUGH and each carries the command that now returns the opposite of what it recorded. Two of the four also record that their own prescription was measurably WRONG -- item 10's regex would have fired 13 times on this repository's render-queue and behavior tokens, and item 16's one-line repair reads the translated member and never touches the duplicates the branch was aimed at -- which is why they were retired rather than re-run. Item 17 landed in a different module than it prescribed, and says so. Items 1, 2, 4, 5, 7, 9, 13 and 18 were re-measured that day and kept: item 4's second command was CORRECTED (it was written in capitals the source does not use, so it returned 0 and read like the refusal had gone), item 7's `QUIT` count moved from 0 to 1 without the fact moving (the one hit is prose), and item 18's count GREW from 28 to 35 because the script wire added two more readers of both names. Items 19 and 20 are new: both were found by the pass that deleted item 16's dead branch, both are the same type-confusion shape, and one of them is live in a public accessor. Items 3, 6, 8, 11, 12 and 14 were not re-measured and keep their own dates. -->
+<!-- pyoneer-stamp: hand-written; every item below was re-measured against the working tree on 2026-08-29 by the command printed beside it. The old item 1 (README's three false gap claims) is gone because README.md was corrected in the same pass; the old items 2-5 kept their text and moved rank. Items 2, 4, 6, 7 and 10 are new and are the open half of the tileset revamp. On 2026-09-03 items 1 and 7 were re-measured and CORRECTED: item 7 had named `tileset_geometry` as the reader that miscounts, with a worked example that was false in both halves -- the divergent reader is pytmx and the axis is margin, not spacing -- and item 1 had counted a `__pycache__` hit as a third prose site. Both now carry the command that produced the numbers they state. On 2026-09-03 the whole list was re-measured again at the finalize of the repair pass: the old item 3 (grow/rename unreachable) is GONE because the tile palette's header menu now constructs all three tileset verbs, the old item 2 lost its tabbed-swatches half because the mask palette is no longer tabified, and the old item 10's folded-companion bullet is GONE because removing an art layer now takes its companion with it. Items 4-10 kept their text and moved rank to 3-9, and a new item 10 records that the credential module deleted in that pass left behind no check that would refuse the next one. Also on 2026-09-03, at the finalize of the entity-editing pass: item 11 is new and records the collision dock floor the author reported and chose to defer, with the Qt numbers measured rather than asserted, and item 10's roster count moved from 51 to 54 in the change that added the three rows. On 2026-09-04, at the finalize of the four-defect repair pass: items 12, 13 and 14 are new and each carries the grep that measured it that day. Item 14 is a recorded DECISION rather than a task, in the shape of item 11. Items 1-11 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the audio + map + queue pass: items 15, 16 and 17 are new, each carrying the grep that measured it that day. Item 15 is the fourth ACTIVE WARNING's shape again and is the most expensive of the three: an entire op vocabulary that no running game can reach. Items 1-14 were not re-measured in that pass and keep their own dates. On 2026-09-04, at the finalize of the spawn-funnel + boot-path pass, item 18 is new and carries the grep that measured it that day. It is a recorded DECISION rather than a task, in the shape of items 11 and 14: the rename it describes was possible in that pass and was deliberately not done, because three checks assert the two names as data and a partial rename is a red suite for the next reader. Items 1-17 were not re-measured in that pass and keep their own dates. On 2026-09-10, at the finalize of the reachability pass: items 10, 15, 16 and 17 are STRUCK THROUGH and each carries the command that now returns the opposite of what it recorded. Two of the four also record that their own prescription was measurably WRONG -- item 10's regex would have fired 13 times on this repository's render-queue and behavior tokens, and item 16's one-line repair reads the translated member and never touches the duplicates the branch was aimed at -- which is why they were retired rather than re-run. Item 17 landed in a different module than it prescribed, and says so. Items 1, 2, 4, 5, 7, 9, 13 and 18 were re-measured that day and kept: item 4's second command was CORRECTED (it was written in capitals the source does not use, so it returned 0 and read like the refusal had gone), item 7's `QUIT` count moved from 0 to 1 without the fact moving (the one hit is prose), and item 18's count GREW from 28 to 35 because the script wire added two more readers of both names. Items 19 and 20 are new: both were found by the pass that deleted item 16's dead branch, both are the same type-confusion shape, and one of them is live in a public accessor. Items 3, 6, 8, 11, 12 and 14 were not re-measured and keep their own dates. On 2026-09-11, at the finalize of the integration pass: NOTHING on this list closed, and that is worth saying plainly -- the pass closed two seams that were never filed here (the scene variable schema, which had no file and no reader, and `pyoneer_script` on the runtime spawn route) plus a guard in `main.py::run_object_script` that tested `script_run` where it had to test the flow SLOT. Items 1, 9, 10, 18, 19 and 20 were re-measured that day and every number they state still holds (item 1: 2 prose sites; item 9: `root.iter()` x2, `zoom` x0; item 10's open seam: 0 hooks; item 18: 49 lines in 11 files, GROWN again from 35 because the shared script reader added callers; item 19: 2 constant-false arms; item 20: 1 definition and no caller). Items 21-25 are NEW and all five came from PLAYING the game rather than from reading it, which is why none of them is a broken assertion -- 21, 22 and 23 are what the newest feature actually looks like to a person, and 23 is the one a new player hits first. Item 21 is a recorded DEFERRAL in the shape of items 11, 14 and 18: the fix moves the frame, and a finalize that re-baselines is a finalize nobody can trust. Items 2-8 and 11-17 were not re-measured in that pass and keep their own dates. -->
 
 # Next — what is open, ranked, and the command that measured it
 
@@ -440,6 +440,97 @@ higher because neither can bite a player; they bite the next reader.
 Measured 2026-09-10: `grep -rn "update_data" --include=*.py .` returns **1**
 (its own `def`), and `grep -rn "EventManager.queue()\|\.queue()" --include=*.py
 scripts/ main.py demos/` returns nothing outside that module.
+
+**21. The dialogue box covers the speaker, and the demo window covers the
+box.** Route A works and nobody can read it. Measured by rectangle
+intersection at `0b6227c` and unchanged today: the hero's screen rect is
+`(512, 384, 44, 64)` and `#TAG:DIALOGUE_BOUNDS` is `Rect(120, 400, 560, 120)`,
+so the box clips **75% of the hero's height** -- press talk and your character
+disappears under the text. The `DemoWindow` `main.py` binds at
+`Rect(100, 100, 400, 400)` overlaps the box by `380x100`, **57% of the box's
+area**, and both live on `UI_LAYER_1`, where the window's children at depths
+102-106 draw after the box background at 101: one of them lands inside the
+sentence as a grey square. F1 clears it and nothing says so.
+Cost: the first thing a person sees the engine's newest feature do is illegible.
+DEFERRED HERE RATHER THAN FIXED, deliberately: moving the box is a frame
+change, so it belongs in a pass that owns `tools/baseline.json` and blesses the
+drift field by field (law 11) -- not in a finalize, which must leave the frame
+where it found it. `Rect(120, 540, 784, 170)` clears both and is the measured
+candidate, not a guess.
+Measured: `grep -n "DIALOGUE_BOUNDS" main.py` names the constant;
+`grep -n "Rect(100, 100, 400, 400)" main.py` names the window.
+
+**22. The dialogue box's inherited close button freezes the player.** `ScriptBox`
+derives `GameWindow`, which brings a red X at `(650, 400, 30, 24)`. Clicking it
+calls `close()` on the WIDGET and touches the run: the box hides, `steerable`
+stays False and the `ScriptRun` stays `running`. Driven: 40 frames of held
+`right` moved the hero 0 px afterwards, with nothing on screen explaining why,
+and the only escape is to press the action verb three more times blind.
+`say_close`'s docstring says it is "the only closer, and it is sufficient" --
+true of the INTERPRETER, false of the widget, because `GameWindow` brought a
+second closer with it. Cost: the most obvious gesture on screen strands the
+player in an empty world. The shape of the fix is that a box owned by a run
+either hides its X or routes it into `say_close`; it is one decision, and which
+one it is belongs to whoever owns the dialogue surface.
+Measured: `grep -n "close_button"
+scripts/core/ui/widget/containers/window.py` returns the inherited control;
+`grep -rn "say_close" scripts/game/flow/ops.py` returns the one the
+interpreter knows about.
+
+**23. The demo window's text box takes the keyboard at launch and only F1 gives
+it back.** It is 346x32, blue, centred, and reads *"Type here (movement is
+suppressed while focused)"* -- the most clickable thing on screen when the game
+opens. After one click the whole game is inert: held `right` moves 0 px, the
+action verb types the letter into the field, no dialogue box is ever BUILT, and
+clicking empty ground does not clear focus. Cost: the single worst thing a new
+player can do is also the first thing they will do, and the recovery is a key
+nobody has been told about. This is the same `begin_text_capture` contract that
+`#TAG:InputActionManager.begin_text_capture` documents working exactly as
+designed -- the defect is that a debug widget claims it at boot with no way
+back that is not F1. Cheapest honest fix: the demo window arrives closed in the
+shipped game as it now does in every demo (`#TAG:DemoGame.load_test_objects`
+closes it for exactly this reason), or a click on empty ground releases capture.
+Measured: `grep -rn "begin_text_capture" scripts/ --include=*.py` names the
+claim; `grep -n "DemoWindow(bounds" main.py` names the widget that makes it at
+boot.
+
+**24. Three loose ends the script wire left, none of which can bite a player
+today.** Ranked together because each is one edit and none is urgent.
+- **A finished `ScriptRun` is never cleared from `SceneManager.flow`.** It sits
+  there with `running=False` for the rest of the session, so `update` is called
+  on it every frame to early-return, and every body it captured in `bodies`
+  stays strongly referenced. Not a leak a player will see; a leak the next
+  reader will have to explain. `grep -n "self.scene.flow = run" main.py`
+  returns **1** and there is no assignment back to None anywhere:
+  `grep -c "scene.flow = None" main.py` returns **0**.
+- **`interact_action` has no range and no facing test, so the hero triggers
+  ITSELF from anywhere.** Walk 200 frames away, press the verb, same
+  conversation. Route A is specified this way and the behavior is correct; what
+  is missing is any notion of WHO you are talking to, which is why the shipped
+  demo cannot teach talking to something. That is the `enter`/`exit` region
+  trigger wire, unbuilt, and `docs/PLAN_SCENES.md` already mints its
+  vocabulary. `grep -c "interact_action" scripts/game/behavior/action.py`
+  returns **4**.
+- **No cooldown, so mashing the action verb replays the chime.** Twelve presses
+  over 24 frames produced **5** chimes and five run/close cycles.
+  `cooldown_ms` defaults to 0 and the shipped hero declares no
+  `pyoneer_param_cooldown_ms`, so this is one map property and not a code
+  change -- which is why it is here rather than in the suite.
+  `grep -n "cooldown_ms" scripts/game/behavior/action.py` names the parameter
+  that already exists.
+
+**25. `ScriptEditor`'s `New...` is enabled under a grant that offers zero ops.**
+With a pack granting `[]` the window says "scripting is off for this project"
+and, in the same breath, leaves `New...` clickable; driving it headlessly
+creates a real document into a screen whose picker offers nothing. Cost: latent
+only because both shipped packs grant `["core"]` -- an author who empties a
+grant gets a window that refuses and creates at the same time, which is the
+"an enabled control that succeeds into a dead end" shape the editor's own rules
+forbid elsewhere. The fix is one gate: `create_script` already has
+`grants_nothing` beside it. Measured 2026-09-11:
+`grep -c "grants_nothing" editor/ui/script_editor.py` returns **2**, and
+neither is in `create_script`
+(`grep -n "def create_script" -A 12 editor/ui/script_editor.py`).
 
 ## What is NOT on this list, and why
 

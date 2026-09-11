@@ -44,6 +44,10 @@ every gate below is asserted in both directions:
                     AND the name really resolves to a file on disk
     a second trigger mid-run is refused as a START
                     AND is not dropped: it is spent as the ADVANCE
+    a flow already in the slot is not evicted by a press
+                    AND the same body over an EMPTY slot still starts one,
+                        and our own FINISHED run parked there is not treated
+                        as somebody else's occupant
     a `pyoneer_script` naming an absent document RAISES, naming both
                     AND one naming a present document does not
     a scripted body with no `action_relay` WARNS, naming the token
@@ -57,7 +61,7 @@ the law was paid a second time by two checks that turned out to be measuring
 one person's punctuation. So NOTHING here reads `data/maps/starter.tmx` or
 `data/project/scripts/`. Every map, every script document and every variable
 schema below is written into a temporary directory by this file, and
-`main.SCENE_VARS` and `script_file.default_scripts_dir` are pointed at it --
+`script_file.default_scripts_dir` and `default_scenes_dir` are pointed at it --
 so repainting the shipped map, renaming its script or rewriting its lines
 cannot make this red, and deleting the WIRE can.
 
@@ -164,8 +168,10 @@ def expect_raises(label, exception, call, *fragments):
 
 WORKSPACE = tempfile.mkdtemp(prefix="pyoneer_script_runtime_")
 SCRIPTS_DIR = os.path.join(WORKSPACE, "scripts")
+SCENES_DIR = os.path.join(WORKSPACE, "scenes")
 ABSENT_DIR = os.path.join(WORKSPACE, "no_scripts_here")
 os.makedirs(SCRIPTS_DIR)
+os.makedirs(SCENES_DIR)
 
 SCRIPT_PROPERTY = main_module.SCRIPT_PROPERTY
 """Read off main.py rather than typed, so a rename moves this check with it."""
@@ -184,11 +190,32 @@ FIXTURE_VARS = {
     "talked": {"type": "bool", "default": False,
                "doc": "Whether the fixture script has already spoken once."},
 }
-"""This check's OWN variable schema. `main.SCENE_VARS` is pointed at it.
+"""This check's OWN variable schema, written into its own scene document.
 
 Law 4 again: the shipped schema is content, and a check that read it would go
 red the day an author declares a second variable.
+
+It reaches the boot the way an author's does -- through a real
+`data/project/scenes/<id>.json` that the SHIPPED `load_vars()` call in
+`main.py` reads, with `default_scenes_dir` pointed at this workspace. It used
+to be assigned onto `main.SCENE_VARS`, a module attribute that existed only
+because no scene reader did; patching a name the shipped code no longer reads
+would have left this check green over a boot that read nothing.
 """
+
+FIXTURE_SCENE = {
+    "format": script_file.SCENE_FORMAT,
+    "version": script_file.SCENE_VERSION,
+    "id": "fixture_scene",
+    "title": "The fixture scene",
+    "vars": FIXTURE_VARS,
+}
+"""`FIXTURE_VARS` as the document `load_vars` actually parses."""
+
+with open(os.path.join(SCENES_DIR, "fixture_scene.json"), "w",
+          encoding="utf-8", newline="\n") as _scene_handle:
+    json.dump(FIXTURE_SCENE, _scene_handle, indent=2, sort_keys=True)
+    _scene_handle.write("\n")
 
 SCRIPTED_LIST = "%s,interact_action,action_relay,topdown_move" % (
     main_module.PLAYER_TOKEN,)
@@ -342,17 +369,18 @@ def boot(key: str, tokens: str, script_id: str | None, *,
          scripts_dir: str = SCRIPTS_DIR):
     """Boot one fixture. Returns (game, content warnings).
 
-    Points `main.SCENE_VARS` at this check's schema and
-    `script_file.default_scripts_dir` at this check's directory, so the
-    SHIPPED `load_scripts()` call in `main.py` -- which takes no argument -- is
-    the thing being measured, over content that belongs to this file.
+    Points `script_file.default_scripts_dir` AND
+    `script_file.default_scenes_dir` at this check's directories, so the
+    SHIPPED `load_scripts()` and `load_vars()` calls in `main.py` -- neither of
+    which takes an argument -- are the things being measured, over content
+    that belongs to this file.
     """
     path = write_fixture(key, tokens, script_id)
     cls = type("FixtureGame_" + key, (FixtureGame,),
                {"MAP_KEY": key, "MAP_FILE": path})
-    previous_vars = main_module.SCENE_VARS
+    previous_scenes = script_file.default_scenes_dir
     previous_dir = script_file.default_scripts_dir
-    main_module.SCENE_VARS = FIXTURE_VARS
+    script_file.default_scenes_dir = lambda: SCENES_DIR
     script_file.default_scripts_dir = lambda: scripts_dir
     try:
         with warnings.catch_warnings(record=True) as caught:
@@ -362,7 +390,7 @@ def boot(key: str, tokens: str, script_id: str | None, *,
         return booted, [str(entry.message) for entry in caught
                         if issubclass(entry.category, PyoneerContentWarning)]
     finally:
-        main_module.SCENE_VARS = previous_vars
+        script_file.default_scenes_dir = previous_scenes
         script_file.default_scripts_dir = previous_dir
 
 
@@ -629,6 +657,83 @@ expect("...and the join still happened, so adding the token is the only fix",
 press(mute)
 expect("...and pressing action on that body really starts nothing",
        mute.script_run, None)
+
+# ---------------------------------------------------------------------------
+print()
+print("8. a flow already in the slot is not evicted by a press")
+# ---------------------------------------------------------------------------
+# THE GUARD THAT READ THE WRONG VARIABLE. `run_object_script` refused a second
+# START by testing `self.script_run` and never `self.scene.flow` -- but the
+# SLOT is the thing that is modal, and its own docstring names a `SceneFlow`
+# as the sibling it must not fight with. Measured on the shipped class before
+# the fix, driving one press over an occupied slot:
+#
+#     before: scene.flow is the other flow -> True
+#     after one press:                     -> False
+#     the evicted flow's update() calls since -> 0
+#
+# So a narrative flow holding the player's steering was silently thrown away,
+# never ticked again, and never released -- which is verbatim the cost the
+# docstring gives for allowing a second run.
+#
+# THE OCCUPANT IS THIS CHECK'S OWN, a duck on `update(delta)`: the class that
+# really lands in that slot lives in the demo suite, and main.py is the smoke
+# baseline, so naming that package here would be the thing another check
+# forbids. What is under test is the SLOT rule, not any particular flow.
+
+
+class _ForeignFlow:
+    """Something else already holding the one modal slot."""
+
+    def __init__(self):
+        self.ticks = 0
+
+    def update(self, delta):
+        self.ticks += 1
+
+
+occupied, _ = boot("occupied", SCRIPTED_LIST, TALK_SCRIPT)
+occupied_state = state_of(occupied.player)
+occupied_state.steerable = False        # what a `hold` in that flow would do
+foreign = _ForeignFlow()
+occupied.scene.flow = foreign
+press(occupied)
+expect("a press over an OCCUPIED flow slot starts no run",
+       occupied.script_run, None)
+expect("...and the occupant still holds the slot", occupied.scene.flow is foreign,
+       True)
+expect("...and its steering was not given back under it",
+       occupied_state.steerable, False)
+# `showing` answers None when no box was ever BUILT, which is the stronger
+# outcome and the one this refusal produces: nothing was said at all.
+expect("...and no line was put on screen", showing(occupied) or False, False)
+# THE OTHER HALF, and without it the rows above pass for a game that can never
+# start a script at all: the same body, the same key, an empty slot.
+occupied.scene.flow = None
+occupied_state.steerable = True
+press(occupied)
+expect("...while the SAME body over an empty slot starts one",
+       occupied.script_run is not None, True)
+expect("...which is what now holds the slot",
+       occupied.scene.flow is occupied.script_run, True)
+# AND OUR OWN FINISHED RUN IS NOT A FOREIGN OCCUPANT. It stays parked in the
+# slot when it ends -- nothing clears it -- so a guard that refused any
+# occupant would make the second press dead and cost the shipped script its
+# `if`'s second arm.
+started = occupied.script_run
+# Pressed to the end rather than a counted number of times: how many nodes the
+# fixture script has is the fixture's business, and a count here would go red
+# for an edit to the lines rather than for an edit to the guard.
+for _ in range(8):
+    if of(started, "done"):
+        break
+    press(occupied)
+expect("the first run finished", of(started, "done"), True)
+expect("...and it is still parked in the slot",
+       occupied.scene.flow is started, True)
+press(occupied)
+expect("...and the next press starts a fresh run over it anyway",
+       occupied.script_run is not started, True)
 
 # ---------------------------------------------------------------------------
 print()

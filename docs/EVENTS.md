@@ -219,7 +219,7 @@ Each row is measured from the parse tree of the tree above this layer, not from 
 | --- | --- | --- |
 | an op registry exists and is populated | **yes** | 10 op(s) in `core` |
 | a genre pack GRANTS a loadout (`event_loadouts`) | **yes** | one array in a pack's `genre.json`, validated through `ops.validate_loadouts`. granted by platformer, topdown_rpg |
-| an editor module reaches the op registry (the PICKER) | **yes** | reached by `editor/core/event_script.py`, `editor/core/genre.py`, `editor/core/verbs.py`, `editor/ui/script_editor.py` |
+| an editor module reaches the op registry (the PICKER) | **yes** | offered by `editor/ui/script_editor.py`, which both imports `scripts.game.flow.ops` and names one of its table readers (`OP_TABLE_NAMES` in tools/check_event_docs.py). An `editor/core/` importer reaches the registry too; it is not a picker and is not counted here. |
 | a script document is read from disk in production | **yes** | read in `main.py` |
 | a `ScriptRun` is constructed outside the checks | **yes** | constructed in `main.py` |
 | a script document exists under `data/project/scripts` | **yes** | 1 file(s): starter_greeting.json |

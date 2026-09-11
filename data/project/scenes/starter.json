@@ -1,0 +1,14 @@
+{
+  "doc": "The scene the shipped game boots: data/maps/starter.tmx, one hero, one event script. Today a scene document is read for its `vars` block and nothing else -- there is no scene manager -- so the eight further keys docs/PLAN_SCENES.md 3.2 mints (loadouts, maps, entry_map, controls, routes, on_enter, on_exit, next) are deliberately absent and are REFUSED by the reader. Each lands in the same change as the code that reads it.",
+  "format": "pyoneer.scene",
+  "id": "starter",
+  "title": "Starter",
+  "vars": {
+    "greeted": {
+      "default": false,
+      "doc": "Whether the starter script has already introduced itself once this session. Its two values are the two arms of the script's `if`, so both are reachable by pressing the action key twice.",
+      "type": "bool"
+    }
+  },
+  "version": 1
+}

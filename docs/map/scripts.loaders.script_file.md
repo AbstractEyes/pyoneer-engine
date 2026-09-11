@@ -5,7 +5,7 @@
 
 > Read `data/project/scripts/*.json` -- the engine side of an event script.
 
-`scripts.loaders.script_file` · 936 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.loaders.script_file` · 1245 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -13,116 +13,132 @@
 
 ## Module constants
 
-- `scripts/loaders/script_file.py:74` `SCRIPT_PROPERTY` #TAG:SCRIPT_PROPERTY
-- `scripts/loaders/script_file.py:95` `FORMAT` #TAG:FORMAT
-- `scripts/loaders/script_file.py:98` `VERSION` #TAG:script_file.VERSION
-- `scripts/loaders/script_file.py:103` `SCRIPTS_DIR` #TAG:SCRIPTS_DIR
-- `scripts/loaders/script_file.py:123` `COMPARATORS` #TAG:COMPARATORS
-- `scripts/loaders/script_file.py:133` `SCRIPT_TRIGGERS` #TAG:SCRIPT_TRIGGERS
-- `scripts/loaders/script_file.py:142` `NAMESPACES` #TAG:NAMESPACES
-- `scripts/loaders/script_file.py:155` `DEFAULT_NAMESPACE` #TAG:DEFAULT_NAMESPACE
-- `scripts/loaders/script_file.py:157` `SCRIPT_KEYS` #TAG:SCRIPT_KEYS
-- `scripts/loaders/script_file.py:159` `PAGE_KEYS` #TAG:PAGE_KEYS
-- `scripts/loaders/script_file.py:161` `CONTROL_KEYS` #TAG:CONTROL_KEYS
-- `scripts/loaders/script_file.py:163` `ARM_KEYS` #TAG:ARM_KEYS
-- `scripts/loaders/script_file.py:164` `CONDITION_KEYS` #TAG:CONDITION_KEYS
-- `scripts/loaders/script_file.py:165` `NODE_COMMON_KEYS` #TAG:NODE_COMMON_KEYS
-- `scripts/loaders/script_file.py:167` `ID_CHARS` #TAG:ID_CHARS
-- `scripts/loaders/script_file.py:312` `EMPTY_VARS` #TAG:EMPTY_VARS
+- `scripts/loaders/script_file.py:89` `SCRIPT_PROPERTY` #TAG:SCRIPT_PROPERTY
+- `scripts/loaders/script_file.py:110` `FORMAT` #TAG:FORMAT
+- `scripts/loaders/script_file.py:113` `VERSION` #TAG:script_file.VERSION
+- `scripts/loaders/script_file.py:118` `SCRIPTS_DIR` #TAG:SCRIPTS_DIR
+- `scripts/loaders/script_file.py:134` `SCENES_DIR` #TAG:SCENES_DIR
+- `scripts/loaders/script_file.py:155` `SCENE_FORMAT` #TAG:SCENE_FORMAT
+- `scripts/loaders/script_file.py:159` `SCENE_VERSION` #TAG:SCENE_VERSION
+- `scripts/loaders/script_file.py:168` `SCENE_KEYS` #TAG:SCENE_KEYS
+- `scripts/loaders/script_file.py:197` `COMPARATORS` #TAG:COMPARATORS
+- `scripts/loaders/script_file.py:207` `SCRIPT_TRIGGERS` #TAG:SCRIPT_TRIGGERS
+- `scripts/loaders/script_file.py:216` `NAMESPACES` #TAG:NAMESPACES
+- `scripts/loaders/script_file.py:229` `DEFAULT_NAMESPACE` #TAG:DEFAULT_NAMESPACE
+- `scripts/loaders/script_file.py:231` `SCRIPT_KEYS` #TAG:SCRIPT_KEYS
+- `scripts/loaders/script_file.py:233` `PAGE_KEYS` #TAG:PAGE_KEYS
+- `scripts/loaders/script_file.py:235` `CONTROL_KEYS` #TAG:CONTROL_KEYS
+- `scripts/loaders/script_file.py:237` `ARM_KEYS` #TAG:ARM_KEYS
+- `scripts/loaders/script_file.py:238` `CONDITION_KEYS` #TAG:CONDITION_KEYS
+- `scripts/loaders/script_file.py:239` `NODE_COMMON_KEYS` #TAG:NODE_COMMON_KEYS
+- `scripts/loaders/script_file.py:241` `ID_CHARS` #TAG:ID_CHARS
+- `scripts/loaders/script_file.py:419` `EMPTY_VARS` #TAG:EMPTY_VARS
 
 ## Functions
 
-- `scripts/loaders/script_file.py:114` `default_scripts_dir() -> str` #TAG:default_scripts_dir
+- `scripts/loaders/script_file.py:129` `default_scripts_dir() -> str` #TAG:default_scripts_dir
   - `data/project/scripts` under the repo root, absolute.
-- `scripts/loaders/script_file.py:170` `_legal_id(value: Any) -> bool` #TAG:_legal_id
-- `scripts/loaders/script_file.py:180` `normalise_var(name: Any, where: str='') -> str` #TAG:normalise_var
+- `scripts/loaders/script_file.py:183` `default_scenes_dir() -> str` #TAG:default_scenes_dir
+  - `data/project/scenes` under the repo root, absolute.
+- `scripts/loaders/script_file.py:244` `_legal_id(value: Any) -> bool` #TAG:_legal_id
+- `scripts/loaders/script_file.py:254` `normalise_var(name: Any, where: str='') -> str` #TAG:normalise_var
   - `coins` -> `scene.coins`; `global.coins` stays. Raises on anything else.
-- `scripts/loaders/script_file.py:316` `read_vars(raw: Any, where: str='') -> VarSchema` #TAG:read_vars
+- `scripts/loaders/script_file.py:423` `read_vars(raw: Any, where: str='', *, source: str='') -> VarSchema` #TAG:read_vars
   - A scene's `vars` block as a schema, or raise saying which entry.
-- `scripts/loaders/script_file.py:445` `_read_condition(raw: Any, variables: Any, where: str) -> Condition` #TAG:_read_condition
-- `scripts/loaders/script_file.py:513` `_read_when(raw: Any, variables: Any, where: str) -> Tuple[Condition, ...]` #TAG:_read_when
+- `scripts/loaders/script_file.py:564` `_read_condition(raw: Any, variables: Any, where: str) -> Condition` #TAG:_read_condition
+- `scripts/loaders/script_file.py:634` `_read_when(raw: Any, variables: Any, where: str) -> Tuple[Condition, ...]` #TAG:_read_when
   - A `when` list. `[]` always passes and is the fallback.
-- `scripts/loaders/script_file.py:526` `passes(conditions: Sequence[Condition], store: Any) -> bool` #TAG:passes
+- `scripts/loaders/script_file.py:647` `passes(conditions: Sequence[Condition], store: Any) -> bool` #TAG:passes
   - Every condition holds. An empty list passes -- that is the fallback.
-- `scripts/loaders/script_file.py:670` `_bad(where: str, message: str) -> PyoneerConfigError` #TAG:script_file._bad
-- `scripts/loaders/script_file.py:674` `_refuse_unknown(raw: Mapping[str, Any], allowed: Sequence[str], where: str, what: str) -> None` #TAG:_refuse_unknown
+- `scripts/loaders/script_file.py:791` `_bad(where: str, message: str) -> PyoneerConfigError` #TAG:script_file._bad
+- `scripts/loaders/script_file.py:795` `_refuse_unknown(raw: Mapping[str, Any], allowed: Sequence[str], where: str, what: str) -> None` #TAG:_refuse_unknown
   - Law 7 at every depth: an unknown key raises, it is not ignored.
-- `scripts/loaders/script_file.py:716` `_read_body(raw: Any, ctx: '_Ctx', where: str) -> Tuple[Node, ...]` #TAG:_read_body
-- `scripts/loaders/script_file.py:726` `_read_node(raw: Any, ctx: '_Ctx', where: str) -> Node` #TAG:_read_node
-- `scripts/loaders/script_file.py:793` `parse_script(raw: Any, path: str='', *, variables: Any=None, registry: Optional[Mapping[str, Any]]=None) -> Script` #TAG:parse_script
+- `scripts/loaders/script_file.py:837` `_read_body(raw: Any, ctx: '_Ctx', where: str) -> Tuple[Node, ...]` #TAG:_read_body
+- `scripts/loaders/script_file.py:847` `_read_node(raw: Any, ctx: '_Ctx', where: str) -> Node` #TAG:_read_node
+- `scripts/loaders/script_file.py:914` `parse_script(raw: Any, path: str='', *, variables: Any=None, registry: Optional[Mapping[str, Any]]=None) -> Script` #TAG:parse_script
   - Judge a decoded script document. `path` is used for blame and for the id.
-- `scripts/loaders/script_file.py:886` `load_script(path: str, *, variables: Any=None, registry: Optional[Mapping[str, Any]]=None) -> Script` #TAG:load_script
+- `scripts/loaders/script_file.py:1007` `load_script(path: str, *, variables: Any=None, registry: Optional[Mapping[str, Any]]=None) -> Script` #TAG:load_script
   - Read one script file, or raise saying which file and what is wrong.
-- `scripts/loaders/script_file.py:903` `load_scripts(directory: str | None=None, *, variables: Any=None, registry: Optional[Mapping[str, Any]]=None) -> dict[str, Script]` #TAG:load_scripts
+- `scripts/loaders/script_file.py:1024` `load_scripts(directory: str | None=None, *, variables: Any=None, registry: Optional[Mapping[str, Any]]=None) -> dict[str, Script]` #TAG:load_scripts
   - Every `*.json` in a scripts directory, keyed by id.
+- `scripts/loaders/script_file.py:1049` `script_of(scripts: Optional[Mapping[str, Any]], properties: Mapping[str, Any], where: str) -> Optional[str]` #TAG:script_of
+  - Which event script `properties` names, or None -- raising if it cannot.
+- `scripts/loaders/script_file.py:1114` `parse_scene_vars(raw: Any, path: str='') -> VarSchema` #TAG:parse_scene_vars
+  - One scene document's `vars` block, judged, or raise saying why not.
+- `scripts/loaders/script_file.py:1156` `load_scene_vars(path: str) -> VarSchema` #TAG:load_scene_vars
+  - Read one scene document, or raise saying which file and what is wrong.
+- `scripts/loaders/script_file.py:1173` `load_vars(directory: str | None=None) -> VarSchema` #TAG:load_vars
+  - Every variable every scene in a directory declares. Possibly none.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class VarDecl` #TAG:VarDecl
 
-`scripts/loaders/script_file.py:216`–`263`
+`scripts/loaders/script_file.py:290`–`337`
 
 > One variable a scene declares: a normalised name, a type, a default.
 
-- `scripts/loaders/script_file.py:230` `__post_init__(self) -> None` #TAG:VarDecl.__post_init__
-- `scripts/loaders/script_file.py:245` `@property bare(self) -> str` #TAG:VarDecl.bare
+- `scripts/loaders/script_file.py:304` `__post_init__(self) -> None` #TAG:VarDecl.__post_init__
+- `scripts/loaders/script_file.py:319` `@property bare(self) -> str` #TAG:VarDecl.bare
   - The name without its namespace. What `coerce` blames.
-- `scripts/loaders/script_file.py:249` `as_param(self) -> BehaviorParam` #TAG:VarDecl.as_param
+- `scripts/loaders/script_file.py:323` `as_param(self) -> BehaviorParam` #TAG:VarDecl.as_param
   - This declaration as the class that already knows how to coerce.
-- `scripts/loaders/script_file.py:255` `coerce(self, value: Any, where: str='') -> Any` #TAG:VarDecl.coerce
+- `scripts/loaders/script_file.py:329` `coerce(self, value: Any, where: str='') -> Any` #TAG:VarDecl.coerce
   - `value` at this variable's declared type, or raise saying why.
 
 ### `@dataclass(frozen=True) class VarSchema` #TAG:VarSchema
 
-`scripts/loaders/script_file.py:267`–`309`
+`scripts/loaders/script_file.py:341`–`416`
 
 > Every variable a scene declares. Possibly none of them.
 
-- `scripts/loaders/script_file.py:278` `__contains__(self, name: str) -> bool` #TAG:VarSchema.__contains__
-- `scripts/loaders/script_file.py:281` `__iter__(self) -> Iterator[str]` #TAG:VarSchema.__iter__
-- `scripts/loaders/script_file.py:284` `__len__(self) -> int` #TAG:VarSchema.__len__
-- `scripts/loaders/script_file.py:287` `names(self) -> list[str]` #TAG:VarSchema.names
-- `scripts/loaders/script_file.py:290` `declaration(self, name: Any, where: str='') -> VarDecl` #TAG:VarSchema.declaration
+- `scripts/loaders/script_file.py:361` `__contains__(self, name: str) -> bool` #TAG:VarSchema.__contains__
+- `scripts/loaders/script_file.py:364` `__iter__(self) -> Iterator[str]` #TAG:VarSchema.__iter__
+- `scripts/loaders/script_file.py:367` `__len__(self) -> int` #TAG:VarSchema.__len__
+- `scripts/loaders/script_file.py:370` `names(self) -> list[str]` #TAG:VarSchema.names
+- `scripts/loaders/script_file.py:373` `where_to_declare(self) -> str` #TAG:VarSchema.where_to_declare
+  - The file an author opens to add a variable, as a sentence.
+- `scripts/loaders/script_file.py:396` `declaration(self, name: Any, where: str='') -> VarDecl` #TAG:VarSchema.declaration
   - The declaration for `name`, or raise naming the whole schema.
-- `scripts/loaders/script_file.py:308` `defaults(self) -> dict[str, Any]` #TAG:VarSchema.defaults
+- `scripts/loaders/script_file.py:415` `defaults(self) -> dict[str, Any]` #TAG:VarSchema.defaults
 
 ### `class VarStore` #TAG:VarStore
 
-`scripts/loaders/script_file.py:362`–`401`
+`scripts/loaders/script_file.py:481`–`520`
 
 > The live value of every declared variable, seeded from the defaults.
 
-- `scripts/loaders/script_file.py:374` `__init__(self, schema: VarSchema | None=None, values: Mapping[str, Any] | None=None)` #TAG:VarStore.__init__
-- `scripts/loaders/script_file.py:381` `declaration(self, name: Any, where: str='') -> VarDecl` #TAG:VarStore.declaration
-- `scripts/loaders/script_file.py:384` `get(self, name: Any, where: str='') -> Any` #TAG:VarStore.get
-- `scripts/loaders/script_file.py:388` `set(self, name: Any, value: Any, where: str='') -> Any` #TAG:VarStore.set
+- `scripts/loaders/script_file.py:493` `__init__(self, schema: VarSchema | None=None, values: Mapping[str, Any] | None=None)` #TAG:VarStore.__init__
+- `scripts/loaders/script_file.py:500` `declaration(self, name: Any, where: str='') -> VarDecl` #TAG:VarStore.declaration
+- `scripts/loaders/script_file.py:503` `get(self, name: Any, where: str='') -> Any` #TAG:VarStore.get
+- `scripts/loaders/script_file.py:507` `set(self, name: Any, value: Any, where: str='') -> Any` #TAG:VarStore.set
   - Write, at the declared type. A wrong type raises naming both.
-- `scripts/loaders/script_file.py:394` `snapshot(self) -> dict[str, Any]` #TAG:VarStore.snapshot
-- `scripts/loaders/script_file.py:397` `__len__(self) -> int` #TAG:VarStore.__len__
-- `scripts/loaders/script_file.py:400` `__repr__(self) -> str` #TAG:VarStore.__repr__
+- `scripts/loaders/script_file.py:513` `snapshot(self) -> dict[str, Any]` #TAG:VarStore.snapshot
+- `scripts/loaders/script_file.py:516` `__len__(self) -> int` #TAG:VarStore.__len__
+- `scripts/loaders/script_file.py:519` `__repr__(self) -> str` #TAG:VarStore.__repr__
 
 ### `@dataclass(frozen=True) class Condition` #TAG:Condition
 
-`scripts/loaders/script_file.py:409`–`442`
+`scripts/loaders/script_file.py:528`–`561`
 
 > One comparison, already typed against the variable it names.
 
-- `scripts/loaders/script_file.py:422` `test(self, store: Any) -> bool` #TAG:Condition.test
+- `scripts/loaders/script_file.py:541` `test(self, store: Any) -> bool` #TAG:Condition.test
   - True if this holds right now. Cannot raise for a loaded script.
-- `scripts/loaders/script_file.py:441` `describe(self) -> str` #TAG:Condition.describe
+- `scripts/loaders/script_file.py:560` `describe(self) -> str` #TAG:Condition.describe
 
 ### `@dataclass(frozen=True) class DoNode` #TAG:DoNode
 
-`scripts/loaders/script_file.py:536`–`551`
+`scripts/loaders/script_file.py:657`–`672`
 
 > An executable node: an op that is already an object, not a string.
 
-- `scripts/loaders/script_file.py:546` `@property op(self) -> str` #TAG:DoNode.op
-- `scripts/loaders/script_file.py:549` `describe(self) -> str` #TAG:DoNode.describe
+- `scripts/loaders/script_file.py:667` `@property op(self) -> str` #TAG:DoNode.op
+- `scripts/loaders/script_file.py:670` `describe(self) -> str` #TAG:DoNode.describe
 
 ### `@dataclass(frozen=True) class Arm` #TAG:Arm
 
-`scripts/loaders/script_file.py:555`–`560`
+`scripts/loaders/script_file.py:676`–`681`
 
 > One `elif` arm: its own condition list and its own body.
 
@@ -130,15 +146,15 @@
 
 ### `@dataclass(frozen=True) class ControlNode` #TAG:ControlNode
 
-`scripts/loaders/script_file.py:564`–`585`
+`scripts/loaders/script_file.py:685`–`706`
 
 > An `if` or a `while`. One node with arms, not a flattened list.
 
-- `scripts/loaders/script_file.py:583` `describe(self) -> str` #TAG:ControlNode.describe
+- `scripts/loaders/script_file.py:704` `describe(self) -> str` #TAG:ControlNode.describe
 
 ### `@dataclass(frozen=True) class Page` #TAG:Page
 
-`scripts/loaders/script_file.py:592`–`610`
+`scripts/loaders/script_file.py:713`–`731`
 
 > One page: when it may run, what starts it, and what it does.
 
@@ -146,27 +162,27 @@
 
 ### `@dataclass(frozen=True) class Script` #TAG:Script
 
-`scripts/loaders/script_file.py:614`–`663`
+`scripts/loaders/script_file.py:735`–`784`
 
 > One `data/project/scripts/<id>.json`, read and judged.
 
-- `scripts/loaders/script_file.py:635` `page(self, page_id: str) -> Page` #TAG:Script.page
-- `scripts/loaders/script_file.py:643` `first_passing(self, store: Any, trigger: Optional[str]=None, payload: Optional[str]=None) -> Optional[Page]` #TAG:Script.first_passing
+- `scripts/loaders/script_file.py:756` `page(self, page_id: str) -> Page` #TAG:Script.page
+- `scripts/loaders/script_file.py:764` `first_passing(self, store: Any, trigger: Optional[str]=None, payload: Optional[str]=None) -> Optional[Page]` #TAG:Script.first_passing
   - The first page whose filters and `when` all pass, or None.
 
 ### `class _Ids` #TAG:_Ids
 
-`scripts/loaders/script_file.py:685`–`713`
+`scripts/loaders/script_file.py:806`–`834`
 
 > Every id seen so far, and where it was seen. Duplicates raise.
 
-- `scripts/loaders/script_file.py:695` `__init__(self) -> None` #TAG:_Ids.__init__
-- `scripts/loaders/script_file.py:698` `claim(self, raw: Mapping[str, Any], where: str, what: str) -> str` #TAG:_Ids.claim
+- `scripts/loaders/script_file.py:816` `__init__(self) -> None` #TAG:_Ids.__init__
+- `scripts/loaders/script_file.py:819` `claim(self, raw: Mapping[str, Any], where: str, what: str) -> str` #TAG:_Ids.claim
 
 ### `class _Ctx` #TAG:_Ctx
 
-`scripts/loaders/script_file.py:783`–`790`
+`scripts/loaders/script_file.py:904`–`911`
 
 > What every level of the read needs: the registry, the schema, the ids.
 
-- `scripts/loaders/script_file.py:786` `__init__(self, registry, variables, loadouts, ids: _Ids)` #TAG:_Ctx.__init__
+- `scripts/loaders/script_file.py:907` `__init__(self, registry, variables, loadouts, ids: _Ids)` #TAG:_Ctx.__init__

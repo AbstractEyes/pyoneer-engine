@@ -338,6 +338,17 @@ moment the author chose.
 
 ### 3.2 The scene — `data/project/scenes/overworld.json`
 
+> **PARTLY BUILT, 2026-09-11, and knowing which part matters.** The directory,
+> the five keys `format version id title vars`, and a reader for them ship:
+> `#TAG:load_vars` merges every `data/project/scenes/*.json` into the
+> `VarSchema` that `main.py` and the editor's `scripts_of` both read, which is
+> what let the event screen open the script the game runs. The **eight further
+> keys below** — `loadouts maps entry_map controls routes on_enter on_exit
+> next` — have no reader and are **REFUSED** rather than accepted and
+> discarded, so authoring one early raises naming the key instead of looking
+> like it works. Each lands with the code that reads it; `check_scenes` in the
+> planned-checks fence is still unwritten and still owns the rest.
+
 ```json
 {
   "format": "pyoneer.scene",

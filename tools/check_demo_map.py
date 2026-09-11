@@ -852,8 +852,19 @@ with open(os.path.join(REPO, "demos", "runtime.py"), encoding="utf-8") as handle
 
 expect("main.py calls it rather than carrying its own copy of the loop",
        entity_constructions(MAIN_SOURCE, {HELPER}), [HELPER])
-expect("...and so does the demo boot path",
-       entity_constructions(DEMO_SOURCE, {HELPER}), [HELPER])
+# THE DEMO PATH REACHES IT THROUGH main.py'S HOOK AND CARRIES NO CALL AT ALL,
+# which is a stronger claim than the one this row used to make. It asserted
+# that `demos/runtime.py` CALLS `driven_record` -- true only while that module
+# re-spelled main.py's camera pick line for line, which was itself the defect:
+# the copy meant the demo route missed the script join, the `say` host, the
+# action route and both of the map guards. Deleting the copy for a
+# `super().load_test_objects()` turned this row red, so the row was pinning a
+# structure rather than a behaviour. What is pinned now is the structure that
+# is actually correct: zero calls of its own, one call of super's.
+expect("...and the demo boot path reaches it through main.py's hook, "
+       "carrying no call of its own",
+       (entity_constructions(DEMO_SOURCE, {HELPER}),
+        "super().load_test_objects()" in DEMO_SOURCE), ([], True))
 expect("...and neither of them still defines one",
        (function_defs(MAIN_SOURCE, HELPER),
         function_defs(DEMO_SOURCE, HELPER)), (0, 0))

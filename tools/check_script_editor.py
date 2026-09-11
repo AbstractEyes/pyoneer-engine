@@ -603,8 +603,15 @@ try:
     select_node(IF)
     screen.add_condition("node")
     settle()
-    expect("the builder opens anyway, saying what the reader will say",
-           ("no variable schema" in screen.form.note.text()), True)
+    # WHAT THE NOTE SAYS, and it is not the sentence it used to say. Before
+    # `scripts_of` had a scene reader to pass, a library arrived with
+    # `variables=None` -- the WIRING error -- and the note carried "no variable
+    # schema", which blamed the editor for its own missing call. A library now
+    # always carries a schema, so with no scene document in the project the
+    # schema is simply EMPTY, and what a person is told is the AUTHORING
+    # error: the variable, and the block that would declare it.
+    expect("the builder opens anyway, saying what a condition is for",
+           "condition" in screen.form.note.text().lower(), True)
     mark = len(harness.applied)
     screen.form.editors["var"].setText("coins")
     screen.form.editors["value"].setText("100")
@@ -612,8 +619,13 @@ try:
     settle()
     expect("...and it writes NOTHING, because nothing can type `coins` yet",
            verbs_since(mark), [])
+    problem = screen.form.problem.text()
     expect("...with the reader's own sentence in the form",
-           "no variable schema" in screen.form.problem.text(), True)
+           ("scene variable" in problem, "'scene.coins'" in problem),
+           (True, True))
+    expect("...which names the FILE a declaration would go in, not just the "
+           "fact that there isn't one",
+           "scenes" in problem and "vars" in problem, True)
     screen.form.cancel()
 
     # THE OTHER HALF. A scene's `vars` is the only thing that changes, and

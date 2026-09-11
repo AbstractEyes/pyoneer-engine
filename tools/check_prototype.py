@@ -703,8 +703,24 @@ try:
     route_row = rows_of("route", EXAMPLE)[0]
     cut = route_row.fields.index("->")
     form_token, form_payload = route_row.fields[0], route_row.fields[1]
+    # THE FORM'S ROW, LOOKED UP -- not the whole table compared. Every demo
+    # inherits main.py's `(interact_action, ANY_PAYLOAD)` script starter now,
+    # so the table carries a second row that has nothing to do with this form.
+    # This assertion used to compare the tuple whole, which made it a count of
+    # HANDLERS standing in for a claim about EFFECT: it went red the day the
+    # demo path stopped re-spelling main.py's boot, while the effect it was
+    # about did not change at all.
     expect("the form's route is the route the game registered",
-           story.scene.actions.routes, ((form_token, form_payload, 1),))
+           [row for row in story.scene.actions.routes
+            if row[:2] == (form_token, form_payload)],
+           [(form_token, form_payload, 1)])
+    expect("...and the OTHER row is main.py's inherited script starter, bound "
+           "to this game",
+           [(getattr(h, "__func__", None) is type(story).run_object_script,
+             getattr(h, "__self__", None) is story)
+            for h in story.scene.actions.handlers_for(form_token,
+                                                      ANY_PAYLOAD)],
+           [(True, True)])
     handlers = story.scene.actions.handlers_for(form_token, form_payload)
     expect("...and its handler is the sequencer method the form names",
            [h.__func__ for h in handlers],
@@ -800,10 +816,25 @@ try:
     # -- prove 4: the payload is the second half of the routing key --------
     expect("PROVE the routed payload reaches the flow",
            len(story.scene.actions.handlers_for(form_token, form_payload)), 1)
-    expect("...AND the same token with any other payload reaches nothing",
-           (len(story.scene.actions.handlers_for(form_token, "somewhere_else")),
-            len(story.scene.actions.handlers_for(form_token, ANY_PAYLOAD))),
-           (0, 0))
+    # THE EFFECT, not the handler count. The exact-payload route is what
+    # reaches the FLOW; any other payload reaches only the inherited starter,
+    # and that starter starts nothing here because no body on this map names a
+    # `pyoneer_script`. Counting handlers instead measured the wiring of a
+    # sibling module and called it this form's claim.
+    def _functions(handlers):
+        return [getattr(handler, "__func__", handler) for handler in handlers]
+
+    flow_handler = getattr(SceneFlow, route_row.fields[cut + 1].split(".")[-1])
+    expect("...AND the same token with any other payload does not reach the "
+           "flow",
+           (flow_handler in _functions(
+                story.scene.actions.handlers_for(form_token, "somewhere_else")),
+            flow_handler in _functions(
+                story.scene.actions.handlers_for(form_token, ANY_PAYLOAD))),
+           (False, False))
+    expect("...and the starter it DOES reach has nothing to start, because no "
+           "body on this map names a script",
+           (story.object_scripts, story.script_run), ([], None))
     expect("the keeper carries no action token at all, so pressing the verb "
            "beside it can fire nothing",
            sorted(q.spec.name for q in
@@ -822,7 +853,11 @@ try:
     control.begin(max_frames=1)
     control_hero = control.entity_of(mapgen.STORY_HERO_ID)
     expect("a story game with no script mounts no flow", control.scene.flow, None)
-    expect("...and registers no route", control.scene.actions.routes, ())
+    expect("...and registers no route OF ITS OWN -- the single row present is "
+           "main.py's inherited script starter, which this map gives nothing "
+           "to start",
+           (control.scene.actions.routes, control.object_scripts),
+           (((ADVANCE_ACTION, ANY_PAYLOAD, 1),), []))
     expect("...and builds no dialogue box", hasattr(control, "story_box"), False)
     expect("...and its hero is steerable from the first frame",
            control_hero.state.steerable, True)

@@ -53,10 +53,25 @@ A scene owns `vars`; a script reads and writes them. So `load_script` takes
 Collapsing the two would let a schema-less load quietly accept every typo in
 the document, which is the exact failure the declaration exists to prevent.
 
-`VarDecl` lives here rather than in a scene reader that does not exist yet,
-and the scene reader will import it instead of declaring a second one. The
-last time two sides of a boundary each grew their own copy of one model it
-cost 425 duplicated lines.
+`VarDecl` lives here, and so does the reader for the file that declares one:
+`load_vars` reads `data/project/scenes/*.json` for its `vars` block and
+nothing else. It is in THIS module rather than in a `scene_file.py` of its
+own for the reason the last version of this paragraph predicted -- the last
+time two sides of a boundary each grew their own copy of one model it cost
+425 duplicated lines -- and because a scene document is, to this build,
+exactly one thing: where the declarations are. The day a scene manager reads
+the other eight keys, that module imports these records; it does not restate
+them.
+
+WHY THE READER EXISTS BEFORE THE SCENE MANAGER DOES
+---------------------------------------------------
+Without a file, the only schema in the tree was a dict in `main.py`, which
+`editor/` may never import (law 2). So the game ran the shipped script and
+the editor refused to OPEN it -- `scripts_of()` passed `variables=None` and
+every condition raised -- and the screen built to author scripts reported
+*"No event script in this project yet"* about a file that had just run. Two
+complete layers that could not see each other, because the file that joins
+them belonged to nobody.
 """
 from __future__ import annotations
 
@@ -114,6 +129,65 @@ _REPO_ROOT: str = os.path.dirname(os.path.dirname(
 def default_scripts_dir() -> str:
     """`data/project/scripts` under the repo root, absolute."""
     return os.path.join(_REPO_ROOT, SCRIPTS_DIR)
+
+
+SCENES_DIR: str = os.path.join("data", "project", "scenes")
+"""Where a scene document lives, relative to the repository root.
+
+The engine reads exactly ONE thing out of a scene today -- its `vars` block
+-- and that is why this constant arrives now rather than with the scene
+manager. Every condition and every `set` in an event script is typed against
+a declaration, so with nowhere for declarations to live, `ScriptLibrary`
+could not open the script the shipped game runs: the editor said *"No event
+script in this project yet"* about a file that had just run perfectly.
+`docs/PLAN_SCENES.md` 3.2 minted this address months ago; this is the day it
+got a reader.
+
+`data/project/tables/` is the shape being copied, down to the sentence that
+matters most: a MISSING directory is not an error. A project with no scenes
+declares no variables, exactly as a project with no `tables/` has no actors
+and one with no `scripts/` has no scripts.
+
+The editor composes the same path from its own `PROJECT_DIR` and CHECKS the
+two agree. The halves are joined by the FILES, never by an import.
+"""
+
+SCENE_FORMAT: str = "pyoneer.scene"
+"""The `format` key every scene document opens with. A FILE FORMAT string,
+minted by `docs/PLAN_SCENES.md` 3.2 and permanent under law 8."""
+
+SCENE_VERSION: int = 1
+"""The scene-document version this build reads.
+
+A newer one RAISES rather than being read optimistically, exactly as
+`VERSION` does for a script: a build that guessed at version 2 would seed
+the variable store from a file it does not understand, and every later
+comparison would be against a value nobody authored.
+"""
+
+SCENE_KEYS: Tuple[str, ...] = ("format", "version", "id", "title", "doc",
+                               "vars")
+"""Every key a scene document may carry TODAY. A closed set, and refused
+loudly outside it.
+
+`docs/PLAN_SCENES.md` 3.2 mints eight more -- `loadouts`, `maps`,
+`entry_map`, `controls`, `routes`, `on_enter`, `on_exit`, `next` -- and
+every one of them raises here, naming this tuple. That is deliberate, and it
+is the cheaper mistake: a key this build ACCEPTS AND DISCARDS is
+`GameEntity`'s `transform=` and the map's `pyoneer_trigger`, an authored
+field with no reader that looks like it works for months. A key joins this
+tuple in the same change as the code that reads it.
+"""
+
+
+def default_scenes_dir() -> str:
+    """`data/project/scenes` under the repo root, absolute.
+
+    Anchored to this file rather than to the working directory, for the same
+    reason `default_tables_dir` is: a game launched from a shortcut has
+    whatever cwd the shortcut had.
+    """
+    return os.path.join(_REPO_ROOT, SCENES_DIR)
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +348,15 @@ class VarSchema:
     """
 
     decls: Mapping[str, VarDecl]
+    source: str = ""
+    """WHERE these declarations were read from -- the address an author has
+    to open to add one more.
+
+    Not decoration: the whole cost of the missing schema was a message that
+    named a problem and no file. `declaration` puts this in the hint, so the
+    same sentence serves a scene document, a check's own fixture and a schema
+    built in memory without any of them being special-cased.
+    """
 
     def __contains__(self, name: str) -> bool:
         return name in self.decls
@@ -286,6 +369,29 @@ class VarSchema:
 
     def names(self) -> list[str]:
         return sorted(self.decls)
+
+    def where_to_declare(self) -> str:
+        """The file an author opens to add a variable, as a sentence.
+
+        Every path into a refusal goes through `declaration` -- a condition
+        in `_read_condition`, a `set` or an `ask` through `ops._declared` --
+        so saying the address once here says it everywhere, including in the
+        two callers this module may not import.
+        """
+        if not self.source:
+            return ("this schema names no source of its own; scene variables "
+                    "are declared in a `vars` block in %s"
+                    % os.path.join(SCENES_DIR, "<scene>.json"))
+        # Three sentences and no filesystem probe: a source is a FILE, a
+        # DIRECTORY several scenes were merged from, or a directory nothing
+        # was read from -- and the empty schema is the one case where the
+        # author has to create something rather than open it. Guessing which
+        # by stat'ing the string invents a path for a source that is not one
+        # (a fixture's name, a module attribute).
+        if not self.decls:
+            return ("nothing has declared a variable yet, and %s is where "
+                    "this load looked" % (self.source,))
+        return "this load's declarations come from %s" % (self.source,)
 
     def declaration(self, name: Any, where: str = "") -> VarDecl:
         """The declaration for `name`, or raise naming the whole schema.
@@ -300,9 +406,10 @@ class VarSchema:
             raise PyoneerAssetMissingError(
                 "scene variable", normalised, available=self.names(),
                 asked_by=where or "<unknown>",
-                hint="declare it in the scene's `vars`, with a type and a "
-                     "default; a variable this file cannot see is one a typo "
-                     "would otherwise create at run time")
+                hint="declare it with a type and a default in a scene "
+                     "document's `vars` block -- %s; a variable this file "
+                     "cannot see is one a typo would otherwise create at run "
+                     "time" % self.where_to_declare())
         return decl
 
     def defaults(self) -> dict[str, Any]:
@@ -313,15 +420,27 @@ EMPTY_VARS: VarSchema = VarSchema(decls={})
 """A scene that declares no variables. NOT the same as `variables=None`."""
 
 
-def read_vars(raw: Any, where: str = "") -> VarSchema:
+def read_vars(raw: Any, where: str = "", *, source: str = "") -> VarSchema:
     """A scene's `vars` block as a schema, or raise saying which entry.
 
-    Lives here rather than in a scene reader so that both readers, and every
-    check, judge a declaration the same way.
+    The raw half of `load_scene_vars`, kept separate so a schema that is not
+    on disk -- a check's fixture, a schema built in memory -- is judged by
+    exactly the same code as one that is. The shipped game had one of those
+    (`main.SCENE_VARS`) until `load_vars` existed; it reads
+    `data/project/scenes/starter.json` now, which is what let the editor open
+    the script the game runs.
+
+    `where` blames a bad DECLARATION; `source` is the address a later
+    refusal tells the author to open, and defaults to `where` because every
+    caller already passes something addressable there (a path, a fixture's
+    name).
     """
     blame = where or "a scene"
     if raw is None:
-        return EMPTY_VARS
+        # Carrying the source even when there is nothing to declare is what
+        # lets the refusal for an undeclared variable name the scene document
+        # that exists and forgot it, rather than the generic address.
+        return VarSchema(decls={}, source=source or where)
     if not isinstance(raw, Mapping):
         raise PyoneerConfigError(
             "%s: `vars` is a JSON object of name -> {type, default, doc}, "
@@ -356,7 +475,7 @@ def read_vars(raw: Any, where: str = "") -> VarSchema:
         decls[normalised] = VarDecl(name=normalised, type=body["type"],
                                     default=body["default"],
                                     doc=str(body.get("doc", "")))
-    return VarSchema(decls=decls)
+    return VarSchema(decls=decls, source=source or where)
 
 
 class VarStore:
@@ -477,8 +596,10 @@ def _read_condition(raw: Any, variables: Any, where: str) -> Condition:
         raise PyoneerConfigError(
             "%s: condition names the variable %r and this load was given no "
             "variable schema, so nothing can say whether it exists or what "
-            "type it is. Pass the scene's `vars` "
-            "(`load_script(path, variables=...)`)." % (where, raw["var"]))
+            "type it is. Pass the scene's `vars`: "
+            "`load_script(path, variables=load_vars())`, which reads the "
+            "`vars` block of every %s."
+            % (where, raw["var"], os.path.join(SCENES_DIR, "*.json")))
     decl = variables.declaration(raw["var"], where)
 
     if operator in ("at_least", "at_most"):
@@ -925,11 +1046,199 @@ def load_scripts(directory: str | None = None, *, variables: Any = None,
     return scripts
 
 
+def script_of(scripts: Optional[Mapping[str, Any]],
+              properties: Mapping[str, Any],
+              where: str) -> Optional[str]:
+    """Which event script `properties` names, or None -- raising if it cannot.
+
+    THE ONE READER OF `pyoneer_script`, and it exists because there were two.
+    The map route in `main.py` grew the property first; `SceneManager.spawn`
+    learned it a pass later and could not call that reader -- the map route's
+    lives in the game module and `scripts/` may not import it (law 2) -- so it
+    carried a copy of the falsy test, the absent/empty split, the kind string,
+    the rendered `available:` list and the `asked_by` context key. Two
+    spellings of one rule is the 425-line shape at method scale: what drifts
+    is not the happy path but the REFUSAL, and a refusal that drifts is a
+    message blaming the wrong half of the tree. This is the function that
+    docstring named as the fix; both routes call it now, the way both call
+    `actor_row`.
+
+    FALSY IS "NAMES NONE", not the id "". That is what the editor writes when
+    an author clears the field, and reading it as an id would raise on a
+    property that says exactly nothing. Such a body is untouched, exactly as a
+    spawn naming no actors row is untouched.
+
+    ABSENT AND EMPTY ARE DIFFERENT MISTAKES, the same split `actor_row` draws.
+    `scripts` being None means nobody handed this join a table -- a WIRING
+    error, `PyoneerConfigError`, and the message names the attribute and the
+    loader that fills it. A table that is merely EMPTY means the project
+    declares no such document -- an AUTHORING error, and it raises the
+    `PyoneerAssetMissingError` that lists what does exist (`<none loaded>`
+    when that is nothing). Skipping either would leave an object that looks
+    scripted and is silently inert, which is the shape law 8 refuses.
+
+    `where` names the asker and NOT the property: the `asked_by` context is
+    composed here as "<where> via pyoneer_script", so the two routes' messages
+    differ only in whom they blame -- "tmx object id=1 on layer 'entity'"
+    against "SceneManager.spawn('Probe')" -- and cannot drift apart, because
+    the sentence around them is written once.
+
+    Returns the id only. JOINING it to a body is the caller's, because the two
+    routes join into the same list at different moments: the map route after
+    the spawn RECORDS exist, the runtime route while it still holds the entity
+    in one hand.
+    """
+    named = properties.get(SCRIPT_PROPERTY)
+    if not named:
+        return None
+    script_id = str(named)
+    if scripts is None:
+        raise PyoneerConfigError(
+            "%s declares %s=%r and no `scripts` mapping reached the join, so "
+            "the document can be neither read nor joined. The boot assigns it "
+            "before the map is bound, from "
+            "`scripts.loaders.script_file.load_scripts()`, and it is the one "
+            "table the map spawn and `SceneManager.spawn` both read."
+            % (where, SCRIPT_PROPERTY, script_id))
+    if script_id not in scripts:
+        raise PyoneerAssetMissingError(
+            "event script", script_id, available=sorted(scripts),
+            asked_by="%s via %s" % (where, SCRIPT_PROPERTY))
+    return script_id
+
+
+# ---------------------------------------------------------------------------
+# The scene document -- where declarations live
+# ---------------------------------------------------------------------------
+
+def parse_scene_vars(raw: Any, path: str = "") -> VarSchema:
+    """One scene document's `vars` block, judged, or raise saying why not.
+
+    Everything the document says ABOUT ITSELF is checked before its `vars`
+    are read -- format, version, id, and every key it carries -- because a
+    file that is not a scene document, or is a newer one, would otherwise
+    contribute an empty schema and make every script naming a variable fail
+    one layer further on, blaming the script for the file's mistake.
+    """
+    blame = os.path.basename(path) or "a scene document"
+    if not isinstance(raw, Mapping):
+        raise _bad(blame, "a scene document is a JSON object, not %s"
+                   % type(raw).__name__)
+    _refuse_unknown(raw, SCENE_KEYS, blame, "a scene")
+
+    if raw.get("format") != SCENE_FORMAT:
+        raise _bad(blame, "declares format %r; a scene document opens with %r"
+                   % (raw.get("format"), SCENE_FORMAT))
+    version = raw.get("version")
+    if not isinstance(version, int) or isinstance(version, bool):
+        raise _bad(blame, "declares version %r; it is a whole number"
+                   % (version,))
+    if version > SCENE_VERSION:
+        raise _bad(blame, "is version %d; this build reads %d. A newer "
+                          "document is refused rather than read optimistically"
+                   % (version, SCENE_VERSION))
+
+    scene_id = raw.get("id")
+    if not _legal_id(scene_id):
+        raise _bad(blame, "declares id %r; an id is %s" % (scene_id, ID_CHARS))
+    if path:
+        stem = os.path.splitext(os.path.basename(path))[0]
+        if scene_id != stem:
+            # `load_table` enforces the same rule for the same measured
+            # reason: one side keys by the inner name and the other by the
+            # file, and a disagreement is addressable under neither.
+            raise _bad(blame, "declares id %r but is named %r; the file name "
+                              "and the `id` key are the same identifier"
+                       % (scene_id, stem + ".json"))
+    return read_vars(raw.get("vars"), blame, source=path or blame)
+
+
+def load_scene_vars(path: str) -> VarSchema:
+    """Read one scene document, or raise saying which file and what is wrong.
+
+    A scene that fails to load is never skipped. The cost of skipping it is
+    the one this whole reader exists to pay off: a schema quietly short one
+    variable refuses the script that names it, and the message blames the
+    script.
+    """
+    with open(path, "r", encoding="utf-8") as handle:
+        try:
+            raw = json.load(handle)
+        except json.JSONDecodeError as exc:
+            raise _bad(os.path.basename(path),
+                       "not valid JSON (%s)" % exc) from exc
+    return parse_scene_vars(raw, path)
+
+
+def load_vars(directory: str | None = None) -> VarSchema:
+    """Every variable every scene in a directory declares. Possibly none.
+
+    A MISSING directory is an empty schema and NOT an error, exactly as a
+    missing `tables/` is `table_file.EMPTY` and a missing `scripts/` is an
+    empty dict. That consistency is worth more than any argument for
+    strictness here: a project declaring no variables and running no script
+    that names one is not broken, and raising would break every project that
+    never asked for any of this.
+
+    WHY THE SCENES ARE MERGED, AND WHAT STOPS THE MERGE BEING A LIE
+    ---------------------------------------------------------------
+    `VarStore` is ONE flat store keyed by `<namespace>.<name>` and nothing in
+    this build enters or leaves a scene, so `scene.coins` is one variable no
+    matter which document declared it. Two documents declaring that name with
+    the same type and the same default therefore agree, and merge. Two
+    declaring it DIFFERENTLY raise, naming both files -- `table_file`'s
+    "contradictory raises" line, in the one place this format can contradict
+    itself.
+
+    The day a scene manager lands, the per-scene split replaces this merge
+    and the raise becomes unnecessary rather than wrong: a project that never
+    contradicted itself reads identically either way.
+    """
+    target = os.path.abspath(default_scenes_dir() if directory is None
+                             else directory)
+    if not os.path.isdir(target):
+        trace_assets("load_vars %s absent -> no declared variables", target)
+        return VarSchema(decls={}, source=target)
+    merged: dict[str, VarDecl] = {}
+    origin: dict[str, str] = {}
+    read: list[str] = []
+    for entry in sorted(os.listdir(target)):
+        if not entry.endswith(".json"):
+            continue
+        path = os.path.join(target, entry)
+        schema = load_scene_vars(path)
+        read.append(path)
+        for name in schema.names():
+            decl = schema.decls[name]
+            seen = merged.get(name)
+            if seen is not None and (seen.type != decl.type
+                                     or seen.default != decl.default):
+                raise PyoneerConfigError(
+                    "%s and %s both declare the variable %r and disagree: "
+                    "%s defaulting to %r against %s defaulting to %r. One "
+                    "name is one variable -- there is a single store, keyed "
+                    "by namespace -- so the two cannot both be true."
+                    % (os.path.basename(origin[name]),
+                       os.path.basename(path), name, seen.type, seen.default,
+                       decl.type, decl.default),
+                    path=path, other=origin[name], variable=name)
+            merged[name] = decl
+            origin[name] = path
+    trace_assets("load_vars %s -> %d variable(s) from %d scene(s): %s",
+                 target, len(merged), len(read),
+                 ", ".join(sorted(merged)) or "<none>")
+    return VarSchema(decls=merged,
+                     source=read[0] if len(read) == 1 else target)
+
+
 __all__ = [
     "COMPARATORS", "CONDITION_KEYS", "CONTROL_KEYS", "DEFAULT_NAMESPACE",
-    "EMPTY_VARS", "FORMAT", "NAMESPACES", "PAGE_KEYS", "SCRIPTS_DIR",
+    "EMPTY_VARS", "FORMAT", "NAMESPACES", "PAGE_KEYS", "SCENES_DIR",
+    "SCENE_FORMAT", "SCENE_KEYS", "SCENE_VERSION", "SCRIPTS_DIR",
     "SCRIPT_KEYS", "SCRIPT_TRIGGERS", "VERSION", "Arm", "Condition",
     "ControlNode", "DoNode", "Page", "Script", "VarDecl", "VarSchema",
-    "VarStore", "default_scripts_dir", "load_script", "load_scripts",
-    "normalise_var", "parse_script", "passes", "read_vars",
+    "VarStore", "default_scenes_dir", "default_scripts_dir",
+    "load_scene_vars", "load_script", "load_scripts", "load_vars",
+    "normalise_var", "parse_scene_vars", "parse_script", "passes",
+    "read_vars", "script_of",
 ]

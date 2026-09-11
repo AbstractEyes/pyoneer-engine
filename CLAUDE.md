@@ -369,6 +369,35 @@ of repetition.
   as missing, and re-measuring one minute later found `bake_tile_mask` landed
   in a sibling's working tree. A gap you did not re-measure is a gap you are
   about to file twice.
+- **You will fix the route that ships and let its SIBLING route grow without
+  the fix.** The move that looks complete is to repair the path the bug was
+  reported on, add the guard, write the check, and stop -- the other path
+  spells the same property, so surely it was covered. **Six sightings**, and
+  the last two were found by DRIVING the code rather than by reading it, which
+  is why the count kept climbing after three passes of looking. Delete and
+  create. Canvas and tree. The map spawn and `SceneManager.spawn`, TWICE --
+  `spawn_defaults` reached the map route alone, so every runtime body was
+  anchored at the top of its head; then `pyoneer_script` reached the map route
+  alone, so a runtime body naming an absent document was silently inert while
+  an authored one raised. `main.py`'s boot hook and `DemoGame`'s override of
+  it, where three copied lines cost the demo path the script join, the `say`
+  host, the action route and both map guards at once. And twice inside the
+  CHECK suite, which is the sighting that should worry you most: two
+  reachability rows measured a JSON file and reported it as a built wire while
+  the sibling instrument one file away already carried the sentence "the
+  loaded pack only, never the raw `genre.json` beside it" -- and after those
+  two were repaired, a THIRD row of the same shape was still sitting in that
+  sibling, reading `config/inputs.json` with `json.load` and printing **yes**
+  for a verb the loader need never have registered.
+  Counter-move, and it is not "grep harder": where the two routes share a
+  rule, make the shared half ONE FUNCTION and delete the copy. `script_of`
+  closed the fourth sighting that way, and the proof it worked is a single
+  mutation -- `if False and script_id not in scripts` -- turning BOTH
+  `tools/check_spawn_runtime.py` and `tools/check_script_runtime.py` red in
+  one run. Two copies that agree today cannot be mutated once. When the shared
+  half genuinely cannot be one function, name every sibling you checked and
+  why each is safe, in the handoff, as a list -- an unnamed sibling is an
+  unchecked one.
 
 ## Known gaps — fill on sight
 

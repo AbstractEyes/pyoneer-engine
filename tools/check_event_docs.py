@@ -20,11 +20,34 @@ WHAT IS ASSERTED
         the store, `wait` elapses, `hold`/`release` move an axis and put it
         back, and `ask` reports **no** -- with a planted do-nothing op proving
         the prober can actually report a failure
-     4. the reachability columns are measurements too, each from the parse
-        tree of the tree above this layer, with a control proving the scan
-        finds a caller where one exists
+     4. the reachability columns are measurements of CODE, each from the
+        parse tree of the tree above this layer or from loading the thing
+        itself -- and every one of them is DRIVEN TO `no` here, against a
+        planted world where the code is broken and the data left intact
      5. the document names exactly the registered ops, in both places it names
         them, and every loadout it names is one the registry knows
+
+A REACHABILITY ROW MUST BE ABLE TO GO RED
+-----------------------------------------
+A row that cannot report `no` is the vacuous assertion, one level up: it
+prints a green word forever and the reader believes a wire exists. Two rows
+here were exactly that, and both were caught by a person driving the code
+rather than reading it:
+
+  * the pack row asserted DATA. It read the two raw `genre.json` files and
+    never the parser, so bypassing `editor/core/genre.py` entirely left the
+    row reading `yes`, while deleting one JSON line left it reading `no`.
+    It now LOADS each pack through `editor.core.genre.load()` and narrows
+    the live op table through `GenrePack.granted_registry`, so the row
+    reports the code path it names.
+  * the picker row measured the WHOLE `editor` package while its own text
+    demanded an `editor/ui/` module, and an `editor/core/` importer had
+    already been counted as evidence. It now measures `editor/ui/` only,
+    and requires the module to NAME the table as well as import it.
+
+So section 6 plants a broken world per row -- a decoy source tree in memory,
+a loader whose parser drops the key, an empty registry, an empty directory
+-- and asserts the row flips. No tracked file is edited to do it.
 
 THE DOCUMENT HAS NO HAND-WRITTEN CLAIM ABOUT THE CODE
 ------------------------------------------------------
@@ -49,14 +72,16 @@ import ast
 import json
 import os
 import sys
+import tempfile
 import warnings
+from dataclasses import replace
 
 import pygame
 
 pygame.init()
 
 from scripts.core.audio import AudioManager
-from scripts.core.errors import PyoneerConfigError
+from scripts.core.errors import PyoneerConfigError, PyoneerError
 from scripts.game.behavior.movement import MS_PER_DELTA
 from scripts.game.behavior.state import ensure_state, state_of
 from scripts.game.flow import ops as ops_module
@@ -64,11 +89,46 @@ from scripts.game.flow.interpreter import ScriptRun
 from scripts.game.flow.ops import OP_REGISTRY, OpSpec, describe_all
 from scripts.loaders import script_file as sf
 
+try:
+    from editor.core import genre as genre_packs
+except ImportError:  # pragma: no cover -- a clone with `editor/` deleted
+    # NOT a fallback to a plausible default: the pack row reports this state
+    # in its own `what it takes` cell, because "the editor package is not
+    # here" and "no pack grants a loadout" are different facts and a reader
+    # of the table has to be able to tell them apart. A tool may import the
+    # editor (law 2 binds `scripts/`); the engine still boots without it.
+    genre_packs = None
+
 ROOT = _bootstrap.REPO_ROOT
 DOC_PATH = os.path.join(ROOT, "docs", "EVENTS.md")
 GENRES_DIR = os.path.join(ROOT, "editor", "genres")
-GENRE_MODULE = os.path.join(ROOT, "editor", "core", "genre.py")
 SCRIPTS_ON_DISK = os.path.join(ROOT, sf.SCRIPTS_DIR)
+
+OPS_MODULE = "scripts.game.flow.ops"
+UI_DIR = "editor/ui"
+"""The picker row's own words. The row is titled *(the PICKER)* and its `no`
+text demands an `editor/ui/` module, so this -- and not the whole `editor`
+package -- is what it may scan. A core module reaching the registry is a
+real fact and a different one."""
+
+EVENT_LOADOUTS_KEY = (genre_packs.EVENT_LOADOUTS if genre_packs is not None
+                      else "event_loadouts")
+"""The `genre.json` key, taken from the parser that owns it.
+
+Law 8 makes this a FILE FORMAT string and `editor/core/genre.py` spells it
+once. This tool asks that module for it rather than retyping it, and carries
+a literal only for the clone where `editor/` is deleted -- where nothing can
+be asked and the row reads `no` anyway."""
+
+OP_TABLE_NAMES = ("OP_REGISTRY", "ops_in", "granted_registry", "describe_all")
+"""Reading the op table means naming one of these.
+
+An import alone is not a picker: a module may import `ops` for a type
+annotation, an error message or a docstring reference and offer a person
+nothing. These four are every way a reader gets a TABLE of ops -- the
+registry itself, the loadout filter, a pack's narrowing of it, and the
+describer -- so naming one is the cheapest honest evidence that the names
+reach a widget."""
 
 REGENERATE = ".venv/Scripts/python.exe tools/check_event_docs.py --write"
 
@@ -329,7 +389,7 @@ def runtime_rows(registry=None):
 SKIP_DIRS = {".git", "__pycache__", ".venv", "docs", "data"}
 
 
-def python_files(*roots):
+def python_files(*roots, sources=None):
     """Every tracked-looking .py under `roots`, repo-relative and sorted.
 
     A root may be a DIRECTORY or a single .py FILE. The file form exists
@@ -338,7 +398,18 @@ def python_files(*roots):
     the boot does could not see the one file that does it, and both printed
     `no` for months after the wire landed. A reachability table blind to the
     file that closes the gap is worse than no table.
+
+    `sources` replaces the tree with a `{repo/relative/path.py: source}`
+    mapping, so section 6 can hand every scan a PLANTED world -- one where
+    the wire is broken, or lives in the wrong package -- without editing a
+    tracked file. Roots still apply to it, which is the whole point: a decoy
+    under `editor/core/` must not answer a scan of `editor/ui/`.
     """
+    if sources is not None:
+        return sorted(rel for rel in sources
+                      if any(rel == root
+                             or rel.startswith(root.rstrip("/") + "/")
+                             for root in roots))
     found = []
     for root in roots:
         base = os.path.join(ROOT, root)
@@ -354,13 +425,15 @@ def python_files(*roots):
     return sorted(found)
 
 
-def _tree(rel):
+def _tree(rel, sources=None):
+    if sources is not None:
+        return ast.parse(sources[rel])
     with open(os.path.join(ROOT, rel), encoding="utf-8",
               errors="replace") as handle:
         return ast.parse(handle.read())
 
 
-def importers(module_name, *roots):
+def importers(module_name, *roots, sources=None):
     """Files under `roots` whose PARSE TREE imports `module_name`.
 
     The tree and not the text, so a docstring naming the module -- and every
@@ -369,8 +442,8 @@ def importers(module_name, *roots):
     this repository's signature defect lives in the gap.
     """
     hits = []
-    for rel in python_files(*roots):
-        tree = _tree(rel)
+    for rel in python_files(*roots, sources=sources):
+        tree = _tree(rel, sources=sources)
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 whole = "%s.%s" % (node.module or "",
@@ -385,7 +458,7 @@ def importers(module_name, *roots):
     return sorted(set(hits))
 
 
-def constructors(name, *roots, exclude=()):
+def constructors(name, *roots, exclude=(), sources=None):
     """Files under `roots` that CALL `name(...)`, from the parse tree.
 
     `exclude` drops the module that DEFINES the thing: `load_scripts` calling
@@ -394,10 +467,10 @@ def constructors(name, *roots, exclude=()):
     exist -- which is the exact lie this table is the instrument against.
     """
     hits = []
-    for rel in python_files(*roots):
+    for rel in python_files(*roots, sources=sources):
         if rel in exclude:
             continue
-        for node in ast.walk(_tree(rel)):
+        for node in ast.walk(_tree(rel, sources=sources)):
             if not isinstance(node, ast.Call):
                 continue
             called = (node.func.attr if isinstance(node.func, ast.Attribute)
@@ -408,73 +481,184 @@ def constructors(name, *roots, exclude=()):
     return sorted(set(hits))
 
 
-def packs_granting():
-    """(packs declaring `event_loadouts`, whether any parser reads the key).
+def naming(wanted, *roots, sources=None):
+    """Files under `roots` whose parse tree NAMES any of `wanted`.
 
-    The raw `genre.json` is read here and NOT the loaded pack, deliberately
-    and with the reason stated in the row: there is no parser for this key
-    yet, so the loaded pack cannot answer. The moment one exists, this
-    measurement is the thing that says so.
+    An attribute or a bare name, called or not: `op_registry.OP_REGISTRY` is
+    a table a widget can iterate whether or not it is called. This is the
+    half `importers` cannot see -- reaching for the module versus reaching
+    for the names in it.
     """
-    granted = {}
-    if os.path.isdir(GENRES_DIR):
-        for genre_id in sorted(os.listdir(GENRES_DIR)):
-            path = os.path.join(GENRES_DIR, genre_id, "genre.json")
-            if not os.path.isfile(path):
+    hits = []
+    for rel in python_files(*roots, sources=sources):
+        for node in ast.walk(_tree(rel, sources=sources)):
+            found = (node.attr if isinstance(node, ast.Attribute)
+                     else node.id if isinstance(node, ast.Name) else None)
+            if found in wanted:
+                hits.append(rel)
+                break
+    return sorted(set(hits))
+
+
+def pickers(sources=None):
+    """`editor/ui/` modules that import the op module AND read its table.
+
+    BOTH halves, because either alone is a lie in a different direction. An
+    import with no use is the "documented but unreachable" shape this table
+    exists to catch; naming `OP_REGISTRY` without importing the module is
+    some other module's attribute with a familiar spelling.
+
+    `editor/core/` is deliberately out of scope. The row is titled *(the
+    PICKER)*, and a previous pass listed `editor/core/genre.py` as its
+    evidence -- a core module that offers a person nothing -- which would
+    have let the row read `yes` with no picker in existence.
+    """
+    return sorted(set(importers(OPS_MODULE, UI_DIR, sources=sources))
+                  & set(naming(OP_TABLE_NAMES, UI_DIR, sources=sources)))
+
+
+def packs_granting(registry=None, *, loader=None, genres_dir=None):
+    """(packs that really grant a loadout, why none does) -- by LOADING them.
+
+    THE PACK IS LOADED, not read. This row asserted DATA until 2026-09-11: it
+    parsed the two raw `genre.json` files itself, so `editor/core/genre.py`
+    could be bypassed entirely -- parser gone, nothing narrowed, no pack
+    granting anything -- and the row still printed `yes`, while removing one
+    JSON line printed `no` with the code perfectly intact. Both directions
+    were measured. A reachability row that reports the presence of two JSON
+    lines is not reporting a wire.
+
+    So a pack counts when the CODE delivers all three steps:
+
+      1. `genre.load()` parses the key into `GenrePack.event_loadouts`
+         (which is where `ops.validate_loadouts` judges it, and a name no op
+         claims raises right here rather than reaching a script)
+      2. the pack grants something -- `None` is silence and `()` is a
+         deliberate "this genre does not script"; neither is a grant
+      3. `GenrePack.granted_registry` narrows the LIVE op table to a
+         non-empty one, so the grant reaches an op that exists
+
+    The raw file is still opened, for one reason only: to tell "no pack
+    declares the key" apart from "a pack declares it and the loaded pack
+    carries none", which is the signature of the parser being broken. That
+    difference is the whole diagnostic value of the `no` cell.
+    """
+    table = OP_REGISTRY if registry is None else registry
+    where = GENRES_DIR if genres_dir is None else genres_dir
+    load = loader
+    if load is None:
+        if genre_packs is None:
+            return {}, ("`editor.core.genre` is not importable from here, so "
+                        "no pack can be loaded to ask")
+        load = genre_packs.load
+
+    granted, declared, dropped, empty, barren, broken = {}, [], [], [], [], []
+    found = sorted(os.listdir(where)) if os.path.isdir(where) else []
+    for genre_id in found:
+        path = os.path.join(where, genre_id, "genre.json")
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as handle:
+            try:
+                raw = json.load(handle)
+            except json.JSONDecodeError:
                 continue
-            with open(path, encoding="utf-8") as handle:
-                try:
-                    raw = json.load(handle)
-                except json.JSONDecodeError:
-                    continue
-            if isinstance(raw, dict) and raw.get("event_loadouts"):
-                granted[genre_id] = tuple(raw["event_loadouts"])
-    parsed = False
-    if os.path.isfile(GENRE_MODULE):
-        with open(GENRE_MODULE, encoding="utf-8", errors="replace") as handle:
-            parsed = "event_loadouts" in handle.read()
-    return granted, parsed
+        if isinstance(raw, dict) and EVENT_LOADOUTS_KEY in raw:
+            declared.append(genre_id)
+        try:
+            pack = load(genre_id, where)
+        except PyoneerError as exc:
+            # Reported, not swallowed: a pack that will not load is a fact
+            # about the wire, and a generator that dies on it takes the
+            # whole document with it.
+            broken.append("%s (%s)" % (genre_id, str(exc).splitlines()[0]))
+            continue
+        names = pack.event_loadouts
+        if names is None:
+            if genre_id in declared:
+                dropped.append(genre_id)
+            continue
+        if not names:
+            empty.append(genre_id)
+            continue
+        if not pack.granted_registry(table):
+            barren.append(genre_id)
+            continue
+        granted[genre_id] = tuple(names)
+
+    why = []
+    if not found:
+        why.append("there is no genre pack on disk to ask")
+    elif not declared and not broken:
+        why.append("no pack declares the key")
+    if dropped:
+        why.append("%s declare(s) it and the LOADED pack carries none, so "
+                   "`editor/core/genre.py` is not parsing it"
+                   % ", ".join(sorted(dropped)))
+    if empty:
+        why.append("%s grant(s) nothing, deliberately"
+                   % ", ".join(sorted(empty)))
+    if barren:
+        why.append("%s grant(s) a loadout no registered op claims"
+                   % ", ".join(sorted(barren)))
+    if broken:
+        why.append("%s will not load" % ", ".join(sorted(broken)))
+    return granted, "; ".join(why)
 
 
-def scripts_on_disk():
-    if not os.path.isdir(SCRIPTS_ON_DISK):
+def scripts_on_disk(where=None):
+    base = SCRIPTS_ON_DISK if where is None else where
+    if not os.path.isdir(base):
         return []
-    return sorted(n for n in os.listdir(SCRIPTS_ON_DISK)
-                  if n.endswith(".json"))
+    return sorted(n for n in os.listdir(base) if n.endswith(".json"))
 
 
-def reach_rows():
-    """(the wire, whether it exists, what it takes) -- every one derived."""
-    editor_reach = importers("scripts.game.flow.ops", "editor")
+def reach_rows(registry=None, *, sources=None, loader=None, genres_dir=None,
+               scripts_dir=None):
+    """(the wire, whether it exists, what it takes) -- every one derived.
+
+    Every seam this reads is an argument, and section 6 drives each one with
+    the code broken: an empty `registry`, a `loader` whose parser drops the
+    key, a planted `sources` tree, a `scripts_dir` with nothing in it. A row
+    nobody has seen report `no` is a green word, not a measurement.
+    """
+    table = OP_REGISTRY if registry is None else registry
+    picker = pickers(sources=sources)
     # `main.py` is named alongside the packages because it IS the game's boot
     # and belongs to no package. Two rows below describe something only that
     # file can do; scanning directories alone made them structurally unable
     # to report it.
     production = ("scripts", "demos", "editor", "main.py")
-    started = constructors("ScriptRun", *production)
+    started = constructors("ScriptRun", *production, sources=sources)
     defines = ("scripts/loaders/script_file.py",)
-    read = (constructors("load_script", *production, exclude=defines)
-            + constructors("load_scripts", *production, exclude=defines))
-    granted, parsed = packs_granting()
-    on_disk = scripts_on_disk()
+    read = (constructors("load_script", *production, exclude=defines,
+                         sources=sources)
+            + constructors("load_scripts", *production, exclude=defines,
+                           sources=sources))
+    granted, why_not = packs_granting(table, loader=loader,
+                                      genres_dir=genres_dir)
+    on_disk = scripts_on_disk(scripts_dir)
     return [
-        ("an op registry exists and is populated", bool(OP_REGISTRY),
-         "%d op(s) in %s" % (len(OP_REGISTRY),
+        ("an op registry exists and is populated", bool(table),
+         "%d op(s) in %s" % (len(table),
                              ", ".join("`%s`" % l
-                                       for l in ops_module.loadouts()))),
+                                       for l in ops_module.loadouts(table)))),
         ("a genre pack GRANTS a loadout (`event_loadouts`)", bool(granted),
          "one array in a pack's `genre.json`, validated through "
          "`ops.validate_loadouts`. %s"
-         % ("granted by " + ", ".join(sorted(granted)) if granted else
-            "no pack declares the key, and `editor/core/genre.py` %s parse it"
-            % ("does" if parsed else "does not"))),
+         % ("granted by " + ", ".join(sorted(granted)) if granted
+            else why_not)),
         ("an editor module reaches the op registry (the PICKER)",
-         bool(editor_reach),
+         bool(picker),
          "an `editor/ui/` module importing `scripts.game.flow.ops` and "
          "offering its names. Until one does, every op above is registered, "
          "documented, checked and UNREACHABLE from the layer that asks for "
-         "it." if not editor_reach else
-         "reached by " + ", ".join("`%s`" % r for r in editor_reach)),
+         "it." if not picker else
+         "offered by %s, which both imports `scripts.game.flow.ops` and "
+         "names one of its table readers (`OP_TABLE_NAMES` in "
+         "tools/check_event_docs.py). An `editor/core/` importer reaches "
+         "the registry too; it is not a picker and is not counted here."
+         % ", ".join("`%s`" % r for r in picker)),
         ("a script document is read from disk in production", bool(read),
          "`script_file.load_scripts()` called from the game's boot" if not read
          else "read in " + ", ".join("`%s`" % r for r in sorted(set(read)))),
@@ -503,6 +687,7 @@ def render_doc(registry=None) -> str:
     """
     table = OP_REGISTRY if registry is None else registry
     lines = [describe_all(table).rstrip("\n"), "", SENTINEL, ""]
+    reach = reach_rows(table)
 
     rows = runtime_rows(table)
     lines.append("## Measured runtime")
@@ -536,7 +721,7 @@ def render_doc(registry=None) -> str:
     lines.append("")
     lines.append("| the wire | at this commit | what it takes |")
     lines.append("| --- | --- | --- |")
-    for what, ok, cost in reach_rows():
+    for what, ok, cost in reach:
         lines.append("| %s | %s | %s |" % (what, "**yes**" if ok else "no",
                                            cost))
     lines.append("")
@@ -584,7 +769,13 @@ expect_true("the file exists at all (run --write if this is the first pass)",
             DOC_EXISTS)
 expect_true("its first half is byte-for-byte ops.describe_all()",
             DOC.startswith(describe_all(OP_REGISTRY).rstrip("\n")))
-expect("...and the whole file matches the generator", DOC, render_doc())
+# Two renders, taken once and reused: every render runs all ten probes and
+# loads both genre packs, so calling it per assertion is the difference
+# between a check that costs seconds and one that costs a minute. Two,
+# because determinism below has to compare independent runs.
+RENDERED = render_doc()
+RENDERED_AGAIN = render_doc()
+expect("...and the whole file matches the generator", DOC, RENDERED)
 expect("the boundary between the two halves is marked exactly once",
        DOC.count(SENTINEL), 1)
 # Not implied by the equality above, unlike the count: if `describe_all` ever
@@ -596,7 +787,7 @@ expect_true("the file names the command that regenerates it",
             REGENERATE in DOC)
 # Determinism: two renders in one process must agree, or the byte-comparison
 # above is a coin toss that happens to be landing the same way.
-expect("the generator is deterministic", render_doc(), render_doc())
+expect("the generator is deterministic", RENDERED, RENDERED_AGAIN)
 
 
 # ===========================================================================
@@ -688,6 +879,15 @@ expect("...and naming that file does NOT drag in its whole directory",
 expect("the boot really is what the production scan sees it as",
        ("main.py" in constructors("load_scripts", "main.py"),
         "main.py" in constructors("ScriptRun", "main.py")), (True, True))
+# The picker row's scope, asserted rather than left to a reader's care: the
+# row says `editor/ui/`, and a previous pass listed `editor/core/genre.py` as
+# its evidence. Anything outside `editor/ui/` in this list is that regression
+# coming back.
+# The literal, NOT `UI_DIR`: measured -- widening the constant back to
+# "editor" made this assertion tautological and it stayed green through the
+# exact regression it is here to catch.
+expect("every module the picker row names lives under editor/ui/",
+       [p for p in pickers() if not p.startswith("editor/ui/")], [])
 
 
 # ===========================================================================
@@ -754,11 +954,181 @@ expect("the file states the op count the registry actually has",
 
 
 # ===========================================================================
+print("\n6. every reachability row goes NO when the CODE is broken")
+# ===========================================================================
+# The assertion a person had to write by hand, once, for one row -- and the
+# reason this section exists is that when he wrote it, the row did not move.
+# Nothing below edits a tracked file: the broken world is a decoy source tree
+# in memory, a loader whose parser drops the key, an empty registry, and a
+# directory this check makes and throws away.
+
+def _row(rows, starts):
+    """One row's verdict, addressed by the words the table prints."""
+    return next(ok for what, ok, _ in rows if what.startswith(starts))
+
+
+_TMP = tempfile.TemporaryDirectory(prefix="pyoneer_event_docs_")
+
+
+def _fixture_genres(label, **extra):
+    """A one-pack genres directory, built here and deleted with the run.
+
+    LAW 4: this asserts what `editor/core/genre.py` DOES with a pack, never
+    what the two packs in `editor/genres/` happen to contain. Point the row
+    at the shipped packs and it measures somebody's JSON; point it at this
+    and it measures the parser.
+    """
+    root = os.path.join(_TMP.name, label, "fixture")
+    os.makedirs(root, exist_ok=True)
+    raw = {"id": "fixture", "title": "Fixture pack"}
+    raw.update(extra)
+    with open(os.path.join(root, "genre.json"), "w", encoding="utf-8") as out:
+        json.dump(raw, out)
+    return os.path.dirname(root)
+
+
+# -- row 1: the registry ----------------------------------------------------
+_EMPTY_REGISTRY = reach_rows({})
+expect("row 1 goes no against an empty op registry",
+       _row(_EMPTY_REGISTRY, "an op registry"), False)
+# And row 2 with it, which is not an accident: a grant that narrows the live
+# table to nothing has reached no op, whatever the pack says.
+expect("...and row 2 with it, because the grant then reaches no op at all",
+       _row(_EMPTY_REGISTRY, "a genre pack"), False)
+
+# -- row 2: the pack grant --------------------------------------------------
+expect_true("the editor package is importable, so the pack row is measurable",
+            genre_packs is not None)
+if genre_packs is not None:
+    _GRANTS = _fixture_genres("grants", event_loadouts=["core"])
+    expect("a planted pack granting `core` is seen as a grant, by LOADING it",
+           packs_granting(genres_dir=_GRANTS)[0], {"fixture": ("core",)})
+    expect("...a pack that never spells the key is silence, not a grant",
+           packs_granting(genres_dir=_fixture_genres("silent"))[0], {})
+    expect("...and `[]` -- this genre does not script -- is not one either",
+           packs_granting(genres_dir=_fixture_genres(
+               "nothing", event_loadouts=[]))[0], {})
+    _no_packs = os.path.join(_TMP.name, "no_packs")
+    os.makedirs(_no_packs, exist_ok=True)
+    _none, _why_none = packs_granting(genres_dir=_no_packs)
+    expect("...and with no pack on disk at all the row says so, not 'no key'",
+           (_none, "no genre pack" in _why_none), ({}, True))
+
+    # The row's own cell claims the array is "validated through
+    # `ops.validate_loadouts`". That claim is now measured, and it is
+    # measured where it happens: at pack load, before any script exists.
+    _unknown = _fixture_genres("unknown", event_loadouts=["telepathy"])
+    try:
+        genre_packs.load("fixture", _unknown)
+        _refusal = "no raise"
+    except PyoneerError as exc:
+        _refusal = type(exc).__name__
+    expect("a loadout no registered op claims is refused AT PACK LOAD",
+           _refusal, "PyoneerGenreError")
+    _barren, _why_barren = packs_granting(genres_dir=_unknown)
+    expect("...and such a pack grants nothing, with the row saying why",
+           (_barren, "will not load" in _why_barren), ({}, True))
+
+    def _parserless(genre_id, directory):
+        """The mutation the prover ran by hand, as a seam instead of an edit.
+
+        `_build` bypassing `_event_loadouts` -- every loaded pack silent,
+        every `genre.json` on disk untouched. The row read **yes** through
+        this, because it was reading the JSON.
+        """
+        return replace(genre_packs.load(genre_id, directory),
+                       event_loadouts=None)
+
+    _dead, _why_dead = packs_granting(genres_dir=_GRANTS, loader=_parserless)
+    expect("row 2 goes no when the PARSER is bypassed and the JSON left whole",
+           (_dead, "not parsing it" in _why_dead), ({}, True))
+    expect("...including against the packs this repository actually ships",
+           _row(reach_rows(loader=_parserless), "a genre pack"), False)
+
+# -- row 3: the picker ------------------------------------------------------
+_PICKER_SOURCE = ("from scripts.game.flow import ops\n"
+                  "def fill(menu):\n"
+                  "    for name in sorted(ops.OP_REGISTRY):\n"
+                  "        menu.addAction(name)\n")
+_IMPORT_ONLY = ("from scripts.game.flow import ops  # for a type hint only\n"
+                "def fill(menu: 'ops.OpSpec'):\n"
+                "    menu.addAction('hard coded')\n")
+_NAMES_ONLY = ("def fill(menu, table):\n"
+               "    for name in sorted(table.OP_REGISTRY):\n"
+               "        menu.addAction(name)\n")
+
+expect("a planted editor/ui module that imports AND reads the table is one",
+       pickers({"editor/ui/palette.py": _PICKER_SOURCE}),
+       ["editor/ui/palette.py"])
+expect("...an import that never reads the table is NOT a picker",
+       pickers({"editor/ui/palette.py": _IMPORT_ONLY}), [])
+expect("...naming `OP_REGISTRY` without importing the module is NOT either",
+       pickers({"editor/ui/palette.py": _NAMES_ONLY}), [])
+expect("...and the SAME picker under editor/core/ is NOT -- the regression",
+       pickers({"editor/core/palette.py": _PICKER_SOURCE}), [])
+expect("row 3 goes no in a world whose only op-reading module is core",
+       _row(reach_rows(sources={"editor/core/palette.py": _PICKER_SOURCE}),
+            "an editor module"), False)
+
+# -- rows 4 and 5: the boot -------------------------------------------------
+_BOOT_SOURCE = ("from scripts.loaders import script_file\n"
+                "from scripts.game.flow.interpreter import ScriptRun\n"
+                "def boot(store):\n"
+                "    found = script_file.load_scripts('data/project')\n"
+                "    return ScriptRun(found['greeting'])\n")
+_INERT_SOURCE = ("from scripts.loaders import script_file\n"
+                 "from scripts.game.flow.interpreter import ScriptRun\n"
+                 "def boot(store):\n"
+                 "    return None\n")
+
+_WIRED = reach_rows(sources={"main.py": _BOOT_SOURCE})
+_INERT = reach_rows(sources={"main.py": _INERT_SOURCE})
+expect("rows 4 and 5 read yes in a planted boot that calls both",
+       (_row(_WIRED, "a script document is read"),
+        _row(_WIRED, "a `ScriptRun`")), (True, True))
+expect("...and BOTH go no in a boot that only imports them",
+       (_row(_INERT, "a script document is read"),
+        _row(_INERT, "a `ScriptRun`")), (False, False))
+expect("...and a `load_scripts` call inside the module that DEFINES it "
+       "is not a production reader",
+       _row(reach_rows(sources={"scripts/loaders/script_file.py":
+                                _BOOT_SOURCE}),
+            "a script document is read"), False)
+
+# -- row 6: the document on disk -------------------------------------------
+# The one row that is honestly about DATA, and its text says so: a script
+# document either is under `data/project/scripts` or is not. Its detector
+# still has to be shown answering both ways, or it is a green word too.
+_NO_SCRIPTS = os.path.join(_TMP.name, "no_scripts")
+os.makedirs(_NO_SCRIPTS, exist_ok=True)
+_ONE_SCRIPT = os.path.join(_TMP.name, "one_script")
+os.makedirs(_ONE_SCRIPT, exist_ok=True)
+with open(os.path.join(_ONE_SCRIPT, "planted.json"), "w",
+          encoding="utf-8") as _out:
+    _out.write("{}")
+expect("row 6 goes no against a directory holding no script document",
+       _row(reach_rows(scripts_dir=_NO_SCRIPTS), "a script document exists"),
+       False)
+expect("...and yes against one that holds one, so it is not stuck either way",
+       _row(reach_rows(scripts_dir=_ONE_SCRIPT), "a script document exists"),
+       True)
+
+_TMP.cleanup()
+
+
+# ===========================================================================
 print("\n%d assertion(s), %d failure(s)" % (len(asserted), len(failures)))
 for _failure in failures:
     print("  FAILED: %s" % _failure)
 if not DOC_EXISTS:
     print("\n  NOTE  docs/EVENTS.md has never been generated. Run:\n"
+          "        %s" % REGENERATE)
+elif DOC != RENDERED:
+    # The file is the generator's output, so a mismatch is never fixed by
+    # editing the document: either the code moved and the paper must be
+    # reprinted, or a row really did change and the reprint is the news.
+    print("\n  NOTE  docs/EVENTS.md no longer matches the generator. Reprint\n"
+          "        it -- do not edit it -- with:\n"
           "        %s" % REGENERATE)
 print("""
 MUTATIONS THIS FILE HAS BEEN RUN AGAINST -- each one was applied, this check
@@ -773,6 +1143,30 @@ was run, the named assertions went red, and the source was put back:
         -> FAILED 2: "`ask` measures as NOT running", and the same live-vs-
            runtime agreement, which reported `['ask']`. A promise printed as a
            `yes` is what this column exists to make impossible
+
+AND THREE AGAINST THIS FILE ITSELF, because a detector is code too and these
+two rows shipped unable to report a `no`:
+
+  * `UI_DIR` widened back to `"editor"` -- the picker row's old scan
+        -> FAILED 3: "every module the picker row names lives under
+           editor/ui/", which reported `['editor/core/genre.py',
+           'editor/core/verbs.py']`; "...and the SAME picker under
+           editor/core/ is NOT"; and "row 3 goes no in a world whose only
+           op-reading module is core". Note the first of those was written
+           as `UI_DIR + "/"` and stayed GREEN through this mutation, being
+           a tautology in terms of the thing being mutated. It is the
+           literal now, and that is why
+  * `packs_granting` taking its names from `raw.get(key)` -- the old DATA
+    assertion, reading the JSON instead of the loaded pack
+        -> FAILED 2: "row 2 goes no when the PARSER is bypassed and the
+           JSON left whole", which reported `({'fixture': ('core',)},
+           False)`, and "...including against the packs this repository
+           actually ships". This is the defect exactly: the parser gone and
+           the row still green
+  * the `granted_registry` gate in `packs_granting` removed
+        -> FAILED 1: "...and row 2 with it, because the grant then reaches
+           no op at all" -- a pack granting a name the live table cannot
+           serve was being counted as a reached wire
 
 TWO THINGS THIS FILE'S OWN SHAPE ALREADY PROVES, so they were not run as
 source edits: a ninth op with no probe is planted live in section 3 and

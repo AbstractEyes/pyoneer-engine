@@ -3,7 +3,7 @@
 
 # `main.py` — tier 2 #TAG:main.py
 
-`main` · 953 lines · tier 1: [`../MAP.md`](../MAP.md)
+`main` · 971 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -11,79 +11,78 @@
 
 ## Module constants
 
-- `main.py:57` `MAP_NAME` #TAG:MAP_NAME
-- `main.py:66` `INTERACT_TOKEN` #TAG:INTERACT_TOKEN
-- `main.py:75` `RELAY_TOKEN` #TAG:RELAY_TOKEN
-- `main.py:90` `SCENE_VARS` #TAG:SCENE_VARS
-- `main.py:115` `DIALOGUE_BOUNDS` #TAG:DIALOGUE_BOUNDS
-- `main.py:118` `DIALOGUE_LAYER` #TAG:DIALOGUE_LAYER
+- `main.py:56` `MAP_NAME` #TAG:MAP_NAME
+- `main.py:65` `INTERACT_TOKEN` #TAG:INTERACT_TOKEN
+- `main.py:74` `RELAY_TOKEN` #TAG:RELAY_TOKEN
+- `main.py:89` `DIALOGUE_BOUNDS` #TAG:DIALOGUE_BOUNDS
+- `main.py:92` `DIALOGUE_LAYER` #TAG:DIALOGUE_LAYER
 
 ## Functions
 
-- `main.py:122` `feet_anchor(animation_config: DataAnimationCategory) -> tuple[float, float]` #TAG:feet_anchor
+- `main.py:96` `feet_anchor(animation_config: DataAnimationCategory) -> tuple[float, float]` #TAG:feet_anchor
   - Where the collision point sits inside a body drawn with this sheet.
 
 ## Classes
 
 ### `class ScriptBox(GameWindow)` #TAG:ScriptBox
 
-`main.py:160`–`227`
+`main.py:134`–`201`
 
 > A `GameWindow` holding one line of dialogue. That is the whole widget.
 
-- `main.py:178` `__init__(self, *args, **kwargs)` #TAG:ScriptBox.__init__
-- `main.py:187` `build_content(self)` #TAG:ScriptBox.build_content
+- `main.py:152` `__init__(self, *args, **kwargs)` #TAG:ScriptBox.__init__
+- `main.py:161` `build_content(self)` #TAG:ScriptBox.build_content
   - Build the line of text. Called by `GameWindow` once chrome exists.
-- `main.py:206` `@property line(self) -> str` #TAG:ScriptBox.line
+- `main.py:180` `@property line(self) -> str` #TAG:ScriptBox.line
   - The sentence currently shown. Assigning repaints it.
-- `main.py:211` `@line.setter line(self, value: str) -> None` #TAG:ScriptBox.line.setter
-- `main.py:219` `@property speaker(self) -> str` #TAG:ScriptBox.speaker
+- `main.py:185` `@line.setter line(self, value: str) -> None` #TAG:ScriptBox.line.setter
+- `main.py:193` `@property speaker(self) -> str` #TAG:ScriptBox.speaker
   - Who is talking, shown in the header. Empty is narration.
-- `main.py:224` `@speaker.setter speaker(self, value: str) -> None` #TAG:ScriptBox.speaker.setter
+- `main.py:198` `@speaker.setter speaker(self, value: str) -> None` #TAG:ScriptBox.speaker.setter
 
 ### `class ScriptDialogue` #TAG:ScriptDialogue
 
-`main.py:230`–`295`
+`main.py:204`–`269`
 
 > The `say` host: two duck-typed methods, and a box built on FIRST USE.
 
-- `main.py:264` `__init__(self, game: 'MainGame')` #TAG:ScriptDialogue.__init__
-- `main.py:269` `require_box(self) -> ScriptBox` #TAG:ScriptDialogue.require_box
+- `main.py:238` `__init__(self, game: 'MainGame')` #TAG:ScriptDialogue.__init__
+- `main.py:243` `require_box(self) -> ScriptBox` #TAG:ScriptDialogue.require_box
   - The box, building and binding it the first time one is asked for.
-- `main.py:276` `say_open(self, who: str, text: str) -> None` #TAG:ScriptDialogue.say_open
+- `main.py:250` `say_open(self, who: str, text: str) -> None` #TAG:ScriptDialogue.say_open
   - Show one line. Called on the frame a `say` node is entered.
-- `main.py:283` `say_close(self) -> None` #TAG:ScriptDialogue.say_close
+- `main.py:257` `say_close(self) -> None` #TAG:ScriptDialogue.say_close
   - Hide the line. Called on the frame the `say` completes.
 
 ### `class MainGame` #TAG:MainGame
 
-`main.py:299`–`949`
+`main.py:273`–`967`
 
-- `main.py:300` `__init__(self, autostart: bool=True)` #TAG:MainGame.__init__
-- `main.py:388` `prepare(self)` #TAG:MainGame.prepare
-- `main.py:393` `build(self)` #TAG:MainGame.build
-- `main.py:396` `prepare_test_scene(self)` #TAG:MainGame.prepare_test_scene
-- `main.py:459` `warn_undriven_player(self) -> None` #TAG:MainGame.warn_undriven_player
+- `main.py:274` `__init__(self, autostart: bool=True)` #TAG:MainGame.__init__
+- `main.py:362` `prepare(self)` #TAG:MainGame.prepare
+- `main.py:367` `build(self)` #TAG:MainGame.build
+- `main.py:370` `prepare_test_scene(self)` #TAG:MainGame.prepare_test_scene
+- `main.py:446` `warn_undriven_player(self) -> None` #TAG:MainGame.warn_undriven_player
   - Say so when the body this game adopted as the player cannot move.
-- `main.py:513` `spawn_arguments(self) -> dict[str, dict]` #TAG:MainGame.spawn_arguments
+- `main.py:500` `spawn_arguments(self) -> dict[str, dict]` #TAG:MainGame.spawn_arguments
   - Constructor arguments for the entity types a map may place.
-- `main.py:550` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:MainGame.load_map
-- `main.py:557` `load_test_objects(self)` #TAG:MainGame.load_test_objects
+- `main.py:537` `load_map(self) -> tuple[GameCamera, GameMap]` #TAG:MainGame.load_map
+- `main.py:544` `load_test_objects(self)` #TAG:MainGame.load_test_objects
   - Configure what the MAP spawned, and build nothing. #TAG:no_entity_is_built_here
-- `main.py:656` `load_config(self)` #TAG:MainGame.load_config
-- `main.py:667` `read_object_scripts(self) -> list[tuple]` #TAG:MainGame.read_object_scripts
+- `main.py:643` `load_config(self)` #TAG:MainGame.load_config
+- `main.py:654` `read_object_scripts(self) -> list[tuple]` #TAG:MainGame.read_object_scripts
   - (entity, script id) for every spawned body naming a `pyoneer_script`.
-- `main.py:740` `script_for(self, entity) -> str | None` #TAG:MainGame.script_for
+- `main.py:734` `script_for(self, entity) -> str | None` #TAG:MainGame.script_for
   - Which script `entity` names, or None. Searched by IDENTITY.
-- `main.py:752` `run_object_script(self, entity, fired) -> None` #TAG:MainGame.run_object_script
+- `main.py:746` `run_object_script(self, entity, fired) -> None` #TAG:MainGame.run_object_script
   - Start the fired body's event script -- or advance the one running.
-- `main.py:829` `load_renderer(self)` #TAG:MainGame.load_renderer
-- `main.py:872` `quit(self)` #TAG:MainGame.quit
-- `main.py:876` `begin(self, max_frames: int | None=None)` #TAG:MainGame.begin
+- `main.py:847` `load_renderer(self)` #TAG:MainGame.load_renderer
+- `main.py:890` `quit(self)` #TAG:MainGame.quit
+- `main.py:894` `begin(self, max_frames: int | None=None)` #TAG:MainGame.begin
   - Run the main loop.
-- `main.py:893` `tick(self) -> float` #TAG:MainGame.tick
+- `main.py:911` `tick(self) -> float` #TAG:MainGame.tick
   - Advance exactly one frame. Returns the delta time used.
-- `main.py:917` `handle_global_input(self)` #TAG:MainGame.handle_global_input
+- `main.py:935` `handle_global_input(self)` #TAG:MainGame.handle_global_input
   - Application-level keys, handled before the scene sees anything.
-- `main.py:938` `toggle_window(self)` #TAG:MainGame.toggle_window
+- `main.py:956` `toggle_window(self)` #TAG:MainGame.toggle_window
   - F1: show or hide the test window.

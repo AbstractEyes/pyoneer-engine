@@ -47,11 +47,23 @@ one rendering, one diff.
 VARIABLES
 ---------
 A condition names a variable, and only a scene's `vars` block says whether
-that variable exists or what type it is. Scenes are not built yet, so
-`ScriptLibrary.variables` is `None` until something sets it, and the
-reader's own refusal -- which names the fix -- is what an author sees if
-they try to write a condition before there is a schema. It is one
-assignable slot, on purpose: the day scenes land, that is the whole wire.
+that variable exists or what type it is. `scripts_of` reads that block --
+`script_file.load_vars` over `data/project/scenes/*.json` -- and hands it to
+the library, which is the ONE wire: `script_editor`, `object_editor` twice,
+`genre.py`'s script check, `request.py` and `verbs.py` all reach a library
+through that single function, so the schema arrives at six surfaces from one
+line.
+
+It was `None` for a day, and the day was measured: the game ran
+`data/project/scripts/starter_greeting.json` and the editor could not OPEN
+it, because its one condition names `greeted` and the only schema in the
+tree was a dict in `main.py` that `editor/` may never import (law 2). The
+Events screen said *"No event script in this project yet"* about a file that
+had just run, and `New...` was inert behind the same refusal.
+
+`variables` stays an assignable slot -- a check points it at its own fixture,
+and the day a scene manager picks ONE scene instead of every scene, that is
+where it reaches.
 """
 from __future__ import annotations
 
@@ -91,6 +103,28 @@ if os.path.join(PROJECT_DIR, SCRIPTS_SUBDIR) != script_file.SCRIPTS_DIR:
         % (os.path.join(PROJECT_DIR, SCRIPTS_SUBDIR), script_file.SCRIPTS_DIR),
         editor=os.path.join(PROJECT_DIR, SCRIPTS_SUBDIR),
         engine=script_file.SCRIPTS_DIR)
+
+SCENES_SUBDIR: str = "scenes"
+"""The directory under `data/project/` that holds scene documents.
+
+Composed from the editor's own `PROJECT_DIR` and then CHECKED against the
+engine's `SCENES_DIR`, one line below, for the same reason `SCRIPTS_SUBDIR`
+is: the two halves are joined by the files, and an agreement nobody measures
+is an agreement that drifts.
+
+The editor does not WRITE this file yet -- nothing here authors a scene -- so
+this is a read-only address today. It is composed the same way anyway,
+because the day a scene screen lands it writes to whatever this says.
+"""
+
+if os.path.join(PROJECT_DIR, SCENES_SUBDIR) != script_file.SCENES_DIR:
+    raise PyoneerProjectError(
+        "the editor looks for scene documents in %r and the engine reads "
+        "them from %r; the two halves of one format have to name one "
+        "directory"
+        % (os.path.join(PROJECT_DIR, SCENES_SUBDIR), script_file.SCENES_DIR),
+        editor=os.path.join(PROJECT_DIR, SCENES_SUBDIR),
+        engine=script_file.SCENES_DIR)
 
 CONTROL_KINDS: tuple[str, ...] = ("if", "while")
 """The two control node shapes. FILE FORMAT strings, both of them.
@@ -617,7 +651,13 @@ class ScriptLibrary:
     def __init__(self, directory: str, *, variables=None, registry=None):
         self.directory = os.path.abspath(directory)
         self.variables = variables
-        """A scene's `vars` schema, or None. See this module's docstring."""
+        """A scene's `vars` schema, or None. See this module's docstring.
+
+        `scripts_of` never passes None -- it passes what the project's scene
+        documents declare, possibly nothing. None survives as a value a
+        CHECK can set, and as the state that produces the wiring-error
+        message for anyone constructing a library by hand.
+        """
         self.registry = registry
         self.documents: dict[str, ScriptDocument] = {}
         self.removed: set[str] = set()
@@ -727,6 +767,18 @@ _LIBRARIES: "WeakKeyDictionary[Any, ScriptLibrary]" = WeakKeyDictionary()
 def scripts_of(project) -> ScriptLibrary:
     """The `ScriptLibrary` for one open project, made on first use.
 
+    THE ONE PLACE THE VARIABLE SCHEMA IS READ. Six editor surfaces reach a
+    library and every one of them comes through here, so the scene's `vars`
+    arrive at all six from the two lines below -- and a seventh surface
+    written tomorrow gets them by asking for a library, which is the only
+    thing it can do anyway. Fixing this in the callers instead would have
+    been six homes for one fact.
+
+    A project with no `data/project/scenes/` reads as a schema declaring
+    nothing, which is not the same as no schema: a script naming a variable
+    is then refused for the reason it should be -- nothing declares it --
+    rather than for a wiring reason the author cannot act on.
+
     Held beside the project rather than on it, because `editor/core/project.py`
     is not this track's file to change. The day it is, this becomes
     `project.scripts`, `Project.save()` grows one line and `Project.dirty`
@@ -734,8 +786,10 @@ def scripts_of(project) -> ScriptLibrary:
     """
     library = _LIBRARIES.get(project)
     if library is None:
-        library = ScriptLibrary(os.path.join(project.project_dir,
-                                             SCRIPTS_SUBDIR))
+        library = ScriptLibrary(
+            os.path.join(project.project_dir, SCRIPTS_SUBDIR),
+            variables=script_file.load_vars(
+                os.path.join(project.project_dir, SCENES_SUBDIR)))
         _LIBRARIES[project] = library
     return library
 

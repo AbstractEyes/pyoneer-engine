@@ -5,8 +5,8 @@ puts back.
 
 `editor/core/event_script.py` is the AUTHORING half of
 `data/project/scripts/*.json` and `editor/core/verbs.py` is its vocabulary.
-Nothing in the shipped game reads a script yet, so none of this is proved by
-running anything. It is proved here or not at all:
+Everything below except section 8 is proved here or not at all -- an inverse
+that nothing exercises is not exercised by playing the game either:
 
   1. every verb's inverse restores the document BYTE FOR BYTE -- including
      the awkward ones: a node lifted out of a nested `elif` arm, a page
@@ -26,6 +26,10 @@ running anything. It is proved here or not at all:
   6. the canonical rendering: a key at its default is written as no key at
      all, which is what lets `set` be its own exact inverse without a second
      `unset` verb per level
+  7. the VARIABLE SCHEMA seam (section 8): `scripts_of` -- the one function
+     every editor surface reaches a library through -- hands the library
+     what `data/project/scenes/*.json` declares, so a script naming a
+     variable can be opened by the editor and not only run by the game
 
 EVERY ASSERTION IS A PAIR
 -------------------------
@@ -38,8 +42,16 @@ red here, and so would a guard that refused nothing.
 THE FIXTURES ARE THIS FILE'S OWN
 --------------------------------
 A temporary workspace, built here, thrown away at the end. `data/maps/`,
-`tools/baseline.json` and the author's own project are never read or
-written. Law 4.
+`tools/baseline.json` and the author's own project are never WRITTEN.
+Law 4.
+
+Section 8 is the one place that READS the real project, in two rows, and it
+is deliberate: every fixture in this tree passed while the seam it covers
+was broken, which is what kept the defect invisible for a whole pass. Those
+two rows name no script, no variable and no file -- they assert that the
+wiring hands over a schema and that the library opens whatever is on disk --
+so they survive a renamed script and die on a broken seam. Every tooth in
+that section is on a fixture built here.
 
 No Qt. pygame arrives through `scripts.game.flow.ops`, which is what holds
 the op registry the node verbs validate against.
@@ -53,6 +65,7 @@ import os
 import shutil
 import sys
 import tempfile
+import warnings
 
 from scripts.loaders import script_file as sf
 
@@ -735,6 +748,309 @@ expect("...and the positive control: a batch naming a container that does "
        "not exist is refused whole, leaving nothing behind",
        ("script node" in landed, text()), (True, before))
 
+
+# --------------------------------------------------------------------------
+section("8. the variable schema: a file, a reader, and ONE wire")
+# --------------------------------------------------------------------------
+# The defect this closes was measured by playing the shipped game: it RAN
+# `data/project/scripts/starter_greeting.json`, and the editor could not OPEN
+# it, because the script's one condition names `greeted` and the only schema
+# in the tree was a dict in `main.py` that `editor/` may never import
+# (law 2). `scripts_of` passed `variables=None`, the reader refused every
+# condition, and the Events screen reported "No event script in this project
+# yet" about a file that had just run. Two complete layers that could not see
+# each other, because the file that joins them belonged to nobody.
+#
+# WHY THE FIRST ROW READS THE REAL PROJECT AND THE REST DO NOT
+# ------------------------------------------------------------
+# Every fixture in this tree passed while the seam was broken -- that is what
+# made the defect invisible for a pass. So one row asks the question no
+# fixture can: does `scripts_of` open what the engine reads, HERE. It asserts
+# what the CODE does -- the wiring hands the library a schema, and the
+# library opens every document on disk -- and names no script, no variable
+# and no file, so it survives a renamed script and dies on a broken seam
+# (law 4). Every TOOTH below it is on a fixture built by this file.
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+made: list[str] = []
+
+
+def scene_doc(scene_id: str, variables: dict) -> dict:
+    return {"format": sf.SCENE_FORMAT, "version": sf.SCENE_VERSION,
+            "id": scene_id, "title": scene_id, "vars": variables}
+
+
+def script_doc(script_id: str, body=(), when=()) -> dict:
+    return {"format": sf.FORMAT, "version": sf.VERSION, "id": script_id,
+            "loadouts": ["core"],
+            "pages": [{"id": "pg", "trigger": "use", "when": list(when),
+                       "body": list(body)}]}
+
+
+def project_at(*, scenes=None, scripts=None) -> str:
+    """A throwaway project. `scenes=None` writes no `scenes/` AT ALL.
+
+    Keyed by FILENAME stem, and a document carries its own `id`, so the two
+    can be made to disagree on purpose.
+    """
+    root = tempfile.mkdtemp(prefix="pyoneer_schema_")
+    made.append(root)
+    os.makedirs(os.path.join(root, "config"))
+    os.makedirs(os.path.join(root, "data", "project"))
+    with open(os.path.join(root, "config", "maps.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"data": []}, handle)
+    with open(os.path.join(root, "data", "project", "project.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"genre": "topdown_rpg"}, handle)
+    for subdir, documents in (("scenes", scenes), ("scripts", scripts)):
+        if documents is None:
+            continue
+        target = os.path.join(root, "data", "project", subdir)
+        os.makedirs(target, exist_ok=True)
+        for stem, document in documents.items():
+            with open(os.path.join(target, "%s.json" % stem), "w",
+                      encoding="utf-8", newline="\n") as handle:
+                handle.write(json.dumps(document, indent=2, sort_keys=True)
+                             + "\n")
+    return root
+
+
+def opened(root: str, **kw):
+    """`scripts_of` on a project -> (library, "") or (None, the refusal)."""
+    try:
+        return event_script.scripts_of(Session.open(root, **kw).project), ""
+    except Exception as exc:                                    # noqa: BLE001
+        return None, str(exc)
+
+
+def declared(lib):
+    """Every name a library's schema declares, or None when it has no schema.
+
+    Never an attribute walk straight inside an `expect` tuple: a mutation
+    that puts None back in that slot must produce a red ROW, not an
+    AttributeError that stops the rest of the section from running.
+    """
+    schema = getattr(lib, "variables", None)
+    return sorted(schema.names()) if isinstance(schema, sf.VarSchema) else None
+
+
+# -- the seam itself, on the real repository -------------------------------
+
+real_dir = os.path.join(REPO, sf.SCRIPTS_DIR)
+on_disk = sorted(os.path.splitext(name)[0]
+                 for name in (sorted(os.listdir(real_dir))
+                              if os.path.isdir(real_dir) else [])
+                 if name.endswith(".json"))
+real, real_refusal = opened(REPO)
+expect("the editor opens every script the engine reads, in THIS project",
+       (real_refusal, sorted(real.names()) if real else None),
+       ("", on_disk))
+expect("...because scripts_of handed the library a schema and not None",
+       isinstance(getattr(real, "variables", None), sf.VarSchema), True)
+
+# -- the wire is at the entry point, not at six surfaces -------------------
+
+WITH_SCENE = project_at(
+    scenes={"overworld": scene_doc("overworld", {
+        "coins": {"type": "int", "default": 0, "doc": "Spendable."}})},
+    scripts={"toll": script_doc("toll", when=[{"var": "coins",
+                                               "at_least": 10}])})
+lib, refused = opened(WITH_SCENE, genre_id="topdown_rpg")
+expect("a scene's `vars` reaches the library through scripts_of alone",
+       (refused, declared(lib)),
+       ("", ["scene.coins"]))
+expect("...so a script naming a declared variable opens",
+       sorted(lib.names()) if lib else None, ["toll"])
+
+# -- an undeclared variable: the refusal, and its ADDRESS -------------------
+
+WRONG_NAME = project_at(
+    scenes={"overworld": scene_doc("overworld", {
+        "gate_open": {"type": "bool", "default": False, "doc": "The gate."}})},
+    scripts={"toll": script_doc("toll", when=[{"var": "coins", "is": 1}])})
+lib, refused = opened(WRONG_NAME, genre_id="topdown_rpg")
+expect("a script naming an undeclared variable is REFUSED", lib is None, True)
+expect("...naming the script, the variable and the file that must declare it",
+       ("toll.json" in refused, "scene.coins" in refused,
+        "overworld.json" in refused), (True, True, True))
+expect("...and what is declared is offered, so a typo reads as one",
+       "scene.gate_open" in refused, True)
+
+# The SAME schema has to reach the op route. `ops._declared` is a sibling of
+# `_read_condition` -- a different function, in a module `script_file` cannot
+# import -- and a fix that reached only conditions would leave `set` and
+# `ask` refusing everything on a project that authored a scene correctly.
+OP_ROUTE = project_at(
+    scenes={"overworld": scene_doc("overworld", {
+        "coins": {"type": "int", "default": 0, "doc": "Spendable."}})},
+    scripts={"toll": script_doc("toll", body=[
+        {"id": "n1", "do": "set", "var": "coins", "to": 5}])})
+lib, refused = opened(OP_ROUTE, genre_id="topdown_rpg")
+expect("the schema reaches the OP route too, not only conditions",
+       (refused, sorted(lib.names()) if lib else None), ("", ["toll"]))
+
+BAD_OP_VAR = project_at(
+    scenes={"overworld": scene_doc("overworld", {
+        "coins": {"type": "int", "default": 0, "doc": "Spendable."}})},
+    scripts={"toll": script_doc("toll", body=[
+        {"id": "n1", "do": "set", "var": "purse", "to": 5}])})
+lib, refused = opened(BAD_OP_VAR, genre_id="topdown_rpg")
+expect("...and refuses an undeclared one there, with the same address",
+       (lib is None, "scene.purse" in refused, "overworld.json" in refused),
+       (True, True, True))
+
+# -- a declared variable at the wrong TYPE ---------------------------------
+
+WRONG_TYPE = project_at(
+    scenes={"overworld": scene_doc("overworld", {
+        "coins": {"type": "int", "default": 0, "doc": "Spendable."}})},
+    scripts={"toll": script_doc("toll", body=[
+        {"id": "n1", "do": "set", "var": "coins", "to": "lots"}])})
+lib, refused = opened(WRONG_TYPE, genre_id="topdown_rpg")
+expect("a declared variable written at the wrong type is refused",
+       (lib is None, "coins" in refused), (True, True))
+
+COMPARE_TYPE = project_at(
+    scenes={"overworld": scene_doc("overworld", {
+        "greeted": {"type": "bool", "default": False, "doc": "Said hello."}})},
+    scripts={"toll": script_doc("toll", when=[{"var": "greeted",
+                                               "at_least": 2}])})
+lib, refused = opened(COMPARE_TYPE, genre_id="topdown_rpg")
+expect("...and an arithmetic comparator on a bool is refused naming the type",
+       (lib is None, "at_least" in refused and "bool" in refused),
+       (True, True))
+
+BAD_DEFAULT = project_at(
+    scenes={"overworld": scene_doc("overworld", {
+        "coins": {"type": "int", "default": "0", "doc": "Spendable."}})},
+    scripts={"toll": script_doc("toll")})
+lib, refused = opened(BAD_DEFAULT, genre_id="topdown_rpg")
+expect("a DECLARATION whose default is the wrong type is refused at load",
+       (lib is None, "coins" in refused), (True, True))
+
+BAD_TYPE_NAME = project_at(
+    scenes={"overworld": scene_doc("overworld", {
+        "coins": {"type": "colour", "default": 0, "doc": "Spendable."}})},
+    scripts={"toll": script_doc("toll")})
+lib, refused = opened(BAD_TYPE_NAME, genre_id="topdown_rpg")
+expect("...and so is a type no `BehaviorParam` knows, naming the known ones",
+       (lib is None, "colour" in refused), (True, True))
+
+# -- a missing schema file is SILENT ---------------------------------------
+# The neighbours decide this one: a missing `tables/` is `table_file.EMPTY`
+# and a missing `scripts/` is an empty dict. Consistency with them is worth
+# more than any argument for strictness -- a project that declares no
+# variables and names none is not broken.
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    absent = sf.load_vars(os.path.join(REPO, "no", "such", "scenes"))
+expect("a missing scenes directory reads as a schema declaring nothing",
+       (isinstance(absent, sf.VarSchema), len(absent), absent.names()),
+       (True, 0, []))
+expect("...silently: nothing is warned, nothing is raised",
+       [str(w.message) for w in caught], [])
+
+NO_SCENES = project_at(scripts={"quiet": script_doc("quiet", body=[
+    {"id": "n1", "do": "say", "text": "No variable anywhere."}])})
+lib, refused = opened(NO_SCENES, genre_id="topdown_rpg")
+expect("...and a project with no scenes/ at all still opens its scripts",
+       (refused, sorted(lib.names()) if lib else None), ("", ["quiet"]))
+schema = getattr(lib, "variables", None)
+expect("...with a real empty schema on the library, not None",
+       # Measured while mutation-testing this section: reading `len()` of a
+       # None straight in the tuple turned a red ROW into a traceback, and
+       # every row after it stopped running. A check that dies is a check
+       # that stops reporting.
+       (isinstance(schema, sf.VarSchema),
+        len(schema) if isinstance(schema, sf.VarSchema) else None), (True, 0))
+
+SILENT_BUT_NAMED = project_at(scripts={"toll": script_doc(
+    "toll", when=[{"var": "coins", "is": 1}])})
+lib, refused = opened(SILENT_BUT_NAMED, genre_id="topdown_rpg")
+expect("...but silence is not permission: an undeclared variable still "
+       "refuses",
+       (lib is None, "scene.coins" in refused), (True, True))
+expect("...and the refusal says where a declaration would have been read",
+       # `PyoneerError.__str__` reprs its context, which DOUBLES every
+       # backslash on Windows, so a path is matched against the unescaped
+       # text rather than against a substring that only holds on posix.
+       os.path.join("data", "project", "scenes")
+       in refused.replace("\\\\", "\\"), True)
+
+# -- the scene document's own vocabulary -----------------------------------
+# Law 7 at the top of the file: a key with no reader is refused, not kept.
+# `docs/PLAN_SCENES.md` 3.2 mints eight more keys and NONE of them is read
+# here, so accepting one would be `transform=` again -- an authored field
+# that looks like it works until somebody measures it.
+
+FUTURE_KEY = project_at(
+    scenes={"overworld": dict(scene_doc("overworld", {}),
+                              maps=[{"map": "starter", "entry": "start"}])},
+    scripts={"toll": script_doc("toll")})
+lib, refused = opened(FUTURE_KEY, genre_id="topdown_rpg")
+expect("a scene key nothing reads yet is refused, naming what is read",
+       (lib is None, "maps" in refused, "vars" in refused),
+       (True, True, True))
+
+MISNAMED = project_at(
+    scenes={"overworld": scene_doc("somewhere_else", {})},
+    scripts={"toll": script_doc("toll")})
+lib, refused = opened(MISNAMED, genre_id="topdown_rpg")
+expect("a scene whose id disagrees with its filename is refused, both named",
+       (lib is None, "somewhere_else" in refused,
+        "overworld.json" in refused), (True, True, True))
+
+NEWER = project_at(
+    scenes={"overworld": dict(scene_doc("overworld", {}), version=2)},
+    scripts={"toll": script_doc("toll")})
+lib, refused = opened(NEWER, genre_id="topdown_rpg")
+expect("a NEWER scene document is refused rather than read optimistically",
+       (lib is None, "version 2" in refused), (True, True))
+
+NOT_A_SCENE = project_at(
+    scenes={"overworld": dict(scene_doc("overworld", {}),
+                              format="pyoneer.script")},
+    scripts={"toll": script_doc("toll")})
+lib, refused = opened(NOT_A_SCENE, genre_id="topdown_rpg")
+expect("...and so is a file that is not a scene document at all",
+       (lib is None, sf.SCENE_FORMAT in refused), (True, True))
+
+CLEAN = project_at(
+    scenes={"overworld": scene_doc("overworld", {})},
+    scripts={"toll": script_doc("toll")})
+lib, refused = opened(CLEAN, genre_id="topdown_rpg")
+expect("...and the positive control: the same document with nothing wrong "
+       "opens", (refused, sorted(lib.names()) if lib else None),
+       ("", ["toll"]))
+
+# -- two scenes, one store -------------------------------------------------
+
+AGREE = project_at(
+    scenes={"one": scene_doc("one", {
+                "coins": {"type": "int", "default": 0, "doc": "Spendable."}}),
+            "two": scene_doc("two", {
+                "coins": {"type": "int", "default": 0, "doc": "Spendable."}})},
+    scripts={"toll": script_doc("toll", when=[{"var": "coins", "is": 0}])})
+lib, refused = opened(AGREE, genre_id="topdown_rpg")
+expect("two scenes declaring one variable identically merge to one",
+       (refused, declared(lib)),
+       ("", ["scene.coins"]))
+
+DISAGREE = project_at(
+    scenes={"one": scene_doc("one", {
+                "coins": {"type": "int", "default": 0, "doc": "Spendable."}}),
+            "two": scene_doc("two", {
+                "coins": {"type": "str", "default": "", "doc": "Spendable."}})},
+    scripts={"toll": script_doc("toll")})
+lib, refused = opened(DISAGREE, genre_id="topdown_rpg")
+expect("...and two that CONTRADICT are refused, naming both files",
+       (lib is None, "one.json" in refused, "two.json" in refused),
+       (True, True, True))
+
+for root in made:
+    shutil.rmtree(root, ignore_errors=True)
 
 shutil.rmtree(workspace, ignore_errors=True)
 
