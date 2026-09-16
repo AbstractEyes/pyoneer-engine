@@ -169,8 +169,9 @@ NO_ANCHOR: str = ""
 Not the back. A body's first node has to be expressible or removing it
 cannot be inverted, and appending is expressible either way -- it names the
 last sibling. This is the whole reason the anchor is a sibling id and a
-side rather than a position (`docs/PLAN_SCENES.md` 3.4): an ordered batch
-of edits shifts every index it touches, and it shifts them silently.
+side rather than a position (`docs/history/PLAN_SCENES_2026-09-03.md` 3.4):
+an ordered batch of edits shifts every index it touches, and it shifts them
+silently.
 """
 
 for _key in PAGE_DEFAULTS:
@@ -641,10 +642,10 @@ class ScriptLibrary:
     """Every event script under one project, and the one place they save.
 
     Creation and deletion happen HERE, in memory, and reach the disk only at
-    `save()`. That is `docs/PLAN_SCENES.md` 2.5's rule and it is the fix for
-    a measured fault in the incumbent: `Project.drop_table` calls
-    `os.remove` inside the command, so a drop that is rolled back has
-    already deleted the file. A file's existence is the one thing a command
+    `save()`. That is `docs/history/PLAN_SCENES_2026-09-03.md` 2.5's rule
+    and it is the fix for a measured fault in the incumbent:
+    `Project.drop_table` calls `os.remove` inside the command, so a drop that
+    is rolled back has already deleted the file. A file's existence is the one thing a command
     cannot invert.
     """
 

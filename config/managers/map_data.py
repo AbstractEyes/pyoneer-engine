@@ -35,7 +35,7 @@ import pytmx
 import pytmx.util_pygame
 
 from config.managers.core_data import CoreAsset
-from scripts.core.art import resolve_art
+from scripts.core.art import MISSING_ART_HINT, resolve_art
 from scripts.core.errors import (PyoneerAssetMissingError, PyoneerConfigError,
                                  warn_content)
 from scripts.core.log import trace_assets
@@ -397,7 +397,7 @@ class BlitmapRuntime:
                     map=os.path.basename(self.filename),
                     tileset=linked.name,
                     declared_in=linked.path,
-                    hint="the repository ships without art; see docs/ASSETS.md",
+                    hint=MISSING_ART_HINT,
                 )
             self._sheets[linked.name] = pygame.image.load(path)
         trace_assets("blitmap %s loaded %d tileset image(s)",
@@ -580,16 +580,14 @@ class AssetMapManager(CoreAsset):
             # pytmx resolves <tileset source=...> relative to the .tmx and
             # raises a bare FileNotFoundError from three frames inside a
             # third-party package, on a mixed-separator path with an
-            # unresolved '..' segment. On a fresh clone -- which ships the
-            # map but not the art -- that is the FIRST thing a newcomer
-            # sees, and it reads as "the checkout is broken" rather than
-            # "this repo ships without art on purpose".
+            # unresolved '..' segment, which reads as "the checkout is
+            # broken" rather than "this map names an image nobody supplied".
             raise PyoneerAssetMissingError(
                 "tileset image", AssetMapManager.__missing_tileset_name(exc),
                 available=(),
                 map=map_data.name,
                 tmx=map_data.file,
-                hint="the repository ships without art; see docs/ASSETS.md",
+                hint=MISSING_ART_HINT,
             ) from exc
 
     @staticmethod

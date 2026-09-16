@@ -1,19 +1,17 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; error strings below were produced by running the code at 5dd012d on 2026-08-16, and every source address was converted from file:line to #TAG: at d8c303f -->
-<!-- pyoneer-stamp: the collision section and its two rows in the raises/silent table were added on 2026-08-29 against the working tree, after per-tile masks and the folded companion changed which level answers first -->
-<!-- pyoneer-stamp: on 2026-09-04, at the finalize of the spawn-funnel + boot-path pass, the `no player_input token` row SPLIT and step 1 of "Nothing happens when I press a key" gained the boot warning: `MainGame` now emits a PyoneerContentWarning naming the <object> it adopted as the player when that body's list lacks the token, so that symptom is no longer wholly silent for the one body it is worst on. Re-measured by booting a fixture both ways -->
+<!-- pyoneer-stamp: hand-written; re-measured 2026-09-16 by the commands printed beside the claims -- every quoted error string and warning below was produced by executing the code that day, and tools/check_script_runtime.py and tools/check_collision_fold.py passed. -->
 
 # Diagnose — "why doesn't my entity do the thing"
 
 **This file is hand-written**, because a symptom is not derivable from a
-registry. Every error string quoted below was produced by executing the code,
-not copied from a docstring. Read [`../CLAUDE.md`](../CLAUDE.md) first for the
-vocabulary; read [`BEHAVIORS.md`](BEHAVIORS.md)'s measured integration table
-for what is actually wired.
+registry. Read [`../CLAUDE.md`](../CLAUDE.md) first for the vocabulary, and
+[`BEHAVIORS.md`](BEHAVIORS.md)'s measured integration table for what is
+actually wired.
 
-The single most useful fact: **failures here split into two opposite families.**
-Some things raise loudly at load or at attach; others move zero pixels and say
-nothing. Knowing which family your symptom is in halves the search.
+The single most useful fact: **failures here split into two opposite
+families.** Some raise loudly at load, at attach or on the frame they happen;
+others move zero pixels and say nothing. Knowing which family your symptom is
+in halves the search.
 
 | | raises | silent |
 |---|---|---|
@@ -21,10 +19,16 @@ nothing. Knowing which family your symptom is in halves the search.
 | unknown tmx object `type` | ✔ at map load | |
 | behavior polls an unbound verb | ✔ at attach | |
 | unknown animation sequence | ✔ at `start()` | |
+| `pyoneer_script` naming no document | ✔ at boot | |
+| a script names a sound neither audio root holds | ✔ when the node runs | |
+| `ask` in a running script | ✔ when the node runs | |
 | unknown movement **direction** | | ✔ moves zero |
 | unmapped tile layer name | | ✔ never draws |
 | no `player_input` token, on the body the game ADOPTED | warns at boot | ✔ never moves |
 | no `player_input` token, on any other body | | ✔ never moves |
+| a scripted map body missing `interact_action` or `action_relay` | warns at boot | ✔ press starts nothing |
+| no sound card | warns once | ✔ plays nothing, game runs |
+| another flow already running in the slot | | ✔ press starts nothing |
 | collision field says BLOCK_ALL | | ✔ never moves |
 | a stamped tile carries its own mask | | ✔ blocks with no cell painted |
 | masks painted on a parallaxed layer | warns at load | ✔ never reach the field |
@@ -35,34 +39,35 @@ nothing. Knowing which family your symptom is in halves the search.
 
 **`PyoneerAssetMissingError: entity behavior 'X' not found; available: …`**
 Your `pyoneer_behaviors` list names a token the registry does not hold. The
-message prints the whole legal vocabulary. `resolve()` raises rather than
-skipping the token deliberately — a skipped token silently disarms the object
-*and looks like the behavior working* (CLAUDE.md law 8).
+message prints the whole legal vocabulary. It raises rather than skipping, by
+law 8.
 
 **`PyoneerAssetMissingError: spawn type 'X' not found; available: GamePlayer`**
-An object on an object layer carries a `Type` that is not in `SPAWN_REGISTRY`.
-One type is spawnable today. See [`PLACEABLE.md`](PLACEABLE.md) — and note that
-`scripts/core/depth.py`'s `OBJECT_CONVERTER` names five more, four of which
-exist nowhere in the tree, so reading that table instead will send you here.
+An object carries a `type` that is not in `SPAWN_REGISTRY`. See
+[`PLACEABLE.md`](PLACEABLE.md), not `scripts/core/depth.py`'s
+`OBJECT_CONVERTER`, which names four types that exist nowhere.
 
 **`PyoneerConfigError: behaviors 'topdown_move' and 'platformer_move' declare
-that they conflict, and pyoneer_behaviors lists both`**
-Exactly what it says. One body model per entity.
+that they conflict, and pyoneer_behaviors lists both`** — one body model per
+entity.
 
 **`PyoneerConfigError: behavior token 'X' appears twice in pyoneer_behaviors`**
-The list is order-insensitive — run order comes from each spec's `order`, not
-from your list — so a repeat is always a mistake, never an emphasis.
+— run order comes from each spec's `order`, not from your list, so a repeat is
+always a mistake.
 
-**`PyoneerConfigError` naming a verb at attach time.** A behavior polls a verb
-that `config/inputs.json` does not bind. It raises at **attach**, on purpose:
-the alternative is `KeyError` from an unguarded dict index *inside*
-`core_frame_update`, which kills the frame for every sibling in that scene
-bucket. Add the binding in the same change as the behavior (CLAUDE.md law 10).
+**`PyoneerConfigError: behavior 'interact_action' on GamePlayer polls the verb
+'action', which config/inputs.json does not bind.`** It raises at **attach**
+on purpose; the alternative is a `KeyError` inside `core_frame_update` that
+kills the frame for every sibling (law 10). Add the binding in the same change.
+
+**`PyoneerAssetMissingError: event script 'X' not found; available: …`** — see
+[the action-key walk](#pressed-the-action-key-and-no-script-ran--no-sound)
+below.
 
 **`PyoneerAssetMissingError: tileset image … not found`** — the map names a
-sheet that is in NEITHER root. Art ships: `data/art/` is tracked and wins
-nothing, `data/graphics/` wins everything, and a path missing from both raises
-naming what was declared. If `data/art/` is empty, run
+sheet in NEITHER art root. `data/graphics/` wins whenever it holds the file,
+`data/art/` answers otherwise, and a path missing from both raises naming what
+was declared. If `data/art/` is empty, run
 `.venv/Scripts/python.exe -m tools.art`. See [`ASSETS.md`](ASSETS.md).
 
 ---
@@ -72,176 +77,204 @@ naming what was declared. If `data/art/` is empty, run
 Walk this in order. It is the order the frame actually runs.
 
 1. **Is `player_input` in the list?** It is the entire marker for "a human
-   drives this". Without it nothing writes a `MoveIntent` and every downstream
-   behavior reads an empty one. A body with `topdown_move` and no
-   `player_input` is a correct, inert body.
-   **For the one body the game adopts as the player, the boot says so**
-   (`#TAG:MainGame.warn_undriven_player`) -- a `PyoneerContentWarning`
-   naming that `<object>`, its layer, the missing token and the property to
-   put it in. A warning and not a raise: an object placed with its list not
-   yet typed is a map halfway through being edited, and refusing to load it
-   would take the editor down with the author still inside. It is
-   deliberately narrow -- only the ADOPTED body -- so a patrol, a decoy or a
-   signpost stays silent, and it says nothing at all when the game adopted
-   nothing, or when a subclass built the player in Python instead of
-   authoring it. So silence here does not mean the token is on the body you
-   were looking at; it means it is on the body the camera followed.
+   drives this"; a body with `topdown_move` and no `player_input` is a
+   correct, inert body. For the one body the game adopts as the player the
+   boot warns (`#TAG:MainGame.warn_undriven_player`), naming the `<object>`
+   and the missing token. Every other body stays silent, so silence means the
+   token is on the body the camera followed, not necessarily on yours.
 2. **Is a key bound to the verb?** `config/inputs.json` is the whole binding
-   surface and nothing in `demos/` names a keycode. Rebinding there changes the
-   game and changes nothing else.
+   surface; rebinding there changes the game and nothing else.
 3. **Is an input manager attached?** `player_input` needs
-   `entity.action_manager`. A `None` manager is a legal configuration — the
-   entity simply produces no intent — which is exactly how a scripted body
-   coexists with a driven one.
+   `entity.action_manager`. A `None` manager is legal and produces no intent,
+   which is how a scripted body coexists with a driven one.
 4. **Is the body steerable?** The agency fields on the shared body state gate
-   the *producer*, not the world. See the next section, because this one has a
-   measured surprise in it.
-5. **Is a window eating the keys?** `begin_text_capture(owner)` makes
-   `pressed`, `released` **and** `held` return False for **every** verb. It is
-   all-or-nothing: there is no "movement off, confirm on". A cutscene that wants
-   the player to be able to press *continue* must clear the body's steerable
-   flag, **not** call `begin_text_capture` — reaching for text capture is the
-   obvious wrong move and it locks the player out of their own dialogue box.
+   the *producer*, not the world. `steerable` false stops walking;
+   `enabled_inputs` false also silences every action behavior.
+5. **Is a window eating the keys?**
+   `#TAG:InputActionManager.begin_text_capture` makes `pressed`, `released`
+   **and** `held` return False for **every** verb. A cutscene that wants a
+   *continue* press must clear `steerable`, never call text capture.
+
+---
+
+## "Pressed the action key and no script ran" / "no sound"
+
+The shipped game's action key runs an event script:
+`.venv/Scripts/python.exe main.py`, press `e`. The chain has five links, and
+`.venv/Scripts/python.exe tools/check_script_runtime.py` drives the real
+keyboard through all of them. Walk them in order.
+
+**1. The verb.** `grep -n '"action"' config/inputs.json` — shipped as
+`keyboard:e` and `gamepad:b`. Unbound **raises** at attach (string above).
+A press is also silently dropped when the body's `enabled_inputs` is false,
+when it has no `action_manager`, or while text capture is on.
+
+**2. The two tokens.** `interact_action` records the press and `action_relay`
+CALLS the scene's router with it (`#TAG:interact_action`,
+`#TAG:action_relay`). A map body naming a script without both **warns** at
+boot and the press starts nothing:
+
+> `PyoneerContentWarning: the map's <object id=1> on layer 'entity' names the
+> event script 'starter_greeting' in pyoneer_script, and its pyoneer_behaviors
+> list is missing 'action_relay' -- so nothing will ever start it.`
+
+A body built through `SceneManager.spawn` gets no such warning, by design.
+
+**3. The property and the document.** `pyoneer_script` on the tmx object is
+read by `#TAG:script_of`, the one reader both spawn routes call, against
+`data/project/scripts/*.json` as loaded by `#TAG:load_scripts` before the map
+bind.
+
+- empty value — names no script, **silent**, by design;
+- an id with no document — **raises** at boot:
+  `PyoneerAssetMissingError: event script 'starter_greting' not found;
+  available: starter_greeting` via
+  `asked_by="tmx object id=1 on layer 'entity' via pyoneer_script"`;
+- a malformed document — **raises** at boot naming the node, e.g.
+  `script op 'play_sond' not found; available: ask, call, hold, …`;
+- the object has no `type` — nothing spawns (`#TAG:untyped_object_spawns_nothing`),
+  so nothing is joined, **silent**.
+
+Check with `grep -rn pyoneer_script data/maps/` and
+`ls data/project/scripts/`.
+
+**4. The flow slot.** `#TAG:MainGame.run_object_script` builds a `ScriptRun`
+into `SceneManager.flow`. `SceneManager` holds ONE flow, and every outcome
+here is **silent**:
+
+- our own run still running — the press **advances** it rather than starting
+  another;
+- a different flow still running (a narrative kit's cutscene) — the press
+  reaches nothing, and the occupant keeps the slot;
+- a finished flow — not an occupant: `#TAG:SceneManager.post_update` clears it,
+  and the next press starts a fresh run over the same variable store;
+- no page whose `when` passes — `begin` returns False and nothing starts.
+
+**5. The ops.** `play_sound` and `play_music` go through
+`#TAG:scripts/core/audio.py` (the two roots are in [`ASSETS.md`](ASSETS.md)).
+
+- file in neither root — **raises** the frame the node runs, with or without
+  a card: `PyoneerAssetMissingError: sound 'sfx/chme.wav' not found;
+  available: music/pleasant_moments.ogg, sfx/chime.wav` with
+  `hint='looked at data/sound/sfx/chme.wav then data/audio/sfx/chme.wav; …'`;
+- no sound card — **warns once**, then every play returns False and the
+  script carries on: `PyoneerWarning: audio is unavailable and the game will
+  run silently: pygame.mixer.init(…) said …`. Reproduce with
+  `SDL_AUDIODRIVER=nosuchdriver`;
+- manager never prepared (a game class that skipped `main.py`'s
+  `load_config`) — **raises**: `AudioManager was asked to play the sound
+  'sfx/chime.wav' and nothing has prepared it.`;
+- `ask` — **raises**: `` `ask` needs a host that reports a CHOICE, and this
+  engine has none ``. Its status is `needs-host` in
+  [`EVENTS.md`](EVENTS.md), which is where every op's measured status lives.
 
 ---
 
 ## "It moves, but not the way I asked"
 
-- **An unrecognised direction moves zero and says nothing.**
-  `GameEntity.move_direction` has four branches and no `else`, so a typo
-  produces a body that runs its animation and never translates. This is the
-  exact opposite of `GameAnimationHandler.start`, which **raises** for an
-  unknown sequence — one typo, two opposite failure modes, in the same frame.
-- **Worse: an unrecognised direction is also unclamped.**
-  `allowed_move` looks the direction up in `DIRECTION_BITS` and returns the
-  wanted vector untouched when the lookup misses
-  (`#TAG:GameEntity.allowed_move`). Measured on a field of
-  all-`BLOCK_ALL` cells: `allowed_move(Vector2(10,10), 'down_right')` returns
-  `[10, 10]` — straight through walls — while `('down')` clamps to `7.999`. It
-  is harmless only while `move_direction` is the sole caller, and it is the
-  reason the facing token must never be handed to the collision gate.
-- **Speed is ~16.7× off.** `event.data["delta"]` is milliseconds ÷ 60, not
-  seconds. A genre table's pixels-per-second figure used raw still *looks* like
-  it works, which is what makes it expensive.
-- **`transform=` was ignored.** `GameEntity.__init__` accepts a `transform`
-  keyword and hands it down to `GameEntitySimple.__init__`, which builds a
-  fresh one from `position`/`rotation`/`scale` and never looks at the one it
-  was given (`#TAG:GameEntitySimple.__init__`). Use `moveto()`.
+| symptom | cause | address |
+|---|---|---|
+| animates, never translates | unknown direction string: `move_direction` has no `else`, while animation `start()` raises for the same typo | `#TAG:GameEntity.move_direction` |
+| walks through walls | an unknown direction is also passed through `allowed_move` unclamped | `#TAG:GameEntity.allowed_move` |
+| speed ~16.7× off | `event.data["delta"]` is milliseconds ÷ 60, not seconds (law 9) | `#TAG:delta_is_ms_over_60` |
+| `transform=` ignored | discarded in the base constructor; use `moveto()` | `#TAG:GameEntitySimple.__init__` |
 
 ---
 
 ## "It falls forever" / "it will not land"
 
-A side-on body's `support` axis comes from the collision field, so all three of
-these produce the same symptom:
+A side-on body's support comes from the collision field, so all three of these
+look the same:
 
-1. **The map has no companion collision layer.** The bake produces `None`,
-   which means **ungated** — every step is allowed and nothing is ever ground.
-   The shipped demo map is ungated and correct; a body falling forever means an
-   *unpainted* map far more often than a missing wire.
+1. **The map declares no collision at all.** No companion layer and no tile
+   masks bake `None`, which means **ungated**: every step is allowed and
+   nothing is ever ground. The shipped `data/maps/starter.tmx` is NOT this
+   case: its `Floor` layer declares `pyoneer_passability="FloorCollision"`,
+   and that companion holds 340 cells of gid 2320, the `collision` tileset's
+   `firstgid` 2305 plus `BLOCK_ALL` (15). Count any map's with
+   `.venv/Scripts/python.exe -c "from collections import Counter; from scripts.loaders.map_document import MapDocument as M; print(Counter(g for g in M.load('data/maps/starter.tmx').tile_layer('FloorCollision').gids() if g))"`.
 2. **The mask says open where you painted.** Erasing writes gid 0, which in a
-   companion layer means `NO_DATA` — "nobody said anything here" — deliberately
-   **not** the same claim as "open". Check you painted the bit you meant.
-3. **You are outside the field.** `CollisionField.outside` defaults to
-   `BLOCK_ALL`, which stops a body walking out of the world — but a body that
-   *spawned* outside is frozen forever, reporting blocked in all four
-   directions. A body that cannot move in any direction at the map edge is this,
-   not gravity.
+   companion means `NO_DATA` — "nobody said anything here" — deliberately not
+   the same claim as "open".
+3. **The body is outside the field.** An anchor outside the map is **not
+   gated at all** (`#TAG:allowed_distance`): the border stops a body *leaving*
+   the field, never one outside it, so a body spawned below or beside the map
+   falls or walks forever.
 
 ---
 
 ## "I painted collision and nothing blocks" / "this wall blocks and I never painted it"
 
 Passability resolves in three levels and the first that is not `NO_DATA` wins,
-so both directions of surprise come from asking the wrong level.
+so both surprises come from asking the wrong level.
 [`TILESETS.md`](TILESETS.md) is how to author each one; this is how to find out
 which one answered.
 
 1. **The tile already had an opinion.** A tileset can carry a `.blitmask`
    naming a mask per tile (`#TAG:tileset_defaults`), so stamping the tile
-   authors the collision. A wall you never painted a cell for is this. It is
-   level one, and it is visible: the map display draws each placed tile's own
-   mask dimmed over the art, and the palette marks the tiles that carry one.
+   authors the collision. The map display draws each placed tile's own mask
+   dimmed over the art, and the palette marks the tiles that carry one.
 2. **A painted cell OVERRIDES that default rather than adding to it.**
-   `PASS_ALL` over a `BLOCK_ALL` tile is open, not the union — that is the
-   whole point of level two. If you want the tile's answer back, clear the cell
-   with the dotted no-opinion chip (`#TAG:BRUSH_DOMAIN`), which writes gid 0.
-   Painting the empty-looking `PASS_ALL` swatch instead asserts *open* and
-   stops the resolve there.
+   `PASS_ALL` over a `BLOCK_ALL` tile is open. To get the tile's answer back,
+   clear the cell with the dotted no-opinion chip (`#TAG:BRUSH_DOMAIN`), which
+   writes gid 0; the `PASS_ALL` swatch asserts *open* instead.
 3. **The layer you painted on never reaches the field.** A layer that moves
    under the camera is excluded by `#TAG:world_coordinate_fault`, so masks on a
-   parallax layer are authored, stored and dead. The hierarchy row carries a
-   warning badge and the engine warns at load; nothing else does.
-4. **There is no companion layer and no tile mask at all**, which bakes `None`
-   — *ungated*, not *open*. What that does to a side-on body is
-   ["It falls forever"](#it-falls-forever--it-will-not-land) above.
+   parallax layer are stored and dead. The hierarchy badge and a load-time
+   warning say so; nothing else does.
+4. **There is no companion and no tile mask at all**, which bakes `None` —
+   *ungated*, not *open*. See ["It falls forever"](#it-falls-forever--it-will-not-land).
 
-The companion layer has no row in the hierarchy, deliberately. It is not
-missing: select the **art** layer, and the badge after its depth is that
-layer's live mask count.
+The companion layer has no row in the hierarchy, deliberately: select the
+**art** layer, and the badge after its depth is its live mask count.
 
 ---
 
 ## "My layer does not draw" / "my tiles vanished"
 
-`resolve_layer_depth` returns `None` for a name it does not know, and an
-unmapped tile layer is silently not drawn. Measured: `resolve_layer_depth
-("Trees")` is `None`; `resolve_layer_depth("Paralax")` is `1`, because the
-author's map spells it with one L and `LAYER_NAME_ALIASES` carries the typo
-rather than rewriting the `.tmx` (`#TAG:LAYER_NAME_ALIASES`). That alias exists
-because 39 authored tiles were silently dropped for months. Legal layer names
-are generated into [`PLACEABLE.md`](PLACEABLE.md).
+`#TAG:resolve_layer_depth` returns `None` for a name it does not know, and an
+unmapped tile layer is silently not drawn: `resolve_layer_depth("Trees")` is
+`None`. `resolve_layer_depth("Paralax")` is `1`, because `#TAG:LAYER_NAME_ALIASES`
+carries the one-L spelling for someone else's map that may spell it that way —
+`data/maps/starter.tmx` does not (`grep -c Paralax data/maps/starter.tmx` is
+0), but both `editor/genres/*/genre.json` packs still declare a `Paralax`
+layer. Legal layer names are generated into [`PLACEABLE.md`](PLACEABLE.md).
 
 ---
 
 ## "The animation is wrong / it raises `idle_none`"
 
-- `GameAnimationHandler` starts `idle_down` **at construction**, before any
-  behavior attaches (`#TAG:GameAnimationHandler.__init__`). A sheet with
-  no `idle_down` row therefore raises inside the entity constructor, before any
-  composition can say what the body faces. This is the first wall a side-on-only
-  or portrait-only sheet hits.
-- `start()` raises `PyoneerAssetMissingError` for an unknown sequence and prints
-  every sequence it does have. The sequence name is built from a format string
-  and the facing token, so `idle_{facing}` with an illegal facing is the usual
-  cause.
-- Sequence naming is **parameters, not code** — `walk_format` / `idle_format` /
-  `initial_sequence` are declared, so a two-row sheet is a parameter change and
-  not a new behavior.
+- A sheet with no `idle_down` row raises inside the entity constructor, before
+  any behavior attaches (`#TAG:GameAnimationHandler.__init__`).
+- `#TAG:GameAnimationHandler.start` raises `PyoneerAssetMissingError` for an
+  unknown sequence and prints every sequence it has. The name is built from a
+  format string and the facing token, so `idle_{facing}` with an illegal
+  facing is the usual cause.
+- Sequence naming is **parameters, not code** — `walk_format`, `idle_format`
+  and `initial_sequence` are declared, so a two-row sheet is a parameter
+  change.
 
 ---
 
 ## "I changed something and the suite went red"
 
-- **`DRIFT smoke`** means the rendered frame moved. Name the field, the old
-  value and the new one, and say why, before re-baselining. Do not re-baseline
-  something you cannot explain.
-- **`PASS smoke` proves less than it looks.** Smoke injects **no input**, so it
-  cannot see anything that only happens while walking. "No drift" never means
-  "nothing changed" — a real animation-phase change once moved ~16% of frames
-  while walking and smoke could not see it. Use `demos.patrol`: it is the only
-  instrument that walks a body deterministically with no key injection.
-- **`HANG`** means a check blocked, almost always on a modal dialog.
-- **A check that asserts what a MAP contains is wrong**, even if it is green
-  today. That includes `data/maps/starter.tmx`, which ships and is repainted,
-  and it includes its PUNCTUATION: `check_tmx_roundtrip` and `check_tileset`
-  each build their own deliberately awkward fixture rather than borrowing one
-  file's indentation. It cost a red suite twice -- once at `333a77a`, once the
-  day the old canvas was retired.
+| verdict | means | do |
+|---|---|---|
+| `DRIFT smoke` | the rendered frame moved | name each field old → new and why before re-baselining (law 11) |
+| `PASS smoke` | no drift **with no input injected** | it cannot see walking; `demos.patrol` walks a body deterministically |
+| `HANG` | a check blocked, almost always on a modal dialog | law 13 |
+| a check asserting what a MAP contains | wrong even when green | write a fixture (law 4) |
 
 ---
 
 ## When the answer is not here
 
-Check [`BEHAVIORS.md`](BEHAVIORS.md)'s integration table before believing any
-prose anywhere, including this file's: that table is produced by constructing a
-real entity and running frames, and a row reading `needs-host` means the
-behavior runs and reaches nothing. If the thing you want appears finished but
-inert, [`history/ORPHANS.md`](history/ORPHANS.md) is the dated archive of
-finished-and-unattached code and is likely to name it — re-measure anything it
-says before acting, because most of its findings are spent.
+Check [`BEHAVIORS.md`](BEHAVIORS.md)'s integration table and
+[`EVENTS.md`](EVENTS.md)'s runtime and reachability columns before believing
+any prose, including this file's: both are produced by running the code. If
+the thing you want appears finished but inert,
+[`history/ORPHANS.md`](history/ORPHANS.md) is the dated archive of
+finished-and-unattached code — re-measure anything it says before acting.
 
-Every address in this file is a `#TAG:`. `grep -rn "#TAG:GameEntity.allowed_move"`
-returns the definition line, this document's citation of it, and the code map's
-entry, in one command — which is the point, and why no line number appears
-above.
+Every address here is a `#TAG:`, so `grep -rn "#TAG:GameEntity.allowed_move"`
+returns the definition, this citation and the code map's entry in one command.

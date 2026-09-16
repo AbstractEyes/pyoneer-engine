@@ -936,7 +936,7 @@ try:
                   PyoneerAssetMissingError,
                   lambda: BlitmapRuntime(load_map(
                       os.path.join(artless, "fixture.blitmap"))),
-                  contains="ships without art")
+                  contains="see docs/ASSETS.md")
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

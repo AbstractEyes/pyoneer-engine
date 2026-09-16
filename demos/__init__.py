@@ -26,9 +26,9 @@ RUNNING ONE
     .venv/Scripts/python.exe -m demos.patrol
     .venv/Scripts/python.exe -m demos.topdown --frames 120    # headless-ish
 
-See docs/DEMOS.md for what each one shows and what to copy to start a new
-one. `tools/check_demos.py` boots them headless and drives them with
-injected input.
+See docs/DEMOS.md for what each one shows, and docs/DESIGN_TEMPLATE.md's
+loop to start a new one. `tools/check_demos.py` and `tools/check_prototype.py`
+boot them headless and drive them with injected input.
 
 THE ONE RULE THIS PACKAGE IS UNDER
 -----------------------------------

@@ -5,7 +5,7 @@
 
 > The event-script document -- the AUTHORING half of `data/project/scripts/`.
 
-`editor.core.event_script` · 848 lines · tier 1: [`../MAP.md`](../MAP.md)
+`editor.core.event_script` · 849 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -24,99 +24,99 @@
 
 ## Functions
 
-- `editor/core/event_script.py:187` `_declared_defaults(spec) -> dict[str, Any]` #TAG:_declared_defaults
+- `editor/core/event_script.py:188` `_declared_defaults(spec) -> dict[str, Any]` #TAG:_declared_defaults
   - Every argument key an op takes -> (required, declared default).
-- `editor/core/event_script.py:197` `_canonical_when(raw: Any) -> list[dict[str, Any]]` #TAG:_canonical_when
-- `editor/core/event_script.py:201` `_canonical_node(raw: Mapping[str, Any], registry, where: str) -> dict` #TAG:_canonical_node
-- `editor/core/event_script.py:235` `_canonical_page(raw: Mapping[str, Any], registry, where: str) -> dict` #TAG:_canonical_page
-- `editor/core/event_script.py:277` `_arm_bodies(node: Mapping[str, Any]) -> Iterator[tuple[str, list]]` #TAG:_arm_bodies
+- `editor/core/event_script.py:198` `_canonical_when(raw: Any) -> list[dict[str, Any]]` #TAG:_canonical_when
+- `editor/core/event_script.py:202` `_canonical_node(raw: Mapping[str, Any], registry, where: str) -> dict` #TAG:_canonical_node
+- `editor/core/event_script.py:236` `_canonical_page(raw: Mapping[str, Any], registry, where: str) -> dict` #TAG:_canonical_page
+- `editor/core/event_script.py:278` `_arm_bodies(node: Mapping[str, Any]) -> Iterator[tuple[str, list]]` #TAG:_arm_bodies
   - Every (arm token, list) a control node holds, in document order.
-- `editor/core/event_script.py:291` `_walk_bodies(nodes: Sequence[Mapping[str, Any]]) -> Iterator[tuple[str, str, list]]` #TAG:_walk_bodies
-- `editor/core/event_script.py:302` `_containers(pages: Sequence[Mapping[str, Any]]) -> Iterator[tuple[str, str, list]]` #TAG:_containers
+- `editor/core/event_script.py:292` `_walk_bodies(nodes: Sequence[Mapping[str, Any]]) -> Iterator[tuple[str, str, list]]` #TAG:_walk_bodies
+- `editor/core/event_script.py:303` `_containers(pages: Sequence[Mapping[str, Any]]) -> Iterator[tuple[str, str, list]]` #TAG:_containers
   - (into, arm, the list) for every place a node can sit, in order.
-- `editor/core/event_script.py:314` `_predecessor(container: Sequence[Mapping[str, Any]], index: int) -> str` #TAG:_predecessor
-- `editor/core/event_script.py:552` `settable_node_keys(node: Mapping[str, Any], registry=None) -> tuple[str, ...]` #TAG:settable_node_keys
+- `editor/core/event_script.py:315` `_predecessor(container: Sequence[Mapping[str, Any]], index: int) -> str` #TAG:_predecessor
+- `editor/core/event_script.py:553` `settable_node_keys(node: Mapping[str, Any], registry=None) -> tuple[str, ...]` #TAG:settable_node_keys
   - Which keys `script.node.set` may write on this node, sorted.
-- `editor/core/event_script.py:574` `node_value(node: Mapping[str, Any], key: str, registry=None) -> Any` #TAG:node_value
+- `editor/core/event_script.py:575` `node_value(node: Mapping[str, Any], key: str, registry=None) -> Any` #TAG:node_value
   - What `key` holds on this node, an absent key reading as its default.
-- `editor/core/event_script.py:783` `scripts_of(project) -> ScriptLibrary` #TAG:scripts_of
+- `editor/core/event_script.py:784` `scripts_of(project) -> ScriptLibrary` #TAG:scripts_of
   - The `ScriptLibrary` for one open project, made on first use.
-- `editor/core/event_script.py:822` `opened_scripts(project) -> 'ScriptLibrary | None'` #TAG:opened_scripts
+- `editor/core/event_script.py:823` `opened_scripts(project) -> 'ScriptLibrary | None'` #TAG:opened_scripts
   - The library this project already has, or None if it never asked.
 
 ## Classes
 
 ### `@dataclass(frozen=True) class NodeSite` #TAG:NodeSite
 
-`editor/core/event_script.py:255`–`274`
+`editor/core/event_script.py:256`–`275`
 
 > A node's address as the VERBS spell it: container, arm, predecessor.
 
-- `editor/core/event_script.py:273` `as_args(self) -> dict[str, str]` #TAG:NodeSite.as_args
+- `editor/core/event_script.py:274` `as_args(self) -> dict[str, str]` #TAG:NodeSite.as_args
 
 ### `@dataclass class ScriptDocument` #TAG:ScriptDocument
 
-`editor/core/event_script.py:323`–`549`
+`editor/core/event_script.py:324`–`550`
 
 > One `data/project/scripts/<id>.json`, open for editing.
 
-- `editor/core/event_script.py:340` `to_raw(self) -> dict[str, Any]` #TAG:ScriptDocument.to_raw
+- `editor/core/event_script.py:341` `to_raw(self) -> dict[str, Any]` #TAG:ScriptDocument.to_raw
   - Exactly what is in memory, judged by nobody yet.
-- `editor/core/event_script.py:346` `to_json(self, registry=None) -> dict[str, Any]` #TAG:ScriptDocument.to_json
+- `editor/core/event_script.py:347` `to_json(self, registry=None) -> dict[str, Any]` #TAG:ScriptDocument.to_json
   - The canonical document: no key that carries no information.
-- `editor/core/event_script.py:357` `render(self, registry=None) -> str` #TAG:ScriptDocument.render
+- `editor/core/event_script.py:358` `render(self, registry=None) -> str` #TAG:ScriptDocument.render
   - The file's exact text: sorted keys, two-space indent, one newline.
-- `editor/core/event_script.py:368` `validate(self, *, variables=None, registry=None)` #TAG:ScriptDocument.validate
+- `editor/core/event_script.py:369` `validate(self, *, variables=None, registry=None)` #TAG:ScriptDocument.validate
   - Run the ENGINE's reader over what is in memory.
-- `editor/core/event_script.py:378` `snapshot(self) -> tuple[str, list, list]` #TAG:ScriptDocument.snapshot
-- `editor/core/event_script.py:382` `restore(self, snapshot: tuple[str, list, list]) -> None` #TAG:ScriptDocument.restore
-- `editor/core/event_script.py:387` `commit(self, *, variables=None, registry=None)` #TAG:ScriptDocument.commit
+- `editor/core/event_script.py:379` `snapshot(self) -> tuple[str, list, list]` #TAG:ScriptDocument.snapshot
+- `editor/core/event_script.py:383` `restore(self, snapshot: tuple[str, list, list]) -> None` #TAG:ScriptDocument.restore
+- `editor/core/event_script.py:388` `commit(self, *, variables=None, registry=None)` #TAG:ScriptDocument.commit
   - Judge, then canonicalise, then mark dirty. Raises unchanged.
-- `editor/core/event_script.py:404` `_node_ids(self, nodes: Sequence[Mapping[str, Any]]) -> list[str]` #TAG:ScriptDocument._node_ids
-- `editor/core/event_script.py:414` `ids(self) -> list[str]` #TAG:ScriptDocument.ids
+- `editor/core/event_script.py:405` `_node_ids(self, nodes: Sequence[Mapping[str, Any]]) -> list[str]` #TAG:ScriptDocument._node_ids
+- `editor/core/event_script.py:415` `ids(self) -> list[str]` #TAG:ScriptDocument.ids
   - Every page id and node id in document order. ONE namespace.
-- `editor/core/event_script.py:422` `page_ids(self) -> list[str]` #TAG:ScriptDocument.page_ids
-- `editor/core/event_script.py:425` `page(self, page_id: str) -> dict` #TAG:ScriptDocument.page
-- `editor/core/event_script.py:435` `page_index(self, page_id: str) -> int` #TAG:ScriptDocument.page_index
-- `editor/core/event_script.py:443` `node(self, node_id: str) -> dict` #TAG:ScriptDocument.node
-- `editor/core/event_script.py:454` `locate(self, node_id: str) -> NodeSite` #TAG:ScriptDocument.locate
+- `editor/core/event_script.py:423` `page_ids(self) -> list[str]` #TAG:ScriptDocument.page_ids
+- `editor/core/event_script.py:426` `page(self, page_id: str) -> dict` #TAG:ScriptDocument.page
+- `editor/core/event_script.py:436` `page_index(self, page_id: str) -> int` #TAG:ScriptDocument.page_index
+- `editor/core/event_script.py:444` `node(self, node_id: str) -> dict` #TAG:ScriptDocument.node
+- `editor/core/event_script.py:455` `locate(self, node_id: str) -> NodeSite` #TAG:ScriptDocument.locate
   - Where a node sits: its container, its arm, and what precedes it.
-- `editor/core/event_script.py:465` `container(self, into: str, arm: str, *, create: bool=False) -> list` #TAG:ScriptDocument.container
+- `editor/core/event_script.py:466` `container(self, into: str, arm: str, *, create: bool=False) -> list` #TAG:ScriptDocument.container
   - The list of nodes at `into`/`arm`, or raise saying what is there.
-- `editor/core/event_script.py:511` `index_after(self, container: Sequence[Mapping[str, Any]], after: str, *, what: str) -> int` #TAG:ScriptDocument.index_after
+- `editor/core/event_script.py:512` `index_after(self, container: Sequence[Mapping[str, Any]], after: str, *, what: str) -> int` #TAG:ScriptDocument.index_after
   - Where `after` puts a new sibling. `""` is the FRONT, index 0.
-- `editor/core/event_script.py:527` `subtree_ids(self, node: Mapping[str, Any]) -> set[str]` #TAG:ScriptDocument.subtree_ids
+- `editor/core/event_script.py:528` `subtree_ids(self, node: Mapping[str, Any]) -> set[str]` #TAG:ScriptDocument.subtree_ids
   - Every id inside a node, itself included.
-- `editor/core/event_script.py:534` `@classmethod from_json(cls, raw: Mapping[str, Any], *, path: str='') -> 'ScriptDocument'` #TAG:ScriptDocument.from_json
+- `editor/core/event_script.py:535` `@classmethod from_json(cls, raw: Mapping[str, Any], *, path: str='') -> 'ScriptDocument'` #TAG:ScriptDocument.from_json
   - Build from a decoded document. Judges NOTHING -- `commit` does.
 
 ### `class edit` #TAG:edit
 
-`editor/core/event_script.py:602`–`633`
+`editor/core/event_script.py:603`–`634`
 
 > Mutate a document, then let the READER decide whether it happened.
 
-- `editor/core/event_script.py:615` `__init__(self, document: ScriptDocument, library: 'ScriptLibrary')` #TAG:edit.__init__
-- `editor/core/event_script.py:620` `__enter__(self) -> ScriptDocument` #TAG:edit.__enter__
-- `editor/core/event_script.py:623` `__exit__(self, kind, value, trace) -> bool` #TAG:edit.__exit__
+- `editor/core/event_script.py:616` `__init__(self, document: ScriptDocument, library: 'ScriptLibrary')` #TAG:edit.__init__
+- `editor/core/event_script.py:621` `__enter__(self) -> ScriptDocument` #TAG:edit.__enter__
+- `editor/core/event_script.py:624` `__exit__(self, kind, value, trace) -> bool` #TAG:edit.__exit__
 
 ### `class ScriptLibrary` #TAG:ScriptLibrary
 
-`editor/core/event_script.py:640`–`777`
+`editor/core/event_script.py:641`–`778`
 
 > Every event script under one project, and the one place they save.
 
-- `editor/core/event_script.py:651` `__init__(self, directory: str, *, variables=None, registry=None)` #TAG:ScriptLibrary.__init__
-- `editor/core/event_script.py:668` `load(self) -> None` #TAG:ScriptLibrary.load
+- `editor/core/event_script.py:652` `__init__(self, directory: str, *, variables=None, registry=None)` #TAG:ScriptLibrary.__init__
+- `editor/core/event_script.py:669` `load(self) -> None` #TAG:ScriptLibrary.load
   - Read every `*.json` in the directory. A missing directory is empty.
-- `editor/core/event_script.py:695` `names(self) -> list[str]` #TAG:ScriptLibrary.names
-- `editor/core/event_script.py:698` `has(self, script_id: str) -> bool` #TAG:ScriptLibrary.has
-- `editor/core/event_script.py:701` `document(self, script_id: str) -> ScriptDocument` #TAG:ScriptLibrary.document
-- `editor/core/event_script.py:711` `create(self, document: ScriptDocument) -> ScriptDocument` #TAG:ScriptLibrary.create
-- `editor/core/event_script.py:721` `delete(self, script_id: str) -> ScriptDocument` #TAG:ScriptLibrary.delete
-- `editor/core/event_script.py:729` `path_for(self, script_id: str) -> str` #TAG:ScriptLibrary.path_for
-- `editor/core/event_script.py:732` `dirty_scripts(self) -> list[str]` #TAG:ScriptLibrary.dirty_scripts
-- `editor/core/event_script.py:736` `@property dirty(self) -> bool` #TAG:ScriptLibrary.dirty
+- `editor/core/event_script.py:696` `names(self) -> list[str]` #TAG:ScriptLibrary.names
+- `editor/core/event_script.py:699` `has(self, script_id: str) -> bool` #TAG:ScriptLibrary.has
+- `editor/core/event_script.py:702` `document(self, script_id: str) -> ScriptDocument` #TAG:ScriptLibrary.document
+- `editor/core/event_script.py:712` `create(self, document: ScriptDocument) -> ScriptDocument` #TAG:ScriptLibrary.create
+- `editor/core/event_script.py:722` `delete(self, script_id: str) -> ScriptDocument` #TAG:ScriptLibrary.delete
+- `editor/core/event_script.py:730` `path_for(self, script_id: str) -> str` #TAG:ScriptLibrary.path_for
+- `editor/core/event_script.py:733` `dirty_scripts(self) -> list[str]` #TAG:ScriptLibrary.dirty_scripts
+- `editor/core/event_script.py:737` `@property dirty(self) -> bool` #TAG:ScriptLibrary.dirty
   - True when something here is not on disk as this library has it.
-- `editor/core/event_script.py:755` `save(self) -> list[str]` #TAG:ScriptLibrary.save
+- `editor/core/event_script.py:756` `save(self) -> list[str]` #TAG:ScriptLibrary.save
   - Write every dirty document and delete every removed one.

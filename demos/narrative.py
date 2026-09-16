@@ -21,7 +21,9 @@ Limits a script written against this will hit:
   * **No trigger.** A flow begins when the game calls `begin()` -- at boot,
     here. The map's `use` triggers are authored by
     `editor/core/map_events.py` and have no runtime reader, so proximity to
-    an object cannot start one.
+    an object cannot start one. A key press can: an object carrying
+    `pyoneer_script` starts a JSON event script through `main.py`'s action
+    route, which this demo does not use.
 """
 from __future__ import annotations
 

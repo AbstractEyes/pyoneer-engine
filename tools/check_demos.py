@@ -52,6 +52,24 @@ constants -- `SIDESTEP_GROUND_TOP * TILE - COLLISION_OFFSET[1] - EDGE_INSET`
 -- and never typed as a literal, so the claim is about the physics and the
 gate rather than about a number written down twice.
 
+MUTATIONS RUN AGAINST THIS CHECK, EACH OF WHICH TURNED IT RED
+-------------------------------------------------------------
+Previously listed in `docs/DEMOS.md`, moved here to sit beside the code
+they measured: `driven_record` matching any record; the feet offset
+removed; the side-on map declaring no collision; the companion layer painted
+all-open; the route validation deleted; the patrol producer publishing
+nothing; its declared conflict removed; its `order` moved from 10 to 50; the
+hero losing `player_input`; a decoy gaining it; the faller gaining it; the
+camera never attached; `MainGame.tick` copied into `DemoGame`; and a demo
+class growing a method.
+
+The side-on landing needs every half of section 3, not just `grounded`:
+`CollisionField.outside` is BLOCK_ALL, so a body with nothing painted under
+it still comes to rest at the world edge reporting `grounded=True`. The body
+must be airborne early, rest with its FEET at exactly the derived floor pixel
+(which kills the head anchor too), and a second boot with `collision_field`
+cleared must satisfy none of it.
+
     .venv/Scripts/python.exe tools/check_demos.py
 """
 from __future__ import annotations
@@ -725,7 +743,7 @@ try:
         shutil.rmtree(once_dir, ignore_errors=True)
 
     with open(CONFIG_MAPS, "rb") as handle:
-        expect("booting three demos did not edit config/maps.json",
+        expect("booting the demos did not edit config/maps.json",
                handle.read() == CONFIG_MAPS_BEFORE, True)
     expect("the shipped demo maps live under demos/, not under data/",
            os.path.abspath(SHIPPED_MAPS_DIR).startswith(

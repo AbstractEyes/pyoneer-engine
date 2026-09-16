@@ -85,7 +85,8 @@ PREFIX: str = layer_profile.PREFIX
 BEHAVIORS: str = PREFIX + "behaviors"
 """The tmx object property that lists which behaviors an object composes.
 
-A comma-separated list of registry tokens, e.g. `topdown_move,tile_collision`.
+A comma-separated list of registry tokens, e.g.
+`player_input,topdown_move,animation_drive`; an unregistered token raises.
 This is the declaration site: the map file is the whole truth, so an object
 plays the same way whether or not the editor has ever opened the map.
 """

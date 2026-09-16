@@ -117,9 +117,9 @@ class Session:
         one real flow crosses addresses: attaching an event script needs
         `script.create` at `script:<id>` and `map.object.property.set` at
         the object that runs it, which is two scopes and no new verb
-        (`docs/PLAN_SCENES.md` section 6). Widening is therefore a
-        declaration the author makes, checked like everything else, rather
-        than a hole in the gate for everybody.
+        (`docs/history/PLAN_SCENES_2026-09-03.md` section 6.4). Widening is
+        therefore a declaration the author makes, checked like everything
+        else, rather than a hole in the gate for everybody.
         """
         resolved = scope if isinstance(scope, Scope) else Scope.parse(scope)
         bundle = write_bundle(self.project,

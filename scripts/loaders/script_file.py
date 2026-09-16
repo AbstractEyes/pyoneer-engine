@@ -89,13 +89,13 @@ from scripts.game.flow import ops as op_registry
 SCRIPT_PROPERTY: str = PREFIX + "script"
 """The tmx object property naming the event script that object runs.
 
-THE ONE DECLARATION. A FILE FORMAT string, minted by `docs/PLAN_SCENES.md`
-4.6 and permanent under law 8, so both halves of the seam must spell it the
-same way forever: `editor/ui/script_editor.py` WRITES it onto an object and
-`main.py` READS it at boot to join a spawned body to its document. It lived
-in both files for a day, which is law 2's corollary -- shared logic lives in
-`scripts/` and the editor re-exports it -- and this is where that debt was
-paid.
+THE ONE DECLARATION. A FILE FORMAT string, minted by
+`docs/history/PLAN_SCENES_2026-09-03.md` 4.6 and permanent under law 8, so
+both halves of the seam must spell it the same way forever:
+`editor/ui/script_editor.py` WRITES it onto an object and `main.py` READS it
+at boot to join a spawned body to its document. It lived in both files for a
+day, which is law 2's corollary -- shared logic lives in `scripts/` and the
+editor re-exports it -- and this is where that debt was paid.
 
 Here, and not in `scripts/core/layer_profile.py`, because that module's
 `KNOWN` tuple is the LAYER vocabulary and a check asserts the editor declares

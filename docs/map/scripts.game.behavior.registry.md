@@ -5,7 +5,7 @@
 
 > Which token means which behavior, and how a map declares a list of them.
 
-`scripts.game.behavior.registry` · 789 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.behavior.registry` · 817 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -43,9 +43,9 @@
   - Everything one tmx object declares about its behaviors.
 - `scripts/game/behavior/registry.py:374` `build(requests: Sequence[BehaviorRequest]) -> list[EntityBehavior]` #TAG:build
   - Construct one behavior per request. Nothing is attached.
-- `scripts/game/behavior/registry.py:603` `_state_axes() -> list[str]` #TAG:_state_axes
+- `scripts/game/behavior/registry.py:631` `_state_axes() -> list[str]` #TAG:_state_axes
   - The `state.<axis>` vocabulary the writes column above is spelled in.
-- `scripts/game/behavior/registry.py:632` `_run_order_and_categories(table: Mapping[str, BehaviorSpec]) -> list[str]` #TAG:_run_order_and_categories
+- `scripts/game/behavior/registry.py:660` `_run_order_and_categories(table: Mapping[str, BehaviorSpec]) -> list[str]` #TAG:_run_order_and_categories
   - The two derived views, rendered from the helpers the editor also calls.
-- `scripts/game/behavior/registry.py:671` `describe_all(registry: Mapping[str, BehaviorSpec] | None=None) -> str` #TAG:registry.describe_all
+- `scripts/game/behavior/registry.py:699` `describe_all(registry: Mapping[str, BehaviorSpec] | None=None) -> str` #TAG:registry.describe_all
   - Render BEHAVIORS.md from the same table the engine binds from.

@@ -3,51 +3,51 @@
 
 # `scripts/game/entity/game_animation.py` — tier 2 #TAG:scripts/game/entity/game_animation.py
 
-`scripts.game.entity.game_animation` · 214 lines · tier 1: [`../MAP.md`](../MAP.md)
+`scripts.game.entity.game_animation` · 215 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
-    config.managers.animation_data scripts.core.errors scripts.core.event_manager
+    config.managers.animation_data scripts.core.art scripts.core.errors scripts.core.event_manager
 
 ## Classes
 
 ### `class GameAnimation` #TAG:GameAnimation
 
-`scripts/game/entity/game_animation.py:14`–`86`
+`scripts/game/entity/game_animation.py:15`–`87`
 
 > One named sequence ("walk_left") with its frames pre-sliced.
 
-- `scripts/game/entity/game_animation.py:22` `__init__(self, animation_data: DataAnimation=None, spritesheet: Surface | None=None, order: str='left-to-right')` #TAG:GameAnimation.__init__
-- `scripts/game/entity/game_animation.py:36` `frame_rect(self, index: int) -> Rect` #TAG:GameAnimation.frame_rect
+- `scripts/game/entity/game_animation.py:23` `__init__(self, animation_data: DataAnimation=None, spritesheet: Surface | None=None, order: str='left-to-right')` #TAG:GameAnimation.__init__
+- `scripts/game/entity/game_animation.py:37` `frame_rect(self, index: int) -> Rect` #TAG:GameAnimation.frame_rect
   - Source rect of one frame on the spritesheet.
-- `scripts/game/entity/game_animation.py:44` `slice_frames(self, spritesheet: Surface)` #TAG:GameAnimation.slice_frames
+- `scripts/game/entity/game_animation.py:45` `slice_frames(self, spritesheet: Surface)` #TAG:GameAnimation.slice_frames
   - Cut every frame out of the sheet once, clipped to the sheet bounds.
-- `scripts/game/entity/game_animation.py:57` `image(self) -> Surface` #TAG:GameAnimation.image
-- `scripts/game/entity/game_animation.py:60` `set_frame(self, frame: int, time=0)` #TAG:GameAnimation.set_frame
-- `scripts/game/entity/game_animation.py:64` `start(self, from_beginning=True)` #TAG:GameAnimation.start
-- `scripts/game/entity/game_animation.py:70` `stop(self, reset=False)` #TAG:GameAnimation.stop
-- `scripts/game/entity/game_animation.py:76` `update(self, event: PyoneerEvent)` #TAG:GameAnimation.update
+- `scripts/game/entity/game_animation.py:58` `image(self) -> Surface` #TAG:GameAnimation.image
+- `scripts/game/entity/game_animation.py:61` `set_frame(self, frame: int, time=0)` #TAG:GameAnimation.set_frame
+- `scripts/game/entity/game_animation.py:65` `start(self, from_beginning=True)` #TAG:GameAnimation.start
+- `scripts/game/entity/game_animation.py:71` `stop(self, reset=False)` #TAG:GameAnimation.stop
+- `scripts/game/entity/game_animation.py:77` `update(self, event: PyoneerEvent)` #TAG:GameAnimation.update
 
 ### `class GameAnimationHandler` #TAG:GameAnimationHandler
 
-`scripts/game/entity/game_animation.py:90`–`214`
+`scripts/game/entity/game_animation.py:91`–`215`
 
 > Owns one spritesheet and every sequence cut from it.
 
-- `scripts/game/entity/game_animation.py:99` `__init__(self, animation_data: DataAnimationCategory)` #TAG:GameAnimationHandler.__init__
-- `scripts/game/entity/game_animation.py:126` `_build_animations(self)` #TAG:GameAnimationHandler._build_animations
-- `scripts/game/entity/game_animation.py:136` `@property active_animation(self) -> GameAnimation | None` #TAG:GameAnimationHandler.active_animation
-- `scripts/game/entity/game_animation.py:139` `image(self) -> Surface | None` #TAG:GameAnimationHandler.image
+- `scripts/game/entity/game_animation.py:100` `__init__(self, animation_data: DataAnimationCategory)` #TAG:GameAnimationHandler.__init__
+- `scripts/game/entity/game_animation.py:127` `_build_animations(self)` #TAG:GameAnimationHandler._build_animations
+- `scripts/game/entity/game_animation.py:137` `@property active_animation(self) -> GameAnimation | None` #TAG:GameAnimationHandler.active_animation
+- `scripts/game/entity/game_animation.py:140` `image(self) -> Surface | None` #TAG:GameAnimationHandler.image
   - Current frame, or None when nothing is playing.
-- `scripts/game/entity/game_animation.py:150` `start(self, name: str | None=None, from_beginning: bool=True)` #TAG:GameAnimationHandler.start
+- `scripts/game/entity/game_animation.py:151` `start(self, name: str | None=None, from_beginning: bool=True)` #TAG:GameAnimationHandler.start
   - Switch to `name`, restarting it from frame 0 by default.
-- `scripts/game/entity/game_animation.py:172` `stop(self, name: str | None=None)` #TAG:GameAnimationHandler.stop
-- `scripts/game/entity/game_animation.py:184` `pause(self)` #TAG:GameAnimationHandler.pause
+- `scripts/game/entity/game_animation.py:173` `stop(self, name: str | None=None)` #TAG:GameAnimationHandler.stop
+- `scripts/game/entity/game_animation.py:185` `pause(self)` #TAG:GameAnimationHandler.pause
   - Freeze the current sequence, remembering it so resume() can restore it.
-- `scripts/game/entity/game_animation.py:190` `resume(self)` #TAG:GameAnimationHandler.resume
+- `scripts/game/entity/game_animation.py:191` `resume(self)` #TAG:GameAnimationHandler.resume
   - Resume the paused sequence at the exact frame it stopped on.
-- `scripts/game/entity/game_animation.py:197` `set_frame(self, frame: int)` #TAG:GameAnimationHandler.set_frame
-- `scripts/game/entity/game_animation.py:201` `get_animation(self, name)` #TAG:GameAnimationHandler.get_animation
-- `scripts/game/entity/game_animation.py:204` `update(self, event: Optional[PyoneerEvent]=None)` #TAG:GameAnimationHandler.update
-- `scripts/game/entity/game_animation.py:208` `dispose(self)` #TAG:GameAnimationHandler.dispose
-- `scripts/game/entity/game_animation.py:213` `clear(self)` #TAG:GameAnimationHandler.clear
+- `scripts/game/entity/game_animation.py:198` `set_frame(self, frame: int)` #TAG:GameAnimationHandler.set_frame
+- `scripts/game/entity/game_animation.py:202` `get_animation(self, name)` #TAG:GameAnimationHandler.get_animation
+- `scripts/game/entity/game_animation.py:205` `update(self, event: Optional[PyoneerEvent]=None)` #TAG:GameAnimationHandler.update
+- `scripts/game/entity/game_animation.py:209` `dispose(self)` #TAG:GameAnimationHandler.dispose
+- `scripts/game/entity/game_animation.py:214` `clear(self)` #TAG:GameAnimationHandler.clear

@@ -5,83 +5,83 @@
 
 > The demo maps and their art, written to disk once and then left alone.
 
-`demos.mapgen` · 463 lines · tier 1: [`../MAP.md`](../MAP.md)
+`demos.mapgen` · 465 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 ## Module constants
 
-- `demos/mapgen.py:34` `MAPS_DIR` #TAG:MAPS_DIR
-- `demos/mapgen.py:36` `TILE` #TAG:TILE
-- `demos/mapgen.py:41` `ART_TILES` #TAG:ART_TILES
-- `demos/mapgen.py:47` `ART_FIRST_GID` #TAG:ART_FIRST_GID
-- `demos/mapgen.py:48` `SKY` #TAG:SKY
-- `demos/mapgen.py:49` `GRASS` #TAG:GRASS
-- `demos/mapgen.py:50` `STONE` #TAG:STONE
-- `demos/mapgen.py:51` `MARK` #TAG:MARK
-- `demos/mapgen.py:58` `COLLISION_FIRST_GID` #TAG:COLLISION_FIRST_GID
-- `demos/mapgen.py:59` `MASK_COUNT` #TAG:MASK_COUNT
-- `demos/mapgen.py:60` `SOLID_GID` #TAG:SOLID_GID
-- `demos/mapgen.py:62` `ART_IMAGE` #TAG:ART_IMAGE
-- `demos/mapgen.py:63` `COLLISION_IMAGE` #TAG:mapgen.COLLISION_IMAGE
-- `demos/mapgen.py:205` `TOPDOWN_SIZE` #TAG:TOPDOWN_SIZE
-- `demos/mapgen.py:206` `SIDESTEP_SIZE` #TAG:SIDESTEP_SIZE
-- `demos/mapgen.py:207` `PATROL_SIZE` #TAG:PATROL_SIZE
-- `demos/mapgen.py:208` `STORY_SIZE` #TAG:STORY_SIZE
-- `demos/mapgen.py:210` `TOPDOWN_BEHAVIORS` #TAG:TOPDOWN_BEHAVIORS
-- `demos/mapgen.py:211` `SCENERY_BEHAVIORS` #TAG:SCENERY_BEHAVIORS
-- `demos/mapgen.py:212` `SIDESTEP_BEHAVIORS` #TAG:SIDESTEP_BEHAVIORS
-- `demos/mapgen.py:213` `FALLER_BEHAVIORS` #TAG:FALLER_BEHAVIORS
-- `demos/mapgen.py:214` `PATROL_BEHAVIORS` #TAG:PATROL_BEHAVIORS
-- `demos/mapgen.py:215` `STORY_BEHAVIORS` #TAG:STORY_BEHAVIORS
-- `demos/mapgen.py:225` `STORY_KEEPER_BEHAVIORS` #TAG:STORY_KEEPER_BEHAVIORS
-- `demos/mapgen.py:227` `SPRITE` #TAG:SPRITE
-- `demos/mapgen.py:246` `TOPDOWN_DECOY_IDS` #TAG:TOPDOWN_DECOY_IDS
-- `demos/mapgen.py:247` `TOPDOWN_HERO_ID` #TAG:TOPDOWN_HERO_ID
-- `demos/mapgen.py:248` `TOPDOWN_DECOY_ORIGIN` #TAG:TOPDOWN_DECOY_ORIGIN
-- `demos/mapgen.py:249` `TOPDOWN_DECOY_STRIDE` #TAG:TOPDOWN_DECOY_STRIDE
-- `demos/mapgen.py:250` `TOPDOWN_HERO_SPAWN` #TAG:TOPDOWN_HERO_SPAWN
-- `demos/mapgen.py:252` `SIDESTEP_HERO_ID` #TAG:SIDESTEP_HERO_ID
-- `demos/mapgen.py:253` `SIDESTEP_FALLER_ID` #TAG:SIDESTEP_FALLER_ID
-- `demos/mapgen.py:254` `SIDESTEP_HERO_SPAWN` #TAG:SIDESTEP_HERO_SPAWN
-- `demos/mapgen.py:255` `SIDESTEP_FALLER_SPAWN` #TAG:SIDESTEP_FALLER_SPAWN
-- `demos/mapgen.py:256` `SIDESTEP_GROUND_ROWS` #TAG:SIDESTEP_GROUND_ROWS
-- `demos/mapgen.py:269` `SIDESTEP_GROUND_TOP` #TAG:SIDESTEP_GROUND_TOP
-- `demos/mapgen.py:272` `SIDESTEP_PLATFORM_ROW` #TAG:SIDESTEP_PLATFORM_ROW
-- `demos/mapgen.py:273` `SIDESTEP_PLATFORM_COLS` #TAG:SIDESTEP_PLATFORM_COLS
-- `demos/mapgen.py:275` `PATROL_PATROLLER_ID` #TAG:PATROL_PATROLLER_ID
-- `demos/mapgen.py:276` `PATROL_HERO_ID` #TAG:PATROL_HERO_ID
-- `demos/mapgen.py:277` `PATROL_PATROLLER_SPAWN` #TAG:PATROL_PATROLLER_SPAWN
-- `demos/mapgen.py:278` `PATROL_HERO_SPAWN` #TAG:PATROL_HERO_SPAWN
-- `demos/mapgen.py:279` `PATROL_ROUTE` #TAG:PATROL_ROUTE
-- `demos/mapgen.py:280` `PATROL_LEG_MS` #TAG:PATROL_LEG_MS
-- `demos/mapgen.py:282` `STORY_HERO_ID` #TAG:STORY_HERO_ID
-- `demos/mapgen.py:283` `STORY_KEEPER_ID` #TAG:STORY_KEEPER_ID
-- `demos/mapgen.py:284` `STORY_HERO_SPAWN` #TAG:STORY_HERO_SPAWN
-- `demos/mapgen.py:285` `STORY_KEEPER_SPAWN` #TAG:STORY_KEEPER_SPAWN
-- `demos/mapgen.py:286` `STORY_PAYLOAD` #TAG:STORY_PAYLOAD
-- `demos/mapgen.py:424` `SOURCES` #TAG:SOURCES
+- `demos/mapgen.py:36` `MAPS_DIR` #TAG:MAPS_DIR
+- `demos/mapgen.py:38` `TILE` #TAG:TILE
+- `demos/mapgen.py:43` `ART_TILES` #TAG:ART_TILES
+- `demos/mapgen.py:49` `ART_FIRST_GID` #TAG:ART_FIRST_GID
+- `demos/mapgen.py:50` `SKY` #TAG:SKY
+- `demos/mapgen.py:51` `GRASS` #TAG:GRASS
+- `demos/mapgen.py:52` `STONE` #TAG:STONE
+- `demos/mapgen.py:53` `MARK` #TAG:MARK
+- `demos/mapgen.py:60` `COLLISION_FIRST_GID` #TAG:COLLISION_FIRST_GID
+- `demos/mapgen.py:61` `MASK_COUNT` #TAG:MASK_COUNT
+- `demos/mapgen.py:62` `SOLID_GID` #TAG:SOLID_GID
+- `demos/mapgen.py:64` `ART_IMAGE` #TAG:ART_IMAGE
+- `demos/mapgen.py:65` `COLLISION_IMAGE` #TAG:mapgen.COLLISION_IMAGE
+- `demos/mapgen.py:207` `TOPDOWN_SIZE` #TAG:TOPDOWN_SIZE
+- `demos/mapgen.py:208` `SIDESTEP_SIZE` #TAG:SIDESTEP_SIZE
+- `demos/mapgen.py:209` `PATROL_SIZE` #TAG:PATROL_SIZE
+- `demos/mapgen.py:210` `STORY_SIZE` #TAG:STORY_SIZE
+- `demos/mapgen.py:212` `TOPDOWN_BEHAVIORS` #TAG:TOPDOWN_BEHAVIORS
+- `demos/mapgen.py:213` `SCENERY_BEHAVIORS` #TAG:SCENERY_BEHAVIORS
+- `demos/mapgen.py:214` `SIDESTEP_BEHAVIORS` #TAG:SIDESTEP_BEHAVIORS
+- `demos/mapgen.py:215` `FALLER_BEHAVIORS` #TAG:FALLER_BEHAVIORS
+- `demos/mapgen.py:216` `PATROL_BEHAVIORS` #TAG:PATROL_BEHAVIORS
+- `demos/mapgen.py:217` `STORY_BEHAVIORS` #TAG:STORY_BEHAVIORS
+- `demos/mapgen.py:227` `STORY_KEEPER_BEHAVIORS` #TAG:STORY_KEEPER_BEHAVIORS
+- `demos/mapgen.py:229` `SPRITE` #TAG:SPRITE
+- `demos/mapgen.py:248` `TOPDOWN_DECOY_IDS` #TAG:TOPDOWN_DECOY_IDS
+- `demos/mapgen.py:249` `TOPDOWN_HERO_ID` #TAG:TOPDOWN_HERO_ID
+- `demos/mapgen.py:250` `TOPDOWN_DECOY_ORIGIN` #TAG:TOPDOWN_DECOY_ORIGIN
+- `demos/mapgen.py:251` `TOPDOWN_DECOY_STRIDE` #TAG:TOPDOWN_DECOY_STRIDE
+- `demos/mapgen.py:252` `TOPDOWN_HERO_SPAWN` #TAG:TOPDOWN_HERO_SPAWN
+- `demos/mapgen.py:254` `SIDESTEP_HERO_ID` #TAG:SIDESTEP_HERO_ID
+- `demos/mapgen.py:255` `SIDESTEP_FALLER_ID` #TAG:SIDESTEP_FALLER_ID
+- `demos/mapgen.py:256` `SIDESTEP_HERO_SPAWN` #TAG:SIDESTEP_HERO_SPAWN
+- `demos/mapgen.py:257` `SIDESTEP_FALLER_SPAWN` #TAG:SIDESTEP_FALLER_SPAWN
+- `demos/mapgen.py:258` `SIDESTEP_GROUND_ROWS` #TAG:SIDESTEP_GROUND_ROWS
+- `demos/mapgen.py:271` `SIDESTEP_GROUND_TOP` #TAG:SIDESTEP_GROUND_TOP
+- `demos/mapgen.py:274` `SIDESTEP_PLATFORM_ROW` #TAG:SIDESTEP_PLATFORM_ROW
+- `demos/mapgen.py:275` `SIDESTEP_PLATFORM_COLS` #TAG:SIDESTEP_PLATFORM_COLS
+- `demos/mapgen.py:277` `PATROL_PATROLLER_ID` #TAG:PATROL_PATROLLER_ID
+- `demos/mapgen.py:278` `PATROL_HERO_ID` #TAG:PATROL_HERO_ID
+- `demos/mapgen.py:279` `PATROL_PATROLLER_SPAWN` #TAG:PATROL_PATROLLER_SPAWN
+- `demos/mapgen.py:280` `PATROL_HERO_SPAWN` #TAG:PATROL_HERO_SPAWN
+- `demos/mapgen.py:281` `PATROL_ROUTE` #TAG:PATROL_ROUTE
+- `demos/mapgen.py:282` `PATROL_LEG_MS` #TAG:PATROL_LEG_MS
+- `demos/mapgen.py:284` `STORY_HERO_ID` #TAG:STORY_HERO_ID
+- `demos/mapgen.py:285` `STORY_KEEPER_ID` #TAG:STORY_KEEPER_ID
+- `demos/mapgen.py:286` `STORY_HERO_SPAWN` #TAG:STORY_HERO_SPAWN
+- `demos/mapgen.py:287` `STORY_KEEPER_SPAWN` #TAG:STORY_KEEPER_SPAWN
+- `demos/mapgen.py:288` `STORY_PAYLOAD` #TAG:STORY_PAYLOAD
+- `demos/mapgen.py:426` `SOURCES` #TAG:SOURCES
 
 ## Functions
 
-- `demos/mapgen.py:70` `ensure_art() -> None` #TAG:ensure_art
+- `demos/mapgen.py:72` `ensure_art() -> None` #TAG:ensure_art
   - Write the two placeholder tilesets if they are not already there.
-- `demos/mapgen.py:110` `_csv(grid: list[list[int]]) -> str` #TAG:_csv
-- `demos/mapgen.py:114` `_grid(width: int, height: int, fill: int=0) -> list[list[int]]` #TAG:_grid
-- `demos/mapgen.py:118` `_properties(pairs: dict[str, tuple[str, str]], indent: str) -> str` #TAG:_properties
+- `demos/mapgen.py:112` `_csv(grid: list[list[int]]) -> str` #TAG:_csv
+- `demos/mapgen.py:116` `_grid(width: int, height: int, fill: int=0) -> list[list[int]]` #TAG:_grid
+- `demos/mapgen.py:120` `_properties(pairs: dict[str, tuple[str, str]], indent: str) -> str` #TAG:_properties
   - `{key: (type, value)}` as a `<properties>` block, or "" for none.
-- `demos/mapgen.py:136` `_object(object_id: int, name: str, type_name: str, x: float, y: float, width: float, height: float, properties: dict[str, tuple[str, str]]) -> str` #TAG:mapgen._object
-- `demos/mapgen.py:148` `build_tmx(width: int, height: int, art: list[list[int]], collision: list[list[int]] | None, objects: list[str]) -> str` #TAG:build_tmx
+- `demos/mapgen.py:138` `_object(object_id: int, name: str, type_name: str, x: float, y: float, width: float, height: float, properties: dict[str, tuple[str, str]]) -> str` #TAG:mapgen._object
+- `demos/mapgen.py:150` `build_tmx(width: int, height: int, art: list[list[int]], collision: list[list[int]] | None, objects: list[str]) -> str` #TAG:build_tmx
   - One orthogonal map: a `Floor` art layer, an optional companion, objects.
-- `demos/mapgen.py:298` `_topdown_source() -> str` #TAG:_topdown_source
+- `demos/mapgen.py:300` `_topdown_source() -> str` #TAG:_topdown_source
   - Six `GamePlayer` objects that differ by ONE token, and nothing else.
-- `demos/mapgen.py:324` `_sidestep_source() -> str` #TAG:_sidestep_source
+- `demos/mapgen.py:326` `_sidestep_source() -> str` #TAG:_sidestep_source
   - Two side-on bodies over a floor that is authored as collision masks.
-- `demos/mapgen.py:372` `_patrol_source() -> str` #TAG:_patrol_source
+- `demos/mapgen.py:374` `_patrol_source() -> str` #TAG:_patrol_source
   - One scripted body and one driven body, sharing `topdown_move`.
-- `demos/mapgen.py:393` `_story_source() -> str` #TAG:_story_source
+- `demos/mapgen.py:395` `_story_source() -> str` #TAG:_story_source
   - One driven body that can also TALK, and one that cannot.
-- `demos/mapgen.py:432` `map_path(name: str) -> str` #TAG:map_path
+- `demos/mapgen.py:434` `map_path(name: str) -> str` #TAG:map_path
   - Where `name`'s .tmx lives. Absolute, because pytmx resolves its tileset
-- `demos/mapgen.py:438` `ensure_map(name: str) -> str` #TAG:ensure_map
+- `demos/mapgen.py:440` `ensure_map(name: str) -> str` #TAG:ensure_map
   - The path to `name`'s map, writing it and its art only if absent.
-- `demos/mapgen.py:451` `regenerate(name: str) -> str` #TAG:regenerate
+- `demos/mapgen.py:453` `regenerate(name: str) -> str` #TAG:regenerate
   - Overwrite `name`'s map from source. For a check that wants a known map,

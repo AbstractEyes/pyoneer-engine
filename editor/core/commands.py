@@ -483,7 +483,7 @@ def describe_all(*, title: str = "Command vocabulary",
         "Lines -- one object per line -- into `response.jsonl`.",
         "",
         "```json",
-        sample or ('{"verb": "map.tile.set", "scope": "map:test/layer:Floor",'
+        sample or ('{"verb": "map.tile.set", "scope": "map:starter/layer:Floor",'
                    ' "args": {"x": 4, "y": 7, "gid": 65}}'),
         "```",
         "",

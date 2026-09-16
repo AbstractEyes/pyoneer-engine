@@ -54,6 +54,33 @@ THE MAPS THIS CHECK READS ARE ITS OWN
 `tools/check_demos.py` does it and for the same reason: `demos/maps/*.tmx` is
 the author's canvas and a check that pinned its content would go red the first
 time somebody repainted one.
+
+THE LOOP SECTION OF THE TEMPLATE IS CHECKED TOO
+-----------------------------------------------
+`docs/DESIGN_TEMPLATE.md` also carries the design -> build -> prove loop (it
+absorbed the retired `docs/PROTOTYPE.md`). Section 8 asserts its heading, its
+three steps in order, that each command it prints runs a program that exists
+with flags that program accepts, and that the class snippet it tells a reader
+to write executes as a `DemoGame` with a `MAP_NAME` and no method. Mutated
+when the section moved, each red on its own assertion: the heading renamed;
+the `gen_map.py --write` line deleted; the snippet's base renamed; the
+`check_docs.py --write` flag misspelled; and, before the old file was
+removed, `docs/PROTOTYPE.md` still present.
+
+MUTATIONS RUN AGAINST THE CODE, EACH RED ON THE ASSERTION THAT COVERS IT
+------------------------------------------------------------------------
+Previously listed in `docs/DEMOS.md`, moved here to sit beside the code
+they measured: the sequencer's default hold no longer clearing
+`steerable`; the manager no longer ticking the flow, so the timed beat never
+advanced; the restore putting back `True` instead of the saved value, caught
+by the keeper and by nothing else; the manager no longer handing out the
+action sink; the step adapter opening the box without setting the line; the
+map dropping `action_relay`; the route dropping its payload; the game never
+beginning the flow it mounted; the first beat losing its timed hold; the map
+declaring a different size than the form; `SceneFlow.on_action` renamed, so
+the form's handler resolved nowhere; the form naming an unregistered token;
+the form losing one half of a `prove` row; and the dialogue box's `close()`
+doing nothing. The twenty form mutations in section 3 run on every pass.
 """
 from __future__ import annotations
 
@@ -1046,13 +1073,111 @@ try:
 
     # =====================================================================
     print()
-    print("8. the loop's parts are where PROTOTYPE.md says they are")
+    print("8. the loop's parts are where DESIGN_TEMPLATE.md says they are")
     # =====================================================================
+    # The loop -- DESIGN -> BUILD -> PROVE -- used to be a document of its
+    # own, `docs/PROTOTYPE.md`, and this section asserted only that the file
+    # EXISTED: a loop whose every command had rotted passed that. It is a
+    # section of the template now, and what is asserted is what a reader
+    # would ACT on: the heading a link lands on, the three steps in order,
+    # every command it prints running a program that exists with a flag that
+    # program accepts, and the class it tells you to write being a demo the
+    # runner would boot.
     expect("the design template is a document on disk",
            os.path.isfile(os.path.join(ROOT, TEMPLATE_REL.replace("/", os.sep))),
            True)
-    expect("the prototype loop is written down beside it",
-           os.path.isfile(os.path.join(ROOT, "docs", "PROTOTYPE.md")), True)
+    LOOP_HEADING = "## The loop: design -> build -> prove"
+    expect("the loop is written down in the template, under ONE heading",
+           TEMPLATE_TEXT.split("\n").count(LOOP_HEADING), 1)
+    expect("...and told once: the retired docs/PROTOTYPE.md is not back",
+           os.path.exists(os.path.join(ROOT, "docs", "PROTOTYPE.md")), False)
+    LOOP_TEXT = (TEMPLATE_TEXT.split("\n" + LOOP_HEADING + "\n", 1) + [""])[1]
+    LOOP_TEXT = LOOP_TEXT.split("\n## ", 1)[0]
+    step_at = [LOOP_TEXT.find("**%s.**" % step)
+               for step in ("DESIGN", "BUILD", "PROVE")]
+    expect("the loop names its three steps, each once, in order",
+           (min(step_at) >= 0 and step_at == sorted(step_at)
+            and all(LOOP_TEXT.count("**%s.**" % step) == 1
+                    for step in ("DESIGN", "BUILD", "PROVE"))), True)
+
+    # Every command line the loop prints, as argv after the interpreter.
+    INTERPRETER = ".venv/Scripts/python.exe"
+    loop_commands = [line.split("#", 1)[0].split()[1:]
+                     for line in LOOP_TEXT.split("\n")
+                     if line.strip().startswith(INTERPRETER)]
+    REQUIRED_COMMANDS = (["-m", "demos.<name>", "--frames", "60"],
+                         ["tools/gen_map.py", "--write"],
+                         ["tools/check_<name>.py"],
+                         ["tools/check_docs.py", "--write"])
+    expect("the loop prints the four commands a turn of it runs -- run the "
+           "demo, map it, check it, regenerate the roster",
+           [" ".join(c) for c in REQUIRED_COMMANDS if c not in loop_commands],
+           [])
+
+    def _command_resolves(argv: list[str]) -> bool:
+        """The program exists on disk and accepts every --flag given to it."""
+        if argv[:1] == ["-m"]:
+            module = argv[1].replace("<name>", "*").replace(".", os.sep)
+            import glob as _glob
+            if not _glob.glob(os.path.join(ROOT, module + ".py")):
+                return False
+            from demos.runtime import parse_args as _demo_args
+            try:
+                _demo_args(argv[2:])
+            except SystemExit:
+                return False
+            return True
+        import glob as _glob
+        found = _glob.glob(os.path.join(
+            ROOT, argv[0].replace("<name>", "*").replace("/", os.sep)))
+        if not found:
+            return False
+        source = open(found[0], encoding="utf-8").read()
+        return all('"%s"' % flag in source
+                   for flag in argv[1:] if flag.startswith("--"))
+
+    expect("every command the loop prints names a program that exists, with "
+           "flags it accepts",
+           [" ".join(c) for c in loop_commands if not _command_resolves(c)], [])
+    expect("...and the loop prints at least the four (a parser that found "
+           "nothing would pass the line above)", len(loop_commands) >= 4, True)
+
+    # BUILD tells you to copy a `_*_source` and add it to `SOURCES`.
+    expect("the BUILD step names the map table it tells you to add to, and "
+           "the table and a source to copy both exist",
+           ("SOURCES" in LOOP_TEXT and isinstance(mapgen.SOURCES, dict)
+            and "_*_source" in LOOP_TEXT
+            and any(re.fullmatch(r"_\w+_source", n) for n in vars(mapgen))),
+           True)
+
+    # The class it tells you to write, executed: a snippet that names a
+    # renamed base or a hook that moved is a snippet a reader copies into a
+    # traceback.
+    from demos.runtime import DemoGame as _DemoGame
+    snippet, collecting = [], False
+    for line in LOOP_TEXT.split("\n"):
+        if line.strip().startswith("from demos.runtime import"):
+            collecting = True
+        if collecting:
+            if line.strip() and not line.startswith("    "):
+                break
+            snippet.append(line[4:])
+    snippet_ns: dict = {"__name__": "loop_snippet"}
+    try:
+        exec(compile("\n".join(snippet), "<loop snippet>", "exec"), snippet_ns)
+        snippet_classes = [value for value in snippet_ns.values()
+                           if isinstance(value, type)
+                           and issubclass(value, _DemoGame)
+                           and value is not _DemoGame]
+    except Exception as exc:                      # reported, not raised
+        snippet_classes = ["raised %s: %s" % (type(exc).__name__, exc)]
+    expect("the class the loop tells you to write is a DemoGame with a "
+           "MAP_NAME and no method of its own",
+           [(bool(getattr(c, "MAP_NAME", "")),
+             sorted(n for n, v in vars(c).items()
+                    if callable(v) and not n.startswith("__")))
+            if isinstance(c, type) else c for c in snippet_classes],
+           [(True, [])])
     expect("this check is in the roster, so the loop's PROVE step is itself run",
            "(\"prototype\"," in
            open(os.path.join(ROOT, "tools", "check_all.py"),

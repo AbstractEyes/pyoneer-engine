@@ -46,6 +46,15 @@ htmlcov/
 saves/
 screenshots/
 
+# AI relay bundles. Every use of the editor's prompt strip writes a
+# NNNN-slug/ directory here (editor/core/request.py's write_bundle), carrying
+# a snapshot of the vocabulary, the author's notes and the project's absolute
+# path. They are one exchange's scratch, not source: a committed one goes
+# stale the day the vocabulary moves. write_bundle creates the directory on
+# demand and the editor's watcher re-arms after each ship, so nothing needs
+# it to exist in git.
+editor/requests/
+
 # ---------------------------------------------------------------------------
 # PyCharm
 # ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ from pygame.draw import rect
 
 from config.managers.animation_data import DataAnimationCategory, DataAnimation, DataAnimationFrame
 from scripts.core.event_manager import PyoneerEvent
+from scripts.core.art import MISSING_ART_HINT
 from scripts.core.errors import PyoneerAssetMissingError
 
 
@@ -113,7 +114,7 @@ class GameAnimationHandler:
                 "spritesheet", self._data.file, available=(),
                 animation_category=self._data.name,
                 declared_in="config/animations.json -> %s.file" % self._data.name,
-                hint="the repository ships without art; see docs/ASSETS.md",
+                hint=MISSING_ART_HINT,
             ) from exc
         self._spritesheet: Surface = sheet.convert_alpha() if pygame.display.get_surface() else sheet
         self._animations: dict[str, GameAnimation] = {}

@@ -1,7 +1,7 @@
 """Tool icons, drawn in code.
 
-No image files: the repository ships without art on purpose, and a toolbar
-that needs a PNG to be legible would be the one place that quietly stops
+No image files: the editor must draw on a machine holding no art at all, and
+a toolbar that needs a PNG to be legible would be the one place that quietly stops
 working on a fresh clone. These are drawn with QPainter at request time and
 cached, so they cost nothing after the first paint.
 

@@ -51,9 +51,12 @@ keyed by `(depth, priority)` and the renderer flattens the frame into one
 - **Draw order is an integer, not a tree position.** To put something in
   front of the player, give it a higher depth. Do not reorder anything.
 - A new map layer name only renders if `scripts/core/depth.py` maps it to a
-  depth. `MAP_DEPTH` is that table. Adding a layer to a `.tmx` without
-  adding it there means the layer silently does not draw -- which is
-  exactly how 39 authored tiles went missing for months.
+  depth. `MAP_DEPTH` is that table. Adding an art layer to a `.tmx` without
+  adding its name there means the layer does not draw. It used to vanish
+  silently -- which is exactly how 39 authored tiles went missing for months
+  -- and today the renderer warns naming it, but it still does not raise. A
+  data layer (a collision companion) declares `pyoneer_renders=false` and is
+  skipped without a warning.
 
 ### The lifecycle contract, and the trap in it
 
@@ -85,8 +88,7 @@ The one exception: `bind_component()` calls `core_lifecycle_prepare*` and
 It is the load-bearing thing. You may add event types, add listeners, and
 add components. Do not change how dispatch works, do not change
 `mark_event_handled`'s consumption semantics, and do not collapse the
-listener registries -- that is planned work with its own measured
-migration.
+listener registries.
 
 A behavior never needs to. It is *called* from the entity's frame update and
 binds nothing, so it can never call `handle()` and silence every sibling for
@@ -108,7 +110,10 @@ tree.
 
 The class resolves to a draw depth through `OBJECT_CONVERTER` in
 `scripts/core/depth.py`. Custom properties on the object become per-instance
-data, and `pyoneer_behaviors` is the one that decides what it does. Two
+data, and `pyoneer_behaviors` is the one that decides what it does. Placing
+a `GamePlayer` on `entity` in the editor writes this pack's default list
+onto the new object; the engine never reads the pack, so that list is a
+starting value carried by the object and nothing re-applies it. Two
 objects of the same class on one map may carry different lists; that is the
 property no other declaration site has, and the reason the list lives on the
 object rather than in a table or in the spawn registry.
@@ -175,15 +180,17 @@ hit it. Renaming this column also changes `tools/check_editor.py`, which pins
 both the column count and this column's default, so do it as one change
 across all three files.
 
-Equipment modifiers are **additive** and applied while equipped. A weapon
-with `attack_mod: 4` on an actor with `attack: 3` gives 7. If you need
+Equipment modifiers are **additive** while equipped, by this pack's
+convention: a weapon with `attack_mod: 4` on an actor with `attack: 3` means
+7. Nothing in the engine applies a modifier yet, so that convention is the
+contract the first code to read these columns must honour. If you need
 multiplicative or conditional modifiers, add columns for them and say so
 in `NOTES.md`; do not redefine what the existing columns mean.
 
 ### Naming
 
 - Classes: `<Paradigm><Usage><Actions><Behavior>` -- `GameAnimatedEntity`,
-  `MouseComponentAsync`, `AssetMapManager`. A behavior class ends `Behavior`:
+  `MouseComponentAsync`, `InputActionManager`. A behavior class ends `Behavior`:
   `Game<Thing>Behavior`, like `GameTopDownMoveBehavior`.
 - Behavior tokens (what goes in the tmx): `snake_case`, stable once
   referenced, never renamed -- the same rule as a table row id, and for the

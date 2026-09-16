@@ -243,7 +243,7 @@ class AttributeText(Param):
         Param("y", int, "row, 0-based from the top"),
         Param("gid", int, "global tile id from the map's tilesets; 0 is empty"),
     ],
-    example='{"verb": "map.tile.set", "scope": "map:test/layer:Floor",'
+    example='{"verb": "map.tile.set", "scope": "map:starter/layer:Floor",'
             ' "args": {"x": 4, "y": 7, "gid": 65}}',
 )
 def _tile_set(project: Project, cmd: Command) -> Command | None:
@@ -263,7 +263,7 @@ def _tile_set(project: Project, cmd: Command) -> Command | None:
     params=[
         Param("tiles", list, "a list of [x, y, gid] triples, all integers"),
     ],
-    example='{"verb": "map.tile.set_many", "scope": "map:test/layer:Floor",'
+    example='{"verb": "map.tile.set_many", "scope": "map:starter/layer:Floor",'
             ' "args": {"tiles": [[0, 0, 65], [1, 0, 65], [2, 0, 66]]}}',
 )
 def _tile_set_many(project: Project, cmd: Command) -> Command | None:
@@ -300,7 +300,7 @@ def _tile_set_many(project: Project, cmd: Command) -> Command | None:
         Param("height", int, "rows"),
         Param("gid", int, "global tile id; 0 clears"),
     ],
-    example='{"verb": "map.tile.fill", "scope": "map:test/layer:Floor",'
+    example='{"verb": "map.tile.fill", "scope": "map:starter/layer:Floor",'
             ' "args": {"x": 0, "y": 0, "width": 8, "height": 4, "gid": 65}}',
 )
 def _tile_fill(project: Project, cmd: Command) -> Command | None:
@@ -373,7 +373,7 @@ def _tile_fill(project: Project, cmd: Command) -> Command | None:
                                "because it has just said it does not draw",
               required=False, default=True),
     ],
-    example='{"verb": "map.layer.add", "scope": "map:test",'
+    example='{"verb": "map.layer.add", "scope": "map:starter",'
             ' "args": {"name": "Hazard", "kind": "tile"}}',
 )
 def _layer_add(project: Project, cmd: Command) -> Command:
@@ -479,7 +479,7 @@ def _layer_element(project: Project, scope: Scope):
         Param("value", object, "int, float, str or bool, matching the "
                                "capability's declared type"),
     ],
-    example='{"verb": "map.layer.set", "scope": "map:test/layer:Paralax",'
+    example='{"verb": "map.layer.set", "scope": "map:starter/layer:Parallax",'
             ' "args": {"key": "parallax_x", "value": 0.5}}',
 )
 def _layer_set(project: Project, cmd: Command) -> Command | None:
@@ -650,7 +650,7 @@ def _tileset_key(cmd: Command) -> str | int:
                                 "later without renumbering a single cell",
               required=False, default=0),
     ],
-    example='{"verb": "map.tileset.add", "scope": "map:test", "args":'
+    example='{"verb": "map.tileset.add", "scope": "map:starter", "args":'
             ' {"name": "Dungeon",'
             ' "image": "../graphics/tilesets/System/Dungeon.png"}}',
 )
@@ -704,7 +704,7 @@ def _tileset_add(project: Project, cmd: Command) -> Command:
               required=False, default=False),
     ],
     destructive=True,
-    example='{"verb": "map.tileset.remove", "scope": "map:test",'
+    example='{"verb": "map.tileset.remove", "scope": "map:starter",'
             ' "args": {"name": "Dungeon"}}',
 )
 def _tileset_remove(project: Project, cmd: Command) -> Command:
@@ -817,7 +817,7 @@ def _tileset_restore(project: Project, cmd: Command) -> Command:
                                  "ragged last row",
               required=False, default=None),
     ],
-    example='{"verb": "map.tileset.grow", "scope": "map:test", "args":'
+    example='{"verb": "map.tileset.grow", "scope": "map:starter", "args":'
             ' {"name": "Dungeon", "image": "../graphics/Dungeon.png",'
             ' "tile_count": 96}}',
 )
@@ -878,7 +878,7 @@ def _tileset_grow(project: Project, cmd: Command) -> Command | None:
         Param("to", str, "the new name; unique within the map, and non-empty "
                          "because it is an address"),
     ],
-    example='{"verb": "map.tileset.rename", "scope": "map:test", "args":'
+    example='{"verb": "map.tileset.rename", "scope": "map:starter", "args":'
             ' {"name": "TileA2", "to": "Village exteriors"}}',
 )
 def _tileset_rename(project: Project, cmd: Command) -> Command | None:
@@ -1228,7 +1228,7 @@ def _mask_edit(project: Project, cmd: Command, *,
         Param("mask", int, "-1 for no opinion, 0..15 for the direction bits "
                            "(1 down, 2 left, 4 right, 8 up), 16 for the star"),
     ],
-    example='{"verb": "map.tileset.mask.set", "scope": "map:test", "args":'
+    example='{"verb": "map.tileset.mask.set", "scope": "map:starter", "args":'
             ' {"name": "Dungeon", "tile": 7, "mask": 15}}',
 )
 def _tileset_mask_set(project: Project, cmd: Command) -> Command | None:
@@ -1261,7 +1261,7 @@ def _tileset_mask_set(project: Project, cmd: Command) -> Command | None:
                                 "declares now",
               required=False, default=""),
     ],
-    example='{"verb": "map.tileset.mask.restore", "scope": "map:test", "args":'
+    example='{"verb": "map.tileset.mask.restore", "scope": "map:starter", "args":'
             ' {"name": "Dungeon", "tile": 7, "mask": -1, "reference": ""}}',
 )
 def _tileset_mask_restore(project: Project, cmd: Command) -> Command | None:
@@ -1319,7 +1319,9 @@ def _checked_property_name(name: str, verb: str) -> str:
             "again -- a starting value, not a policy.",
     scopes=["map:*/layer:*"],
     params=[
-        Param("type", str, "the object's class, e.g. 'Chest' or 'PlayerStart'"),
+        Param("type", str, "the spawn type; an unregistered one makes the "
+                           "map raise at load, and `GamePlayer` is the only "
+                           "one that spawns today -- see docs/PLACEABLE.md"),
         Param("x", float, "world pixels from the left"),
         Param("y", float, "world pixels from the top"),
         Param("name", str, "an instance name, unique within the layer by "
@@ -1341,9 +1343,10 @@ def _checked_property_name(name: str, verb: str) -> str:
                                 "document assigns the next free one",
               required=False, default=0),
     ],
-    example='{"verb": "map.object.add", "scope": "map:test/layer:entity",'
-            ' "args": {"type": "Chest", "name": "chest_01", "x": 128, "y": 96,'
-            ' "properties": {"locked": true, "loot": "potion"}}}',
+    example='{"verb": "map.object.add", "scope": "map:starter/layer:entity",'
+            ' "args": {"type": "GamePlayer", "name": "hero", "x": 128,'
+            ' "y": 96, "properties": {"pyoneer_behaviors":'
+            ' "player_input,topdown_move,animation_drive"}}}',
 )
 def _object_add(project: Project, cmd: Command) -> Command:
     layer = _object_layer(project, cmd.scope)
@@ -1414,7 +1417,7 @@ def _born_with(project: Project, scope: Scope, args: dict[str, Any],
     scopes=["map:*/layer:*/object:*"],
     destructive=True,
     example='{"verb": "map.object.remove",'
-            ' "scope": "map:test/layer:entity/object:14", "args": {}}',
+            ' "scope": "map:starter/layer:entity/object:14", "args": {}}',
 )
 def _object_remove(project: Project, cmd: Command) -> Command:
     found = _object(project, cmd.scope)
@@ -1611,7 +1614,7 @@ def _object_unset(project: Project, cmd: Command) -> Command | None:
         Param("value", object, "int, float, str or bool"),
     ],
     example='{"verb": "map.object.property.set",'
-            ' "scope": "map:test/layer:entity/object:14",'
+            ' "scope": "map:starter/layer:entity/object:14",'
             ' "args": {"key": "hp", "value": 30}}',
 )
 def _object_property_set(project: Project, cmd: Command) -> Command | None:
@@ -1733,7 +1736,7 @@ def _action_inverse(scope: Scope, key: str, existing: dict[str, Any]) -> Command
                                "'key=value;key=value'."),
     ],
     example='{"verb": "map.object.action.set",'
-            ' "scope": "map:test/layer:entity/object:14",'
+            ' "scope": "map:starter/layer:entity/object:14",'
             ' "args": {"key": "trigger", "value": "enter"}}',
 )
 def _action_set(project: Project, cmd: Command) -> Command | None:
@@ -2063,7 +2066,7 @@ def _genre_set(project: Project, cmd: Command) -> Command | None:
 #
 # The authoring half of `data/project/scripts/`. Fourteen verbs, not one per
 # op: nine ops times four verbs would be thirty-six new permanent names and
-# a parallel registry, which is the shape `docs/PLAN_SCENES.md` 6.4 refuses.
+# a parallel registry, which is the shape `docs/history/PLAN_SCENES_2026-09-03.md` 6.4 refuses.
 # One node verb validated against the op registry is the trade
 # `map.layer.set` already makes against `CAPABILITIES`.
 #
@@ -2084,7 +2087,7 @@ def _genre_set(project: Project, cmd: Command) -> Command | None:
 # on a `do` node, and a move into a node's own subtree.
 #
 # THE SEAM, WIRED, AND WHERE IT LIVES. `ScriptLibrary` creates and deletes
-# in memory and writes at `save()`, per `docs/PLAN_SCENES.md` 2.5. For a
+# in memory and writes at `save()`, per `docs/history/PLAN_SCENES_2026-09-03.md` 2.5. For a
 # whole pass `Project.save()` did not call it and `Project.dirty` did not
 # count it, so authoring a script through these verbs, pressing Ctrl+S and
 # closing wrote the MAP that names the script and never the script -- and

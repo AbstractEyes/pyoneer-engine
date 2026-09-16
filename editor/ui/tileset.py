@@ -3,8 +3,8 @@
 Reads the tmx XML directly rather than going through pytmx, because the
 editor is pygame-free and pytmx's pygame loader is not.
 
-Degrades on purpose. This repository ships without art, so a tileset image
-will often be missing. Rather than refusing to draw a map, a missing image
+Degrades on purpose. A map may name a tileset image nobody supplied, so an
+image can be missing. Rather than refusing to draw a map, a missing image
 produces a deterministic color swatch per gid -- enough to see structure,
 edit layers, and place objects, and visibly not real art.
 """

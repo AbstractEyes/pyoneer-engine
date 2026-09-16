@@ -1,6 +1,5 @@
 <!-- pyoneer-doc: L0 -->
-<!-- pyoneer-stamp: hand-written; the engine claims were re-measured against d8c303f on 2026-08-16, the `.blitmap` collision gap on 2026-08-18 by the greps it names. The tileset rows in `The constants`, the query playbook's TILESETS row, the fourth sighting in ACTIVE WARNINGS, the two new KNOWN GAPS bullets and the six new anchors were measured against the working tree on 2026-08-29. The first two KNOWN GAPS bullets were re-measured on 2026-09-03: README's three false gap claims and its stale check count are gone, so that bullet now names only the structural half it still owns, and the BEHAVIORS preamble bullet gained the second lie found in the same preamble that day. Also on 2026-09-03, at the finalize of the repair pass: the `map.tileset.grow`/`.rename` gap is struck through with the grep that closed it, and the fourth ACTIVE WARNING sighting was put into the past tense without being deleted. On 2026-09-04, at the finalize of the audio + map + queue pass: LAW 11 CHANGED SUBJECT -- the author's private test.tmx canvas was retired ON HIS EXPLICIT INSTRUCTION and replaced by the shipped data/maps/starter.tmx, so law 11 now protects that file and the baseline, with its reasons re-measured against the new map (byte-exact round trip under both LF and CRLF); law 4 gained the second instance that cost this pass; the query playbook gained an audio row and re-measured EVENTS.md's reachability count; The constants gained the two asset-root pairs and the shipped map; and KNOWN GAPS gained the audio-unreachable bullet. The ladder's level-0 cost was re-measured at ~9.7k. On 2026-09-10, at the finalize of the reachability pass: the query playbook's EVENTS row was re-measured and INVERTED -- all six reachability rows read `yes` now, where four read `no`, because a scripted event runs when a human presses a key; the KNOWN GAPS audio bullet is struck through with the greps that closed it, and the action-route shortcut it named was deleted rather than left beside the real route; and one anchor was added, `#TAG:no_event_pooling`, for the measurement that justified deleting a branch that had never executed. Nothing else in this file was re-measured in that pass and every other claim keeps its own date. On 2026-09-11, at the finalize of the four-defect repair pass: the fifth ACTIVE WARNING's count moved from NINE to ELEVEN and both new sightings are named -- the tenth is `MapDocument._append_child`, whose middle branch recomputed a separator three lines below its own comment saying not to, which ends the "distance is the cause" reading for good; the eleventh is `ScriptLibrary.dirty`, a repaired bug's untouched twin one layer down with no reader at all. That entry also gained the positive proof of its own counter-move: four copies of the self-closing guard in `editor/core/verbs.py` became one line in `_remove_child` and the four copies were deleted, so one mutation now turns four rows red where four were needed before. One anchor was added, `#TAG:childless_parent_closes_itself`. Nothing else in this file was re-measured in that pass. Later on 2026-09-11, at the finalize of the overnight run: the fifth ACTIVE WARNING's count moved from ELEVEN to FIFTEEN and all four new sightings are named -- the twelfth is the tightest instance recorded here, a guard that landed on one PARAMETER while the sibling parameter in the SAME ARGS DICT stayed open; the thirteenth is the verb that looked guarded because its sibling ARGUMENT declared `choices=`; the fourteenth is a door that read every NAME in a restored element and never one VALUE; the fifteenth is open and filed as item 37 of docs/NEXT.md. That entry also gained the enumeration counter-move and its measured cost (51 verbs, 136 parameters, 5 in the defect class). Three anchors were added: `#TAG:attribute_order_read_off_the_file`, `#TAG:untyped_object_spawns_nothing` and `#TAG:text_the_reader_casts_back`, the last for the shared `ATTRIBUTE_TEXT` table that now lives beside `RESERVED` and is asked by both the editor's command door and the engine-side restore door. Nothing else in this file was re-measured in that pass. -->
-
+<!-- pyoneer-stamp: hand-written; re-measured on 2026-09-16 during the markdown cleanup by tools/check_docs.py and the greps it names. -->
 # Pyoneer — read this first
 
 This is the boot document. It is small on purpose: reading the whole thing is
@@ -33,35 +32,31 @@ file read:
 ```
 grep -rnE "#TAG:GameEntity(\s|$)"          the class alone -- 2 hits
 grep -rn  "#TAG:GameEntity.allowed_move"   one method, wherever it now lives
-grep -rn  "#TAG:topdown_move"              a behavior token's declaration, not its 40 mentions
+grep -rn  "#TAG:topdown_move"              a behavior token's declaration, not its 200+ mentions
 grep -rn  "#TAG:map.tile.set"              an editor verb's declaration, same
 grep -rn  "pyoneer_param_"                 a file-format string, everywhere it is spelled
 ```
 
 **BOUND THE TAG OR IT IS NOT A LOOKUP.** A tag is a PREFIX of every tag under
 it, so the bare form matches the whole subtree: measured, `#TAG:GameEntity`
-returns **43** lines and `#TAG:GameEntity(\s|$)` returns **2**. Use the bare
-form deliberately, when you want the subtree ("everything about this class");
-use the bounded form when you want the declaration. A dotted tag
-(`#TAG:GameEntity.allowed_move`) is a leaf and needs no bounding. Behavior
-tokens and verbs are leaves too -- `#TAG:topdown_move` is 4 lines.
+returns **48** lines and `#TAG:GameEntity(\s|$)` returns **2**. Use the bare
+form deliberately, when you want the subtree; use the bounded form when you
+want the declaration. A dotted tag (`#TAG:GameEntity.allowed_move`) is a leaf
+and needs no bounding. Behavior tokens and verbs are leaves too.
 
-The third and fourth are the ones worth internalising. A behavior token and a
-verb name are *strings*, spelled in specs, examples, docstrings, generated
-tables and `.tmx` files, so grepping the bare name returns dozens of lines and
-none of them is the declaration. The `#TAG:` form returns exactly one line in
-the source — the line that defines the thing — plus the code map's entry for
-it. Every registered behavior token and every editor verb carries one.
+The third and fourth commands are the ones worth internalising. A behavior
+token and a verb name are *strings*, spelled in specs, examples, docstrings,
+generated tables and `.tmx` files, so grepping the bare name returns dozens of
+lines and none of them is the declaration. The `#TAG:` form returns exactly one
+line in the source — the line that defines the thing — plus the code map's
+entry for it. Every registered behavior token and every editor verb carries
+one.
 
-A `#TAG:` is this repository's stable address for a symbol. It replaced
-line-number addressing for a measured reason: a five-line docstring edit once
-turned the documentation check red because a quoted line had *moved down five
-rows*. The anchor was correct, the document was current, and nothing about the
-documented fact had changed. **A line number is not an address. A tag is.**
-
-Nothing at all is written by hand in the map — [`tools/gen_map.py`](tools/gen_map.py)
-walks the AST and emits it — so a tag cannot name something that does not
-exist, and the tag for a symbol you just renamed disappears in the same run.
+A `#TAG:` is this repository's stable address for a symbol; law 14 says why a
+line number is not. Nothing at all is written by hand in the map —
+[`tools/gen_map.py`](tools/gen_map.py) walks the AST and emits it — so a tag
+cannot name something that does not exist, and the tag for a symbol you just
+renamed disappears in the same run.
 
 ### The tag vocabulary — four shapes, one rule
 
@@ -79,30 +74,25 @@ thing you were looking for. (Angle brackets are the escape for a placeholder:
 | a topic with no Python name | `lower_snake_case`, chosen by hand, written as a trailing comment on the line it describes | `#TAG:delta_is_ms_over_60`, `#TAG:qt_takewidget_sequence` |
 | a behavior token or an editor verb | the token or verb **exactly as authored**, because that string is the file format | `#TAG:topdown_move`, `#TAG:map.object.property.set` |
 
-Two qualifications, and no more. **Bare by default**, because someone looking up
-`GameEntity` knows the class name and does *not* yet know the module, so a
-scheme demanding `game_entity.GameEntity` would demand the answer as the
-question. **Qualified only on collision** — when two things in the tree share a
-name the generator prefixes both with the module stem
+**Bare by default**, because someone looking up `GameEntity` knows the class
+name and does *not* yet know the module. **Qualified only on collision** — when
+two things share a name the generator prefixes both with the module stem
 (`#TAG:layer_profile.PREFIX`), and a property's setter takes `.setter`
 (`#TAG:GameComponent.depth.setter`), because a bare `update` is claimed by 18
 classes here and a tag returning 18 lines is not an address.
 
 **A TAG IS A DECLARATION, NEVER A CITATION.** A hand-placed tag value may
-appear exactly ONCE anywhere in the mapped tree, so a `see #TAG:<value>`
-inside a docstring that points back at the line declaring it --
-which reads as good practice, and is what this file's own prose does -- makes
+appear exactly ONCE anywhere in the mapped tree, so a `see #TAG:<value>` inside
+a docstring pointing back at the line that declares it makes
 `tools/check_docs.py` report the value at two addresses. Cite it in prose
-instead. The asymmetry to know: `tools/` is not mapped, so a check module may
-name a tag as often as it likes.
+instead. `tools/` is not mapped, so a check module may name a tag as often as
+it likes.
 
 You do not write tags for symbols: the generator emits them. Write one by hand
 **only** to name a line that is not a definition — a sentence inside a
 docstring, a token inside a spec literal, a step inside a sequence — as a
 trailing comment on that line. `tools/check_docs.py` refuses a hand-placed tag
-that sits outside the symbol it names, and refuses two tags with the same value
-anywhere.
-
+that sits outside the symbol it names, and refuses two tags with the same value.
 Three families are already sown, and adding to a family is part of the change
 that adds the thing: **every registered behavior token** (on its `name=` line
 in the spec), **every editor verb** (on its name line in the `@command`
@@ -116,16 +106,16 @@ answers is the single most expensive habit available here.
 
 | level | read | cost | when |
 |---|---|---|---|
-| 0 | this file | ~9.7k tokens | always, first, whole |
+| 0 | this file | ~7.1k tokens | always, first, whole |
 | 1 | `grep -rn "#TAG:<name>"` | one command | you know the name and want the address |
-| 2 | [`docs/MAP.md`](docs/MAP.md) — tier 1 | ~13k tokens | starting a task; "what exists and where" |
-| 3 | `docs/map/<dotted.module>.md` — tier 2 | ~0.5k tokens each; the largest is ~5k | you are about to touch ONE module and need real signatures |
-| 4 | the source file | ~1.7k tokens for the median module, ~22k for the largest | you are about to EDIT it, or the map is not enough |
+| 2 | [`docs/MAP.md`](docs/MAP.md) — tier 1 | ~16k tokens | starting a task; "what exists and where" |
+| 3 | `docs/map/<dotted.module>.md` — tier 2 | ~0.6k tokens each; the largest (`editor.core.verbs`) is ~10k | you are about to touch ONE module and need real signatures |
+| 4 | the source file | ~2.1k tokens for the median module, ~47k for the largest | you are about to EDIT it, or the map is not enough |
 | 5 | a whole package | tens of thousands | last resort. Say out loud why levels 1–4 failed |
 
 Level 3 is one file per module: `scripts/core/depth.py` maps to
 [`docs/map/scripts.core.depth.md`](docs/map/scripts.core.depth.md). **Never
-load them all** — the set is ~100k tokens, which is more than reading the
+load them all** — the set is ~136k tokens, which is more than reading the
 source, and that is the exact failure two tiers exist to prevent.
 
 ## The constants — literal strings, not descriptions
@@ -180,24 +170,24 @@ topic, different layers, and different files.
 |---|---|
 | "what exists" · "where does X live" · "is there already a function for this" | [`docs/MAP.md`](docs/MAP.md) — GENERATED tier 1, then one tier-2 file |
 | "what does this behavior do" · "how do I make it move" · "add a behavior" | [`docs/BEHAVIORS.md`](docs/BEHAVIORS.md) — GENERATED; trust its **measured integration table** over any prose, including its own preamble |
-| "what can a script DO" · "what ops exist" · "what may I write in a `do`" · "does that op actually run" | [`docs/EVENTS.md`](docs/EVENTS.md) — GENERATED, and it makes no hand-written claim about the code at all: its runtime and reachability columns are measured on every run, and today ALL SIX reachability rows read `yes` for the first time -- four of them flipped on 2026-09-10. A row that goes back to `no` is a wire somebody broke, not a feature nobody built yet |
-| "how do I make a noise" · "where does audio come from" · "why is it silent" · "what am I allowed to ship" | [`data/audio/CREDITS.md`](data/audio/CREDITS.md) for the two shipped assets and their licences; `#TAG:scripts/core/audio.py` for the two roots and the missing-card / missing-file split; [`docs/EVENTS.md`](docs/EVENTS.md) for the two play ops |
+| "what can a script DO" · "what ops exist" · "what may I write in a `do`" · "does that op actually run" · "how do I script an event" · "what commands can a script use" | [`docs/EVENTS.md`](docs/EVENTS.md) — GENERATED, with no hand-written claim about the code: its runtime and reachability columns are measured on every run, so a row reading `no` is a wire somebody broke, not a feature nobody built yet |
+| "how do I make a noise" · "where does audio come from" · "why is it silent" · "what am I allowed to ship" | [`data/audio/CREDITS.md`](data/audio/CREDITS.md) for the shipped assets and their licences; `#TAG:scripts/core/audio.py` for the two roots and the missing-card / missing-file split; [`docs/EVENTS.md`](docs/EVENTS.md) for the play ops |
 | "my entity does not move" · "nothing happens when I press a key" · "it falls forever" · "it raises at load" · "I painted collision and nothing blocks" | [`docs/DIAGNOSE.md`](docs/DIAGNOSE.md) |
 | "what can I place on an object layer" · "what goes in `type=`" · "why does my layer not draw" · "what key is bound to what" | [`docs/PLACEABLE.md`](docs/PLACEABLE.md) — GENERATED |
 | "make me a platformer" · "make me a top-down RPG" | `editor/genres/<id>/RULES.md`, then `docs/BEHAVIORS.md` |
-| "how do I make a tileset" · "how do I add tiles from an image" · "can I use part of this PNG" · "how do I make a tile solid" · "where did the collision layer go" · "why will this tileset not grow" | [`docs/TILESETS.md`](docs/TILESETS.md) |
+| "how do I make a tileset" · "how do I add tiles from an image" · "how do I add or remove a tile from a tileset" · "can I use part of this PNG" · "how do I make a tile solid" · "where did the collision layer go" · "why will this tileset not grow" | [`docs/TILESETS.md`](docs/TILESETS.md) |
 | "how do I change project data from a script" · "what verbs exist" | [`docs/COMMANDS.md`](docs/COMMANDS.md) — GENERATED |
 | "show me a game that works" · "start a new demo" | [`docs/DEMOS.md`](docs/DEMOS.md) |
-| "design a small game" · "design me a small game" · "I have an idea, what do I write down" · "write the spec before the code" · "what goes in the behavior list" · "what can I actually build with this today" | [`docs/DESIGN_TEMPLATE.md`](docs/DESIGN_TEMPLATE.md) — a fill-in form, five minutes, every field resolved against a live registry by a check |
-| "how do I get from an idea to a running prototype" · "what is the loop here" · "what does one turn of the loop cost" | [`docs/PROTOTYPE.md`](docs/PROTOTYPE.md) — DESIGN → BUILD → PROVE, each step's cost measured |
+| "design me a small game" · "I have an idea, what do I write down" · "what goes in the behavior list" · "what can I actually build with this today" · "how do I get from an idea to a running prototype" · "what is the loop here" · "what does one turn of the loop cost" | [`docs/DESIGN_TEMPLATE.md`](docs/DESIGN_TEMPLATE.md) — a fill-in form checked against the live registries, and the design → build → prove loop |
 | "how do I run the checks" · "I wrote a check" | [`docs/CHECKS.md`](docs/CHECKS.md) — GENERATED — plus law 6 below |
-| "how does the editor think" · "why is every change a command" | [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md) |
-| "what is a scene" · "how do I share a tileset between maps" · "how do I add or remove a tile from a tileset" · "how do I script an event" · "what commands can a script use" · "how does the relay work" · "what do I type into the prompt strip" | [`docs/PLAN_SCENES.md`](docs/PLAN_SCENES.md) — the build spec; unbuilt until its stages say otherwise |
+| "how does the editor think" · "why is every change a command" · "what is a scope" · "how does the relay work" · "what do I type into the prompt strip" | [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md) — the editor's architecture |
+| "what is still unbuilt for scenes" · "what is a scene" · "how do I share a tileset between maps" · "is there a tileset editor screen" · "how will region triggers work" · "what is the relay back channel" · "why does `ask` not run" | [`docs/PLAN_SCENES.md`](docs/PLAN_SCENES.md) — the UNBUILT remainder of the scenes plan, with a status table at the top |
 | "where is the art" · "why does it fail on a fresh clone" | [`docs/ASSETS.md`](docs/ASSETS.md) |
 | "is this already written but unwired" | [`docs/BEHAVIORS.md`](docs/BEHAVIORS.md)'s measured integration column first; [`docs/history/ORPHANS.md`](docs/history/ORPHANS.md) only for the archaeology |
-| "what should I do next" | [`docs/NEXT.md`](docs/NEXT.md) — every entry carries the command that measured it; run it before acting |
+| "what should I do next" · "is this a known defect" | [`docs/NEXT.md`](docs/NEXT.md) — every entry carries the command that measured it; run it before acting. Item numbers are permanent ids |
 | "the frame changed" · "smoke drifted" | `tools/smoke.py --frames 60`, then law 11 |
-| "what did the first review find" · "why was it built this way" · "was this planned once already" | everything under `docs/history/`: `docs/history/ENGINE_REVIEW.md`, `docs/history/IMPROVEMENT_PLAN.md`, `docs/history/NEXT_ce66ce5.md`, `docs/history/ORPHANS.md`, `docs/history/PLAN_EVENT_SYSTEM.md`, `docs/history/PLAN_MAPS.md`, `docs/history/PLAN_SINGLETONS.md` — each dated, each stamped with what superseded it. **Never navigate by them.** |
+| "how many times has this mistake happened" · "when did that gap close" | [`docs/history/SIGHTINGS.md`](docs/history/SIGHTINGS.md) — the append-only ledger behind ACTIVE WARNINGS and the paid-off gaps |
+| "what did the first review find" · "why was it built this way" · "was this planned once already" | everything under `docs/history/`: `docs/history/ENGINE_REVIEW.md`, `docs/history/IMPROVEMENT_PLAN.md`, `docs/history/NEXT_ce66ce5.md`, `docs/history/ORPHANS.md`, `docs/history/PLAN_EVENT_SYSTEM.md`, `docs/history/PLAN_MAPS.md`, `docs/history/PLAN_SCENES_2026-09-03.md`, `docs/history/PLAN_SINGLETONS.md`, `docs/history/SIGHTINGS.md` — each dated. **Never navigate by them.** |
 
 ## Generated vs written
 
@@ -205,14 +195,15 @@ topic, different layers, and different files.
 |---|---|---|
 | `docs/MAP.md`, `docs/map/*.md` | `tools/gen_map.py --write` | what exists, where it is, and every `#TAG:` |
 | `docs/BEHAVIORS.md` | `tools/check_behavior_docs.py --write` | the behavior table and its **measured** integration status |
+| `docs/EVENTS.md` | `tools/check_event_docs.py --write` | the op vocabulary and its **measured** runtime and reachability |
 | `docs/PLACEABLE.md` | `tools/check_docs.py --write` | spawnable types, layer→depth, input verbs |
 | `docs/CHECKS.md` | `tools/check_docs.py --write` | the check roster |
 | `docs/COMMANDS.md` | `tools/check_docs.py --write` | the editor's verb vocabulary |
 | everything else in `docs/` | hand-written, stamped | its own question shape only |
 
 A generated file is regenerated and compared byte-for-byte by its check, so it
-cannot drift. **A generated file's hand-written preamble still can** — see
-KNOWN GAPS.
+cannot drift from its generator. **A generator's hand-written preamble still
+can** — read it against the code, because no check here can.
 
 ## The hard laws — each one states what it cost
 
@@ -224,389 +215,147 @@ A law with no cost attached gets ignored. Every cost below is in the tree.
    `scripts/core/layer_profile.py`; never retype it.
 2. **`editor/` may import `scripts/`. `scripts/` may NEVER import `editor/`.**
    Cost: `python main.py` must work on a clone with `editor/` deleted.
-   *Corollary, paid in `29fbfc1`:* shared logic lives in `scripts/` and the
-   editor re-exports it. A second implementation of the collision model shipped
-   with 37 shared symbols, 35 textually identical; **425 duplicate lines** were
-   deleted, and the "differential" guard meant to catch it compared 11 of 37
-   symbols and missed the gate itself. Every tier-2 map file prints that
-   module's first-party imports, so this law is now auditable by reading rather
-   than by grepping.
+   Corollary: shared logic lives in `scripts/` and the editor re-exports it —
+   a second copy of the collision model cost **425 duplicate lines**, deleted
+   in `29fbfc1`. Every tier-2 map file prints its module's first-party imports,
+   so this law is auditable by reading.
 3. **Do not restructure the event system.** Add types, listeners and components
    freely; do not touch dispatch, consumption or the listener registries. Cost:
    consumption is **not type-gated** — one stray `handle()` in a fan-out
    silences every sibling for the rest of the frame. That is *why* a behavior is
    called and never dispatched to.
-4. **A check asserts what the CODE does, never what the MAP contains.** Cost:
-   red suites, and commit `333a77a` exists solely to undo two checks that pinned
-   the shipped map's content. Write your own fixture. Paid again the day
-   `data/maps/starter.tmx` replaced the old canvas: `check_tmx_roundtrip` and
-   `check_tileset` were measuring CRLF, tab indentation and `</data>` at
-   column 0 against a file that merely happened to have them, so they read as
-   claims about the WRITER and were claims about one person's punctuation.
-   Both build their own deliberately awkward fixture now, and a repoint would
-   have deleted that coverage while still printing `PASS`.
+4. **A check asserts what the CODE does, never what the MAP contains.** Write
+   your own fixture. Cost: commit `333a77a` exists solely to undo two checks
+   that pinned the shipped map's content, and `check_tmx_roundtrip` and
+   `check_tileset` were later found measuring one map's CRLF and indentation
+   rather than the writer — both now build a deliberately awkward fixture.
 5. **An assertion that cannot fail is not an assertion.** The dominant failure
-   shape by far is **one half of an invariant** — a gate proved to let something
-   through and never proved to stop it. Cost: `[UNVERIFIED]` 26 such assertions
-   reported across review passes; `README.md` describes five. Break the code your
-   check covers, confirm it goes red, and report the mutation and the result.
+   shape is **one half of an invariant** — a gate proved to let something
+   through and never proved to stop it. Break the code your check covers,
+   confirm it goes red, and report the mutation and the result. Cost:
+   `[UNVERIFIED]` 26 such assertions reported across review passes.
 6. **A new check goes into `tools/check_all.py`'s roster in the SAME change.**
    Cost: three checks have been written, passed, and never run by the suite —
    one of them with 114 assertions.
 7. **Raise; never fall back to a plausible default.** Cost: 39 authored tiles
-   silently dropped for months because the renderer looked up `Parallax` and the
-   retired canvas said `Paralax` (`#TAG:LAYER_NAME_ALIASES` still carries the
-   alias, because someone else's map may still spell it that way). This is why `BehaviorParam.coerce` raises where
+   silently dropped for months because the renderer looked up `Parallax` and
+   the retired canvas said `Paralax` (`#TAG:LAYER_NAME_ALIASES` still carries
+   the alias). This is why `BehaviorParam.coerce` raises where
    `Capability.coerce` falls back, and why they are deliberately not one class.
 8. **A behavior token, a table row id and a column name are FILE FORMAT
    strings** — stable once referenced, never renamed. Cost: a renamed token
    silently disarms every object carrying it *and looks like the behavior
-   working*. `resolve()` raises on an unknown token rather than skipping it, for
-   exactly this reason.
+   working*. `resolve()` raises on an unknown token for exactly this reason.
 9. **`event.data["delta"]` is milliseconds ÷ 60, not seconds.** Cost: a genre
    table's pixels-per-second number used raw is ~16.7× wrong **in a way that
    still looks like it works**.
 10. **Adding a behavior that polls a verb and adding its binding are ONE
-    change.** Cost: `InputActionManager.held()` is an unguarded dict index, so an
-    unbound verb raises `KeyError` *inside* `core_frame_update`, killing the
+    change.** Cost: `InputActionManager.held()` is an unguarded dict index, so
+    an unbound verb raises `KeyError` *inside* `core_frame_update`, killing the
     frame for every sibling in that scene bucket. The behaviors raise at
     **attach** instead — deliberately the opposite timing. Know which you are
     writing.
 11. **Do not hand-edit `data/maps/starter.tmx` or `tools/baseline.json`; name a
-    smoke drift field-by-field or do not bless it.** The subject changed on
-    2026-09-04 and the reasons did not. The author's private `test.tmx`
-    canvas, which this law used to name, was **retired on the author's
-    explicit instruction** and replaced by `data/maps/starter.tmx`,
-    the shipped demo map: 80×60, tracked, boots the game, and the only thing
-    the smoke baseline is measured over. Cost, measured on the old file and
-    still live: a tmx that mixes tab-indented and space-indented blocks and is
-    CRLF throughout is reproduced by no pretty-printer — only by
-    whitespace-preserving parsing, which is why `MapDocument` exists and why a
-    hand-edit destroys the byte-exactness contract. `starter.tmx` is uniform
-    LF today and round-trips byte-exactly under **both** LF and CRLF
-    (measured), so the contract binds it the same way: edit it through the
-    editor or through `MapDocument`, never by hand. And **smoke injects no
-    input**, so "no drift" never means "nothing changed": it cannot see
-    anything that only happens while walking. A check that pins this map's
-    punctuation is a law-4 violation, not a feature — write a fixture.
+    smoke drift field-by-field or do not bless it.** Edit the map through the
+    editor or `MapDocument`, whose byte-exact round trip (measured under both
+    LF and CRLF) a hand-edit destroys. Cost: that contract exists because a
+    tmx mixing tab and space indentation under CRLF is reproduced by no
+    pretty-printer — and **smoke injects no input**, so "no drift" never means
+    "nothing changed".
 12. **In a Qt panel, never `setParent(None)` to clear a layout, and never free
-    the old body synchronously.** Cost, both measured: `setParent(None)` promotes
-    a widget to a **top-level window** — ~20 orphan windows flashed on every
-    Ctrl+Z and leaked (59 top-level widgets at rest → 85 after one undo → still
-    85); and `setWidget()` alone frees the old body while a field's own `toggled`
-    signal is still on the stack, a hard **STATUS_HEAP_CORRUPTION (0xC0000374)**
-    crash of the whole editor. The one correct sequence is `takeWidget()` →
-    `setParent(self)` → `hide()` → `deleteLater()` → `setWidget(new)`.
-13. **A check must never block on a modal dialog.** Cost: `check_collision_mount`
-    hung on `QMessageBox.question` for **40+ minutes with zero output**,
-    indistinguishable from a slow machine. `check_all.py` now carries a 600s
-    per-check timeout and a `HANG` verdict.
-14. **Address code by `#TAG:`, never by a line number.** Cost: measured this
-    pass — a docstring edit five rows above a pinned line turned `check_docs`
-    red with `no longer contains ... it moved to line 241`, for a document that
-    was entirely correct. `tools/check_docs.py` now refuses a numbered anchor
-    and pins the shrinking inventory of documents that still use one.
+    the old body synchronously.** Cost, both measured: `setParent(None)`
+    promotes a widget to a **top-level window** (59 top-level widgets at rest →
+    85 after one undo → still 85), and `setWidget()` alone frees the old body
+    while a field's own `toggled` signal is still on the stack — a hard
+    **STATUS_HEAP_CORRUPTION (0xC0000374)** crash of the whole editor. The one
+    correct sequence is `takeWidget()` → `setParent(self)` → `hide()` →
+    `deleteLater()` → `setWidget(new)`.
+13. **A check must never block on a modal dialog.** Cost:
+    `check_collision_mount` hung on `QMessageBox.question` for **40+ minutes
+    with zero output**, indistinguishable from a slow machine. `check_all.py`
+    now carries a 600s per-check timeout and a `HANG` verdict.
+14. **Address code by `#TAG:`, never by a line number.** Cost: a docstring edit
+    five rows above a pinned line turned `check_docs` red with `it moved to
+    line 241`, for a document that was entirely correct. `tools/check_docs.py`
+    now refuses a bare line-number address in any live document.
 
 ## ACTIVE WARNINGS — mistake patterns caught more than once
 
-Append-only, newest last. A law says what the rule is; a warning says **what
-people actually do instead**, so each entry names the move that looked
-reasonable at the time. Add one the second time you catch a shape, not the
-first — and never delete one, because the whole value is that it is a record
-of repetition.
+A law says what the rule is; a warning says **what people actually do
+instead**. Each entry is the move, the counter-move and a count. The record
+behind every count is [`docs/history/SIGHTINGS.md`](docs/history/SIGHTINGS.md),
+and it is **append-only**: a new sighting is appended to the ledger and the
+count here is updated in the same change, and nothing is deleted from either,
+because the whole value is the record of repetition. Add a warning the second
+time you catch a shape, not the first; newest last.
 
-- **You will reach for a sibling file.** The move that looks safe is a new
-  module beside the incumbent — `foo_v2.py`, `new_foo.py`, a "clean"
-  reimplementation to switch over later. Measured here: **five** refactors were
-  attempted that way and all five died; every refactor written *into* the
-  incumbent class landed. Law 2's corollary is the same lesson at package
-  scale — 425 duplicate lines. Counter-move: `grep -rn "#TAG:<TheClass>"`, open
-  the incumbent, edit it.
-- **You will read a finished plan as an instruction.** Caught again on
-  2026-08-16 at `d8c303f`: [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md)'s "not
-  built yet" list named four things that had already shipped — including the
-  object-layer spawn path, whose absence it gave as the reason not to build the
-  action queue. Nothing about that document announced itself as stale, and it
-  sits at the address a reader is routed to for editor architecture.
+- **You will reach for a sibling file** — `foo_v2.py`, `new_foo.py`, a clean
+  reimplementation to switch over to later. Counter-move:
+  `grep -rn "#TAG:<TheClass>"`, open the incumbent, edit it; shared logic goes
+  in `scripts/` and the editor re-exports it (law 2). **6 sightings** --
+  ledger: `docs/history/SIGHTINGS.md`.
+- **You will read a finished plan as an instruction** — nothing about a stale
+  plan announces itself, and it sits at the address readers are routed to.
   Counter-move: a plan whose work is done goes under `docs/history/` **the day
-  it is done**, and any list of open work carries the command that measured it.
-- **You will forget to regenerate the map.** Observed the same day: two modules
-  landed in `demos/` without `tools/gen_map.py --write`, so `docs/MAP.md` did
-  not know they existed and the next agent's `check_docs` run would have been
-  red for someone else's change. Counter-move: it is one command, it belongs in
-  the same change as the rename, and it names the first differing line.
+  it is done**, and any list of open work carries the command that measured
+  it. **3 sightings** -- ledger: `docs/history/SIGHTINGS.md`.
+- **You will forget to regenerate the map** after adding or renaming a module,
+  so the next agent's `check_docs` run is red for your change. Counter-move:
+  `tools/gen_map.py --write` in the same change; it names the first differing
+  line. **1 sighting** -- ledger: `docs/history/SIGHTINGS.md`.
 - **You will ship your own layer and leave the wire to whoever owns the next
-  file.** The move that looks responsible is to land the engine read, the
-  model, the verb and the check, then stop at the file a sibling agent is
-  holding: the seam is one line, you wrote it down in the handoff, and not
-  causing an edit conflict is good manners. Four sightings. Sub-cell collision
-  landed in the engine at `b438c85` and a click could not address a sub-cell
-  until the very next commit, `62c5677`. The editor's Database window has
-  authored `data/project/tables/` since `2ddee3d` (2026-08-08) and no
-  `scripts/` reader existed until `6794bde` (2026-08-18), so for ten days
-  seventeen `source="actors"` parameters looked authored and were silently the
-  declared default. And tile masks took FOUR passes to reach a click: the
-  engine read at `6794bde`, then the overlay and a working
-  `map.tileset.mask.set` at `8915ee0` -- where
-  `grep -rn "map.tileset.mask" editor/ui/` still returned nothing, so the one
-  thing the author had asked for could not be done -- and only the pass after
-  that wired `Canvas.bake_tile_mask`. And `#TAG:map.tileset.grow` and
-  `#TAG:map.tileset.rename` shipped with exact inverses, teeth on both
-  refusals, and no control anywhere calling either -- for that whole time the
-  tileset the author asked to be growable and nameable was neither from
-  inside the window. (That one was closed on 2026-09-03 by the palette's
-  header menu; the sighting stays here because the value of this list is the
-  count, not the open items.) Note
-  that the middle sighting runs the other way round: this is not "the editor
-  lags the engine", it is that NOBODY owns a seam, so each pass ships a layer
-  that is complete, checked, and unreachable by the person who asked for it.
-  Counter-move: before you call a pass done, grep for a caller from the layer
-  ABOVE the thing you just built -- zero hits means the capability exists and
-  the author cannot get at it. When the file really is held, the unwired seam
-  goes into [`docs/NEXT.md`](docs/NEXT.md) as an entry carrying that grep as
-  its command, not into a commit message nobody greps. And run the grep again
-  before you write the entry: this one was written naming the tile-mask click
-  as missing, and re-measuring one minute later found `bake_tile_mask` landed
-  in a sibling's working tree. A gap you did not re-measure is a gap you are
-  about to file twice.
+  file** — engine read, model, verb and check land, and the one-line seam goes
+  into a handoff. Nobody owns a seam, so the capability is complete, checked,
+  and unreachable by the person who asked. Counter-move: before calling a pass
+  done, grep for a caller from the layer ABOVE what you built; zero hits means
+  the author cannot get at it. If that file is held, file the seam in
+  [`docs/NEXT.md`](docs/NEXT.md) with the grep as its command — and re-run the
+  grep first. **7 sightings** -- ledger: `docs/history/SIGHTINGS.md`.
 - **You will fix the route that ships and let its SIBLING route grow without
-  the fix.** The move that looks complete is to repair the path the bug was
-  reported on, add the guard, write the check, and stop -- the other path
-  spells the same property, so surely it was covered. **Nine sightings**, and
-  the last five were found by DRIVING the code rather than by reading it,
-  which is why the count kept climbing after three passes of looking. Delete
-  and create. Canvas and tree. The map spawn and `SceneManager.spawn`, TWICE --
-  `spawn_defaults` reached the map route alone, so every runtime body was
-  anchored at the top of its head; then `pyoneer_script` reached the map route
-  alone, so a runtime body naming an absent document was silently inert while
-  an authored one raised. `main.py`'s boot hook and `DemoGame`'s override of
-  it, where three copied lines cost the demo path the script join, the `say`
-  host, the action route and both map guards at once. And twice inside the
-  CHECK suite, which is the sighting that should worry you most: two
-  reachability rows measured a JSON file and reported it as a built wire while
-  the sibling instrument one file away already carried the sentence "the
-  loaded pack only, never the raw `genre.json` beside it" -- and after those
-  two were repaired, a THIRD row of the same shape was still sitting in that
-  sibling, reading `config/inputs.json` with `json.load` and printing **yes**
-  for a verb the loader need never have registered.
-  And three more on 2026-09-11, one of which was CREATED by the previous
-  pass's own fix. `main.py`'s press guard was corrected to exempt a finished
-  flow -- but by IDENTITY, so it exempted our own finished run and not the
-  sibling kind, and one finished cutscene then disabled event scripts for the
-  rest of the session in silence. `map.object.action.unset` had carried
-  `if not list(found.element): found.element.text = None` since the day it was
-  written, with the reason in a comment, and `map.object.property.remove` one
-  screenful away had not, so declaring a script and pressing Ctrl+Z left two
-  lines of diff nobody authored. And `map.object.set` has declared
-  `choices=_OBJECT_ATTRIBUTES` since it was written while its inverse
-  `map.object.unset` declared `Param("key", str)` and nothing, so the verb
-  that could not WRITE `id` could DELETE it. Note what the three have in
-  common and the earlier six do not: all three pairs live in ONE file, two of
-  them within thirty lines of each other. Distance is not the cause.
-  **ELEVEN NOW**, and the tenth is the end of the distance argument: at the
-  finalize of 2026-09-11, `MapDocument._append_child`'s middle branch carried
-  the comment *"Recomputing looked equivalent and was not ... Inheriting makes
-  the pair exactly reversible"* -- and recomputed the very next separator it
-  wrote, THREE LINES BELOW its own warning, as did the branch after it. One
-  function, three branches, one rule, two of them wrong. A rule written in a
-  comment is a rule the line under it does not obey. The eleventh is the
-  quiet kind: `Project.dirty_scripts` learned to ask what EXISTS instead of
-  trusting a `removed` set, and `ScriptLibrary.dirty` one layer down did not
-  -- and it had NO READER, so nothing went wrong, and the first surface that
-  reached for it would have inherited a repaired bug. A latent sibling is
-  still a sighting; it is just one nobody can date.
-  **FIFTEEN NOW**, and the four added at the finalize of 2026-09-11 are the
-  tightest instances on this list, because three of them are inside ONE
-  argument list. THE TWELFTH: `map.object.restore`'s `xml` argument was given
-  a door one pass earlier, and `next_object_id` -- THREE LINES BELOW IT, IN
-  THE SAME ARGS DICT, on the same verb -- was left open, so the command that
-  could no longer smuggle an attribute NAME could still write
-  `nextobjectid="not-a-number"` and make the whole map unloadable. Not another
-  file, not another function: another KEY. The thirteenth was found by the
-  enumeration that closed the twelfth rather than by any prover:
-  `map.object.set` LOOKS guarded because its sibling argument `key` declares
-  `choices=_OBJECT_ATTRIBUTES`, so it checked WHICH attribute was written and
-  never WHAT went into it -- `width="not-a-number"` went through the same
-  relay to the same unloadable map. The fourteenth is the same asymmetry one
-  layer down and had stood since that door was built:
-  `_refuse_smuggled_names` reads every NAME in a restored element's subtree
-  and never one VALUE, so `<object pyoneer_x="1"/>` was refused and
-  `<object width="abc"/>` -- identical cost, whole map lost, naming neither
-  the map nor the attribute -- was accepted by all three restore verbs. The
-  fifteenth is still OPEN and filed as item 37 of
-  [`docs/NEXT.md`](docs/NEXT.md): `_release_object_id` tests whether an id is
-  one below the counter where the invariant is "this session handed it out",
-  so a guard written for the CLAIM route is simply wrong on the RESTORE route.
-  Counter-move for this family, which is not the one above: after you guard
-  ONE input, enumerate EVERY OTHER INPUT THE SAME FUNCTION ACCEPTS and give
-  each a verdict out loud. Measured, that enumeration is affordable -- 51
-  verbs and 136 parameters dumped from the live registry, five of them in the
-  defect class, four of those carrying no validation of any kind -- and it is
-  what found the thirteenth. Then make the shared half one function: all five
-  now go through `_checked_attribute_text`, and the fourteenth closed by
-  MOVING its table to `scripts/core/layer_profile.py` so the engine-side door
-  and the editor-side door ask one `ATTRIBUTE_TEXT` rather than two.
-  Counter-move, and it is not "grep harder": where the two routes share a
-  rule, make the shared half ONE FUNCTION and delete the copy -- or, where a
-  rule is a declared vocabulary, make both halves NAME THE SAME TUPLE, which
-  is what closed the ninth. `script_of`
-  closed the fourth sighting that way, and the proof it worked is a single
-  mutation -- `if False and script_id not in scripts` -- turning BOTH
-  `tools/check_spawn_runtime.py` and `tools/check_script_runtime.py` red in
-  one run. Two copies that agree today cannot be mutated once. It closed the
-  self-closing guard the same way on 2026-09-11: FOUR copies of
-  `if not list(x.element): x.element.text = None` in `editor/core/verbs.py`,
-  each carrying a comment saying it belonged in `scripts/`, became one line in
-  `#TAG:childless_parent_closes_itself` and the four copies were deleted --
-  and one mutation of that line now turns four rows red where four separate
-  mutations were needed before. When the shared
-  half genuinely cannot be one function, name every sibling you checked and
-  why each is safe, in the handoff, as a list -- an unnamed sibling is an
-  unchecked one. And check the CHECK SUITE last, not never: three of this
-  pass's sightings were in `tools/`, where a wrong detector is a green
-  assertion rather than a visible failure.
+  the fix** — the other path spells the same property, so surely it was
+  covered. Distance is not the cause: siblings have turned up in another file,
+  in the same function, and in the same args dict. Counter-move: after you
+  guard ONE input, enumerate EVERY OTHER input the same function accepts and
+  give each a verdict out loud; where two routes share a rule, make the shared
+  half ONE FUNCTION or one named tuple and delete the copy, so one mutation
+  turns both red. If it cannot be one function, list every sibling you checked
+  and why each is safe, in the handoff — and check `tools/` last, not never,
+  because a wrong detector there is a green assertion. **19 sightings** --
+  ledger: `docs/history/SIGHTINGS.md`.
 
 ## Known gaps — fill on sight
 
-Things that are *missing*, not broken. Each is a real hole someone will hit.
-Each address below is a tag, so it stays true when the code moves.
+Things that are *missing*, not broken; each is a trap someone will hit. Each
+address is a tag, so it stays true when the code moves. The work to close one
+is filed in [`docs/NEXT.md`](docs/NEXT.md), which points here rather than
+restating; a gap that closes moves to the ledger's *Gaps paid off* table.
 
-- **`README.md` is the front door and its "Known rough edges" section is still
-  hand-written.** The three false gap claims this bullet used to name are
-  gone: README no longer says the engine cannot read a collision mask, that
-  placing an object does not spawn an entity, or that `.blitmap` has no
-  reader. Its check counts are correct too — two of them now, both agreeing
-  with the roster [`docs/CHECKS.md`](docs/CHECKS.md) generates, which
-  `tools/check_docs.py`'s rule 6 compares on every run. What is left is the
-  structural half, and it is the half that will rot again: that section is
-  prose sitting beside a generated roster, so nothing regenerates it and its
-  next wrong sentence arrives silently, exactly as the last three did. It must
-  become generated. **This file's own navigation deliberately does not route
-  through `README.md`.** Re-measured 2026-09-03 by reading the section and by
-  rule 6.
-- **`docs/BEHAVIORS.md`'s preamble is hand-written prose inside the
-  generator**, so it can lie while the file still matches its generator. It
-  currently shows the token `tile_collision`, which is not registered and makes
-  a map raise at load. Same string in `#TAG:scripts/game/behavior/base.py` and
-  `#TAG:scripts/game/behavior/registry.py`. That preamble held a **second**
-  lie until 2026-09-03 — it told every reader that nothing in `scripts/` reads
-  `data/project/` and that the engine has no table reader, months after
-  `#TAG:scripts/loaders/table_file.py` shipped — and the generated file matched
-  its generator byte for byte the whole time. Two instances is the measure of
-  how well this shape hides: check the preamble by reading it against the
-  code, because no check here can.
-- **~~No `needs_art` flag on the check roster~~ — paid off, by removing the
-  thing it would have described.** Art SHIPS now: six generated sheets under
-  `data/art/`, tracked, drawn by `tools/art/` and materialised by
-  `.venv/Scripts/python.exe -m tools.art`. `#TAG:resolve_art` reads the two
-  roots in order — `data/graphics/` wins whenever it holds the file, so a
-  machine with real art renders byte-identically, and `data/art/` answers
-  when it does not. Measured both ways by moving `data/graphics` aside:
-  `tools/check_all.py` reports `FAILED: []` with no art directory at all, so
-  the art-dependent subset is empty and there is no list to generate.
-- **A native `.blitmap` gets no collision at all.** `field_from_map` returns
-  None for any source answering its own `object_records`, so every body on a
-  native map is ungated -- stated in its own docstring as the true answer, and
-  it was, while the format carried no mask declaration to read. It carries one
-  now: `#TAG:declared_collision` lifts a tmx `<tileset>`'s `pyoneer_collision`
-  into `TilesetFile.collision`, so a converted map's `.tileset` says
-  `collision <ref>` on its own line and nothing opens it. Level one is the only
-  level the native path could serve today -- there are no companion layers in a
-  `.blitmap` either. Measured: `grep -rn "collision" scripts/loaders/` names
-  `tileset_file.py`'s own field and nothing that opens it.
-- **~~No genre-pack default behavior list~~ — paid off.** `GenreLayer` now
-  carries `object_classes`, both packs declare a real list for `GamePlayer` on
-  their entity layer, and `map.object.add` MATERIALISES it into
-  `pyoneer_behaviors` on the new object (`#TAG:behaviors_materialised_at_add`).
-  It is a starting value, not a fallback: the engine never reads a pack, an
-  author's own list wins outright — including an explicit empty one — and
-  nothing re-asserts the default afterwards. A pack that declares no
-  `object_classes` is unchanged; one that declares a token the registry does
-  not know now RAISES at pack load rather than poisoning every map made from
-  it. Measured: `.venv/Scripts/python.exe tools/check_editor.py`.
+- **`README.md` is hand-written and unchecked** — `grep -n README
+  tools/check_docs.py` returns nothing. Keep it a front door that links (its
+  rough edges are one link to `docs/NEXT.md`) rather than one that restates.
 - **The `transform` keyword is accepted and discarded**
-  (`#TAG:GameEntitySimple.__init__`, which is where `GameEntity`'s own
-  `transform=` argument ends up). Pass position via `moveto`.
+  (`#TAG:GameEntitySimple.__init__`, where `GameEntity`'s own `transform=`
+  argument ends up). Pass position via `moveto`.
 - **`allowed_move` swallows an unrecognised direction**
   (`#TAG:GameEntity.allowed_move`): a bad bit returns the wanted vector
-  unclamped through cells that block everything. Harmless only while
-  `move_direction` is its sole caller.
-- **`GameAnimationHandler` plays `idle_down` unconditionally at construction**
+  unclamped. Harmless only while `move_direction` is its sole caller.
+- **`GameAnimationHandler` plays `idle_down` at construction**
   (`#TAG:GameAnimationHandler.__init__`), before any behavior attaches — the
   first wall a side-on-only or portrait-only sheet hits.
-- **`GameEventType.POST_DISPOSE` is defined and never dispatched.**
-  `CUSTOM_EVENT`, `REBUILD`, `PARENT_RESIZED` and `USE` are likewise
-  definition-only — `USE` is emitted once, from a `TextBox` pressing Enter, and
-  bound by nobody. **Do not add an event member before a listener exists**;
-  `USE` is the standing proof of what that costs.
-- **~~No engine-side reader for `data/project/tables/`~~ — paid off.**
-  `#TAG:scripts/loaders/table_file.py` reads them; `#TAG:actor_row` turns an
-  object's `pyoneer_actor` into the row and both spawn routes pass it, so the
-  behaviour-parameter chain's step 2 fires and an `hp` column reaches the
-  runtime. `LayerRenderer.tables` is the one slot, assigned in `main.py`
-  beside `spawn_defaults` and read by the map spawn and `SceneManager.spawn`
-  alike. Missing stays free (no `tables/` directory, no `pyoneer_actor`, a row
-  omitting a column: all fall to the declared default); unreadable and
-  contradictory raise, and a `pyoneer_actor` naming an absent row raises
-  naming the object.
-- **~~Two documents still address code by line number~~ — paid off.** Both are
-  converted: DIAGNOSE's four became `#TAG:` addresses, and NEXT's seven went
-  with the `ce66ce5`-era ranked list into `docs/history/NEXT_ce66ce5.md`, where
-  an archive's numbers are history and exempt by design.
-  `tools/check_docs.py`'s `LINE_ANCHOR_DEBT` is now the empty dict, which is
-  the strongest form the rule can take: **any** bare `file.py:LINE` in a live
-  document is a failure, with no exemption left to argue about.
+- **`GameEventType.POST_DISPOSE` is defined and never dispatched**;
+  `CUSTOM_EVENT`, `REBUILD`, `PARENT_RESIZED` and `USE` are definition-only too
+  (`USE` is emitted by a `TextBox` on Enter and bound by nobody). **Do not add
+  an event member before a listener exists.**
+- **A native `.blitmap` gets no collision at all.** `#TAG:field_from_map`
+  answers None for a source serving its own `object_records`, and the
+  `collision <ref>` line `#TAG:declared_collision` writes is opened by nothing.
 - **The editor and the engine disagree about a collection-of-images tileset,
-  in silence.** A `<tileset>` whose children are `<tile id="N"><image/></tile>`
-  with no `<image>` of its own reads correctly in `MapDocument` (byte-exact
-  round trip, correct extent) and pytmx draws its loose images at the right
-  gids -- while `#TAG:TilesetAtlas` draws procedural colour swatches for it and
-  does not even report it as missing art. `#TAG:tileset_defaults` also refuses
-  `columns <= 0`, which is what Tiled writes for that shape, so such a tileset
-  cannot carry per-tile masks as authored. This editor never writes the shape;
-  a reader can still open a map that does. The two methods that would fix it
-  are in `#TAG:editor/ui/tileset.py` and neither touches the format.
-- **~~`#TAG:map.tileset.grow` and `#TAG:map.tileset.rename` have no caller in
-  the window~~ -- paid off.** Right-clicking a tileset's header strip in the
-  palette opens Rename / Grow / Remove; an entry that cannot act is DISABLED
-  and carries the reason in its own label, and growth is asked in rows and
-  refused against the headroom before a command exists. Measured 2026-09-03:
-  `grep -rn "map.tileset.grow\|map.tileset.rename" editor/ui/ --include=*.py`
-  returns **6** lines where it returned none, and `tools/check_palette.py`
-  drives a real right-click, a real `QAction.trigger()` and a real undo. The
-  sighting itself stays recorded in ACTIVE WARNINGS above, because that list
-  is a record of repetition and closing an instance does not unmake it.
-- **~~Nothing but a script can make a noise, and no script runs~~ -- paid
-  off, and the shortcut it named was deleted rather than left beside the
-  real route.** The boot reads `data/project/scripts/` beside the tables and
-  before the map bind; `pyoneer_script` on a tmx object joins to a spawned
-  body; one press of the `action` verb builds a `ScriptRun` in
-  `SceneManager`'s flow slot. So the demo's chime now comes THROUGH the
-  vocabulary -- `play_sound` blaming `starter_greeting page 'greeting' node
-  'chime'` -- and `MainGame.play_interaction_sound`, the action route that
-  stood in for it, is gone: two ways to make one noise is worse than one.
-  Measured 2026-09-10: `grep -rn "load_scripts" main.py` returns a hit where
-  it returned nothing, `grep -rn "pyoneer_script" data/` names the shipped
-  hero, and `tools/check_script_runtime.py` drives the real keyboard through
-  the real relay. THE GESTURE: `.venv/Scripts/python.exe main.py`, press
-  `e`. A `.blitmap` still declares no audio anywhere, which is the part of
-  this bullet that did not move.
-- **`tools/` is not in the code map**, deliberately — a check module is read
-  whole or not at all. So `grep -rn "#TAG:"` answers nothing about the check
-  suite; [`docs/CHECKS.md`](docs/CHECKS.md) is the index for that half of the
-  tree, and it is generated too.
-- **Landed recently, so verify before trusting a doc that says otherwise:** the
-  whole tileset surface. `#TAG:MapDocument.grow_tileset` and
-  `#TAG:MapDocument.rename_tileset` with `#TAG:MapDocument.tileset_headroom`
-  under them; `#TAG:TilePalette` as one stacked column with the selection held
-  as a tileset NAME plus a rectangle; `#TAG:TilesetImportDialog` as a non-modal
-  region crop with `margin`/`spacing` gone; and the collision companion folded
-  out of the hierarchy (`#TAG:companion_folded_into_its_layer`) with
-  `#TAG:BRUSH_DOMAIN`'s no-opinion chip as the way to clear either level.
-  [`docs/TILESETS.md`](docs/TILESETS.md) is the current account of all of it.
-  Entries leave this list fast -- the previous four died in one afternoon and
-  one of them died DURING the pass that was writing it down.
-  **Re-measure this section; do not cite it.**
+  silently.** pytmx draws its `<tile><image/></tile>` children;
+  `#TAG:TilesetAtlas` draws swatches and reports nothing missing, and
+  `#TAG:tileset_defaults` refuses the `columns <= 0` Tiled writes for it.
+- **`tools/` is not in the code map**, deliberately, so `grep -rn "#TAG:"`
+  answers nothing about the check suite; [`docs/CHECKS.md`](docs/CHECKS.md) is
+  that index, and it is generated.
 
 ## TODO-VERIFY
 
@@ -615,8 +364,7 @@ pass is prefixed `[UNVERIFIED]`. An unmarked claim is a claim someone executed.
 There is exactly one:
 
 - `[UNVERIFIED]` the aggregate "26 vacuous assertions found across review
-  passes" in law 5 is carried from review reports, not re-counted here. The
-  five in `README.md` are described there in detail.
+  passes" in law 5 is carried from review reports, not re-counted here.
 
 ## Anchors — machine-checked, do not edit by hand
 

@@ -6,7 +6,7 @@ Every change to the project is one of these. Emit them as JSON
 Lines -- one object per line -- into `response.jsonl`.
 
 ```json
-{"verb": "map.tile.set", "scope": "map:test/layer:Floor", "args": {"x": 4, "y": 7, "gid": 65}}
+{"verb": "map.tile.set", "scope": "map:starter/layer:Floor", "args": {"x": 4, "y": 7, "gid": 65}}
 ```
 
 Rules that are enforced, not suggested:
@@ -37,7 +37,7 @@ Add a tile or object layer. A tile layer is created at the map's size unless wid
 | `renders` | bool | no (default `True`) | does this layer DRAW? False declares pyoneer_renders=false on it in the same command, which is what a passability companion is: mask numbers, read as gids, that paint the mask vocabulary over the map if anything ever draws them. A layer created this way is also not advised to get a depth, because it has just said it does not draw |
 
 ```json
-{"verb": "map.layer.add", "scope": "map:test", "args": {"name": "Hazard", "kind": "tile"}}
+{"verb": "map.layer.add", "scope": "map:starter", "args": {"name": "Hazard", "kind": "tile"}}
 ```
 
 ### `map.layer.remove`
@@ -72,7 +72,7 @@ Declare a capability on a layer -- depth, motion, parallax, opacity, occlusion, 
 | `value` | any | yes | int, float, str or bool, matching the capability's declared type |
 
 ```json
-{"verb": "map.layer.set", "scope": "map:test/layer:Paralax", "args": {"key": "parallax_x", "value": 0.5}}
+{"verb": "map.layer.set", "scope": "map:starter/layer:Parallax", "args": {"key": "parallax_x", "value": 0.5}}
 ```
 
 ### `map.layer.unset`
@@ -108,7 +108,7 @@ Declare one field of an object's map-event trigger -- when it fires, which entit
 | `value` | any | yes | str, int or bool, matching the field's declared type. A filter list is comma separated ('player,npc'); args are 'key=value;key=value'. |
 
 ```json
-{"verb": "map.object.action.set", "scope": "map:test/layer:entity/object:14", "args": {"key": "trigger", "value": "enter"}}
+{"verb": "map.object.action.set", "scope": "map:starter/layer:entity/object:14", "args": {"key": "trigger", "value": "enter"}}
 ```
 
 ### `map.object.action.unset`
@@ -129,7 +129,7 @@ Place an object on an object layer. `type` is the class name the game resolves t
 
 | arg | type | required | meaning |
 |---|---|---|---|
-| `type` | str | yes | the object's class, e.g. 'Chest' or 'PlayerStart' |
+| `type` | str | yes | the spawn type; an unregistered one makes the map raise at load, and `GamePlayer` is the only one that spawns today -- see docs/PLACEABLE.md |
 | `x` | float | yes | world pixels from the left |
 | `y` | float | yes | world pixels from the top |
 | `name` | str | no (default `''`) | an instance name, unique within the layer by convention but not enforced |
@@ -140,7 +140,7 @@ Place an object on an object layer. `type` is the class name the game resolves t
 | `object_id` | int | no (default `0`) | force a specific id; leave unset and the document assigns the next free one |
 
 ```json
-{"verb": "map.object.add", "scope": "map:test/layer:entity", "args": {"type": "Chest", "name": "chest_01", "x": 128, "y": 96, "properties": {"locked": true, "loot": "potion"}}}
+{"verb": "map.object.add", "scope": "map:starter/layer:entity", "args": {"type": "GamePlayer", "name": "hero", "x": 128, "y": 96, "properties": {"pyoneer_behaviors": "player_input,topdown_move,animation_drive"}}}
 ```
 
 ### `map.object.move`
@@ -176,7 +176,7 @@ Set a custom property on an object. The tmx type attribute is written from the P
 | `value` | any | yes | int, float, str or bool |
 
 ```json
-{"verb": "map.object.property.set", "scope": "map:test/layer:entity/object:14", "args": {"key": "hp", "value": 30}}
+{"verb": "map.object.property.set", "scope": "map:starter/layer:entity/object:14", "args": {"key": "hp", "value": 30}}
 ```
 
 ### `map.object.remove`
@@ -188,7 +188,7 @@ Remove an object. Its inverse restores the whole XML element, so undo brings bac
 *No arguments.*
 
 ```json
-{"verb": "map.object.remove", "scope": "map:test/layer:entity/object:14", "args": {}}
+{"verb": "map.object.remove", "scope": "map:starter/layer:entity/object:14", "args": {}}
 ```
 
 ### `map.object.restore`
@@ -239,7 +239,7 @@ Set every tile in a rectangle. The rectangle is clipped to the layer, so an over
 | `gid` | int | yes | global tile id; 0 clears |
 
 ```json
-{"verb": "map.tile.fill", "scope": "map:test/layer:Floor", "args": {"x": 0, "y": 0, "width": 8, "height": 4, "gid": 65}}
+{"verb": "map.tile.fill", "scope": "map:starter/layer:Floor", "args": {"x": 0, "y": 0, "width": 8, "height": 4, "gid": 65}}
 ```
 
 ### `map.tile.set`
@@ -255,7 +255,7 @@ Set one tile's gid. gid 0 clears the tile.
 | `gid` | int | yes | global tile id from the map's tilesets; 0 is empty |
 
 ```json
-{"verb": "map.tile.set", "scope": "map:test/layer:Floor", "args": {"x": 4, "y": 7, "gid": 65}}
+{"verb": "map.tile.set", "scope": "map:starter/layer:Floor", "args": {"x": 4, "y": 7, "gid": 65}}
 ```
 
 ### `map.tile.set_many`
@@ -269,7 +269,7 @@ Set many tiles at once. Cheaper and more readable than one command per tile, and
 | `tiles` | list | yes | a list of [x, y, gid] triples, all integers |
 
 ```json
-{"verb": "map.tile.set_many", "scope": "map:test/layer:Floor", "args": {"tiles": [[0, 0, 65], [1, 0, 65], [2, 0, 66]]}}
+{"verb": "map.tile.set_many", "scope": "map:starter/layer:Floor", "args": {"tiles": [[0, 0, 65], [1, 0, 65], [2, 0, 66]]}}
 ```
 
 ### `map.tileset.add`
@@ -293,7 +293,7 @@ Add an embedded tileset, appended above every gid range the map already uses. An
 | `first_gid` | int | no (default `0`) | the range this tileset claims, instead of the packed one. Above every range in use, never below one -- the gap it leaves is HEADROOM, and map.tileset.grow spends it later without renumbering a single cell |
 
 ```json
-{"verb": "map.tileset.add", "scope": "map:test", "args": {"name": "Dungeon", "image": "../graphics/tilesets/System/Dungeon.png"}}
+{"verb": "map.tileset.add", "scope": "map:starter", "args": {"name": "Dungeon", "image": "../graphics/tilesets/System/Dungeon.png"}}
 ```
 
 ### `map.tileset.grow`
@@ -312,7 +312,7 @@ Point a tileset at a re-cut sheet and change how many tiles it owns, without mov
 | `tile_count` | int | no (default `None`) | how many tiles the tileset owns afterwards; omit for every tile the new sheet holds, and pass a smaller number to truncate a ragged last row |
 
 ```json
-{"verb": "map.tileset.grow", "scope": "map:test", "args": {"name": "Dungeon", "image": "../graphics/Dungeon.png", "tile_count": 96}}
+{"verb": "map.tileset.grow", "scope": "map:starter", "args": {"name": "Dungeon", "image": "../graphics/Dungeon.png", "tile_count": 96}}
 ```
 
 ### `map.tileset.mask.restore`
@@ -330,7 +330,7 @@ Write one tile's mask back AND put the tileset's pyoneer_collision declaration b
 | `reference` | str | no (default `''`) | the pyoneer_collision value to leave on the tileset, spelled exactly as the file spells it. Empty removes the property, and the mask is then written into whatever the tileset declares now |
 
 ```json
-{"verb": "map.tileset.mask.restore", "scope": "map:test", "args": {"name": "Dungeon", "tile": 7, "mask": -1, "reference": ""}}
+{"verb": "map.tileset.mask.restore", "scope": "map:starter", "args": {"name": "Dungeon", "tile": 7, "mask": -1, "reference": ""}}
 ```
 
 ### `map.tileset.mask.set`
@@ -347,7 +347,7 @@ Set one TILE's collision mask, once, for everywhere that tile is ever stamped. I
 | `mask` | int | yes | -1 for no opinion, 0..15 for the direction bits (1 down, 2 left, 4 right, 8 up), 16 for the star |
 
 ```json
-{"verb": "map.tileset.mask.set", "scope": "map:test", "args": {"name": "Dungeon", "tile": 7, "mask": 15}}
+{"verb": "map.tileset.mask.set", "scope": "map:starter", "args": {"name": "Dungeon", "tile": 7, "mask": 15}}
 ```
 
 ### `map.tileset.remove`
@@ -363,7 +363,7 @@ Remove a tileset by name, or by firstgid for an external one. REFUSED while any 
 | `force` | bool | no (default `False`) | remove even though gids still point into the range. Correct in exactly one situation: those gids were zeroed EARLIER IN THE SAME transaction, so undo puts the tileset back before it puts the gids back. map.tile.set_many is the verb that zeroes them and its inverse is exact. Outside that, this silently repaints every orphaned tile with the wrong art. |
 
 ```json
-{"verb": "map.tileset.remove", "scope": "map:test", "args": {"name": "Dungeon"}}
+{"verb": "map.tileset.remove", "scope": "map:starter", "args": {"name": "Dungeon"}}
 ```
 
 ### `map.tileset.rename`
@@ -379,7 +379,7 @@ Rename a tileset. No gid moves -- a name is not part of the numbering -- but it 
 | `to` | str | yes | the new name; unique within the map, and non-empty because it is an address |
 
 ```json
-{"verb": "map.tileset.rename", "scope": "map:test", "args": {"name": "TileA2", "to": "Village exteriors"}}
+{"verb": "map.tileset.rename", "scope": "map:starter", "args": {"name": "TileA2", "to": "Village exteriors"}}
 ```
 
 ### `map.tileset.restore`

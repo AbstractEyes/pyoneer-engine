@@ -1,14 +1,14 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written architecture; the "not built yet" list and the action-queue reasons were re-measured against d8c303f on 2026-08-16 and five stale claims were corrected in place -->
-<!-- pyoneer-stamp: the Panels table's Tiles row, the mouse and wheel bindings under Painting, and the check enumeration under Status were re-measured against the working tree on 2026-08-29. The tileset and collision surface itself is docs/TILESETS.md, not here -->
-<!-- pyoneer-stamp: earlier: counts re-checked at 5dd012d on 2026-08-16 -->
+<!-- pyoneer-stamp: hand-written architecture, re-measured against the working tree on 2026-09-16 (layout by `ls editor/core editor/ui`, panels by reading `EditorWindow.__init__`, scopes against `config/maps.json`); unbuilt work lives in docs/PLAN_SCENES.md and docs/NEXT.md, never here. -->
 
 # The editor
 
 An authoring environment where a human and an AI build a game together, and
-the editor itself is one of the things they build.
-
-This document is the architecture and the reasoning. `editor/` is the code.
+the editor itself is one of the things they build. This is the architecture
+and the reasoning; `editor/` is the code. It deliberately carries **no status
+and no "not built yet" list** — one that sat here was read as instructions for
+work that had already shipped. Unbuilt work is in
+[`PLAN_SCENES.md`](PLAN_SCENES.md) and [`NEXT.md`](NEXT.md).
 
 ---
 
@@ -24,8 +24,7 @@ This document is the architecture and the reasoning. `editor/` is the code.
 ```
 
 A `Command` is a verb, a scope, and arguments. Applying one returns *the
-command that undoes it* — not a snapshot. Everything the editor is supposed
-to be falls out of that single decision:
+command that undoes it* — not a snapshot. Everything else falls out of that:
 
 | requirement | how the command stream gives it |
 |---|---|
@@ -35,189 +34,144 @@ to be falls out of that single decision:
 | paved roads, fail-loud | one validator, one place to raise |
 | the AI's instructions can't go stale | `COMMANDS.md` is generated from the registry that executes it |
 
-That last one matters more than it sounds. A hand-written interface
-document is the single most likely thing to drift out from under a model
-that trusts it. Here, a verb that is not implemented cannot appear in the
-docs, and an implemented verb cannot be missing from them — asserted by
-`tools/check_editor.py`.
+A hand-written interface document is the thing most likely to drift out from
+under a model that trusts it. Here an unimplemented verb cannot appear in
+[`COMMANDS.md`](COMMANDS.md) and an implemented one cannot be missing —
+asserted by `tools/check_editor.py`.
 
 ## Toolkit: PySide6
 
-Chosen deliberately, and it is a one-way door, so the reasoning is on the
-record:
-
-| requirement from the brief | what Qt gives it |
-|---|---|
-| "components populated based on the need" | `QDockWidget` — panels that appear, dock, tear off, and remember layout |
-| a tilemap canvas with layers | `QGraphicsView` — z-ordered scene, zoom, pan, rubber-band select |
-| "a list of actors, their stats" | `QAbstractTableModel` — real model/view editing |
-| undo across all of it | `QUndoStack` maps 1:1 onto the command stream |
-| watch for `response.jsonl` | `QFileSystemWatcher` |
-| licence sanity | LGPL, same as pygame and pytmx |
-
-And the pointed one: **Tiled is Qt.** Building the replacement on the same
-toolkit means the thing being replaced is the C++ and the age, not the
-widget layer.
-
-It is a separate dependency file (`editor/requirements.txt`) so the engine's
-install stays `pygame` + `pytmx`.
-
-The engine's own widget system is **not** used for the editor. It is a game
-UI — deferred blits, depth sorting, custom scrollbars — and it is still
-being repaired. An editor needs native text input, IME, accessibility, file
-dialogs and a table view; that is a different job.
+A one-way door, so the reasoning is recorded: `QDockWidget` panels that dock
+and remember layout, a zoomable `QGraphicsView` map, `QAbstractTableModel`
+data editing, `QFileSystemWatcher` for arriving responses, LGPL like pygame —
+and **Tiled is Qt**. Its own `editor/requirements.txt` keeps the engine's
+install at `pygame` + `pytmx`. The engine's widget system is a game UI and is
+not used.
 
 ## Layout and the dependency rule
 
 ```
 editor/
-  _bootstrap.py        sys.path, same rule as tools/
-  core/                headless. No Qt, no pygame. All of it testable.
-    errors.py            PyoneerEditorError and below
-    scope.py             the addressing scheme
-    commands.py          Command, the registry, transactions, undo
-    verbs.py             the vocabulary itself
-    genre.py             genre packs and rule validation
-    project.py           Project, DataTable — what is edited
-    request.py           notes, manifests, bundles, response parsing
-    session.py           the one object the GUI holds
-  genres/
-    topdown_rpg/         genre.json, RULES.md, ART.md
-    platformer/
-  ui/                  Qt. Views only; no authority.
-  requests/            request bundles, in and out
+  app.py            launcher: editor/app.py [--genre id] [--root path]
+  _bootstrap.py     sys.path, same rule as tools/
+  preflight.py      parses the engine modules the editor binds, before Qt
+  core/             headless. No Qt, no pygame. All of it testable.
+    scope.py          the addressing scheme, and code_locations()
+    commands.py       Command, the registry, transactions, undo
+    verbs.py          the vocabulary itself
+    project.py        Project, DataTable -- what is edited
+    genre.py          genre packs and rule validation
+    request.py        notes, manifests, bundles, the response gate
+    session.py        the one object the GUI holds
+    event_script.py   event-script documents, the authoring half of data/project/scripts/
+    map_events.py     authorable region triggers (no runtime reader yet)
+    collision.py      collision as authored data: three levels, one baked field
+    layers.py         per-layer capabilities, as declared data
+    inspect.py        what to show for a selection, as data
+    behavior_view.py  what a map object composes, as data
+    paint.py          what a drag means, as pure logic
+    autotile.py       terrain that picks its own edge tiles
+    settings.py       editor preferences
+    ide.py            open a file at a line in the IDE actually in use
+    errors.py         PyoneerEditorError and below
+  genres/           topdown_rpg/, platformer/ -- genre.json, RULES.md, ART.md
+  ui/               Qt. Views only; no authority. One module per panel or window.
+  requests/         request bundles, written on demand
 ```
 
-The dependency direction is one-way and **asserted by the check**:
-
-```
-editor/  ──►  scripts/        allowed (MapDocument, errors)
-scripts/ ──►  editor/         never
-```
-
-`python main.py` must work on a clone with `editor/` deleted.
+Inside `core/`, the `inspect`, `*_view` and `paint` modules answer "what should
+the screen show / what does this gesture mean" as data, so a check asserts it
+with no window open. The dependency direction is one-way and asserted:
+`editor/` may import `scripts/` (shared logic lives there and the editor
+re-exports it); `scripts/` never imports `editor/`, so `python main.py` runs
+with `editor/` deleted.
 
 ## The contract with the engine
 
-The editor does not talk to a running game. It writes the files the engine
-already reads:
+The editor never talks to a running game. It writes the files the engine
+reads:
 
 | what | where | via |
 |---|---|---|
-| maps | `data/maps/*.tmx` | `MapDocument`, byte-faithfully |
+| maps | `data/maps/*.tmx`, listed in `config/maps.json` | `MapDocument`, byte-faithfully |
 | data tables | `data/project/tables/*.json` | sorted keys, `\n`, trailing newline |
+| event scripts | `data/project/scripts/*.json` | `ScriptLibrary`: created and deleted in memory, written at save |
+| scene variables | `data/project/scenes/*.json` | read, not yet authored |
 | which genre | `data/project/project.json` | |
 
-That is the whole interface. Live reload is an optimisation to add later
-(`renderer.invalidate()` and `AssetMapManager.load_assets(reload=True)`
-already exist), not a dependency.
-
-Byte-faithfulness is load-bearing, not fastidiousness. The intent is that a
-human edits in Tiled while the editor and an AI edit programmatically. A
-writer that reflows the file makes every subsequent human diff unreadable.
-`check_editor.py` asserts the strongest available form of this: after
-`add object → undo`, the 133,940-byte map is byte-identical, including the
-`<objectgroup/>` going back to self-closing.
+Byte-faithfulness is load-bearing: a human edits in Tiled while the editor and
+an AI edit programmatically, and a writer that reflows the file makes every
+later diff unreadable. `tools/check_editor.py` asserts that after `add object
+→ undo` the map is byte-identical, down to `<objectgroup/>` self-closing again.
 
 ## Scopes — why a request knows where it lands
 
 ```
-project
-genre
-map:test
-map:test/layer:Floor
-map:test/layer:entity/object:14
-table:actors
-table:actors/row:hero
+project                              table:actors
+genre                                table:actors/row:1
+map:starter                          script:starter_greeting
+map:starter/layer:Floor
+map:starter/layer:entity/object:1
 ```
 
-Every dock declares a scope. Every note carries one. Every command targets
-one. The same string appears in the panel title, the manifest, the
-generated context, and the response.
+Every dock declares a scope, every note and command carries one, and the same
+string appears in the panel title, the manifest, the bundle and the response.
+A verb declares the scope patterns it accepts and `Verb.validate` refuses any
+other address before anything runs. Code paths are **not** encoded in scopes
+— `code_locations()` looks them up *from* a scope, so the address stays stable
+when code moves, and a check asserts every path it names exists.
 
-Code paths are **not** encoded in scopes — they are looked up *from* a scope
-by `code_locations()`. That keeps the address stable when code moves, and it
-is what fills the "where do I edit?" section of a request. The table names
-real paths and the check asserts every one exists, so it cannot rot the way
-a comment would.
+## The prompt paradigm — how the relay works
 
-## The prompt paradigm
-
-Each primary panel carries a prompt strip at the bottom. Typing there
-leaves a **note** on that panel's scope — a code review comment on the
-project rather than on a diff.
+Every panel carries a prompt strip; typing there leaves a **note** on that
+panel's scope — a review comment on the project rather than on a diff. Two
+grains:
 
 ```
-  1. type          note{scope, text, kind}       kind ∈ change|question|constraint
-  2. accumulate    the Manifest panel, grouped by scope; reorder, delete
-  3. ship          writes editor/requests/NNNN-slug/
-  4. answer        an AI writes response.jsonl (+ NOTES.md, + code edits)
-  5. apply         validated, applied as ONE transaction, one undo step
+  Stage + Ship   collect notes across panels in the Manifest dock, then write one
+                 bundle with the whole vocabulary -- for a change that crosses the project
+  Ask            one note, one bundle, cut to this panel's address, now (Session.ask)
+  then           an AI writes response.jsonl (+ NOTES.md, + code edits)
+  apply          validated, applied as ONE transaction, one undo step
 ```
 
-A shipped bundle is self-contained:
-
-| file | what it is | generated from |
+| bundle file | what it is | generated from |
 |---|---|---|
-| `BRIEF.md` | the protocol and the response contract | fixed |
-| `RULES.md` | genre conventions — the conditioning | the genre pack |
-| `CONTEXT.md` | current state of every scope touched, plus open rule violations | the live project |
-| `REQUEST.md` | the notes, grouped by scope, each with its likely files | the manifest |
-| `COMMANDS.md` | the exact vocabulary | **the registry** |
-| `manifest.json` | machine-readable | the manifest |
+| `BRIEF.md` | the protocol and response contract — protocol claims only | fixed |
+| `RULES.md` | genre conventions; dropped from an Ask on content (a layer, object, row, script), which a pack says nothing about | the genre pack |
+| `CONTEXT.md` | current state of every scope touched, plus live rule violations | the live project |
+| `REQUEST.md` | the notes by scope, each with its likely files | the notes |
+| `COMMANDS.md` | the vocabulary — all of it for a Ship, only what the address accepts for an Ask | **the registry** |
+| `manifest.json` | machine-readable; a scoped bundle adds `scoped` and `verbs` | the notes |
 
-Why a bundle rather than a prompt string:
+A scoped bundle is a **promise the editor keeps**: `BundleContract`, inside
+`read_response`, refuses a response using a verb the bundle did not ship or
+aiming at an address it did not declare, before anything applies. Both apply
+paths — the window's Apply-a-response and `Session.apply_response` — read
+through that one gate. `also=` widens an Ask to a second address explicitly
+(attaching a script is `script.create` plus `map.object.property.set`).
 
-- **Location.** The scope becomes concrete file paths. No guessing where
-  "the actors list" lives.
-- **Conditioning without bloat.** The genre pack is a page, and it is the
-  *same* page every time, so it is reviewable. That is what makes "make me a
-  platformer with guns and aliens" affordable — the eight words carry the
-  intent and the pack carries the rest.
-- **No drift.** See above.
-
-The response contract is strict on purpose: unknown verb, unknown argument,
-missing argument, or wrong type rejects the **whole** response. Nothing is
-half-applied. A typo costs the model a retry rather than costing the author
-a corrupted project. Types are checked, never coerced — `"5"` is not `5`,
-because a plausible wrong value is this codebase's documented failure mode.
-
-Code changes are the escape hatch, not the norm. Some requests genuinely
-need engine code — a jump arc, a targeting rule — and those are ordinary
-diffs, reviewed as ordinary diffs. The bundle names the files; `RULES.md`
-states what must not be touched.
+The response contract is strict: an unknown verb, unknown or missing argument,
+or wrong type rejects the **whole** response, and types are never coerced
+(`"5"` is not `5`). A typo costs the model a retry, not the author a corrupted
+project. Engine code is the escape hatch — ordinary diffs, with the bundle
+naming the files.
 
 ## Genre packs
 
-A pack is `genre.json` + `RULES.md` + `ART.md` (+ optional `template/`).
+A pack is `genre.json` + `RULES.md` + `ART.md` (+ an optional `template/`).
+`genre.json` declares `layers` (kind, depth, required, collision), `tables`
+and their fields, the relevant `docks`, `object_classes` (the starting
+`pyoneer_behaviors` that `map.object.add` materialises onto a new object) and
+`event_loadouts` (the op vocabularies its scripts may use — names, never op
+lists). Two ship: `topdown_rpg`, matching `data/maps/starter.tmx`, and
+`platformer`. A pack naming an unregistered behavior token or loadout raises
+**at pack load**, judged by the engine's own registries.
 
-```jsonc
-{
-  "layers": [ { "name": "Floor", "kind": "tile", "depth": 10,
-                "required": true, "collision": true, "doc": "..." } ],
-  "tables": [ { "name": "actors", "required": true,
-                "fields": [ { "name": "hp", "type": "int", "required": true } ] } ],
-  "docks":  ["map", "layers", "objects", "tables", "problems", "manifest", "history"]
-}
-```
-
-Two ship today: `topdown_rpg` (matches the layers the shipped
-`data/maps/starter.tmx` declares) and `platformer`.
-
-**Hard rules** raise and roll back — deleting a genre-required table or
-column. **Soft rules** surface in the Problems panel and block nothing: a
-project is allowed to be half-built, and an editor that argues with you at
-every step is worse than one that keeps a list.
-
-The pack declares a *starting* schema. The file is the authority afterwards,
-so `table.column.add` can grow the model without an editor change. That is
-the freedom requirement: adding `stat_modifier` to equipment is a command,
-not a feature request.
-
-`platformer/RULES.md` is deliberately honest about what the engine does not
-have — no gravity, no tile collision, no spawn system reading the object
-layer. A pack that oversold the engine would produce answers that assume
-machinery that is not there.
+**Hard rules** raise and roll back (deleting a required table or column).
+**Soft rules** land in Problems and block nothing — a project may be
+half-built. The pack declares a *starting* schema; the file is the authority
+afterwards, so `table.column.add` grows the model without an editor change.
 
 ## Panels
 
@@ -225,176 +179,58 @@ machinery that is not there.
 |---|---|---|
 | Hierarchy | the whole map as one tree — groups, layers, objects | yes |
 | Inspector | every field of the selected thing, editable | yes |
-| Tiles | every tileset stacked in one scroll; drag a rectangle for a multi-tile stamp. [`TILESETS.md`](TILESETS.md) | — |
-| Problems | soft rule violations; nothing here blocks | no |
-| Manifest | staged notes, grouped by scope | no |
+| Behaviors | the object's `pyoneer_behaviors` as a grouped checklist with parameters, refusals and the per-frame run order | yes |
+| Actions | the object's region-trigger declaration via `map.object.action.*`, under a banner saying nothing runs it yet | yes |
+| Tiles, Collision | the stacked tile palette and the mask palette — [`TILESETS.md`](TILESETS.md) | — |
+| Problems | soft rule violations; nothing blocks | no |
+| Manifest | staged notes by scope, and Ship | no |
 | History | every command that ran, human or AI | no |
-| Database | **a second window** — actors, items, equipment, RPG Maker shape | — |
+| Database | **window** — actors, items, equipment, RPG Maker shape | — |
+| Object editor | **window** — one entity: identity, placement, behaviors, actors row; opens on creating or double-clicking an object | one object |
+| Script editor | **window**, Ctrl+E — pages, the indented command tree, the op picker, a strip aimed at the script | one script |
 
-Selection is global (`editor/ui/selection.py`) and dock scope is per-panel.
-Inspectors follow the selection; Problems and Manifest do not, because a note
-typed into Problems is about the project and should not be dragged onto
-whatever tile was last clicked.
+Behaviors and Actions tab onto the Inspector: all three answer "what is this
+selected thing". Selection is global (`editor/ui/selection.py`); scope is per
+panel. Problems and Manifest ignore selection, because a note typed there is
+about the project. Panels open dialogs only through `editor/ui/ask.py`'s seams,
+so a check can assert the routine path opened nothing.
 
-## Painting
+## Painting and terrain
 
-`editor/core/paint.py` is pure — no Qt, no document, `(x, y, gid)` in and
-out — which is the only reason its edge cases are testable.
+`editor/core/paint.py` is pure — `(x, y, gid)` in and out — which is why its
+edge cases are testable. **One stroke is one transaction**: press-drag-release
+commits one `map.tile.set_many`, Bresenham-joined so a fast drag is a line. A
+brush anchors its stamp; an area tool tiles it, aligned to map coordinates.
+Mouse, wheel and palette bindings are in [`TILESETS.md`](TILESETS.md) and the
+window's status bar.
 
-- **One stroke is one transaction.** Press-drag-release accumulates and
-  commits a single `map.tile.set_many`. Before that, a forty-cell drag made
-  forty undo steps and re-rendered the csv payload forty times.
-- Bresenham between mouse samples, so a fast drag is a line and not a
-  dotted line.
-- A brush *anchors* its stamp under the cursor; an area tool *tiles* the
-  stamp across the area, aligned to map coordinates so two rectangles
-  painted with the same pattern line up.
-- Left paints, right erases, middle or space pans, alt picks, shift+left
-  gives the tile under the cursor the selected passability mask. Tiled's
-  conventions where they exist — the one deliberate departure is that a
-  **plain** wheel zooms the canvas and shift+wheel scrolls, because panning
-  is middle-drag here so scrolling is the rare gesture. The palette is the
-  other way round, since a column holding every tileset needs scrolling
-  more than it needs zoom: plain wheel scrolls, ctrl+wheel steps the cell
-  size through 1×–4×, integers only.
+**Terrain** (`editor/core/autotile.py`) is a Wang **corner** set, because the
+art demands it: `TileA2.png` is an RPG Maker A2 sheet whose 16px quadrants are
+this map's 16px cells. A terrain is **one integer**, its group's top-left gid.
+The trap: terrain lives on the `(W+1)×(H+1)` lattice of cell corners, so one
+corner re-tiles four cells and a stroke rewrites cells the cursor never
+touched — that is how the seam against existing terrain updates.
 
-**Terrain (autotile)** is `editor/core/autotile.py`, and it is a Wang
-**corner** set rather than an orthogonal bitmask because the art demands it.
-`TileA2.png` is an RPG Maker VX Ace A2 sheet — 8×4 = 32 groups, each a 4×6
-grid of 16px quadrants — and since this map's cells are also 16px, one cell
-is one quadrant. Thirteen of the sixteen corner masks have art; the two
-diagonals have none in any RM sheet and hit a stated `Diagonal` policy
-instead of a `KeyError` mid-stroke. A whole terrain is **one integer**, the
-group's top-left gid, so choosing one is "click any tile of it".
+## Crash resistance and opening code
 
-The half-cell trap is the thing to keep in mind: terrain lives on the
-`(W+1)×(H+1)` lattice of cell corners, so editing one corner re-tiles four
-cells and a stroke rewrites cells the cursor never touched. That is not a
-bug — it is how the seam against existing terrain updates.
+A syntax error in an engine module the editor imports used to kill it above
+`QApplication`, so launched from a shortcut the window never appeared.
+`editor/preflight.py` `ast.parse`s those modules (never imports), confirms
+each still declares the names the editor binds, and reports file, line and
+message; it imports only `os`, `ast` and `sys`, and `tools/check_editor.py`
+asserts its contract. It cannot see inheritance across files or dynamic
+registration; it catches what stops startup.
 
-## Crash resistance
+`editor/core/ide.py` finds the IDE from JetBrains Toolbox's `state.json` and
+known install locations, with **PATH as a last resort** — measured, PATH named
+an older PyCharm than the one running, and a stale VS Code shim silently
+cold-starts a second, older instance. Command construction is pure; launching
+is detached and returns a result rather than raising.
 
-The editor is a tool for changing a codebase that is being changed
-underneath it, so the interesting question is what happens while the engine
-is broken. Measured answer before `editor/preflight.py`: a syntax error in
-any of the three engine modules the editor imports killed it with a bare
-traceback *above* `QApplication`, so the existing error dialog never ran —
-launched from a shortcut, that is a window that never appears.
+## Where the rest lives
 
-Preflight `ast.parse`s those three files — parses, never imports, so nothing
-executes — confirms each still declares the names the editor binds, and
-reports file, line and message. It imports `os`, `ast` and `sys` and nothing
-else, so it cannot be broken by what it checks. `tools/check_editor.py`
-asserts the contract stays true, turning a startup crash into a failing
-check.
-
-It is honest about its limits: `ast` cannot see inheritance across files,
-decorator side effects, dynamic registration, or module-level import
-explosions. It catches the failure that actually stops startup.
-
-## Opening code
-
-`editor/core/ide.py`. Detection reads JetBrains Toolbox's own `state.json`
-and known install locations, and treats **PATH as a last resort** — measured
-on the author's machine, `shutil.which("pycharm")` resolves to PyCharm
-Community 2023.3.3 while the running IDE, with this project open, is
-Professional 2026.1.4 under a differently-numbered shim. The VS Code case is
-worse: a stale shim does not error, it silently cold-starts an older second
-instance.
-
-Command construction is pure and therefore testable; launching is detached
-and returns a result rather than raising. Revealing code is read-only by
-construction and cannot affect the project, the game, or the editor.
-
-## Status
-
-Asserted by the `editor`, `paint`, `autotile`, `editor_ui`, `palette`,
-`behavior_ui`, `actions_panel`, `collision_view`, `collision_mount` and
-`collision_fold` checks. The roster is generated into
-[`CHECKS.md`](CHECKS.md) and the verb vocabulary into [`COMMANDS.md`](COMMANDS.md);
-both numbers were stale in this paragraph before those files existed, so read
-the count there and never here. Between them they cover:
-
-- scopes, command stream, transactions, exact undo/redo, atomic rollback
-- every registered verb, across tiles, objects, tables and project settings
-- genre packs, hard and soft rule validation
-- notes, manifests, bundle writing, strict response parsing
-- painting: strokes, stamps, flood fill, clipping, drag semantics
-- autotile: the pixel-verified corner table, terrain recovery, diagonals
-- the Qt window driven offscreen: panels, selection sync, canvas edits as
-  commands, the database window, response application
-- the stacked tile palette and the region-crop importer, asserted against
-  *pytmx*'s reading of the resulting tileset rather than only the editor's
-- the collision surface: the companion folded out of the hierarchy, the map's
-  passability field identical before and after the editor opens it, and a
-  no-opinion click that changes a pixel of the overlay rather than only a list
-
-Not built yet — **re-measured at `d8c303f`, and four entries came off this
-list because they had shipped.** The removed four are recorded below rather
-than deleted, because a "not built yet" list that quietly loses entries is
-indistinguishable from one that is wrong:
-
-- **Live reload**, so a command shows up in a running `main.py`.
-- **Shape geometry editing.** Polygons, ellipses and text objects are
-  displayed and **preserved byte-exactly**, but their points are not
-  editable.
-- **The event action queue.** Deliberately deferred, not forgotten — see
-  below.
-
-Shipped since this section was written, and *no longer work to do*:
-`#TAG:map.layer.add` and `#TAG:map.layer.remove` are registered verbs;
-`#TAG:map.layer.set` declares a layer capability — depth, motion, parallax,
-opacity, occlusion, passability — as a tmx custom property, with
-`#TAG:map.layer.unset` as its inverse; and the object layer → entity spawn
-path runs, `#TAG:spawn_objects` being called from the renderer at bind. Read
-[`COMMANDS.md`](COMMANDS.md) for the current verb vocabulary rather than any
-sentence here: it is generated from the registry that executes the verbs, so
-it cannot say a verb exists that does not.
-
-## Why the action queue is not built yet
-
-An "attach an ordered list of actions to an object, triggered by an engine
-event" panel is the right idea and it is authoring data, so it invalidates
-nothing. But investigation found the runtime cannot execute it yet:
-
-- `GameEntity` derives `PyoneerGameObject`, **not** `GameComponent`. It has
-  no `callbacks`, no `bind_sync_listener`, no `send_event_advanced` — it is
-  not on the event bus at all, and only receives direct `core_*` calls. This
-  is the load-bearing one and it is deliberate: see
-  [`../CLAUDE.md`](../CLAUDE.md) law 3.
-- `GameEventType` has 49 members (re-measured at `d8c303f`; this line said 54)
-  and only about ten are ever dispatched through the bus. Every `MOUSE_*` and
-  `KEY_*` member reaches components through a *separate* registry, so a raw
-  event-type picker would be mostly dead options.
-- There is still no collision detection between entities: `BoundingBox` is
-  defined in `#TAG:scripts/game/entity/game_bounding_box.py` and constructed
-  nowhere.
-
-**Corrected at `d8c303f`.** This section used to close with "above all: the
-object layer is skipped at runtime", and it is not — `#TAG:spawn_objects` runs
-at bind, and `#TAG:GamePlayer.core_input_receive` is no longer a `todo` but a
-documented no-op. The two reasons that survive are the first two above, and
-they are about the event bus rather than about spawning. The order is: a small
-`EntityActionComponent` on the bus, then the panel. The design is settled:
-semantic triggers (`on_touch`, `on_interact`, `on_spawn`, `on_frame`) rather
-than raw event types, stored as a JSON string in a tmx custom property,
-authored through `map.object.action.*` verbs so it inherits undo, rollback
-and generated docs for free.
-
-## Open design questions
-
-1. **Response transport.** Today: the editor writes a bundle, something
-   answers it, the editor picks up `response.jsonl`. A "Send" button that
-   shells out to `claude -p` is a convenience on top of that primitive, not
-   a different design. The file drop stays the contract because it works
-   with an interactive session, a headless run, or a different model
-   entirely.
-2. **How much the AI may restructure.** `RULES.md` currently says "do not
-   restructure the event system" in prose. It could be mechanical — a check
-   that fails if dispatch changed. Prose first; mechanise when it is
-   violated once.
-3. **Per-genre engine code.** A pack can ship `template/`, but nothing
-   copies it yet. Open question whether a genre should ship runnable
-   systems (a platformer body) or only condition an AI to write them. The
-   current lean is: ship the rules, let the AI write the code, because a
-   shipped system that nobody reads is the thing that rots.
+Generated, so read counts there and never in prose: the check roster in
+[`CHECKS.md`](CHECKS.md), verbs in [`COMMANDS.md`](COMMANDS.md), ops in
+[`EVENTS.md`](EVENTS.md). Unbuilt scene, tileset-screen, trigger and
+relay-review work: [`PLAN_SCENES.md`](PLAN_SCENES.md). Everything else open:
+[`NEXT.md`](NEXT.md).

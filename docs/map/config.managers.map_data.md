@@ -5,7 +5,7 @@
 
 > Maps named in config/maps.json, parsed and handed to the renderer.
 
-`config.managers.map_data` · 677 lines · tier 1: [`../MAP.md`](../MAP.md)
+`config.managers.map_data` · 675 lines · tier 1: [`../MAP.md`](../MAP.md)
 
 **First-party imports.** `scripts/` may never import `editor/` — this line is where that is auditable.
 
@@ -116,7 +116,7 @@
 
 ### `class AssetMapManager(CoreAsset)` #TAG:AssetMapManager
 
-`config/managers/map_data.py:534`–`676`
+`config/managers/map_data.py:534`–`674`
 
 - `config/managers/map_data.py:535` `__init__(self)` #TAG:AssetMapManager.__init__
 - `config/managers/map_data.py:538` `__find_map(self, name: str) -> MapData | None` #TAG:AssetMapManager.__find_map
@@ -125,15 +125,15 @@
   - Return the parsed map, parsing it at most once.
 - `config/managers/map_data.py:572` `@staticmethod __parse(map_data: MapData) -> pytmx.TiledMap | BlitmapRuntime` #TAG:AssetMapManager.__parse
   - Read one map file with whichever loader its extension names.
-- `config/managers/map_data.py:596` `@staticmethod __missing_tileset_name(exc: BaseException) -> str` #TAG:AssetMapManager.__missing_tileset_name
+- `config/managers/map_data.py:594` `@staticmethod __missing_tileset_name(exc: BaseException) -> str` #TAG:AssetMapManager.__missing_tileset_name
   - Pull just the path out of pytmx's mangled FileNotFoundError.
-- `config/managers/map_data.py:611` `@staticmethod __require_file(map_data: MapData) -> None` #TAG:AssetMapManager.__require_file
+- `config/managers/map_data.py:609` `@staticmethod __require_file(map_data: MapData) -> None` #TAG:AssetMapManager.__require_file
   - Fail with both paths, not just the one pytmx happens to hold.
-- `config/managers/map_data.py:624` `document(self, name: str) -> MapDocument` #TAG:AssetMapManager.document
+- `config/managers/map_data.py:622` `document(self, name: str) -> MapDocument` #TAG:AssetMapManager.document
   - Open a map for EDITING, as a byte-faithful XML document.
-- `config/managers/map_data.py:650` `is_loaded(self, name: str) -> bool` #TAG:AssetMapManager.is_loaded
-- `config/managers/map_data.py:654` `unload_assets(self, name: str) -> bool` #TAG:AssetMapManager.unload_assets
-- `config/managers/map_data.py:661` `__load_maps(self, config: dict[str, any]) -> AssetMapManager` #TAG:AssetMapManager.__load_maps
-- `config/managers/map_data.py:667` `reload(self, config: dict[str, any] | tuple[str, any] | None=None) -> AssetMapManager` #TAG:AssetMapManager.reload
+- `config/managers/map_data.py:648` `is_loaded(self, name: str) -> bool` #TAG:AssetMapManager.is_loaded
+- `config/managers/map_data.py:652` `unload_assets(self, name: str) -> bool` #TAG:AssetMapManager.unload_assets
+- `config/managers/map_data.py:659` `__load_maps(self, config: dict[str, any]) -> AssetMapManager` #TAG:AssetMapManager.__load_maps
+- `config/managers/map_data.py:665` `reload(self, config: dict[str, any] | tuple[str, any] | None=None) -> AssetMapManager` #TAG:AssetMapManager.reload
   - Re-parse every map that is currently loaded, in place.
-- `config/managers/map_data.py:675` `prepare(self, config: dict[str, any]) -> AssetMapManager` #TAG:AssetMapManager.prepare
+- `config/managers/map_data.py:673` `prepare(self, config: dict[str, any]) -> AssetMapManager` #TAG:AssetMapManager.prepare

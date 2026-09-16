@@ -21,7 +21,8 @@ that nothing exercises is not exercised by playing the game either:
   4. a refusal changes NOTHING -- the document is byte-identical afterwards,
      which is the property that makes a rolled-back batch safe
   5. creation and deletion reach the DISK only at `save()`, so a delete that
-     is undone leaves the file where it was (`docs/PLAN_SCENES.md` 2.5, and
+     is undone leaves the file where it was
+     (`docs/history/PLAN_SCENES_2026-09-03.md` 2.5, and
      the measured fault in `Project.drop_table` it exists to avoid)
   6. the canonical rendering: a key at its default is written as no key at
      all, which is what lets `set` be its own exact inverse without a second
@@ -200,7 +201,8 @@ expect("`script` is a scope kind, so a script scope parses at all",
        "script" in SCOPE_KINDS, True)
 expect("and a script scope really does parse",
        str(Scope.parse("script:keeper_gate")), "script:keeper_gate")
-expect("the fourteen verbs of PLAN_SCENES 6.4 are registered", registered, [
+expect("the fourteen verbs of PLAN_SCENES_2026-09-03 6.4 are registered",
+       registered, [
     "script.create", "script.delete", "script.node.add", "script.node.move",
     "script.node.remove", "script.node.restore", "script.node.set",
     "script.page.add", "script.page.move", "script.page.remove",
@@ -376,7 +378,8 @@ session.run([
 ], label="build the keeper")
 
 document = library.document(SCRIPT)
-expect("the whole tree of PLAN_SCENES 3.4 is reachable through the verbs",
+expect("the whole tree of PLAN_SCENES_2026-09-03 3.4 is reachable through "
+       "the verbs",
        document.ids(),
        ["pg_open", "pg_main", "n2", "n3", "n4", "n5", "n8", "n9",
         "n10", "n11", "n12", "n13", "pg_last"])
@@ -685,9 +688,9 @@ expect("and the document is unchanged", text(), INTACT)
 # --------------------------------------------------------------------------
 section("6. the disk: created and deleted in memory, written at save")
 # --------------------------------------------------------------------------
-# PLAN_SCENES 2.5. The measured fault it exists to avoid: `Project.drop_table`
-# calls `os.remove` INSIDE the command, so a drop that is rolled back has
-# already deleted the file.
+# docs/history/PLAN_SCENES_2026-09-03.md 2.5. The measured fault it exists
+# to avoid: `Project.drop_table` calls `os.remove` INSIDE the command, so a
+# drop that is rolled back has already deleted the file.
 
 path = library.path_for(SCRIPT)
 expect("nothing is on disk before a save", os.path.isfile(path), False)

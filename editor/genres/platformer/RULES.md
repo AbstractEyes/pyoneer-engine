@@ -12,7 +12,7 @@ control, tile collision and a spawn system all exist now.
 |---|---|
 | deferred depth-sorted rendering | a one-way platform (the mask vocabulary is symmetric) |
 | tile map loading and compositing | a swept or box collider; the test is one anchor point |
-| a spawn path that reads each object's `pyoneer_behaviors` and composes it | a genre pack's default list being applied for you -- the object carries its own |
+| a spawn path that reads each object's `pyoneer_behaviors` and composes it, and an editor that writes this pack's default list onto a `GamePlayer` placed on `entity` | a default the ENGINE applies at spawn -- it never reads the pack, so an object written by hand in Tiled carries only what it says, and a list given at placement wins over the default |
 | gravity, terminal velocity, air control and a jump with coyote time -- the `platformer_move` behavior | jump *buffering* (pressing early, before landing) |
 | a passability gate baked at map load from a tileset's own tile masks AND from companion layers, handed to every entity bound | a body gated on a map that declares neither -- that bakes `None`, which is ungated |
 | behavior composition: swap what an entity does by editing a list | a class-free way to mark which object the human drives; that is `player_input` in the list |
@@ -59,9 +59,10 @@ player are one class and one spawn entry, distinguished by one token.
 
 - **A behavior**, in `scripts/game/behavior/`, deriving `EntityBehavior` --
   `attach(entity)` / `update(entity, event)` / `detach(entity)`, no event-bus
-  presence. Register it in `scripts/game/behavior/registry.py` with a
-  `BehaviorSpec` declaring what it writes, what it requires, what it conflicts
-  with, its run order, and the actors columns it consumes. Name it
+  presence. Declare its `BehaviorSpec` beside the class -- what it writes,
+  what it requires, what it conflicts with, its run order, and the actors
+  columns it consumes -- and register it in
+  `scripts/game/behavior/registry.py`'s `register_all`. Name it
   `Game<Thing>Behavior`, like `GamePlatformerMoveBehavior`. The step-by-step
   is in `docs/BEHAVIORS.md`; do not restate it here, because a second copy of
   a procedure drifts from the first.
@@ -130,8 +131,10 @@ The companion has no row in the editor's hierarchy: it declares
 mask swatch, and paint; shift+click a map cell to give the TILE under it that
 mask instead.
 
-Hazards go on the `entity` object layer as objects, not as tiles, so they can
-carry damage values and trigger regions.
+Hazards belong on the `entity` object layer as objects rather than as tiles,
+so each can carry its own values and region -- but nothing to build one from
+exists yet: no hazard class is registered to spawn (next section) and no
+behavior applies damage, so a hazard today is a code change first.
 
 ### An object's Type must be spawnable
 
@@ -159,8 +162,10 @@ keyed by `(depth, priority)` and the renderer flattens the frame into one
 
 - **Draw order is an integer, not a tree position.**
 - A new map layer name only renders if `scripts/core/depth.py` maps it to a
-  depth. Adding a layer to a `.tmx` without adding it to `MAP_DEPTH` means
-  the layer silently does not draw.
+  depth. Adding an art layer to a `.tmx` without adding its name to
+  `MAP_DEPTH` means the layer does not draw -- the renderer warns naming it
+  and carries on, it does not raise. A data layer (a collision companion)
+  declares `pyoneer_renders=false` instead and is skipped without a warning.
 
 ### The lifecycle contract, and the trap in it
 

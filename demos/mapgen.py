@@ -21,9 +21,11 @@ it. Tile index N in that tileset IS mask N: 0 is PASS_ALL, 15 is BLOCK_ALL,
 `pyoneer_passability` property.
 
 The engine warns once per boot that `'FloorCollision'` has no depth mapping
-in `scripts/core/depth.py` and will not be drawn. That is what a mask layer
-wants: do NOT follow the warning's advice and add it to `MAP_DEPTH`, which
-would draw the masks on top of the floor.
+in `scripts/core/depth.py` and will not be drawn. Not drawing is what a mask
+layer wants, so do NOT follow the warning's advice and add it to `MAP_DEPTH`,
+which would draw the masks on top of the floor. The warning itself is
+avoidable: the renderer honours `pyoneer_renders=false` on a layer, and these
+sources never write it (open in `docs/DEMOS.md`).
 """
 from __future__ import annotations
 

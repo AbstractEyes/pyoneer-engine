@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every field below is resolved against the live registries by tools/check_prototype.py on every run, and the worked example is booted -->
+<!-- pyoneer-stamp: hand-written; tools/check_prototype.py resolves every field of both forms against the live registries, boots the worked example, and checks the loop section's commands and files on every run. -->
 
 # Design template — a small game, in one screen, executable
 
@@ -11,6 +11,9 @@ them on every run, and boots the worked example at the bottom.
 
 Five minutes is the budget. If a row takes longer than that, the row is
 describing something the engine cannot do yet, and **that** is the finding.
+
+This file is also where the loop lives: fill the form, build the demo, prove
+it. See [the loop](#the-loop-design---build---prove) at the end.
 
 ## The blank form
 
@@ -48,7 +51,7 @@ prove   <what the check asserts> AND <the half that kills the false pass>
 | `name` | the demo name | a key in `demos.mapgen`'s map sources | [`DEMOS.md`](DEMOS.md) |
 | `genre` | pack id | a directory under `editor/genres/` | `editor/genres/<id>/genre.json` |
 | `map` | three integers | width, height in tiles, and pixels per tile | your call |
-| `layer` | name + `tile`/`object` | a layer the genre pack declares — and a **tile** layer must resolve to a depth or it is silently not drawn | [`PLACEABLE.md`](PLACEABLE.md) |
+| `layer` | name + `tile`/`object` | a layer the genre pack declares — and a **tile** layer must resolve to a depth or it is not drawn | [`PLACEABLE.md`](PLACEABLE.md) |
 | `object` | spawn type | a key in `SPAWN_REGISTRY`. One type is spawnable today | [`PLACEABLE.md`](PLACEABLE.md) |
 | `object` | token list | every token registered; no duplicates; no two that declare a conflict | [`BEHAVIORS.md`](BEHAVIORS.md) |
 | `param` | key | a parameter one of that object's tokens declares | [`BEHAVIORS.md`](BEHAVIORS.md) |
@@ -64,6 +67,10 @@ Four rows are optional and the rest are not: `param`, `actor`, `flow`/`step`
 and `route` are for games that need parameters, table data or narrative. A
 top-down walking prototype is `name`, `genre`, `map`, two `layer`s, one
 `object` and one `prove`.
+
+An `actor` row is read at runtime: an object carrying `pyoneer_actor` gets
+that row's columns under its own `pyoneer_param_*` and over each declared
+default (`#TAG:actor_row`), and a `pyoneer_actor` naming an absent row raises.
 
 ## Three things the form makes you say out loud
 
@@ -123,26 +130,6 @@ prove   the routed payload reaches the flow AND a different payload reaches noth
 Read that against [`DEMOS.md`](DEMOS.md)'s story section for what each `prove`
 row cost to make true.
 
-### Where the example used to be honest about a hole
-
-The `actor` row above resolves — every column is declared by the `topdown_rpg`
-pack — and it is **read at runtime now.** `scripts/loaders/table_file.py` is
-the engine-side reader for `data/project/tables/`, so step 2 of parameter
-resolution fires: an object carrying `pyoneer_actor` gets its row's columns
-under its own `pyoneer_param_*` and over each parameter's declared default.
-Nothing above this section changed to make that true, which is the claim this
-paragraph made while the hole was open and the one it keeps now that it is
-filled.
-
-Two halves of that are worth stating, because both are load-bearing:
-
-* A column the row omits, a project with no `tables/` directory, and an object
-  with no `pyoneer_actor` all behave exactly as they did before the reader
-  existed — the declared default answers.
-* A `pyoneer_actor` naming a row that is **absent** raises, naming the object.
-  It does not fall back. A row reference that resolved to nothing would look
-  identical to one that worked, with every number quietly at its default.
-
 ## Filling it in for a genre that is not top-down
 
 Only two rows move. A side-on game swaps `topdown_move` for `platformer_move`
@@ -151,9 +138,55 @@ in the `object` row, and gains `param` rows for `gravity`, `jump_velocity` and
 layer is the same, the depth is the same. That is the whole claim the demos
 exist to make, and the form is shaped so that making it is easier than not.
 
-## What to do with a filled form
+## What the form cannot say yet
 
-Take it to [`PROTOTYPE.md`](PROTOTYPE.md), which is the loop: DESIGN (this
-file) → BUILD (a map source plus `demos/<name>.py`) → PROVE (a check that boots
-it headless and drives injected input). The form is step one of three and is
-the only step that does not touch code.
+It has no row for an **event script** (`pyoneer_script` on an object, a JSON
+document under `data/project/scripts/`, [`EVENTS.md`](EVENTS.md)) and none for
+**audio** (`play_sound`, `play_music`). Both are live in the shipped game, and
+the worked example predates them: its dialogue is a `flow` over Python beats.
+A row kind needs a resolver in the check before it belongs in the form, so
+until one lands, write a scripted game's script id and its sounds as a
+comment line and resolve them by hand against `EVENTS.md`.
+
+## The loop: design -> build -> prove
+
+    DESIGN   fill the form above                     no code is written
+    BUILD    a map source, plus demos/<name>.py      the game runs
+    PROVE    a check that boots it and presses keys  the game stays running
+
+**DESIGN.** Fill the blank form; the vocabulary is in
+[`BEHAVIORS.md`](BEHAVIORS.md) and [`PLACEABLE.md`](PLACEABLE.md). It catches,
+before any file exists, a token that would raise at load, a tile layer that
+would not be drawn, and a verb a behavior would poll unbound.
+
+**BUILD.** Two files, usually only one of them new. In `demos/mapgen.py`, copy
+the nearest `_*_source` function, add it to `SOURCES`, and put every position,
+object id and geometry number in a named module constant: the check derives
+its expectations from those constants, so a number typed twice is a check
+pinning map content. Then a class in `demos/<name>.py`:
+
+    from demos.runtime import DemoGame, run
+
+    class MyDemo(DemoGame):
+        MAP_NAME = "demo_mine"
+
+    if __name__ == "__main__":
+        sys.exit(run(MyDemo))
+
+A narrative demo derives `StoryGame` from `demos/narrative.py` and adds a
+`SCRIPT`. If your class needs a method, stop: it wanted a hook on `DemoGame` or
+`MainGame`. A genre pack's default behavior list reaches an object only through
+the editor, where `map.object.add` materialises it
+(`#TAG:behaviors_materialised_at_add`); `demos/mapgen.py` writes maps from
+Python, so spell every list out.
+
+**PROVE.** A section in a check that boots the demo headless, drives it with
+injected input (smoke presses nothing), and asserts both halves of every
+`prove` row, usually with a negative-control boot. Put the check in
+`tools/check_all.py`'s roster in the same change. Every check generates its
+own maps into a temp directory, so `demos/maps/*.tmx` stays yours to repaint.
+
+    .venv/Scripts/python.exe -m demos.<name> --frames 60   # BUILD: it runs
+    .venv/Scripts/python.exe tools/gen_map.py --write      # BUILD: map the new module
+    .venv/Scripts/python.exe tools/check_<name>.py         # PROVE: both halves
+    .venv/Scripts/python.exe tools/check_docs.py --write   # PROVE: CHECKS.md gains the row

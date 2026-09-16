@@ -51,6 +51,11 @@ GRAPHICS_ROOT = "data/graphics"
 SHIPPED_ROOT = "data/art"
 """The generated pack. Tracked, and written only by `tools/art/`."""
 
+MISSING_ART_HINT = ("no file there under data/graphics/ and no shipped twin "
+                    "under data/art/; see docs/ASSETS.md")
+"""The one hint every missing-image error carries. Art ships, so a missing
+image is a path the author declared and never supplied -- not a bare clone."""
+
 _GRAPHICS_PARTS = tuple(GRAPHICS_ROOT.split("/"))
 _SHIPPED_PARTS = tuple(SHIPPED_ROOT.split("/"))
 

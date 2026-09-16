@@ -557,8 +557,8 @@ _PLACEHOLDER: dict[type, Any] = {
 _UNSCOPED_EXAMPLE = (
     '{"verb": "table.row.add", "scope": "table:actors",'
     ' "args": {"id": "hero", "values": {"hp": 30}}}\n'
-    '{"verb": "map.object.add", "scope": "map:test/layer:entity",'
-    ' "args": {"type": "PlayerStart", "x": 64, "y": 64}}'
+    '{"verb": "map.object.add", "scope": "map:starter/layer:entity",'
+    ' "args": {"type": "GamePlayer", "x": 64, "y": 64}}'
 )
 
 

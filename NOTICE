@@ -25,9 +25,19 @@ their terms apply to those components.
 Art and other assets
 --------------------------------------------------------------------------------
 
-No third-party art is included in this repository, deliberately. The engine
-reads image files at runtime that you must supply yourself. See docs/ASSETS.md
-for what is required and tools/make_placeholder_art.py for generated stand-ins.
+The art under data/art/ is drawn by this repository's own generator
+(`python -m tools.art`) and is covered by the licence above. Your own art goes
+in data/graphics/, which is untracked and wins over data/art/ file by file. See
+docs/ASSETS.md.
+
+Two third-party audio files ship under data/audio/, both free to redistribute:
+sfx/chime.wav (CC0 1.0) and music/pleasant_moments.ogg (public domain). Source,
+author and checksum for each are in data/audio/CREDITS.md. Your own audio goes
+in data/sound/, which is untracked and wins over data/audio/ the same way.
+
+Images cropped in through the editor's tileset import dialog land in
+data/maps/tilesets/. They are not covered by the licence above and keep
+whatever terms their source image carries.
 
 The Apache-2.0 licence above covers the SOURCE CODE of this engine. It says
 nothing about art, audio, maps or other content you load into it -- those carry

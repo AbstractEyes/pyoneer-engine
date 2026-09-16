@@ -132,8 +132,9 @@ def tokens(text_or_path) -> int:
     """The measure the spec is written in: bytes over four.
 
     Not a tokeniser. It does not need to be -- the claim being defended is a
-    4x ratio, and every number in `docs/PLAN_SCENES.md` section 5a was taken
-    this way, so this is the same yardstick rather than a better one.
+    4x ratio, and every number in `docs/history/PLAN_SCENES_2026-09-03.md`
+    section 5a was taken this way, so this is the same yardstick rather than
+    a better one.
     """
     if isinstance(text_or_path, str) and os.path.isdir(text_or_path):
         return sum(os.path.getsize(os.path.join(text_or_path, name))
@@ -673,10 +674,11 @@ print("...and the sibling address a real answer needs is DECLARED, not "
 # The case that decides this cannot be a pure gate: attaching an event
 # script to the object that runs it is `script.create` at `script:<id>` AND
 # `map.object.property.set` at the object, one note, two addresses
-# (`docs/PLAN_SCENES.md` section 6 -- "attaching a script to an object needs
-# NO new verb"). A gate with no door for that would refuse the main flow of
-# the feature, so `also` widens the bundle on every axis at once: the
-# address is declared, its verbs are SHIPPED, and the gate accepts it.
+# (`docs/history/PLAN_SCENES_2026-09-03.md` section 6.4 -- "attaching a
+# script to an object needs NO new verb"). A gate with no door for that would
+# refuse the main flow of the feature, so `also` widens the bundle on every
+# axis at once: the address is declared, its verbs are SHIPPED, and the gate
+# accepts it.
 ENTITY = Scope.parse("map:test/layer:entity")
 session.run(Command("map.object.add", ENTITY,
                     {"type": "GamePlayer", "x": 64.0, "y": 64.0,

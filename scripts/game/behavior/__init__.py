@@ -34,26 +34,33 @@ WHAT IS HERE
 
 THE ONE-MINUTE VERSION
 ----------------------
-    from scripts.game.behavior import (BehaviorParam, BehaviorSpec,
-                                       EntityBehavior, build, read_requests,
-                                       register)
+    # In the family module, e.g. movement.py -- the spec sits BESIDE its class.
+    from scripts.game.behavior.base import (BehaviorParam, BehaviorSpec,
+                                            EntityBehavior)
 
-    class GameTopDownMoveBehavior(EntityBehavior):
-        def __init__(self, move_speed: int = 16):
-            self.move_speed = move_speed
+    class GamePlatformerMoveBehavior(EntityBehavior):
+        def __init__(self, gravity: float = 900.0, ...):
+            self.gravity = gravity                # keyword == param key
         def update(self, entity, event):
             ...                                   # event.data["delta"]
 
-    register(BehaviorSpec(
-        name="topdown_move",                      # goes into the .tmx
-        summary="Four-way axis-aligned movement polled from input verbs.",
-        factory=GameTopDownMoveBehavior,
-        params=(BehaviorParam("move_speed", "move speed", "int", 16,
-                              "Pixels per delta unit.", source="actors"),),
-        writes=("transform.position",),           # what it mutates
-        requires=("action_manager",),             # what it needs to work
-        order=20))                                # low runs first
+    PLATFORMER_MOVE = BehaviorSpec(
+        name="platformer_move",                   # goes into the .tmx
+        summary="A side-on body: gravity, terminal velocity, ...",
+        factory=GamePlatformerMoveBehavior,
+        params=(BehaviorParam("gravity", "gravity", "float", 900.0,
+                              "Downward pixels per second squared.",
+                              source="actors"),),  # an actors column
+        writes=("transform.position", "velocity"),  # what it mutates
+        requires=("allowed_move", "transform"),   # reported, never enforced
+        conflicts=("topdown_move",),
+        order=20,                                 # low runs first
+        genres=("platformer",))
 
+    # In registry.py, at the bottom: the one token -> spec table.
+    register_all((PLAYER_INPUT, TOPDOWN_MOVE, PLATFORMER_MOVE, ANIMATION_DRIVE))
+
+    # At spawn, from the tmx object's own properties:
     entity.behaviors.attach_all(build(read_requests(obj.properties)))
 """
 from __future__ import annotations

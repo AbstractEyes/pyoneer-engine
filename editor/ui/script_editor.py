@@ -79,21 +79,22 @@ field an author cannot clear.
 CONDITIONS ARE BUILT, NOT TYPED -- AND THE READER STILL JUDGES THEM
 -------------------------------------------------------------------
 A condition is a comparison RECORD with six closed comparators
-(`docs/PLAN_SCENES.md` 3.4), never a string, precisely so that it renders
-as a form with no parsing: a variable, one comparator from a list of six, a
-value. So the same `ArgumentForm` builds one, and `+ when` / `− when`
-author the list on a page and on an `if` alike.
+(`docs/history/PLAN_SCENES_2026-09-03.md` 3.4), never a string, precisely so
+that it renders as a form with no parsing: a variable, one comparator from a
+list of six, a value. So the same `ArgumentForm` builds one, and `+ when` /
+`− when` author the list on a page and on an `if` alike.
 
 What is NOT invented here is the variable schema. Only a scene's `vars`
-block says whether a variable exists or what type it is; scenes are stage 6
-of `docs/PLAN_SCENES.md`, and until one lands `ScriptLibrary.variables` is
-None and the READER refuses every condition -- so the builder opens, the
-sentence the reader would say at load is shown in it, and nothing is
-written. Inventing a permissive schema to make the form look finished is
-the plausible default law 7 forbids, and it would let an author write a
-condition on a variable that will never exist. The moment a schema is in
-hand the same builder writes, the variable row becomes the closed list of
-declared names, and no line of this file changes.
+block says whether a variable exists or what type it is -- the one piece of
+stage 6 of `docs/PLAN_SCENES.md` that has landed, read by
+`script_file.load_vars` into `ScriptLibrary.variables` -- and where no scene
+declares a variable the READER refuses every condition naming it, so the
+builder opens, the sentence the reader would say at load is shown in it, and
+nothing is written. Inventing a permissive schema to make the form look
+finished is the plausible default law 7 forbids, and it would let an author
+write a condition on a variable that will never exist. The moment a schema
+is in hand the same builder writes, the variable row becomes the closed list
+of declared names, and no line of this file changes.
 
 `refusal_for_when` is how that judgement is asked, and it is the reason a
 record carrying two comparators is refused HERE naming both: the rule is
@@ -123,17 +124,18 @@ THE VIEW CHOICE, STATED
 RPG Maker draws a nested branch as a FLAT list with a `Branch End` row.
 This draws the real tree: `then` bodies hang under the `if` row, and
 `else if` / `else` are DRAWN ARM HEADERS with the arm's nodes under them.
-The file is genuinely nested (`docs/PLAN_SCENES.md` 3.4), containment is
-what an insert has to address, and a flat rendering would have to invent a
-row that is not a node and then explain why it cannot be selected. The one
+The file is genuinely nested (`docs/history/PLAN_SCENES_2026-09-03.md`
+3.4), containment is what an insert has to address, and a flat rendering
+would have to invent a row that is not a node and then explain why it cannot
+be selected. The one
 thing borrowed from the flat rendering is that an empty body still draws a
 row -- a dim placeholder carrying the address, so "put a command in this
 else arm" is a click rather than a thing that cannot be said.
 
-PAGES ARE A LIST, NOT TABS. `docs/PLAN_SCENES.md` 5.3's reason, kept: a tab
-bar stops being readable past six, and list order IS evaluation order here
-(the FIRST page whose `when` all pass runs), so a row that can be moved up
-and down is the honest control for a semantic ordering.
+PAGES ARE A LIST, NOT TABS. `docs/history/PLAN_SCENES_2026-09-03.md` 5.3's
+reason, kept: a tab bar stops being readable past six, and list order IS
+evaluation order here (the FIRST page whose `when` all pass runs), so a row
+that can be moved up and down is the honest control for a semantic ordering.
 
 NOT MODAL, AND IT MUST NEVER BECOME MODAL
 -----------------------------------------
@@ -191,12 +193,13 @@ SCRIPT: str = SCRIPT_PROPERTY
 """The tmx object property naming the event script an object runs.
 
 RE-EXPORTED, never composed here. A FILE FORMAT string, minted by
-`docs/PLAN_SCENES.md` 4.6 and permanent under law 8, so the window that
-WRITES it and the boot that READS it must spell it identically forever. It
-was composed independently on both sides for a day; law 2's corollary says
-shared logic lives in `scripts/` and the editor re-exports it, so the one
-declaration is `script_file.SCRIPT_PROPERTY` and this name is an alias kept
-because the rest of this file reads better for it.
+`docs/history/PLAN_SCENES_2026-09-03.md` 4.6 and permanent under law 8, so
+the window that WRITES it and the boot that READS it must spell it
+identically forever. It was composed independently on both sides for a day;
+law 2's corollary says shared logic lives in `scripts/` and the editor
+re-exports it, so the one declaration is `script_file.SCRIPT_PROPERTY` and
+this name is an alias kept because the rest of this file reads better for
+it.
 
 It needs no verb of its own: `map.object.property.set` already writes it,
 already has an exact inverse, and already refuses a reserved name.
@@ -383,8 +386,8 @@ def mint(taken, prefix: str) -> str:
 
     An id has to be minted somewhere: something must produce one when a
     command is added. It is minted ONCE, here, and then never changes. What
-    `docs/PLAN_SCENES.md` 3.4 refuses is an id minted at SAVE time, which
-    moves under a relay response that addressed it.
+    `docs/history/PLAN_SCENES_2026-09-03.md` 3.4 refuses is an id minted at
+    SAVE time, which moves under a relay response that addressed it.
     """
     used = set(taken)
     index = 1
@@ -1452,8 +1455,8 @@ class ScriptEditor(QMainWindow):
         """Where the next picked command goes: `(into, arm, after)`.
 
         An id and a SIDE, never an index -- the addressing the verbs take,
-        for the reason `docs/PLAN_SCENES.md` 3.4 gives: an ordered batch of
-        edits shifts every index it touches, silently.
+        for the reason `docs/history/PLAN_SCENES_2026-09-03.md` 3.4 gives:
+        an ordered batch of edits shifts every index it touches, silently.
 
         A selected command means "after this one". A selected arm header or
         the dim placeholder means "into that arm, at the end". Nothing
@@ -1867,8 +1870,9 @@ class ScriptEditor(QMainWindow):
         """The form for ONE condition: a variable, a comparator, a value.
 
         Three rows, and the middle one is a closed list of the six the
-        format has. `docs/PLAN_SCENES.md` 3.4 made a condition a record
-        rather than a string precisely so this form needs no parser.
+        format has. `docs/history/PLAN_SCENES_2026-09-03.md` 3.4 made a
+        condition a record rather than a string precisely so this form needs
+        no parser.
         """
         names = self.variable_names()
         # Every comparator the record carries, in the format's own order --
