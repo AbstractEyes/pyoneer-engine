@@ -17,7 +17,7 @@ have been written, passed, and never run by the suite. A check that
 did not run has proved nothing, which is why an absent optional
 dependency reports `SKIP` and never `PASS`.
 
-64 checks:
+65 checks:
 
 | check | roster line | module says |
 |---|---|---|
@@ -83,6 +83,7 @@ dependency reports `SKIP` and never `PASS`.
 | `art` | the shipped pack: every sheet on disk at its builder's size, the tracked bytes reproducible twice over, the engine loading each one, resolve_art ordering the two roots both ways, and git ignoring the licensed root but not the pack | Verify the shipped art pack: it is there, it is reproducible, it loads. |
 | `art_sprites` | the generated character sheets, mask palette and parallax band: the declared frame grid, four distinct walk poses, no frame overhanging its cell, every mask edge marked only where it blocks, a seamless join, and no pixel read from a file | Verify the generated sprites, mask palette and parallax background. |
 | `nai` | the NovelAI sprite pipeline with every socket refused: one builder for the three parallel caption arrays, each free-tier refusal under its own condition, one POST between two balance reads and never a retry, a canary key that reaches only its header, and the inits, masks and pixelize measured on synthetic strips | Verify tools/nai with every socket refused: the body, the free-tier guard, the one POST, the key, the inits, the masks, pixelize and the CLI. |
+| `nai_ui` | the NovelAI composer window is only a composer: every button's argv parses under the LIVE cli parser, every Opus-tier number it shows is model's own, and its code never names the key, the probe flag, the transport or a process outside run_pane -- then the window itself is built off-screen and driven, proving both halves of each rule: a sending button starts nothing while a free one starts one thing, the arm needs a green dry run of its own request and drops on any edit, LOCK shuts the senders and only the senders, a refused character file shows the loader's own sentence and blocks every command naming it, and a decoy credential reaches no widget, argv or saved file -- and, through a fake child this check opens and closes by hand, that the clearance a send arms on is the argv the CHILD parsed and not the line the form has since recomposed, that a line which cannot run shuts its button and its menu item and says why instead of raising out of a Qt slot, that the line shown re-splits into the argv that runs under the platform's own quoting rule, that every key of request.FIXED_PARAMETERS is shown-and-locked or classified, and that nothing clips sideways at 1920, 1680, 1440 or 1366 px | The NovelAI composer window's contract: its argv table, its limits, its silence. |
 | `secrets` | no tracked file carries a plaintext credential: a credential-shaped name bound to a real literal, a high-entropy key under an innocent name, a provider token or connection URL whatever it is called, the same three over json, xml and prose as well as python, and an os.environ read never flagged | Refuse a plaintext credential in a TRACKED file. |
 | `docs` | the doc spine: navigation, #TAG anchors, the generated code map, fact drift | Verify the documentation SPINE, and generate the parts that can be generated. |
 
