@@ -161,6 +161,20 @@ data/maps/tilesets/
 data/sound/
 
 # ---------------------------------------------------------------------------
+# NovelAI pipeline state
+# ---------------------------------------------------------------------------
+# tools/nai/ keeps its working state here: the append-only ledger (account
+# balances), proof rows, the LOCK and INFLIGHT markers, request/response
+# blobs, mannequin renders and generated sprites. None of it is source.
+# Generated NovelAI output stays out of the repo until the author decides
+# otherwise, having read NovelAI's terms for generated images; promoting a
+# sprite to data/art/ is a deliberate, by-hand step, never the tool's.
+#
+# data/reference/sprites/ is deliberately NOT listed: those are CC0 sheets
+# drawn by people, committed with their provenance in its CREDITS.md.
+data/nai/
+
+# ---------------------------------------------------------------------------
 # Secrets
 # ---------------------------------------------------------------------------
 # Keys live in the Windows USER environment, never in a file here: the NovelAI

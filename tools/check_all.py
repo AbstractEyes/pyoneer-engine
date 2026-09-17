@@ -158,6 +158,12 @@ CHECKS = [
                     "walk poses, no frame overhanging its cell, every mask "
                     "edge marked only where it blocks, a seamless join, and "
                     "no pixel read from a file"),
+    ("nai", "the NovelAI sprite pipeline with every socket refused: one "
+            "builder for the three parallel caption arrays, each free-tier "
+            "refusal under its own condition, one POST between two balance "
+            "reads and never a retry, a canary key that reaches only its "
+            "header, and the inits, masks and pixelize measured on "
+            "synthetic strips"),
     ("secrets", "no tracked file carries a plaintext credential: a "
                 "credential-shaped name bound to a real literal, a "
                 "high-entropy key under an innocent name, a provider token "
