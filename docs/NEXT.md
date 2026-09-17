@@ -6,7 +6,7 @@
 1. **Item numbers are permanent ids.** Code cites items by number: item 16 is
    cited from `scripts/core/event_manager.py` and `tools/check_event_queue.py`,
    and item 29 from `tools/check_editor.py`. So a number is never changed and
-   never reused. A new item takes the next unused number (**46**), and a
+   never reused. A new item takes the next unused number (**47**), and a
    closed item moves to *Closed* at the bottom and keeps its number.
 2. **Rank is the section, not the number.** Sections run from most to least
    expensive; within a section, earlier means more urgent.
@@ -318,6 +318,33 @@ the commit is made. A pre-commit hook is the missing half, and installing one
 is repository configuration, so it is the author's decision.
 
     grep -rln "check_secrets" .git/hooks/ 2>/dev/null | wc -l   -> 0
+
+### 46. A character file may give two parts the same colour, and pixelize fuses them
+
+`characters._colours` measures every identity colour against the grey key and
+the outline, and every drawn shade against the key -- but never one part
+against another. Two parts within `post.MERGE_DISTANCE` (12.0) are merged
+into one palette entry by pixelize, so a file giving `scarf` the tunic's
+blue ships a sprite whose scarf has silently vanished into the tunic, with
+no refusal anywhere. `tools/check_nai.py`'s shipped-file block now judges
+every file in `tools/nai/characters/` legal, so it would pass such a file:
+*legal* does not yet include part-to-part separation. The only
+part-to-part assertion in the tree is hand-written for one pair of one
+file (blue scarf vs tunic >= 48). Fix: one more rule in `characters._colours`,
+measured for every pair, and a shipped-file assertion beside the other
+three.
+
+    .venv/Scripts/python.exe -c "import sys; sys.path.insert(0, 'tools'); import _bootstrap
+    import json, os, tempfile
+    from tools.nai import characters
+    raw = json.load(open(characters.file_for('scout')))
+    raw['colours']['scarf'] = raw['colours']['tunic']
+    d = tempfile.mkdtemp(); p = os.path.join(d, 'twin.json')
+    json.dump(raw, open(p, 'w'))
+    i = characters.load_file(p)
+    print('loads with scarf == tunic:',
+          characters.distance_sq(i.colour('scarf'), i.colour('tunic')))"
+    -> loads with scarf == tunic: 0
 
 ## Unbuilt, decided or deferred
 

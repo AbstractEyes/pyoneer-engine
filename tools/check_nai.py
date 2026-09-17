@@ -61,7 +61,16 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
      default; the blue-scarf file differs from it ONLY in the scarf tag and
      the scarf colour, reaches every caption and the init's pixels, and
      leaves no red scarf in the body; an unknown character is refused,
-     listing the files.
+     listing the files. Finally, the ONE place here that reads shipped
+     data rather than a fixture: EVERY file in the real
+     tools/nai/characters/ is enumerated and judged legal -- it parses,
+     available() can reach it, its colours and their drawn shades keep
+     their distance from the key and the outline, and walk, run and jump
+     all build inside the token budget -- with nothing asserted about any
+     one file's content. Both halves: the distances and the token count
+     are re-measured here rather than taken from the loader and
+     build_recipe that already applied them, their thresholds are pinned,
+     and the set is asserted non-empty so no loop passes vacuously.
   2. `guard.assert_free`: a legal generate, img2img and infill pass; every
      refusal condition of brief 2.2 -- and every sub-rule inside conditions
      1, 6 and 7 (image keys bound to the action, a proof the chain has not
@@ -1368,6 +1377,96 @@ try:
                       f"shipped files", ValueError, call,
                       "unknown character 'scout_green'", "scout.json",
                       "scout_blue_scarf.json")
+
+    # -- EVERY shipped character file, enumerated from the REAL directory -----
+    # The one place in this file that reads shipped data instead of a fixture,
+    # and deliberately so. CLAUDE.md law 4 forbids pinning shipped content
+    # because 333a77a had to delete two checks that measured one map's bytes --
+    # but tools/nai/characters/ is not content, it is the REGISTRY every
+    # `--character` flag resolves against, so a file that ships illegal is a
+    # broken feature rather than a fixture detail. The blocks above write
+    # their own fixtures to prove each RULE has both halves; this block proves
+    # the SHIPPED SET obeys them. It therefore asserts nothing about any one
+    # file -- no colour value, no tag text, no name beyond the default's --
+    # only that every file present is legal. Add a character file and
+    # it is checked here without editing a line.
+    SHIPPED_DIR = characters.CHARACTERS_DIR
+    expect("the enumerated directory is the repository's own "
+           "tools/nai/characters/, not a fixture, and CHAR_DIR is unpatched",
+           os.path.normpath(SHIPPED_DIR),
+           os.path.normpath(os.path.join(_bootstrap.REPO_ROOT, "tools", "nai",
+                                         "characters")))
+    SHIPPED = characters.available()
+    expect("every .json shipped there is a name available() lists, so no "
+           "shipped file is unreachable by --character",
+           sorted(entry for entry in os.listdir(SHIPPED_DIR)
+                  if entry.endswith(".json")),
+           sorted(f"{name}.json" for name in SHIPPED))
+    # without this the loops below all pass vacuously on an empty directory
+    expect("...and there is at least one shipped character, the default among "
+           "them, so nothing below is a loop over nothing",
+           (len(SHIPPED) >= 1, characters.DEFAULT_CHARACTER in SHIPPED),
+           (True, True))
+    shipped_loaded = {name: outcome(lambda n=name: characters.load(n))
+                      for name in SHIPPED}
+    expect("every shipped character file parses",
+           sorted(f"{name}: {got}" for name, got in shipped_loaded.items()
+                  if not isinstance(got, Identity)), [])
+    # The colour and budget loops below MEASURE the rules rather than trusting
+    # the loader that already applied them: a shipped file reaches them only
+    # because parse() accepted it, so taking parse()'s word would be one half
+    # of an invariant (law 5). Their thresholds are pinned here too, so
+    # loosening a gate turns this red instead of quietly widening what ships.
+    expect("...and the colour rules those files are judged against are still "
+           "48 from a reserved colour, 40 from the key for each drawn shade",
+           (characters.MIN_KEY_DISTANCE, characters.MIN_SHADE_KEY_DISTANCE,
+            [factor for factor, _drawn in characters.SHADES]), (48, 40,
+                                                                [0.7, 0.6]))
+    colour_faults: list[str] = []
+    for name, identity in sorted(shipped_loaded.items()):
+        if not isinstance(identity, Identity):
+            continue
+        for part in IDENTITY_PARTS:
+            rgb = identity.colour(part)
+            for what, reserved in (("the grey key", BACKGROUND_RGB),
+                                   ("the outline", OUTLINE_RGB)):
+                far = characters.distance_sq(rgb, reserved) ** 0.5
+                if far < characters.MIN_KEY_DISTANCE:
+                    colour_faults.append(f"{name}.{part} is {far:.1f} from "
+                                         f"{what}")
+            for factor, _drawn in characters.SHADES:
+                shaded = characters.shade(rgb, factor)
+                far = characters.distance_sq(shaded, BACKGROUND_RGB) ** 0.5
+                if far < characters.MIN_SHADE_KEY_DISTANCE:
+                    colour_faults.append(f"{name}.{part} x{factor:g} is "
+                                         f"{far:.1f} from the grey key")
+    expect("every colour of every shipped file, and every shade the mannequin "
+           "draws it at, keeps its distance from the key and the outline",
+           colour_faults, [])
+    expect("...and walk, run and jump are every recipe there is, so building "
+           "those three leaves no shipped file unbuilt",
+           sorted(recipes.RECIPE_NAMES), ["jump", "run", "walk"])
+    recipe_faults: list[str] = []
+    budget_faults: list[str] = []
+    for name, identity in sorted(shipped_loaded.items()):
+        if not isinstance(identity, Identity):
+            continue
+        source = characters.file_for(name)
+        for recipe_name in ("walk", "run", "jump"):
+            built = outcome(lambda r=recipe_name, i=identity, s=source:
+                            recipes.build_recipe(r, i, source=s))
+            if not isinstance(built, recipes.Recipe):
+                recipe_faults.append(f"{name} {recipe_name}: {built}")
+            words = recipes.caption_words(recipe_name, identity)
+            tokens = recipes.TOKENS_PER_WORD * words
+            if tokens > recipes.TOKEN_BUDGET:
+                budget_faults.append(f"{name} {recipe_name}: {words} words ~ "
+                                     f"{tokens:g} tokens")
+    expect("every shipped file builds a walk, a run and a jump recipe",
+           recipe_faults, [])
+    expect("...each inside the token budget, counted here rather than taken "
+           "from build_recipe's own gate",
+           (budget_faults, recipes.TOKEN_BUDGET), ([], 450))
 
     # =======================================================================
     print("\n2. assert_free: the legal request passes, each refusal has its own reason")
