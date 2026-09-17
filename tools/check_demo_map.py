@@ -763,17 +763,24 @@ print("8. the driven-record pick is ONE function, called by both boot paths")
 # would be a copy waiting to happen.
 
 HELPER = "driven_record"
-SKIP_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".idea", ".vs"}
+SKIP_DIRS = set(_bootstrap.NOT_THIS_TREE)
 
 
-def python_sources() -> list[str]:
-    """Every .py file in the working tree, repo-relative, sorted."""
+def python_sources(root: str = REPO,
+                   skip: set[str] | None = None) -> list[str]:
+    """Every .py file in the working tree, repo-relative, sorted.
+
+    `root` and `skip` are parameters so the walk can be aimed at a fixture
+    tree: the count below is only as good as what it refuses to look at, and
+    that refusal needs its own assertion (law 5).
+    """
+    skipping = SKIP_DIRS if skip is None else skip
     found: list[str] = []
-    for root, dirs, names in os.walk(REPO):
-        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+    for base, dirs, names in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in skipping)
         for name in sorted(names):
             if name.endswith(".py"):
-                found.append(os.path.relpath(os.path.join(root, name), REPO)
+                found.append(os.path.relpath(os.path.join(base, name), root)
                              .replace("\\", "/"))
     return found
 
@@ -814,6 +821,32 @@ expect("the walk reaches both boot paths, so a copy in either is in scope",
        {"main.py", "demos/runtime.py"} <= SEEN, True)
 expect("...and it skips nothing it should not: it sees the engine half too",
        "scripts/loaders/map_loader.py" in SEEN, True)
+
+# ...and the teeth on what the walk REFUSES to look at. A background task
+# checks the repository out again under `.claude/worktrees/`, so the tree
+# holds a second copy of every file; counting `def driven_record` across it
+# then reports 2 and blames a change that duplicated nothing. Both halves on
+# a fixture, because a skip that skips nothing passes silently:
+with tempfile.TemporaryDirectory() as _tree:
+    _real = os.path.join(_tree, "scripts", "loaders")
+    _copy = os.path.join(_tree, ".claude", "worktrees", "wt",
+                         "scripts", "loaders")
+    for _where in (_real, _copy):
+        os.makedirs(_where)
+        with open(os.path.join(_where, "map_loader.py"), "w",
+                  encoding="utf-8") as _handle:
+            _handle.write(f"def {HELPER}():\n    return None\n")
+    _seen = python_sources(_tree)
+    expect("a nested worktree's copy is not part of this working tree",
+           [p for p in _seen if p.startswith(".claude/")], [])
+    expect("...and the real file is still walked, so the skip is not a"
+           " walk that reached nothing",
+           "scripts/loaders/map_loader.py" in _seen, True)
+    # The counter-proof: drop `.claude` and the copy comes back. Without
+    # this, deleting the entry above would leave the assertion green.
+    _unskipped = python_sources(_tree, skip=SKIP_DIRS - {".claude"})
+    expect("...and the same walk DOES see it once `.claude` is not skipped",
+           len([p for p in _unskipped if p.endswith("map_loader.py")]), 2)
 
 expect("exactly one file in the tree DEFINES it", len(defining), 1)
 expect("...and it is in the engine half, which is the only package both "

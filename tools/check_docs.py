@@ -815,8 +815,13 @@ expect_empty("every behavior token a live document declares is registered "
 SOWN_RX = re.compile(r"#TAG:([a-z][a-z0-9_]*)\b")
 sown: set[str] = set()
 for root, dirs, files in os.walk(ROOT):
+    # `_bootstrap.NOT_THIS_TREE` carries the dirs that are inside the repo
+    # and are not this working tree -- `.claude/worktrees/` above all, where
+    # a background task's own checkout of every one of these files lives.
+    # This walk unions a set: a second checkout hides in it rather than
+    # failing, which is worse than a red check, not better.
     dirs[:] = [d for d in dirs
-               if d not in {".git", "__pycache__", ".venv", "docs", "tools"}]
+               if d not in _bootstrap.NOT_THIS_TREE | {"docs", "tools"}]
     for name in files:
         if not name.endswith(".py"):
             continue
