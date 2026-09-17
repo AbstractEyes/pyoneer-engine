@@ -187,7 +187,7 @@ topic, different layers, and different files.
 | "how does the editor think" · "why is every change a command" · "what is a scope" · "how does the relay work" · "what do I type into the prompt strip" | [`docs/PLAN_EDITOR.md`](docs/PLAN_EDITOR.md) — the editor's architecture |
 | "what is still unbuilt for scenes" · "what is a scene" · "how do I share a tileset between maps" · "is there a tileset editor screen" · "how will region triggers work" · "what is the relay back channel" · "why does `ask` not run" | [`docs/PLAN_SCENES.md`](docs/PLAN_SCENES.md) — the UNBUILT remainder of the scenes plan, with a status table at the top |
 | "where is the art" · "why does it fail on a fresh clone" | [`docs/ASSETS.md`](docs/ASSETS.md) |
-| "how do I generate sprites with NovelAI" · "how do I run img2img or inpainting" · "is this generation free" · "where do the reference sprites come from" | [`docs/NAI_SPRITES.md`](docs/NAI_SPRITES.md) |
+| "how do I generate sprites with NovelAI" · "how do I run img2img or inpainting" · "is this generation free" · "how do I ask an agent for a new character" · "is this outfit a data file or mannequin code" · "where do the reference sprites come from" | [`docs/NAI_SPRITES.md`](docs/NAI_SPRITES.md) |
 | "is this already written but unwired" | [`docs/BEHAVIORS.md`](docs/BEHAVIORS.md)'s measured integration column first; [`docs/history/ORPHANS.md`](docs/history/ORPHANS.md) only for the archaeology |
 | "what should I do next" · "is this a known defect" | [`docs/NEXT.md`](docs/NEXT.md) — every entry carries the command that measured it; run it before acting. Item numbers are permanent ids |
 | "the frame changed" · "smoke drifted" | `tools/smoke.py --frames 60`, then law 11 |

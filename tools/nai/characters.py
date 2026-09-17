@@ -6,7 +6,10 @@ OWNER: the author writes the files; this module refuses a bad one.
     {
       "tags":    "brown hair, short hair, red scarf, blue tunic, ...",
       "anchor":  "brown hair, red scarf, blue tunic",
-      "colours": {"skin": "#E8B48C", "hair": "#6B4226", ...}
+      "colours": {"skin": "#E8B48C", "hair": "#6B4226", ...},
+      "subject": "girl",                       OPTIONAL, default "boy"
+      "garments": {"hat": "wizard", "cape": true, "neck": "none",
+                   "legwear": "dress", "footwear": "heels"}   OPTIONAL
     }
 
 RESPONSIBILITY
@@ -15,27 +18,37 @@ Say which characters exist (`available`), turn one file into the
 `model.Identity` a recipe is built for (`load`, `load_file`, `parse`), and
 hold the ONE per-tag caption rule (`tag_problem`) that this loader,
 `recipes.build_recipe` (an Identity built in code) and
-`recipes.character_caption` all apply, so a count, rating, quality, view or
-negative tag is refused by one function whichever route it arrives on.
+`recipes.character_caption` all apply, so a count, rating, quality, view,
+negative or contradicting-subject tag is refused by one function whichever
+route it arrives on.
 
 `tags` goes into the base caption, `anchor` into every character caption,
-`colours` into the mannequin init. Nothing else in this package reads a
-character file.
+`subject` decides the count tag and every caption's first word, `garments`
+decide what the mannequin draws, and `colours` paint it. Nothing else in
+this package reads a character file.
 
 RULES -- every refusal is a ValueError naming the file and the field
 -----
 * The file is UTF-8 (a BOM is allowed) holding ONE JSON object, with no key
-  written twice at any depth, and exactly the fields `FIELDS`: an unknown
-  field and a missing field are each refused by name.
+  written twice at any depth, and no field outside `FIELDS`: an unknown
+  field and a missing REQUIRED_FIELDS field are each refused by name, and
+  `OPTIONAL_FIELDS` may be left out (every file written before they existed
+  loads unchanged, as `model.DEFAULT_SUBJECT` in `model.DEFAULT_GARMENTS`).
+* `subject` is one of model.SUBJECT_NAMES ("boy", "girl").
+* `garments` is an object; every key is one of model.GARMENT_SLOTS by name
+  and every value is one of that slot's `choices` AT ITS OWN TYPE, so `0`
+  is not `false`. A key that is left out means that slot's `default`.
 * `tags` and `anchor` are non-empty ASCII strings of comma-separated tags. No
   tag is empty (`a, , b`); each tag is stripped and the tags are re-joined
   with ", ", so spacing around commas is not significant and nothing else is
   rewritten.
-* Every tag of either field has `tag_problem(tag) is None`, which JUDGES
+* Every tag of either field has `tag_problem(tag, subject) is None`, JUDGING
   WHAT THE MODEL READS, NOT THE COMMA-SEPARATED SPELLING: the text is
-  lower-cased and NovelAI's emphasis syntax (`{}`, `[]`, a `1.5::` weight
-  and its closing `::`, `WEIGHT_RX`) is taken off before a rule looks, and
-  a count or a refused word is found anywhere inside a tag, not only as the
+  lower-cased, NovelAI's emphasis syntax (`{}`, `[]`, a `1.5::` weight and
+  its closing `::`, `WEIGHT_RX`) is taken off and every UNDERSCORE becomes a
+  space (`judged`) before a rule looks -- so a booru spelling is judged like
+  the words it spells, `magical_girl` exactly as `magical girl` -- and a
+  count or a refused word is found anywhere inside a tag, not only as the
   whole tag. Refused, each by its own name (`TAG_PROBLEMS`):
     - a character outside printable ASCII 0x20-0x7E (a NUL, a newline, a tab);
     - `rating:` however spaced (model.RATING_RX);
@@ -46,16 +59,22 @@ RULES -- every refusal is a ValueError naming the file and the field
     - a view that contradicts the recipe's side view (`facing left`,
       `from behind`, ...), VIEW_PHRASES;
     - a tag that IS one of model.NEGATIVE's tags (`blurry`) -- the whole tag
-      only, so `cropped jacket` is not `cropped`.
-  The count, the quality tail, the rating and the view are written once, by
-  the recipe.
+      only, so `cropped jacket` is not `cropped`;
+    - a word naming a DIFFERENT subject than this file's (`male` or `man`
+      in a girl file, `woman` in a boy file), SUBJECT words, as whole words
+      so `boyish` names nobody.
+  The count, the quality tail, the rating, the view and the subject are
+  written once, by the recipe.
 * Every tag of `anchor` is, verbatim, a tag of `tags`. So every anchor word
   appears in the tags, and an anchor cannot assemble `red hair` out of
   `brown hair, red scarf` either.
-* `colours` maps EXACTLY the parts in model.IDENTITY_PARTS -- an unknown
-  part and a missing part are each refused by name -- to `#RRGGBB` strings
-  (either case). The Identity lists them in IDENTITY_PARTS order whatever the
-  file's order.
+* `colours` maps EXACTLY the parts this file's garments draw
+  (`model.garment_parts`, model.IDENTITY_PARTS for the default outfit) to
+  `#RRGGBB` strings (either case). Three refusals with their own messages
+  (`parts_problem`): an UNKNOWN part (not in model.PARTS at all), an UNUSED
+  part (a real part these garments do not draw -- a `scarf` colour under
+  `"neck": "none"` is paint nobody ever sees), and a MISSING part. The
+  Identity lists them in model.PARTS order whatever the file's order.
 * THE DISTANCE RULE: every colour's Euclidean RGB distance to
   model.BACKGROUND_RGB (the grey key) and to model.OUTLINE_RGB (the
   near-black outline) is AT LEAST `MIN_KEY_DISTANCE`; a colour strictly
@@ -89,10 +108,16 @@ from __future__ import annotations
 import json
 import os
 import re
+from typing import Iterable
 
-from tools.nai.model import (BACKGROUND_RGB, FAR_SHADE, IDENTITY_PARTS,
-                             INNER_SHADE, NEGATIVE, OUTLINE_RGB, QUALITY_TAIL,
-                             RATING_RX, Identity, shade)
+from tools.nai.model import (BACKGROUND_RGB, DEFAULT_GARMENTS,
+                             DEFAULT_SUBJECT, FAR_SHADE, GARMENT_SLOTS,
+                             INNER_SHADE, NEGATIVE, OUTLINE_RGB, PARTS,
+                             QUALITY_TAIL, RATING_RX, SUBJECTS,
+                             SUBJECT_NAMES, Garments, Identity,
+                             garment_parts, garment_problem, garments_text,
+                             shade)
+from tools.nai.model import subject as subject_named
 
 CHARACTERS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               "characters")
@@ -102,8 +127,17 @@ function is called with `directory` None, never bound at import."""
 DEFAULT_CHARACTER = "scout"
 """The character every command uses when none is named; recipes.IDENTITY."""
 
-FIELDS: tuple[str, ...] = ("tags", "anchor", "colours")
-"""The fields of a character file, exactly."""
+REQUIRED_FIELDS: tuple[str, ...] = ("tags", "anchor", "colours")
+"""Every character file writes these three."""
+
+OPTIONAL_FIELDS: tuple[str, ...] = ("subject", "garments")
+"""A file may leave these out; it then means model.DEFAULT_SUBJECT in
+model.DEFAULT_GARMENTS, which is what every file written before the fields
+existed means. ADDING A FIELD HERE IS A FILE-FORMAT CHANGE (CLAUDE.md law
+8): the name is spelled in every shipped character file."""
+
+FIELDS: tuple[str, ...] = REQUIRED_FIELDS + OPTIONAL_FIELDS
+"""Every field a character file may hold, required ones first."""
 
 NAME_RX = re.compile(r"[a-z][a-z0-9_]*")
 """A legal character name, which is also its file stem (fullmatch)."""
@@ -163,6 +197,14 @@ NEGATIVE_TAGS: frozenset[str] = frozenset(
     t.strip().lower() for t in NEGATIVE.split(","))
 """The tags of model.NEGATIVE, lower-cased: a tag EQUAL to one is refused."""
 
+SUBJECT_WORDS: dict[str, tuple[str, ...]] = {
+    s.name: tuple(word for other in SUBJECTS if other is not s
+                  for word in other.words)
+    for s in SUBJECTS}
+"""Per subject, every word that names a DIFFERENT subject -- what a file of
+that subject may not carry in a tag. Read off model.SUBJECTS, never typed
+here, so a subject added there is refused here in the same change."""
+
 TAG_PROBLEMS: dict[str, str] = {
     "control character": "every tag is printable ASCII, 0x20 to 0x7E",
     "rating tag": "the rating is written once, by the recipe, at the end of "
@@ -177,6 +219,11 @@ TAG_PROBLEMS: dict[str, str] = {
                 "side, facing right",
     "negative tag": "the negative prompt refuses it, so a caption may not "
                     "also ask for it",
+    "subject word": "the subject is written once, by the recipe: this "
+                    "file's 'subject' field becomes the "
+                    "count at the head of the base caption and the first "
+                    "word of every character caption, so a tag naming a "
+                    "different one asks for two people",
 }
 """Every answer `tag_problem` gives, with why the rule exists."""
 
@@ -190,24 +237,42 @@ def _phrase_rx(phrases) -> re.Pattern:
 _QUALITY_RX = _phrase_rx(t for t in QUALITY_TAGS if not RATING_RX.search(t))
 _RATING_WORD_RX = _phrase_rx(RATING_WORDS)
 _VIEW_RX = _phrase_rx(VIEW_PHRASES)
+_SUBJECT_RX: dict[str, re.Pattern] = {
+    name: _phrase_rx(words) for name, words in SUBJECT_WORDS.items()}
 
 
 def judged(tag: str) -> str:
     """`tag` as `tag_problem` judges it: lower-cased, WEIGHT_RX replaced by
-    spaces, runs of whitespace collapsed to one space, stripped."""
-    return " ".join(WEIGHT_RX.sub(" ", tag.lower()).split())
+    spaces, UNDERSCORES replaced by spaces, runs of whitespace collapsed to
+    one space, stripped.
+
+    THE UNDERSCORE IS NORMALISED HERE, FOR EVERY RULE AT ONCE, and not in one
+    rule's pattern. A booru tag is written `magical_girl` as often as
+    `magical girl`, and the two ask the model for the same thing; the word
+    rules are `\\b`-bounded phrases, so without this an underscore hides
+    every one of them (MEASURED: `magical_girl` loaded into a boy file and
+    `old_man` into a girl file, each producing a caption asking for two
+    people -- the exact failure the subject rule exists to stop). COUNT_RX
+    already spelled `[\\s_-]` itself; that is now belt and braces rather than
+    the only rule that knew (CLAUDE.md, ACTIVE WARNINGS: the sibling route).
+    """
+    return " ".join(WEIGHT_RX.sub(" ", tag.lower()).replace("_", " ").split())
 
 
-def tag_problem(tag: str) -> str | None:
-    """Why `tag` may not stand in an identity or a character caption, or None.
+def tag_problem(tag: str, subject: str = DEFAULT_SUBJECT) -> str | None:
+    """Why `tag` may not stand in a `subject` identity or character caption.
 
     A key of TAG_PROBLEMS, the first that applies, in its order: a character
     of `tag` outside 0x20-0x7E; model.RATING_RX in the lower-cased tag; and,
     on `judged(tag)`, COUNT_RX found anywhere, a QUALITY_TAIL tag as a whole
-    phrase, a RATING_WORDS word, a VIEW_PHRASES phrase, and a tag equal to
-    one of NEGATIVE_TAGS. The ONE rule behind this loader,
-    recipes.build_recipe and recipes.character_caption.
+    phrase, a RATING_WORDS word, a VIEW_PHRASES phrase, a tag equal to one
+    of NEGATIVE_TAGS, and a SUBJECT_WORDS word of ANOTHER subject as a whole
+    word. None when the tag is fine. The ONE rule behind this loader,
+    recipes.build_recipe and recipes.character_caption; ValueError for a
+    `subject` that is not one of model.SUBJECT_NAMES, because a tag judged
+    against a subject nobody declared is judged against nothing.
     """
+    subject_named(subject)
     if any(not " " <= ch <= "~" for ch in tag):
         return "control character"
     if RATING_RX.search(tag.lower()):
@@ -223,7 +288,30 @@ def tag_problem(tag: str) -> str | None:
         return "view tag"
     if core in NEGATIVE_TAGS:
         return "negative tag"
+    if _SUBJECT_RX[subject].search(core):
+        return "subject word"
     return None
+
+
+def tag_refusal(tag: str, problem: str,
+                subject: str = DEFAULT_SUBJECT) -> str:
+    """The ONE sentence every route writes for a tag `tag_problem` refused.
+
+    `carries the <problem> '<tag>'; <why>`, and for a `subject word` the
+    subject the tag was judged against -- which the static TAG_PROBLEMS text
+    cannot say. A girl file refusing `male focus` used to end "this file's
+    'subject' field (default 'boy')", a parenthetical about the FIELD's
+    default that reads as a statement about THIS FILE and names the wrong
+    subject.
+
+    This loader, `recipes.build_recipe` and `recipes.character_caption` all
+    call it, so the sentence cannot drift between the three routes into one
+    caption (CLAUDE.md, ACTIVE WARNINGS: the sibling route).
+    """
+    text = f"carries the {problem} {tag.strip()!r}; {TAG_PROBLEMS[problem]}"
+    if problem == "subject word":
+        text += f" -- and the subject judged here is {subject!r}"
+    return text
 
 
 def distance_sq(a: tuple[int, int, int], b: tuple[int, int, int]) -> int:
@@ -312,7 +400,36 @@ def load_file(path: str) -> Identity:
     return parse(raw, source)
 
 
-def _tag_list(source: str, field: str, value: object) -> list[str]:
+def parts_problem(parts: Iterable[str],
+                  garments: Garments = DEFAULT_GARMENTS) -> str | None:
+    """Why the colour parts `parts` do not match `garments`, or None.
+
+    `parts` is any iterable of part names -- a colours dict is one.
+    Three answers, each with its own message: an UNKNOWN part (not in
+    model.PARTS), an UNUSED part (in model.PARTS, but not drawn by these
+    garments), and a MISSING part. THE ONE RULE: the loader applies it to a
+    character file and `recipes.build_recipe` to an Identity built in code,
+    so a colour map that names paint nobody sees is refused on either route.
+    """
+    wanted = garment_parts(garments)
+    outfit = garments_text(garments)
+    unknown = sorted(set(parts) - set(PARTS))
+    if unknown:
+        return f"unknown part(s) {unknown}; the parts are {PARTS}"
+    unused = sorted(set(parts) - set(wanted))
+    if unused:
+        return (f"unused part(s) {unused}; the garments ({outfit}) draw "
+                f"{wanted}, and a colour for a part they do not draw is "
+                f"paint nobody ever sees")
+    missing = [part for part in wanted if part not in parts]
+    if missing:
+        return (f"missing part(s) {missing}; the garments ({outfit}) draw "
+                f"{wanted}, and every one of those needs a colour")
+    return None
+
+
+def _tag_list(source: str, field: str, value: object,
+              subject: str = DEFAULT_SUBJECT) -> list[str]:
     if not isinstance(value, str) or not value.strip():
         raise _refused(source, field, f"must be a non-empty string of "
                                       f"comma-separated tags, got {value!r}")
@@ -323,29 +440,56 @@ def _tag_list(source: str, field: str, value: object) -> list[str]:
         raise _refused(source, field, f"has an empty tag (two commas, or a "
                                       f"comma at an end): {value!r}")
     for piece in pieces:
-        problem = tag_problem(piece)
+        problem = tag_problem(piece, subject)
         if problem is not None:
-            raise _refused(source, field, f"carries the {problem} "
-                           f"{piece.strip()!r}; {TAG_PROBLEMS[problem]}")
+            raise _refused(source, field,
+                           tag_refusal(piece, problem, subject))
     return [piece.strip() for piece in pieces]
 
 
-def _colours(source: str, value: object
+def _subject(source: str, value: object) -> str:
+    if not isinstance(value, str) or value not in SUBJECT_NAMES:
+        raise _refused(source, "subject", f"{value!r} is not a subject; "
+                       f"legal: {SUBJECT_NAMES} (a file that leaves the "
+                       f"field out means {DEFAULT_SUBJECT!r})")
+    return value
+
+
+def _garments(source: str, value: object) -> Garments:
+    slots = {slot.name: slot for slot in GARMENT_SLOTS}
+    if not isinstance(value, dict):
+        raise _refused(source, "garments", f"must be an object with the "
+                       f"optional keys {tuple(slots)}, got "
+                       f"{type(value).__name__}")
+    unknown = sorted(set(value) - set(slots))
+    if unknown:
+        raise _refused(source, "garments", f"unknown garment(s) {unknown}; "
+                       f"the garments are {tuple(slots)}")
+    chosen = {}
+    for name, slot in slots.items():
+        if name not in value:
+            chosen[name] = slot.default
+            continue
+        problem = garment_problem(slot, value[name])
+        if problem is not None:
+            raise _refused(source, f"garments.{name}", problem)
+        chosen[name] = value[name]
+    return Garments(**chosen)
+
+
+def _colours(source: str, value: object,
+             garments: Garments = DEFAULT_GARMENTS
              ) -> tuple[tuple[str, tuple[int, int, int]], ...]:
+    wanted = garment_parts(garments)
     if not isinstance(value, dict):
         raise _refused(source, "colours", f"must be an object mapping every "
-                       f"part of {IDENTITY_PARTS} to '#RRGGBB', got "
+                       f"part of {wanted} to '#RRGGBB', got "
                        f"{type(value).__name__}")
-    unknown = sorted(set(value) - set(IDENTITY_PARTS))
-    if unknown:
-        raise _refused(source, "colours", f"unknown part(s) {unknown}; the "
-                                          f"parts are {IDENTITY_PARTS}")
-    missing = [part for part in IDENTITY_PARTS if part not in value]
-    if missing:
-        raise _refused(source, "colours", f"missing part(s) {missing}; every "
-                       f"part of {IDENTITY_PARTS} needs a colour")
+    problem = parts_problem(value, garments)
+    if problem is not None:
+        raise _refused(source, "colours", problem)
     out: list[tuple[str, tuple[int, int, int]]] = []
-    for part in IDENTITY_PARTS:
+    for part in wanted:
         field = f"colours.{part}"
         text = value[part]
         if not isinstance(text, str) or not HEX_RX.fullmatch(text):
@@ -398,24 +542,31 @@ def parse(raw: bytes, source: str) -> Identity:
                        ) from exc
     if not isinstance(doc, dict):
         raise _refused(source, None, f"must be one JSON object with the "
-                                     f"fields {FIELDS}, got "
+                                     f"fields {REQUIRED_FIELDS}, got "
                                      f"{type(doc).__name__}")
     unknown = sorted(set(doc) - set(FIELDS))
     if unknown:
         raise _refused(source, unknown[0], f"unknown field(s) {unknown}; a "
-                                           f"character file holds exactly "
-                                           f"{FIELDS}")
-    missing = [key for key in FIELDS if key not in doc]
+                                           f"character file holds "
+                                           f"{REQUIRED_FIELDS} and may hold "
+                                           f"{OPTIONAL_FIELDS}")
+    missing = [key for key in REQUIRED_FIELDS if key not in doc]
     if missing:
         raise _refused(source, missing[0], f"missing field(s) {missing}; a "
-                                           f"character file holds exactly "
-                                           f"{FIELDS}")
-    tags = _tag_list(source, "tags", doc["tags"])
-    anchor = _tag_list(source, "anchor", doc["anchor"])
+                                           f"character file holds "
+                                           f"{REQUIRED_FIELDS} and may hold "
+                                           f"{OPTIONAL_FIELDS}")
+    subject = (DEFAULT_SUBJECT if "subject" not in doc
+               else _subject(source, doc["subject"]))
+    garments = (DEFAULT_GARMENTS if "garments" not in doc
+                else _garments(source, doc["garments"]))
+    tags = _tag_list(source, "tags", doc["tags"], subject)
+    anchor = _tag_list(source, "anchor", doc["anchor"], subject)
     stray = [tag for tag in anchor if tag not in tags]
     if stray:
         raise _refused(source, "anchor", f"anchor tag(s) {stray} are not a "
                        f"tag of 'tags'; the anchor repeats tags verbatim and "
                        f"adds none")
     return Identity(tags=", ".join(tags), anchor=", ".join(anchor),
-                    colours=_colours(source, doc["colours"]))
+                    colours=_colours(source, doc["colours"], garments),
+                    subject=subject, garments=garments)

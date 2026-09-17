@@ -38,7 +38,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Mapping
+from typing import Mapping, NamedTuple
 
 # ---------------------------------------------------------------------------
 # Position grid (brief 4.1)
@@ -463,18 +463,197 @@ class Layout:
         }
 
 
+# ---------------------------------------------------------------------------
+# Who the sprite is, and what it wears: ONE table (author, 2026-09-17)
+# ---------------------------------------------------------------------------
+
+
+class Subject(NamedTuple):
+    """Who a character file draws, and every string that says so.
+
+    `count_tag` heads the base caption (the ONE count in the request),
+    `noun` opens every character caption and fills the `{noun}` of every
+    recipe sentence ("the same boy"), and `words` are the words that NAME
+    this subject in a tag -- refused by characters.tag_problem in a file
+    whose subject is a different one, because a `male` tag under a `1girl`
+    count is a contradiction the model resolves by drawing neither.
+    """
+    name: str
+    count_tag: str
+    noun: str
+    words: tuple[str, ...]
+
+
+SUBJECTS: tuple[Subject, ...] = (
+    Subject("boy", "1boy", "boy", ("boy", "boys", "male", "man", "men")),
+    Subject("girl", "1girl", "girl",
+            ("girl", "girls", "female", "woman", "women")),
+)
+"""Every subject a character file may declare. The words are whole words:
+`boyish` names no subject, and `woman` is not `man`."""
+
+SUBJECT_NAMES: tuple[str, ...] = tuple(s.name for s in SUBJECTS)
+
+DEFAULT_SUBJECT = "boy"
+"""What a character file with no `subject` field means -- scout's, so every
+file written before the field existed loads unchanged."""
+
+
+def subject(name: object) -> Subject:
+    """The Subject called `name`; ValueError listing SUBJECT_NAMES."""
+    for candidate in SUBJECTS:
+        if candidate.name == name:
+            return candidate
+    raise ValueError(f"unknown subject {name!r}; legal: {SUBJECT_NAMES}")
+
+
+class GarmentSlot(NamedTuple):
+    """One choice in an outfit, and the colour parts each choice draws.
+
+    `choices` is every legal value in the character file; `default` is what
+    a file that does not write the slot means; `drawn` is
+    ((choice, (part, ...)), ...) -- THE table `garment_parts` reads, which
+    is why the loader can refuse a colour for a part no garment draws and
+    the mannequin can ask for exactly the parts it is about to paint.
+    """
+    name: str
+    choices: tuple[object, ...]
+    default: object
+    drawn: tuple[tuple[object, tuple[str, ...]], ...]
+
+    def parts_for(self, choice: object) -> tuple[str, ...]:
+        """The parts `choice` draws; ValueError for an unknown choice."""
+        for value, parts in self.drawn:
+            if type(value) is type(choice) and value == choice:
+                return parts
+        raise ValueError(f"unknown {self.name} {choice!r}; legal: "
+                         f"{self.choices}")
+
+
+GARMENT_SLOTS: tuple[GarmentSlot, ...] = (
+    GarmentSlot("hat", ("none", "wizard"), "none",
+                (("none", ()), ("wizard", ("hat",)))),
+    GarmentSlot("cape", (False, True), False,
+                ((False, ()), (True, ("cape",)))),
+    GarmentSlot("neck", ("scarf", "none"), "scarf",
+                (("scarf", ("scarf",)), ("none", ()))),
+    GarmentSlot("legwear", ("pants", "dress"), "pants",
+                (("pants", ("tunic", "pants")), ("dress", ("dress",)))),
+    GarmentSlot("footwear", ("boots", "heels"), "boots",
+                (("boots", ("boots",)), ("heels", ("heels",)))),
+)
+"""The outfit vocabulary, in `Garments` field order."""
+
+
+class Garments(NamedTuple):
+    """What one character wears, one field per GARMENT_SLOTS entry.
+
+    The defaults ARE scout's outfit, so `Garments()` is what every character
+    file written before this table existed means, and
+    `garment_parts(Garments())` is `IDENTITY_PARTS`.
+    """
+    hat: str = "none"
+    cape: bool = False
+    neck: str = "scarf"
+    legwear: str = "pants"
+    footwear: str = "boots"
+
+
+DEFAULT_GARMENTS = Garments()
+
+ALWAYS_PARTS: tuple[str, ...] = ("skin", "hair", "belt")
+"""The parts every outfit draws, whatever its garments."""
+
+PARTS: tuple[str, ...] = (
+    "skin", "hair", "scarf", "tunic", "belt", "pants", "boots",
+    "dress", "heels", "cape", "hat",
+)
+"""Every colour part any garment draws, in the order an Identity lists them.
+The first seven are the default outfit's, in their original order, so a
+scout file's colours are read in the order they always were."""
+
+
+def garment_problem(slot: GarmentSlot, value: object) -> str | None:
+    """Why `value` is not a legal choice for `slot`, or None.
+
+    The TYPE is judged first, so `0` is not `False` and `1` is not `True`:
+    a JSON number in a boolean slot is refused instead of read as one.
+    """
+    if any(type(choice) is type(value) and choice == value
+           for choice in slot.choices):
+        return None
+    return (f"{value!r} is not a legal {slot.name}; legal: "
+            f"{', '.join(repr(c) for c in slot.choices)}")
+
+
+def garments_problem(garments: object) -> str | None:
+    """Why `garments` is not a legal Garments, or None -- the one rule the
+    loader (per JSON key) and every in-code route (whole value) share."""
+    if not isinstance(garments, Garments):
+        return (f"garments must be a {Garments.__name__}, got "
+                f"{type(garments).__name__}")
+    for slot in GARMENT_SLOTS:
+        problem = garment_problem(slot, getattr(garments, slot.name))
+        if problem is not None:
+            return problem
+    return None
+
+
+def garment_parts(garments: Garments) -> tuple[str, ...]:
+    """The colour parts `garments` draw: ALWAYS_PARTS plus each slot's, in
+    PARTS order. ValueError (garments_problem) for an illegal choice."""
+    problem = garments_problem(garments)
+    if problem is not None:
+        raise ValueError(problem)
+    wanted = set(ALWAYS_PARTS)
+    for slot in GARMENT_SLOTS:
+        wanted.update(slot.parts_for(getattr(garments, slot.name)))
+    return tuple(part for part in PARTS if part in wanted)
+
+
+def garments_text(garments: Garments) -> str:
+    """`garments` as one line for a refusal: "hat=wizard, cape=True, ..."."""
+    return ", ".join(f"{slot.name}={getattr(garments, slot.name)!r}"
+                     for slot in GARMENT_SLOTS)
+
+
+IDENTITY_PARTS: tuple[str, ...] = garment_parts(DEFAULT_GARMENTS)
+"""The parts the DEFAULT outfit draws -- scout's seven, in their original
+order. A character wearing something else names `garment_parts(its
+garments)` instead; this tuple is what a file with no `garments` field
+means."""
+
+if IDENTITY_PARTS != ("skin", "hair", "scarf", "tunic", "belt", "pants",
+                      "boots"):
+    raise RuntimeError(f"model: the default outfit draws {IDENTITY_PARTS}, "
+                       f"not the shipped scout's seven parts in their order")
+_unknown_parts = sorted(
+    {part for slot in GARMENT_SLOTS for _c, parts in slot.drawn
+     for part in parts}.union(ALWAYS_PARTS) - set(PARTS))
+if _unknown_parts:
+    raise RuntimeError(f"model: GARMENT_SLOTS draws {_unknown_parts}, which "
+                       f"PARTS does not list")
+if tuple(Garments._fields) != tuple(slot.name for slot in GARMENT_SLOTS):
+    raise RuntimeError("model: Garments' fields and GARMENT_SLOTS disagree")
+
+
 @dataclass(frozen=True)
 class Identity:
-    """The character: caption tags, the per-frame anchor, the init colours.
+    """The character: who it is, what it wears, its caption tags and colours.
 
     `tags` goes into the base caption, `anchor` into every character caption,
-    `colours` is ((part, (r, g, b)), ...) for the parts in `IDENTITY_PARTS`.
+    `colours` is ((part, (r, g, b)), ...) for exactly
+    `garment_parts(garments)` -- `IDENTITY_PARTS` while `garments` is the
+    default. `subject` is one of SUBJECT_NAMES and decides the count tag,
+    the caption noun and which subject words a tag may not carry.
     DESIGN (brief 3.1): no grey and no near-white or near-black colour, since
     grey is the key colour and near-black the outline.
     """
     tags: str
     anchor: str
     colours: tuple[tuple[str, tuple[int, int, int]], ...]
+    subject: str = DEFAULT_SUBJECT
+    garments: Garments = DEFAULT_GARMENTS
 
     def colour(self, part: str) -> tuple[int, int, int]:
         """The RGB of `part`; KeyError naming the part when it is absent."""
@@ -486,11 +665,6 @@ class Identity:
     def as_dict(self) -> dict[str, tuple[int, int, int]]:
         """`colours` as a fresh dict, in declaration order."""
         return dict(self.colours)
-
-
-IDENTITY_PARTS: tuple[str, ...] = (
-    "skin", "hair", "scarf", "tunic", "belt", "pants", "boots",
-)
 
 
 @dataclass(frozen=True)
@@ -601,6 +775,13 @@ class Proof:
     read being judged) equals the probe's balance after, so a debit that
     lands late (risk R4) refutes it instead of leaving img2img unlocked --
     and any later charged call of the same (action, model) refutes it too.
+
+    THAT RULE SURVIVES EVERY SIGNATURE. A fall in the read after one of our
+    own sent rows is R4's own shape, and nothing in this ledger can tell it
+    from somebody else's spend on a shared account, so it refutes FOR GOOD:
+    `guard.signed_allowance` re-baselines the chain and `proof_standing`
+    never reads it. Neither `acknowledge-drift` nor `resolve-boundary` can
+    re-arm img2img; the author removes the proof by hand and probes again.
     """
     action: str
     model: str
@@ -680,11 +861,23 @@ class LedgerContext:
 # Ledger row shape (brief 7.2, plus kind / refusal / lock bookkeeping)
 # ---------------------------------------------------------------------------
 
-ROW_KINDS: tuple[str, ...] = ("generation", "refused")
+CHAIN_KINDS: tuple[str, ...] = ("generation", "refused")
 """`generation`: a POST was attempted (an interrupted one included). `refused`:
 the guard refused after the balance was read, so nothing was sent; its
 account_after equals its account_before. Both kinds are links in the balance
-chain."""
+chain: each one measured the balance itself."""
+
+DRIFT_KIND = "drift"
+"""A row this tool wrote about a fall it did not measure the cause of: the
+balance fell BETWEEN two of our own rows, on a shared account, and the author
+SIGNED for it (`cli acknowledge-drift` at an external boundary, `cli
+resolve-boundary` at an ambiguous one). It is an ANNOTATION ON A BOUNDARY,
+never a link in the chain -- `state.last_balance`, `guard.open_boundaries`
+and `guard.proof_standing` all step over it -- and `guard.accounting` counts
+it on its own line, THEIRS or OURS-BY-HAND, never added to what a row
+MEASURED."""
+
+ROW_KINDS: tuple[str, ...] = CHAIN_KINDS + (DRIFT_KIND,)
 
 VERDICTS: tuple[str | None, ...] = (None, "accepted", "rejected", "probe")
 
@@ -699,6 +892,8 @@ LEDGER_FIELDS: tuple[str, ...] = (
     "request_sha256", "request_path",
     "init_png_sha256", "mask_png_sha256", "mannequin_sha256",
     "account_before", "account_after", "delta", "chain_ok", "refill_seen",
+    "drift_previous_row", "drift_observed_row", "drift_acknowledged_by",
+    "drift_attribution", "drift_checked",
     "inconclusive", "probe_flag_used", "refusal_condition", "locked",
     "http_status", "content_type", "error_message", "elapsed_ms",
     "zip_sha256", "output_png_sha256", "output_path", "differs_outside_mask",
@@ -706,3 +901,92 @@ LEDGER_FIELDS: tuple[str, ...] = (
 )
 """Every ledger row carries exactly these keys, in this order, null where
 not applicable. `state.State.write_row` refuses any other key set."""
+
+DRIFT_ROW_FIELDS: tuple[str, ...] = ("drift_previous_row",
+                                     "drift_observed_row",
+                                     "drift_acknowledged_by",
+                                     "drift_attribution",
+                                     "drift_checked")
+"""The five keys only a `drift` row fills: the ledger id whose after-read held
+the higher balance, the ledger id whose before-read held the lower one, who
+signed for the gap between them, WHICH SIDE he attributed it to
+(DRIFT_ATTRIBUTIONS), and what he says he checked before he signed. The last
+two are required because a signature is a JUDGEMENT about a shared account,
+not a measurement: a row that does not say whose it is and what was looked at
+records a figure and loses the only thing a reader needs a month later."""
+
+DRIFT_ATTRIBUTIONS: tuple[str, ...] = ("theirs", "ours")
+"""`theirs`: somebody else spent it (`cli acknowledge-drift`, and only at a
+boundary whose earlier row SENT NOTHING). `ours`: the author checked by hand
+and recorded a fall at an AMBIGUOUS boundary as a late charge of ours (`cli
+resolve-boundary`). `guard.accounting` keeps the two on separate lines and
+never mixes either with what a row MEASURED."""
+
+DRIFT_ROW_MAY_FILL: tuple[str, ...] = (
+    "ledger_id", "kind", "utc_time", "account_before", "account_after",
+    "delta", "reason") + DRIFT_ROW_FIELDS
+"""A WHITELIST, not a blacklist. Every OTHER field of a drift row is null, so
+a drift row cannot masquerade as anything else this ledger holds: with no
+`action`, `model`, `verdict` or `http_status` it is not a generation and not
+a probe (`guard.probe_row_problem` reads `kind` first anyway); with no
+`output_png_sha256` it is not an output; with no `strip`, `sprite_sha256` or
+`post` it is not a strip; with no `locked` it never wrote LOCK. Stated as a
+whitelist because a new LEDGER_FIELDS key is then forbidden on a drift row by
+default -- the safe direction for money code."""
+
+
+def drift_row_problem(row: Mapping[str, object]) -> str | None:
+    """Why `row` is not a well-formed acknowledged-drift row; None when it is.
+
+    THE ONE RULE for the shape. `state.State.validate_row` refuses to WRITE a
+    row this rejects, and `guard.signatures` refuses to READ one --
+    one function, so a mutation of it turns both routes red (CLAUDE.md's
+    sibling-route warning).
+
+    A drift row: kind DRIFT_KIND; the five DRIFT_ROW_FIELDS non-empty
+    strings, the two row ids DIFFERENT and `drift_attribution` one of
+    DRIFT_ATTRIBUTIONS; integer account_before.sum (the higher, established
+    balance) and account_after.sum (the lower, observed one) with after
+    STRICTLY BELOW before; delta exactly after - before; and every field
+    outside DRIFT_ROW_MAY_FILL null. Pure.
+    """
+    if row.get("kind") != DRIFT_KIND:
+        return f"its kind is {row.get('kind')!r}, not {DRIFT_KIND!r}"
+    for key, wanted in (("drift_previous_row", "a ledger id"),
+                        ("drift_observed_row", "a ledger id"),
+                        ("drift_acknowledged_by", "a name"),
+                        ("drift_attribution", f"one of {DRIFT_ATTRIBUTIONS}"),
+                        ("drift_checked", "what was checked before signing")):
+        value = row.get(key)
+        if not (isinstance(value, str) and value):
+            return f"its {key} is {value!r}, not {wanted}"
+    if row["drift_attribution"] not in DRIFT_ATTRIBUTIONS:
+        return (f"its drift_attribution is {row['drift_attribution']!r}, not "
+                f"one of {DRIFT_ATTRIBUTIONS}: a signature says WHOSE the "
+                f"money was, or it is not a signature")
+    if row["drift_previous_row"] == row["drift_observed_row"]:
+        return (f"it names ledger row {row['drift_previous_row']!r} on BOTH "
+                f"sides of the gap: a drift sits BETWEEN two rows")
+    sums = {}
+    for key in ("account_before", "account_after"):
+        account = row.get(key)
+        total = account.get("sum") if isinstance(account, Mapping) else None
+        if not isinstance(total, int) or isinstance(total, bool):
+            return f"its {key} has no integer sum"
+        sums[key] = total
+    high, low = sums["account_before"], sums["account_after"]
+    if low >= high:
+        return (f"its balance went {high} -> {low}, which is not a fall: a "
+                f"drift row records a DROP somebody else caused")
+    delta = row.get("delta")
+    if not (isinstance(delta, int) and not isinstance(delta, bool)
+            and delta == low - high):
+        return (f"its delta is {delta!r}, not the {low - high} its own "
+                f"balances measure")
+    filled = sorted(key for key, value in row.items()
+                    if value is not None and key not in DRIFT_ROW_MAY_FILL)
+    if filled:
+        return (f"a drift row fills only {DRIFT_ROW_MAY_FILL}, but this one "
+                f"also fills {filled}: it is an annotation on a boundary, "
+                f"not a request")
+    return None

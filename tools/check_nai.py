@@ -54,14 +54,47 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
      -- is refused with ITS OWN message naming the file and the field, and
      the same tag rule refuses a bad anchor through
      `recipes.character_caption` and a bad Identity built in code through
-     `recipes.build_recipe`. `available` lists only legal stems of regular
-     files. A character over the token budget in ANY recipe is refused for
+     `recipes.build_recipe`. The optional `subject` and `garments` fields
+     carry the same weight: a file that writes neither is the boy in the
+     default outfit it always was; a girl in a wizard hat, cape, dress and
+     heels loads with her colours in model.PARTS order; and an unknown
+     subject, a garment or a garment value nobody wrote (`0` is not
+     `false`), a colour for a part these garments never draw (UNUSED, as
+     against a part no garment draws at all), a missing one, and a word
+     naming another subject (`male` in a girl file, `woman` in a boy one,
+     while `boyish` names nobody) are each refused by their own message. A
+     subject word spelled the booru way with an UNDERSCORE is refused on
+     every route into a caption -- a file, an Identity built in code, a
+     character caption -- because `judged` normalises the underscore for
+     every rule at once rather than COUNT_RX spelling it alone; and a girl
+     file's refusal names the subject it judged against instead of telling
+     her the file is a boy.
+     `available` lists only legal stems of regular files. A character over the token budget in ANY recipe is refused for
      every recipe, naming the file, counted exactly as guard condition 7
      counts (300 words builds and the guard agrees; 301 is refused). scout.json IS recipes.IDENTITY and the
      default; the blue-scarf file differs from it ONLY in the scarf tag and
      the scarf colour, reaches every caption and the init's pixels, and
      leaves no red scarf in the body; an unknown character is refused,
-     listing the files.
+     listing the files. The default outfit still draws the sha256-PINNED
+     bytes it drew before any garment vocabulary existed, for every recipe
+     and for the image img2img sends, and wizard_girl.json carries her
+     subject and garments all the way: 1girl at the head of every base
+     caption, 'the same girl' in every sentence, every character caption
+     opening 'girl,', no boy word anywhere in a built body or a printed
+     plan, and a sent init wearing the hat above the head, the cape behind
+     the dress, an A-line skirt and a heel at each foot, in her colours
+     only, with nothing outside a cell -- while the same judge, shown the
+     same girl with her hat and cape taken off, reports each of those
+     missing. EVERY GARMENT SHAPE IS BOUNDED FROM BOTH SIDES, each half
+     proved by mutating the constant it reads and asserting the judge, the
+     brim geometry, the heel's notch or the mannequin's own name goes red:
+     ten such mutations were measured leaving this suite green. Her hat and
+     her cape carry different purples; a dressed arm draws the dress, bare
+     skin and an outline wrist where a sleeved one draws two colours; the
+     cape carries its own darkened line against every part in front of it
+     and its root moves back with the lean; and a garmented mannequin's
+     NAME is taken over the garments and every garment constant while the
+     default outfit's is taken over neither.
   2. `guard.assert_free`: a legal generate, img2img and infill pass; every
      refusal condition of brief 2.2 -- and every sub-rule inside conditions
      1, 6 and 7 (image keys bound to the action, a proof the chain has not
@@ -95,8 +128,10 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
   4. `transport.api_key`: present -> stripped value; absent, blank, or not a
      bare visible-ASCII token -> MissingKey naming NAI_KEY, with a message
      that does not depend on the value.
-  5. mannequin: every layout's centers are on the grid, distinct, inside
-     their own cell and re-measured from the PNG's pixels; the init is exactly
+  5. mannequin: every layout's centers -- the three recipes for scout, the
+     same three for the wizard girl in her own garments, and four `strip`
+     sizes -- are on the grid, distinct, inside their own cell and
+     re-measured from the PNG's pixels; the init is exactly
      width x height, RGB (opaque) and k-blocky; render_init refuses two frames
      sharing a center and a center outside its cell; `strip` refuses n > 5,
      sizes off the 64 grid and areas over MAX_AREA.
@@ -143,12 +178,14 @@ import io
 import json
 import os
 import random
+import re
 import shutil
 import socket
 import ssl
 import sys
 import tempfile
 import traceback
+import types
 import urllib.error
 import urllib.request
 import urllib.response
@@ -207,15 +244,17 @@ from tools.nai import (characters, cli, guard, mannequin, masks,  # noqa: E402
                        post, recipes, request, run)
 from tools.nai import transport as tp  # noqa: E402
 from tools.nai.model import (BACKGROUND_RGB, DEFAULT_COLOURS,  # noqa: E402
-                             GENERATE_URL, GRID, IDENTITY_PARTS, IMG2IMG_KEY,
+                             DEFAULT_GARMENTS, DEFAULT_SUBJECT, GENERATE_URL,
+                             GRID, IDENTITY_PARTS, IMG2IMG_KEY,
                              INPAINT_STRENGTH_KEY, LEDGER_FIELDS, MAX_AREA,
                              MODEL_CURATED, MODEL_CURATED_INPAINTING,
                              MODEL_FULL, MODEL_FULL_INPAINTING,
                              NEVER_SEND_KEYS, NEVER_SEND_PREFIXES,
-                             OUTLINE_RGB, PROBE_STRENGTH, QUALITY_TAIL,
-                             RATING_TAG, SUBSCRIPTION_URL, Account, CellSpec,
-                             Frame, Identity, Layout, LedgerContext, Proof,
-                             on_grid,
+                             OUTLINE_RGB, PARTS, PROBE_STRENGTH, QUALITY_TAIL,
+                             RATING_TAG, SUBJECT_NAMES, SUBSCRIPTION_URL,
+                             Account, CellSpec, Frame, Garments, Identity,
+                             Layout, LedgerContext, Pose, Proof,
+                             garment_parts, on_grid,
                              snap)
 from tools.nai import state as nai_state  # noqa: E402
 from tools.nai.state import State  # noqa: E402
@@ -264,6 +303,24 @@ def expect_raises(label, exception, call, *fragments):
     print(f"  FAIL {label:<66} did not raise")
     failures.append(label)
     return None
+
+
+@contextlib.contextmanager
+def patched(module, name, value):
+    """`module.name` is `value` inside the block, its old value after.
+
+    THE OTHER HALF OF A DRAWING ASSERTION (CLAUDE.md law 5). A constant that
+    only ever holds its shipped value is a constant no assertion covers: the
+    checks below mutate one here and assert that the judge, or the mannequin
+    name, goes red -- which is the mutation testing the law asks for, run on
+    every suite pass instead of once by hand.
+    """
+    old = getattr(module, name)
+    setattr(module, name, value)
+    try:
+        yield
+    finally:
+        setattr(module, name, old)
 
 
 REPO_STATE = os.path.join(_bootstrap.REPO_ROOT, "data", "nai")
@@ -952,9 +1009,12 @@ try:
         ("colours that are not an object", "colours_string",
          legal_but(lambda d: d.__setitem__("colours", "#E8B48C")), None,
          "colours", "must be an object"),
-        ("an unknown part", "unknown_part",
-         legal_but(set_colour("cape", "#46A5E6")), None, "colours",
+        ("a part no garment draws at all", "unknown_part",
+         legal_but(set_colour("wings", "#46A5E6")), None, "colours",
          "unknown part"),
+        ("a real part THESE garments do not draw", "unused_part",
+         legal_but(set_colour("cape", "#46A5E6")), None, "colours",
+         "unused part"),
         ("a missing part", "missing_part",
          legal_but(lambda d: d["colours"].pop("boots")), None, "colours",
          "missing part"),
@@ -1279,6 +1339,269 @@ try:
            recipes.character_caption(recipes.IDENTITY, "walking"),
            PIN_CAPTION + "walking")
 
+    # -- 1c. the subject and the garments: one table, every route ----------
+    PIN_DEFAULT_PARTS = ("skin", "hair", "scarf", "tunic", "belt", "pants",
+                         "boots")
+    PIN_PARTS = PIN_DEFAULT_PARTS + ("dress", "heels", "cape", "hat")
+    PIN_SUBJECTS = ("boy", "girl")
+    expect("the DEFAULT outfit draws the seven parts it always drew, the "
+           "vocabulary adds dress, heels, cape and hat, and a file with "
+           "neither new field is a boy in those default garments",
+           (IDENTITY_PARTS, PARTS, SUBJECT_NAMES, DEFAULT_SUBJECT,
+            DEFAULT_GARMENTS, garment_parts(DEFAULT_GARMENTS),
+            (WANT_LEGAL.subject, WANT_LEGAL.garments)),
+           (PIN_DEFAULT_PARTS, PIN_PARTS, PIN_SUBJECTS, "boy",
+            Garments("none", False, "scarf", "pants", "boots"),
+            PIN_DEFAULT_PARTS, ("boy", Garments())))
+    LEGAL_GIRL = {
+        "subject": "girl",
+        "tags": "blonde hair, pointed hat, crimson dress, violet cape, "
+                "blue shoes, boyish",
+        "anchor": "blonde hair, pointed hat, crimson dress",
+        "garments": {"hat": "wizard", "cape": True, "neck": "none",
+                     "legwear": "dress", "footwear": "heels"},
+        # deliberately NOT in model.PARTS order
+        "colours": {"hat": "#8C3CC8", "cape": "#8C3CC8", "heels": "#1E5AF0",
+                    "dress": "#C83232", "belt": "#5A3A1E",
+                    "hair": "#E8C85A", "skin": "#E8B48C"},
+    }
+    WANT_GIRL = Identity(
+        tags="blonde hair, pointed hat, crimson dress, violet cape, "
+             "blue shoes, boyish",
+        anchor="blonde hair, pointed hat, crimson dress",
+        colours=(("skin", (0xE8, 0xB4, 0x8C)), ("hair", (0xE8, 0xC8, 0x5A)),
+                 ("belt", (0x5A, 0x3A, 0x1E)), ("dress", (0xC8, 0x32, 0x32)),
+                 ("heels", (0x1E, 0x5A, 0xF0)), ("cape", (0x8C, 0x3C, 0xC8)),
+                 ("hat", (0x8C, 0x3C, 0xC8))),
+        subject="girl",
+        garments=Garments("wizard", True, "none", "dress", "heels"))
+    girl_path = character_file("legal_girl", LEGAL_GIRL)
+    expect("a girl in a wizard hat, a cape, a dress and heels loads: her "
+           "subject, her garments, her colours in model.PARTS order, and "
+           "'boyish' names nobody",
+           outcome(lambda: characters.load_file(girl_path)), WANT_GIRL)
+
+    def girl_but(change):
+        doc = copy.deepcopy(LEGAL_GIRL)
+        change(doc)
+        return doc
+
+    def set_garment(name, value):
+        return lambda d: d.__setitem__("garments", {name: value})
+
+    GARMENT_RAW = ('{"tags": ' + json.dumps(LEGAL_CHARACTER["tags"])
+                   + ', "anchor": ' + json.dumps(LEGAL_CHARACTER["anchor"])
+                   + ', "colours": {' + colour_pairs
+                   + '}, "garments": {"cape": false, "cape": true}}'
+                   ).encode("ascii")
+    OUTFIT_REFUSALS = (
+        # (label, stem, doc, raw, field, the rule's own fragment)
+        ("an unknown subject", "subject_woman",
+         legal_but(lambda d: d.__setitem__("subject", "woman")), None,
+         "subject", "is not a subject"),
+        ("a subject that is not a string", "subject_number",
+         legal_but(lambda d: d.__setitem__("subject", 1)), None, "subject",
+         "is not a subject"),
+        ("garments that are not an object", "garments_string",
+         legal_but(lambda d: d.__setitem__("garments", "wizard")), None,
+         "garments", "must be an object"),
+        ("an unknown garment", "garments_gloves",
+         legal_but(set_garment("gloves", "leather")), None, "garments",
+         "unknown garment"),
+        ("a garment written twice", "garments_duplicate", None, GARMENT_RAW,
+         "cape", "duplicate key"),
+        ("a hat nobody wrote", "hat_crown",
+         legal_but(set_garment("hat", "crown")), None, "garments.hat",
+         "is not a legal hat"),
+        ("a cape written as 0, which is not false", "cape_zero",
+         legal_but(set_garment("cape", 0)), None, "garments.cape",
+         "is not a legal cape"),
+        ("a cape written as the string 'true'", "cape_string",
+         legal_but(set_garment("cape", "true")), None, "garments.cape",
+         "is not a legal cape"),
+        ("a neck nobody wrote", "neck_tie",
+         legal_but(set_garment("neck", "tie")), None, "garments.neck",
+         "is not a legal neck"),
+        ("legwear nobody wrote", "legwear_kilt",
+         legal_but(set_garment("legwear", "kilt")), None, "garments.legwear",
+         "is not a legal legwear"),
+        ("footwear nobody wrote", "footwear_sandals",
+         legal_but(set_garment("footwear", "sandals")), None,
+         "garments.footwear", "is not a legal footwear"),
+        ("a scarf colour under 'neck': 'none'", "unused_scarf",
+         legal_but(set_garment("neck", "none")), None, "colours",
+         "unused part"),
+        ("a dress outfit still carrying pants and tunic", "unused_trousers",
+         girl_but(lambda d: d["colours"].update(pants="#C8A064",
+                                                tunic="#3C64C8")), None,
+         "colours", "unused part"),
+        ("a dress outfit with no dress colour", "missing_dress",
+         girl_but(lambda d: d["colours"].pop("dress")), None, "colours",
+         "missing part"),
+        ("a hat garment with no hat colour", "missing_hat",
+         girl_but(lambda d: d["colours"].pop("hat")), None, "colours",
+         "missing part"),
+        ("a boy tag in a girl file", "girl_boy_tag",
+         girl_but(lambda d: d.__setitem__("tags", d["tags"] + ", boy")), None,
+         "tags", "subject word"),
+        ("'male' in a girl file, inside a longer tag", "girl_male_tag",
+         girl_but(lambda d: d.__setitem__("tags",
+                                          d["tags"] + ", male knight")), None,
+         "tags", "subject word"),
+        ("'man' in a girl file's anchor, in NovelAI braces", "girl_man_anchor",
+         girl_but(lambda d: d.__setitem__("anchor",
+                                          d["anchor"] + ", {old man}")),
+         None, "anchor", "subject word"),
+        ("'woman' in a boy file", "boy_woman_tag",
+         legal_but(lambda d: d.__setitem__("tags", d["tags"] + ", woman")),
+         None, "tags", "subject word"),
+        ("'female' in a boy file, inside a numeric weight", "boy_female_tag",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           d["tags"] + ", 1.5::female::")),
+         None, "tags", "subject word"),
+    )
+    OUTFIT_FRAGMENTS = RULE_FRAGMENTS | {row[5] for row in OUTFIT_REFUSALS}
+    for label, stem, doc, raw, field, fragment in OUTFIT_REFUSALS:
+        path = character_file(stem, doc, raw)
+        where = [f"{stem}.json"] + ([f"field {field!r}"] if field else [])
+        caught = expect_raises(f"{label} is refused, naming the file and field",
+                               ValueError,
+                               lambda p=path: characters.load_file(p),
+                               *where, fragment)
+        expect(f"...with its own message and no other rule's",
+               sorted(other for other in OUTFIT_FRAGMENTS - {fragment}
+                      if other in str(caught)), [])
+    partial = outcome(lambda: characters.load_file(character_file(
+        "partial_garments", legal_but(
+            lambda d: (d.__setitem__("garments", {"neck": "none"}),
+                       d["colours"].pop("scarf"))))))
+    expect("a garments object writes only what it changes: 'neck': 'none' "
+           "keeps the other four defaults, and the colours then name exactly "
+           "the six parts left",
+           (getattr(partial, "garments", partial),
+            tuple(part for part, _rgb in getattr(partial, "colours", ()))),
+           (Garments("none", False, "none", "pants", "boots"),
+            ("skin", "hair", "tunic", "belt", "pants", "boots")))
+    expect("tag_problem judges a word against the subject it is GIVEN: "
+           "'male' and 'man' name a boy, 'woman' and 'female' a girl, and "
+           "'boyish' names nobody",
+           [characters.tag_problem(tag, who)
+            for tag, who in (("male", "girl"), ("male", "boy"),
+                             ("old man", "girl"), ("old man", "boy"),
+                             ("woman", "boy"), ("woman", "girl"),
+                             ("female", "boy"), ("female", "girl"),
+                             ("boyish", "girl"), ("brown hair", "girl"))],
+           ["subject word", None, "subject word", None, "subject word", None,
+            "subject word", None, None, None])
+    expect_raises("...and refuses to judge against a subject nobody declared",
+                  ValueError,
+                  lambda: characters.tag_problem("brown hair", "robot"),
+                  "unknown subject 'robot'")
+    # A BOORU TAG IS WRITTEN WITH UNDERSCORES AS OFTEN AS WITH SPACES, and
+    # every word rule here is a `\b`-bounded phrase, so an underscore used to
+    # hide all of them at once: `magical_girl` loaded into a boy file and
+    # `old_man` into a girl file, each building a caption that asks for two
+    # people -- the exact failure the subject rule exists to stop. COUNT_RX
+    # was the only rule that spelled `[\s_-]` itself; `judged` now normalises
+    # it for every rule, so ONE mutation turns them all red (CLAUDE.md,
+    # ACTIVE WARNINGS: the sibling route).
+    expect("judged() normalises an underscore to a space, so every rule reads "
+           "the same text: the weight syntax, the underscore and runs of "
+           "space all collapse",
+           (characters.judged("Magical_Girl"),
+            characters.judged("{2girls}"),
+            characters.judged("1.5::female_focus::"),
+            characters.judged("brown__hair")),
+           ("magical girl", "2girls", "female focus", "brown hair"))
+    expect("...so an underscored subject word is refused in EITHER "
+           "direction, an underscored count and negative tag with it, and a "
+           "word that merely contains one is still nobody",
+           [characters.tag_problem(tag, who) for tag, who in (
+               ("magical_girl", "boy"), ("school_girl", "boy"),
+               ("female_focus", "boy"), ("cow_girl", "boy"),
+               ("the_woman", "boy"), ("male_focus", "girl"),
+               ("old_man", "girl"), ("salary_man", "girl"),
+               ("boy_scout", "girl"), ("man_made", "girl"),
+               ("1_girl", "boy"), ("jpeg_artifacts", "boy"),
+               ("boyish", "girl"), ("brown_hair", "girl"))],
+           ["subject word"] * 10 + ["count tag", "negative tag", None, None])
+    GIRL = characters.load_file(girl_path)
+    for label, identity, field, fragment in (
+            ("an unknown subject",
+             dataclasses.replace(recipes.IDENTITY, subject="robot"),
+             "subject", "unknown subject"),
+            ("garments that are not a Garments",
+             dataclasses.replace(recipes.IDENTITY,
+                                 garments={"hat": "wizard"}),
+             "garments", "must be a Garments"),
+            ("a garment choice nobody wrote",
+             dataclasses.replace(recipes.IDENTITY,
+                                 garments=Garments(hat="crown")),
+             "garments", "is not a legal hat"),
+            ("colours that do not match the garments",
+             dataclasses.replace(recipes.IDENTITY,
+                                 garments=Garments(legwear="dress")),
+             "colours", "unused part"),
+            ("a boy word in a girl identity's tags",
+             dataclasses.replace(GIRL, tags=GIRL.tags + ", male"),
+             "tags", "subject word")):
+        expect_raises(f"build_recipe refuses an in-code identity with "
+                      f"{label}", ValueError,
+                      lambda i=identity: recipes.build_recipe("walk", i),
+                      f"identity, field {field!r}", fragment)
+    expect("character_caption opens with the identity's OWN subject noun",
+           (recipes.character_caption(GIRL, "walking"),
+            recipes.character_caption(recipes.IDENTITY, "walking")),
+           (f"girl, {WANT_GIRL.anchor}, from side, facing right, walking",
+            PIN_CAPTION + "walking"))
+    expect_raises("...and refuses an anchor that names another subject",
+                  ValueError,
+                  lambda: recipes.character_caption(
+                      dataclasses.replace(GIRL, anchor="blonde hair, male"),
+                      "walking"), "subject word")
+    # The same hole, end to end on every route into a caption: a file, an
+    # in-code identity and a character caption.
+    for label, call in (
+            ("a character file",
+             lambda: characters.load_file(character_file(
+                 "underscored", legal_but(lambda d: d.__setitem__(
+                     "tags", d["tags"] + ", magical_girl"))))),
+            ("an in-code identity through build_recipe",
+             lambda: recipes.build_recipe("walk", dataclasses.replace(
+                 recipes.IDENTITY,
+                 tags=recipes.IDENTITY.tags + ", magical_girl"))),
+            ("a character caption",
+             lambda: recipes.character_caption(dataclasses.replace(
+                 recipes.IDENTITY,
+                 anchor=recipes.IDENTITY.anchor + ", school_girl"),
+                 "walking"))):
+        expect_raises(f"an UNDERSCORED subject word is refused through "
+                      f"{label}", ValueError, call, "subject word")
+    girl_refusal = expect_raises(
+        "a GIRL file refusing a boy word names the subject it judged "
+        "against, and never calls her a boy", ValueError,
+        lambda: characters.load_file(character_file(
+            "girl_male_focus", legal_but(lambda d: (
+                d.__setitem__("subject", "girl"),
+                d.__setitem__("tags", d["tags"] + ", male_focus"))))),
+        "subject word", "the subject judged here is 'girl'")
+    expect("...and that refusal carries no claim that this file is a boy, "
+           "which is what \"(default 'boy')\" inside \"this file's 'subject' "
+           "field\" said to every girl who tripped the rule",
+           ("boy" in str(girl_refusal),
+            "subject word" in characters.TAG_PROBLEMS,
+            "boy" in characters.TAG_PROBLEMS["subject word"]),
+           (False, True, False))
+    expect_raises("render_init refuses colours missing a part the garments "
+                  "draw", KeyError,
+                  lambda: mannequin.render_init(
+                      L5, WALK.poses, COLOURS,
+                      garments=Garments(legwear="dress")), "'dress'")
+    expect_raises("...and colours for a part they never draw", ValueError,
+                  lambda: mannequin.render_init(
+                      L5, WALK.poses, dict(COLOURS, hat=(0x8C, 0x3C, 0xC8))),
+                  "do not draw")
+
     # -- the shipped files ----------------------------------------------------
     SCOUT = characters.load("scout")
     BLUE = characters.load("scout_blue_scarf")
@@ -1289,6 +1612,41 @@ try:
     expect("...so its tags and anchor are the brief's pinned identity text",
            (SCOUT.tags, SCOUT.anchor),
            (PIN_IDENTITY, "brown hair, red scarf, blue tunic"))
+    # MEASURED 2026-09-17 on the shipped scout BEFORE the garment vocabulary
+    # existed, and pinned here as literals: the default outfit must draw the
+    # same pixels and answer to the same mannequin name afterwards.
+    PIN_SCOUT_INIT = {
+        "walk": "9a7c03a2ab8585516a32556d947aa36f80a8c3b47fe0af51121bb12ca4ec536a",
+        "run": "e6011966819876ff76567d7a9f993af7c4eb50c605d2d4ab9272547f514f998f",
+        "jump": "b48d64e56616906ee4ceafa0a306b0107f7f660254c9dd9c8d7387457afd1811",
+    }
+    PIN_SCOUT_PARAMS = {
+        "walk": "607042448f45d2477a5f53b94603d6a0503519d21dde007feea82e0d2f22a9fc",
+        "run": "72c94e2504390765582323bad47c22b089c784f4cea6de50a1550f38c513db7d",
+        "jump": "aa244a876960234c8bf0a578fa33fbc1a0f691457922566a798c983454582dc5",
+    }
+    scout_drawn = {}
+    for name in ("walk", "run", "jump"):
+        recipe = recipes.RECIPES[name]
+        drawn, _c = mannequin.render_init(recipe.layout, recipe.poses,
+                                          SCOUT.as_dict(),
+                                          garments=SCOUT.garments)
+        sent = recipes.make_request(name, "img2img", SEED).image_png
+        scout_drawn[name] = (
+            hashlib.sha256(drawn).hexdigest(),
+            hashlib.sha256(sent).hexdigest(),
+            mannequin.params_sha256(recipe.layout, recipe.poses,
+                                    SCOUT.as_dict(),
+                                    garments=SCOUT.garments),
+            mannequin.params_sha256(recipe.layout, recipe.poses,
+                                    SCOUT.as_dict()))
+    expect("the default outfit still draws the pinned bytes: the init of "
+           "every recipe, the image img2img sends, and the mannequin name -- "
+           "with the garments passed and left out alike",
+           scout_drawn,
+           {name: (PIN_SCOUT_INIT[name], PIN_SCOUT_INIT[name],
+                   PIN_SCOUT_PARAMS[name], PIN_SCOUT_PARAMS[name])
+            for name in ("walk", "run", "jump")})
     expect("get_recipe for the default character, and for scout, equals "
            "RECIPES for every recipe",
            [(recipes.get_recipe(n) == recipes.RECIPES[n],
@@ -1369,6 +1727,549 @@ try:
                       "unknown character 'scout_green'", "scout.json",
                       "scout_blue_scarf.json")
 
+    # -- 1d. wizard_girl: a girl in a wizard hat, a cape, a dress and heels --
+    def shades_of(rgb):
+        """Every shade of `rgb` the mannequin can draw: the colour, its far
+        and inner shades, and a far pixel an inner line darkened again."""
+        far = mannequin._shade(rgb, mannequin.FAR_SHADE)
+        return {rgb, far, mannequin._shade(rgb, mannequin.INNER_SHADE),
+                mannequin._shade(far, mannequin.INNER_SHADE)}
+
+    WIZARD = characters.load("wizard_girl")
+    PIN_WIZARD_TAGS = ("blonde hair, wizard hat, purple headwear, red dress, "
+                       "purple cape, cape, high heels, blue footwear")
+    PIN_WIZARD_ANCHOR = ("blonde hair, wizard hat, red dress, purple cape, "
+                         "blue footwear")
+    PIN_WIZARD_CAPTION = f"girl, {PIN_WIZARD_ANCHOR}, from side, facing right, "
+    PIN_GIRL_HEAD = PIN_HEAD.replace("1boy", "1girl")
+    # The girl's base caption is the brief's, with EXACTLY three changes: the
+    # count, the outfit tags, and the sentence's noun. Anything else the code
+    # writes differently turns this red.
+    PIN_WIZARD_BASE = {
+        name: text.replace(PIN_HEAD, PIN_GIRL_HEAD)
+                  .replace(PIN_IDENTITY, PIN_WIZARD_TAGS)
+                  .replace("the same boy", "the same girl")
+        for name, text in PIN_BASE.items()}
+    PIN_SCOUT_PANTS, PIN_SCOUT_TUNIC = (0xC8, 0xA0, 0x64), (0x3C, 0x64, 0xC8)
+    expect("wizard_girl.json is a GIRL wearing a wizard hat, a cape, no "
+           "scarf, a dress and heels, with one colour per part they draw",
+           (WIZARD.subject, WIZARD.garments, WIZARD.tags, WIZARD.anchor,
+            WIZARD.colours),
+           ("girl", Garments("wizard", True, "none", "dress", "heels"),
+            PIN_WIZARD_TAGS, PIN_WIZARD_ANCHOR,
+            (("skin", (0xE8, 0xB4, 0x8C)), ("hair", (0xE8, 0xC8, 0x5A)),
+             ("belt", (0x5A, 0x3A, 0x1E)), ("dress", (0xC8, 0x32, 0x32)),
+             ("heels", (0x1E, 0x5A, 0xF0)), ("cape", (0x8C, 0x3C, 0xC8)),
+             ("hat", (0x5A, 0x28, 0xA0)))))
+    expect("...and her hat is NOT her cape's purple: two garments in one RGB "
+           "are one garment to the model, and the judge below would have to "
+           "work around the collision to see either",
+           (WIZARD.colour("hat") != WIZARD.colour("cape"),
+            characters.distance_sq(WIZARD.colour("hat"),
+                                   WIZARD.colour("cape")) >= 60 * 60,
+            sorted(shades_of(WIZARD.colour("hat"))
+                   & shades_of(WIZARD.colour("cape")))),
+           (True, True, []))
+
+    def boy_words(text):
+        """Every word of any subject but hers, anywhere in a built body."""
+        return sorted(set(re.findall(r"[a-z]+", text.lower()))
+                      & {"boy", "boys", "male", "man", "men"})
+
+    for name in ("walk", "run", "jump"):
+        recipe = recipes.get_recipe(name, "wizard_girl")
+        req = recipes.make_request(name, "generate", SEED,
+                                   character="wizard_girl")
+        body_text = json.dumps(request.build_body(req))
+        expect(f"{name} for wizard_girl: 1girl heads the base caption, its "
+               f"sentence says 'the same girl', every character caption opens "
+               f"'girl,', and no boy word anywhere in the body",
+               (recipe.base_caption == PIN_WIZARD_BASE[name],
+                req.base_caption == recipe.base_caption,
+                [f.caption for f in req.frames]
+                == [PIN_WIZARD_CAPTION + words for words in PIN_POSES[name]],
+                "the same girl" in recipe.base_caption,
+                boy_words(body_text)),
+               (True, True, True, True, []))
+
+    SKIRT_MIN_HEM = 9
+    """A drawn A-line hem is at least this wide, against a 6 px bodice:
+    measured 10-12 over her fifteen figures."""
+    SKIRT_MAX_HEM = 14
+    """...and AT MOST this wide. The other half: `>= SKIRT_MIN_HEM` alone
+    leaves SKIRT_HEM_W free to grow without bound, and 12 -> 18 measured
+    11-18 px hems with the suite green."""
+    SKIRT_MAX_WAIST = 8
+    """The skirt's TOP row -- the first below the belt -- is at most this
+    wide, so the hem being >= 9 means the skirt actually flares. MEASURED
+    1-7 on her fifteen figures; SKIRT_TOP_W 6 -> 12 (a straight tube, no
+    A-line at all) measured up to 12 and was green."""
+    HEEL_MAX_PX = 20
+    """A heel draws at most this many shoe pixels in a cell. MEASURED: heels
+    10-16, and the same figures in boots 20-37, because a boot adds a shaft
+    up the shin and a boot-coloured ankle."""
+    HEEL_MIN_PX = 8
+    """...and at least this many. MEASURED 9-16; HEEL_DROP 1 -> 0 (the sole
+    alone, no post and no toe) measured 5-9 and HEEL_SOLE_W 4 -> 2 measured
+    6-9, both with the suite green."""
+    CAPE_MIN_STANDOFF = 3
+    """The cape's leftmost pixel sits at least this far behind the dress's.
+    MEASURED 4-11; merely `behind the dress` left CAPE_BACK, CAPE_LEN and
+    CAPE_MAX_ANGLE free -- zeroing CAPE_BACK measured 2 and was green."""
+    CAPE_MIN_FLARE = 3
+    """The cape's widest row is at least this much wider than its top row: it
+    is a FLARE, not a band. MEASURED 4-9; CAPE_HEM_W 9 -> 6 (top and hem
+    equal, no flare) measured 2 and was green."""
+
+    def components(points):
+        """4-connected pieces `points` falls into."""
+        left, pieces = set(points), 0
+        while left:
+            stack, pieces = [left.pop()], pieces + 1
+            while stack:
+                x, y = stack.pop()
+                for q in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                    if q in left:
+                        left.discard(q)
+                        stack.append(q)
+        return pieces
+
+    def outfit_problems(src, layout, identity):
+        """Every way a drawn strip fails to wear identity's outfit: nothing
+        drawn, a hat that is not above the head, a missing dress, a skirt
+        that is not wider than the bodice or not narrower at the waist or
+        wider than any hem should be, a cape that is not behind the dress, is
+        not far enough behind it, does not flare, or has been cut into
+        pieces, a heel that is not at the foot, a shoe with a boot's bulk or
+        with no heel's worth of pixels. A part this identity does not wear
+        simply has no pixels, so the same function judges a girl who took her
+        hat off.
+
+        EVERY TEST IS BOUNDED FROM BOTH SIDES. Each shape was drawn from a
+        constant that had only a floor or only a ceiling, and ten mutations
+        of those constants -- a brim narrower than the head, a heel with no
+        notch, a skirt with no A-line, a cape that stops flaring -- were
+        measured leaving this suite green at 790 assertions (CLAUDE.md law 5:
+        one half of an invariant is the dominant failure shape). The
+        mutations below prove each new half can fail.
+        """
+        problems = []
+        for i, cell in enumerate(layout.cells):
+            sx0, sy0, sx1, sy1 = layout.rect_src(i)
+            crop = src.crop((sx0, sy0, sx1, sy1))
+            where = {}
+            for y in range(crop.height):
+                for x in range(crop.width):
+                    where.setdefault(crop.getpixel((x, y)), []).append((x, y))
+
+            def points(part):
+                try:
+                    rgb = identity.colour(part)
+                except KeyError:
+                    return []
+                return [p for drawn_rgb in shades_of(rgb)
+                        for p in where.get(drawn_rgb, ())]
+            drawn = [p for rgb, ps in where.items() if rgb != BACKGROUND_RGB
+                     for p in ps]
+            body = points("skin") + points("hair")
+            if not drawn or not body:
+                problems.append(f"cell {i}: nothing drawn")
+                continue
+            head_top = min(y for _x, y in body)
+            floor = max(y for _x, y in drawn)
+            if not [p for p in points("hat") if p[1] < head_top]:
+                problems.append(f"cell {i}: no hat above the head")
+            if not points("dress"):
+                problems.append(f"cell {i}: no dress")
+            else:
+                rows = {}
+                for x, y in points("dress"):
+                    rows.setdefault(y, []).append(x)
+                hem = max(max(xs) - min(xs) + 1 for xs in rows.values())
+                if hem < SKIRT_MIN_HEM:
+                    problems.append(f"cell {i}: the skirt is {hem} px wide, "
+                                    f"no wider than the bodice")
+                elif hem > SKIRT_MAX_HEM:
+                    problems.append(f"cell {i}: the skirt is {hem} px wide, "
+                                    f"wider than any hem")
+                # The A-line, bounded at the WAIST as well as the hem: the
+                # skirt's first row below the belt is the waist, and a skirt
+                # as wide there as at the hem is a tube.
+                belt = points("belt")
+                waist_rows = sorted(y for y in rows if not belt
+                                    or y > max(b[1] for b in belt))
+                if waist_rows:
+                    xs = rows[waist_rows[0]]
+                    waist = max(xs) - min(xs) + 1
+                    if waist > SKIRT_MAX_WAIST:
+                        problems.append(f"cell {i}: the skirt is {waist} px "
+                                        f"wide at the waist, no narrower "
+                                        f"than its hem")
+                # The cape is judged over the WHOLE CELL: her hat carries its
+                # own colour, so nothing else purple can stand in for it.
+                cape = points("cape")
+                dress = points("dress")
+                if not cape:
+                    problems.append(f"cell {i}: no cape beside the dress")
+                else:
+                    standoff = (min(x for x, _y in dress)
+                                - min(x for x, _y in cape))
+                    if standoff < CAPE_MIN_STANDOFF:
+                        problems.append(f"cell {i}: the cape stands {standoff}"
+                                        f" px behind the dress, not enough to"
+                                        f" read as a second garment")
+                    cape_rows = {}
+                    for x, y in cape:
+                        cape_rows.setdefault(y, []).append(x)
+                    widths = {y: max(xs) - min(xs) + 1
+                              for y, xs in cape_rows.items()}
+                    flare = max(widths.values()) - widths[min(widths)]
+                    if flare < CAPE_MIN_FLARE:
+                        problems.append(f"cell {i}: the cape widens by "
+                                        f"{flare} px from its shoulder to "
+                                        f"its hem; it does not flare")
+                    pieces = components(cape)
+                    if pieces > 1:
+                        problems.append(f"cell {i}: the cape is cut into "
+                                        f"{pieces} pieces")
+            shoe = points("heels")
+            if not [p for p in shoe if p[1] >= floor - 2]:
+                problems.append(f"cell {i}: no heel at the foot")
+            elif len(shoe) > HEEL_MAX_PX:
+                problems.append(f"cell {i}: the shoe has a boot's bulk "
+                                f"({len(shoe)} px)")
+            elif len(shoe) < HEEL_MIN_PX:
+                problems.append(f"cell {i}: the shoe is {len(shoe)} px, too "
+                                f"little for a sole, a post and a toe")
+        return problems
+
+    for name in ("walk", "run", "jump"):
+        recipe = recipes.get_recipe(name, "wizard_girl")
+        layout = recipe.layout
+        # The image img2img would SEND, not one drawn here: make_request is
+        # the route that has to carry her garments to the mannequin.
+        sent = recipes.make_request(name, "img2img", SEED,
+                                    character="wizard_girl").image_png
+        image = opened(sent).convert("RGB")
+        source = image.resize((layout.src_w, layout.src_h),
+                              Image.Resampling.NEAREST)
+        palette = {rgb for _n, rgb in source.getcolors(1 << 20)}
+        allowed = {BACKGROUND_RGB} | shades_of(OUTLINE_RGB)
+        for part, _rgb in WIZARD.colours:
+            allowed |= shades_of(WIZARD.colour(part))
+        outside = source.copy()
+        for cell in layout.cells:
+            sx0, sy0, sx1, sy1 = [v // layout.k for v in cell.rect_canvas]
+            outside.paste(BACKGROUND_RGB, (sx0, sy0, sx1, sy1))
+        expect(f"{name} for wizard_girl: the sent init wears the hat above "
+               f"the head, an A-line skirt, a cape that stands off, flares "
+               f"and is in one piece, and a heel at each foot, in her "
+               f"colours only, with nothing outside a cell",
+               (outfit_problems(source, layout, WIZARD),
+                sorted(palette - allowed),
+                sorted({PIN_SCOUT_PANTS, PIN_SCOUT_TUNIC} & palette),
+                outside.getcolors(1 << 20)),
+               ([], [], [], [(layout.src_w * layout.src_h, BACKGROUND_RGB)]))
+
+    # -- the OTHER HALF of every garment constant: mutate one, go red -------
+    # Each row below was measured leaving the suite green before these
+    # assertions existed. `drawn_problems` redraws her walk with one constant
+    # changed and asks the SAME judge, so a row that stops firing is a
+    # judge that stopped looking, not a constant that stopped mattering.
+    def drawn_problems(**changes):
+        """Every problem the judge reports over ALL THREE strips, stripped of
+        cell numbers and measurements. All three, because a pose the walk
+        does not strike is a constant the walk cannot test: the walk leans 0,
+        so CAPE_MAX_ANGLE never binds there and clamping it to 12 changed not
+        one walk pixel."""
+        found = set()
+        for recipe_name in ("walk", "run", "jump"):
+            shape = recipes.get_recipe(recipe_name, "wizard_girl")
+            with contextlib.ExitStack() as stack:
+                for name_, value in changes.items():
+                    stack.enter_context(patched(mannequin, name_, value))
+                png, _c = mannequin.render_init(
+                    shape.layout, shape.poses, WIZARD.as_dict(),
+                    garments=WIZARD.garments)
+            drawn = opened(png).convert("RGB").resize(
+                (shape.layout.src_w, shape.layout.src_h),
+                Image.Resampling.NEAREST)
+            found |= {p.split(": ", 1)[1].split(" (")[0].split(" px")[0]
+                      for p in outfit_problems(drawn, shape.layout, WIZARD)}
+        return sorted(found)
+
+    for label, changes, wanted in (
+            ("SKIRT_TOP_W 6 -> 12 (a tube, no A-line)",
+             {"SKIRT_TOP_W": 12}, "the skirt is"),
+            ("SKIRT_HEM_W 12 -> 18 (a hem wider than the figure)",
+             {"SKIRT_HEM_W": 18}, "the skirt is"),
+            ("CAPE_BACK 2.0 -> 0.0 (the cape hangs on the torso)",
+             {"CAPE_BACK": 0.0}, "the cape stands"),
+            ("CAPE_HEM_W 9 -> 6 (a band, not a flare)",
+             {"CAPE_HEM_W": 6}, "the cape widens by"),
+            ("CAPE_MAX_ANGLE 38 -> 12 (the cape hides behind the figure)",
+             {"CAPE_MAX_ANGLE": 12.0}, "the cape"),
+            ("HEEL_DROP 1 -> 0 (a sole with no post and no toe)",
+             {"HEEL_DROP": 0}, "the shoe is"),
+            ("HEEL_SOLE_W 4 -> 2 (half a sole)",
+             {"HEEL_SOLE_W": 2}, "the shoe is")):
+        found = drawn_problems(**changes)
+        expect_true(f"the judge goes red on {label}",
+                    found and any(p.startswith(wanted) for p in found))
+    expect("...and reports nothing at all on the shipped constants, so those "
+           "seven rows are the mutation and not the judge",
+           drawn_problems(), [])
+
+    # The hat's brim and the heel's notch are the same geometry in every
+    # frame -- only what covers them changes -- so they are asserted on the
+    # drawing code itself, where an arm cannot hide half the answer.
+    brim_px = {}
+    mannequin._hat(brim_px, 0, 0, (0x5A, 0x28, 0xA0))   # an 8x8 head at (0, 0)
+    brim_rows = {}
+    for (x, y), _v in brim_px.items():
+        brim_rows.setdefault(y, []).append(x)
+    widest = max(brim_rows, key=lambda y: len(brim_rows[y]))
+    expect("the wizard hat's brim is WIDER THAN THE HEAD ON BOTH SIDES and "
+           "sits on the head, not above it: the front edge overhangs the "
+           "face, which is the half of the shape the model has to draw",
+           (len(brim_rows[widest]) >= mannequin.HEAD + 2,
+            widest > 0, widest <= mannequin.HAT_BRIM_ROW,
+            0 - min(brim_rows[widest]), max(brim_rows[widest]) - 7),
+           (True, True, True, 2, 1))
+    for label, changes, wanted in (
+            ("HAT_BRIM_W 11 -> 8 (a cone with no brim at all)",
+             {"HAT_BRIM_W": 8}, "width"),
+            ("HAT_BRIM_ROW 1 -> 0 (the brim above the head, not on it)",
+             {"HAT_BRIM_ROW": 0}, "row"),
+            ("HAT_BRIM_BACK 0.0 -> 1.0 (the front edge flush with the face)",
+             {"HAT_BRIM_BACK": 1.0}, "front"),
+            ("HAT_BRIM_BACK 0.0 -> 4.0 (a rear flange, no brim at the face)",
+             {"HAT_BRIM_BACK": 4.0}, "front")):
+        with contextlib.ExitStack() as stack:
+            for name_, value in changes.items():
+                stack.enter_context(patched(mannequin, name_, value))
+            mutant = {}
+            mannequin._hat(mutant, 0, 0, (0x5A, 0x28, 0xA0))
+        rows_ = {}
+        for (x, y), _v in mutant.items():
+            rows_.setdefault(y, []).append(x)
+        wy = max(rows_, key=lambda y: len(rows_[y]))
+        broken = {"width": len(rows_[wy]) < mannequin.HEAD + 2,
+                  "row": not 0 < wy <= mannequin.HAT_BRIM_ROW,
+                  "front": max(rows_[wy]) - 7 < 1}
+        expect_true(f"...and that is false for {label}", broken[wanted])
+
+    heel = [[mannequin._in_heel(a + 0.5, f + 0.5, 0.0)
+             for f in range(mannequin.HEEL_SOLE_W)]
+            for a in range(mannequin.HEEL_SOLE_H + mannequin.HEEL_DROP)]
+    expect("the high heel is a SOLE WITH A NOTCH UNDER IT -- a solid sole "
+           "row, then a row that is a post at the back and a toe at the "
+           "front with the arch open between them; the notch is the whole "
+           "read, and a solid block is a boot",
+           (len(heel) >= 2, heel[0], all(heel[0]),
+            heel[-1][0], heel[-1][-1], False in heel[-1]),
+           (True, [True] * 4, True, True, True, True))
+    for label, changes in (
+            ("HEEL_DROP 1 -> 0 (the sole alone, nothing under it)",
+             {"HEEL_DROP": 0}),
+            ("HEEL_SOLE_W 4 -> 2 (post and toe meet, the arch closes)",
+             {"HEEL_SOLE_W": 2})):
+        with contextlib.ExitStack() as stack:
+            for name_, value in changes.items():
+                stack.enter_context(patched(mannequin, name_, value))
+            mutant_heel = [[mannequin._in_heel(a + 0.5, f + 0.5, 0.0)
+                            for f in range(mannequin.HEEL_SOLE_W)]
+                           for a in range(mannequin.HEEL_SOLE_H
+                                          + mannequin.HEEL_DROP)]
+        expect_true(f"...and that is false for {label}",
+                    len(mutant_heel) < 2 or False not in mutant_heel[-1])
+
+    def block_heel(along, fwd, heel_):
+        """`_in_heel` with its post/toe branch replaced by the full sole: a
+        solid two-row block, the shape the notch exists not to be."""
+        return (0.0 <= along < mannequin.HEEL_SOLE_H + mannequin.HEEL_DROP
+                and heel_ <= fwd < heel_ + mannequin.HEEL_SOLE_W)
+
+    with patched(mannequin, "_in_heel", block_heel):
+        blocked = [[mannequin._in_heel(a + 0.5, f + 0.5, 0.0)
+                    for f in range(mannequin.HEEL_SOLE_W)]
+                   for a in range(mannequin.HEEL_SOLE_H
+                                  + mannequin.HEEL_DROP)]
+    expect("...and false when the post/toe branch is the whole sole, which "
+           "is the mutation the notch assertion exists to catch",
+           (len(blocked), False in blocked[-1]), (2, False))
+
+    # -- the cape's own line, and the root that moves with the lean --------
+    def cape_pixels(pose, identity=None):
+        who = identity or WIZARD
+        px = mannequin._figure(pose, who.as_dict(), who.garments)
+        base = who.colour("cape")
+        unlined = 0
+        for (x, y), (rgb, tag) in px.items():
+            if tag != "cape" or rgb != base:
+                continue
+            for q in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                other = px.get(q)
+                if other is not None and other[1] != "cape":
+                    unlined += 1
+                    break
+        return ([rgb for rgb, tag in px.values() if tag == "cape"], unlined)
+
+    lined = {name: [cape_pixels(p) for p in
+                    recipes.get_recipe(name, "wizard_girl").poses]
+             for name in ("walk", "run", "jump")}
+    expect("THE CAPE CARRIES ITS OWN LINE. It is drawn first, so every other "
+           "part lies over it: in all sixteen frames no cape pixel at the "
+           "base colour touches another part, and every frame draws a "
+           "darkened cape edge. Without it the cape's hem ends INSIDE the "
+           "skirt -- measured cape row 2-4 against skirt row 6-8 in every "
+           "frame -- with no outline and no inner line between purple and "
+           "red, so the two garments read as one two-tone flare",
+           (sorted({u for rows in lined.values() for _px, u in rows}),
+            min(sum(1 for rgb in px if rgb != WIZARD.colour("cape"))
+                for rows in lined.values() for px, _u in rows) >= 8),
+           ([0], True))
+    with patched(mannequin, "INNER_SHADE", 1.0):
+        flat = [cape_pixels(p)[1] for p in WALK.poses]
+    expect("...and with nothing to darken it with, the same measurement "
+           "finds bare cape pixels against the dress in every walk frame, so "
+           "that assertion can fail",
+           (all(u > 0 for u in flat), len(flat)), (True, 5))
+
+    UPRIGHT = Pose(0, 0, 0, 0, 0, 0, 0, 0, lean=0)
+    CROUCH = dataclasses.replace(UPRIGHT, lean=35)
+    LEANT_BACK = dataclasses.replace(UPRIGHT, lean=-5)
+    with patched(mannequin, "CAPE_LEAN_BACK", 0.0):
+        rooted = {p.lean: len(cape_pixels(p)[0])
+                  for p in (UPRIGHT, CROUCH, LEANT_BACK)}
+    swung = {p.lean: len(cape_pixels(p)[0])
+             for p in (UPRIGHT, CROUCH, LEANT_BACK)}
+    expect("THE CAPE'S ROOT MOVES BACK WITH THE LEAN, not only its angle: in "
+           "a deep crouch the swing is already clamped at CAPE_MAX_ANGLE, so "
+           "rotating it further cannot clear the near arm's backswing and "
+           "only the root can. A crouch therefore draws MORE cape than the "
+           "same crouch with CAPE_LEAN_BACK zeroed, while an upright or "
+           "backward-leaning figure draws exactly the same (max(0, lean))",
+           (swung[35] > rooted[35], swung[0] == rooted[0],
+            swung[-5] == rooted[-5]), (True, True, True))
+    BARE = dataclasses.replace(
+        WIZARD, garments=Garments("none", False, "none", "dress", "boots"),
+        colours=tuple((part, rgb) for part, rgb in WIZARD.colours
+                      if part not in ("hat", "cape", "heels"))
+        + (("boots", (0x1E, 0x5A, 0xF0)),))
+    bare_png, _bare_centers = mannequin.render_init(
+        L5, WALK.poses, BARE.as_dict(), garments=BARE.garments)
+    bare_image = opened(bare_png).convert("RGB")
+    bare_colours = {rgb for _n, rgb in bare_image.getcolors(1 << 20)}
+    expect("...and the same girl with the hat and the cape taken off and her "
+           "blue in boots draws no purple at all, and the SAME judge then "
+           "reports the missing hat, the missing cape and no heel in every "
+           "cell -- so those assertions can fail",
+           (sorted(bare_colours & shades_of((0x8C, 0x3C, 0xC8))),
+            outfit_problems(bare_image.resize((L5.src_w, L5.src_h),
+                                              Image.Resampling.NEAREST),
+                            L5, BARE)),
+           ([], [problem for i in range(5)
+                 for problem in (f"cell {i}: no hat above the head",
+                                 f"cell {i}: no cape beside the dress",
+                                 f"cell {i}: no heel at the foot")]))
+
+    # -- the dress's SHORT SLEEVE and its wrist, in the drawing itself -----
+    # Judged on BARE, which wears no cape: the cape's own inner line would
+    # otherwise put a darkened shade into the arm and blur the exact sets.
+    def arm_values(identity, tag, pose=None):
+        px = mannequin._figure(pose or WALK.poses[0], identity.as_dict(),
+                               identity.garments)
+        return {rgb for rgb, t in px.values() if t == tag}
+
+    BARE_SKIN, BARE_DRESS = BARE.colour("skin"), BARE.colour("dress")
+    far = lambda rgb: mannequin._shade(rgb, mannequin.FAR_SHADE)
+    expect("a DRESSED figure's arm is three values: the dress to the elbow, "
+           "BARE SKIN past it, and an OUTLINE_RGB wrist before the hand -- "
+           "the far arm the same, in far shades. Without the wrist the "
+           "forearm and the hand are one skin value, in the same value as "
+           "the bare far leg: a blunt plank that reads as a held object",
+           (arm_values(BARE, "near_arm"),
+            arm_values(BARE, "far_arm"),
+            OUTLINE_RGB in arm_values(BARE, "near_arm")),
+           ({BARE_DRESS, BARE_SKIN, OUTLINE_RGB},
+            {far(BARE_DRESS), far(BARE_SKIN),
+             OUTLINE_RGB},
+            True))
+    expect("...and a SLEEVED figure's arm is two, with no wrist at all: the "
+           "tunic's own colour already breaks it, so the shipped scout draws "
+           "exactly what it always drew",
+           (arm_values(SCOUT, "near_arm"), arm_values(SCOUT, "far_arm")),
+           ({SCOUT.colour("tunic"), SCOUT.colour("skin")},
+            {far(SCOUT.colour("tunic")),
+             far(SCOUT.colour("skin"))}))
+
+    def skin_px(identity, tag, shade=lambda rgb: rgb):
+        """Per walk pose, the pixels of `tag` drawn in `identity`'s skin."""
+        wanted = shade(identity.colour("skin"))
+        return [sum(1 for rgb, t in mannequin._figure(
+            pose, identity.as_dict(), identity.garments).values()
+            if t == tag and rgb == wanted) for pose in WALK.poses]
+
+    # COUNTED, not merely named: `lower = sleeve` -- the dress's short sleeve
+    # deleted -- leaves the SET of arm colours untouched, because the hand is
+    # skin either way. A dressed arm has to draw skin BEYOND its hand.
+    expect("the dress's sleeve stops at the ELBOW: a dressed arm draws more "
+           "skin than its hand alone, strictly more than the same arm in a "
+           "tunic, which draws the hand and nothing else -- and the two "
+           "figures share one skin colour, so that is a fair count",
+           (min(skin_px(BARE, "near_arm")) > max(skin_px(SCOUT, "near_arm")),
+            max(skin_px(BARE, "far_arm", far))
+            > max(skin_px(SCOUT, "far_arm", far)),
+            BARE.colour("skin") == SCOUT.colour("skin")),
+           (True, True, True))
+    with patched(mannequin, "WRIST_PX", 0):
+        no_wrist = (arm_values(BARE, "near_arm"), arm_values(BARE, "far_arm"))
+    expect("...and with WRIST_PX 0 the dressed arm collapses to two values "
+           "and the far arm's are exactly the far leg's, so this assertion "
+           "can fail",
+           (no_wrist[0], no_wrist[1] == {far(BARE_DRESS),
+                                         far(BARE_SKIN)},
+            far(BARE_SKIN) in arm_values(BARE, "far_leg")),
+           ({BARE_DRESS, BARE_SKIN}, True, True))
+
+    # -- what a mannequin NAME means for a figure wearing something --------
+    # `params_sha256` is a hash, and a hash tells nobody what left the
+    # document: dropping _GARMENT_SKELETON_NAMES, dropping the "garments"
+    # key, and bumping GARMENT_DRAW_VERSION were each measured moving (or
+    # failing to move) a garmented name with the suite green. These assert
+    # the DOCUMENT and the RELATION, not a literal, so tuning a constant
+    # does not make them red.
+    wizard_doc = mannequin.params_doc(L5, WALK.poses, WIZARD.as_dict(),
+                                      garments=WIZARD.garments)
+    scout_doc = mannequin.params_doc(L5, WALK.poses, SCOUT.as_dict())
+    expect("a garmented mannequin's name is taken over its GARMENTS and "
+           "every garment constant; the default outfit's over neither, so "
+           "the shipped scout's name cannot move when a hat constant does",
+           (sorted(set(mannequin._GARMENT_SKELETON_NAMES)
+                   - set(wizard_doc["skeleton"])),
+            wizard_doc.get("garments"),
+            sorted(set(mannequin._GARMENT_SKELETON_NAMES)
+                   & set(scout_doc["skeleton"])),
+            "garments" in scout_doc,
+            "GARMENT_DRAW_VERSION" in wizard_doc["skeleton"]),
+           ([], dict(WIZARD.garments._asdict()), [], False, True))
+    for constant, value in (("GARMENT_DRAW_VERSION",
+                             mannequin.GARMENT_DRAW_VERSION + 1),
+                            ("HAT_BRIM_W", mannequin.HAT_BRIM_W + 1),
+                            ("CAPE_LEAN_BACK", mannequin.CAPE_LEAN_BACK + 1),
+                            ("WRIST_PX", mannequin.WRIST_PX + 1)):
+        with patched(mannequin, constant, value):
+            moved = mannequin.params_sha256(L5, WALK.poses, WIZARD.as_dict(),
+                                            garments=WIZARD.garments)
+            still = mannequin.params_sha256(L5, WALK.poses, SCOUT.as_dict())
+        expect(f"...so changing {constant} renames HER mannequin and leaves "
+               f"the default outfit's alone",
+               (moved != mannequin.params_sha256(L5, WALK.poses,
+                                                 WIZARD.as_dict(),
+                                                 garments=WIZARD.garments),
+                still == PIN_SCOUT_PARAMS["walk"]), (True, True))
+
     # =======================================================================
     print("\n2. assert_free: the legal request passes, each refusal has its own reason")
     # =======================================================================
@@ -1403,6 +2304,36 @@ try:
                    output_path="blobs/" + "ab" * 32 + ".png")
         row.update(fields)
         return row
+
+    def drift_ack(ledger_id, previous, observed, high, low, by="phil",
+                  attribution="theirs", checked="the usage page"):
+        """One signature row, as the signing commands write it: the two
+        balances, the negative delta, the two row ids the boundary sits
+        between, who signed it, WHOSE he says the money was and what he
+        checked. Nothing else is filled."""
+        row = dict.fromkeys(LEDGER_FIELDS)
+        row.update(ledger_id=ledger_id, kind="drift",
+                   utc_time="2026-09-17T14:00:00.000000Z",
+                   account_before={"sum": high}, account_after={"sum": low},
+                   delta=low - high, drift_previous_row=previous,
+                   drift_observed_row=observed, drift_acknowledged_by=by,
+                   drift_attribution=attribution, drift_checked=checked)
+        return row
+
+    def acknowledge(state, by="check_nai"):
+        """Sign the ledger's oldest open boundary THROUGH THE CLI, so no
+        check ever grows a second copy of the rule -- the right verb for
+        the boundary's own class. Returns (exit code, what it printed). It
+        does not delete LOCK -- nothing does but the author."""
+        gap = guard.open_boundary(state.rows())
+        argv = (["resolve-boundary", "--attribute", "theirs"] if gap.ambiguous
+                else ["acknowledge-drift"]) + [
+            "--anlas", str(-gap.delta), "--by", by,
+            "--checked", "the provider usage page"]
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed),                 contextlib.redirect_stderr(printed):
+            code = cli.main(argv, transport=None, state=state)
+        return code, printed.getvalue()
 
     CHAINED = scratch_state("chained")
     CHAINED.write_row(ledger_row(1000))
@@ -1585,9 +2516,12 @@ try:
             BODY_GEN, account=dataclasses.replace(ACCOUNT, active=False))
     refused("a grace period is refused", 8, "grace period", BODY_GEN,
             account=dataclasses.replace(ACCOUNT, grace=True))
-    refused("a balance BELOW the last ledger row is refused", 9,
-            "balance fell from 1000 to 998", BODY_GEN, state=CHAINED,
-            account=dataclasses.replace(ACCOUNT, fixed=998))
+    refused("a live balance BELOW the last ledger row is refused as an "
+            "AMBIGUOUS boundary -- the last row SENT a request of ours, so a "
+            "late debit for it looks exactly like this", 9,
+            "AMBIGUOUS BOUNDARY -- this tool CANNOT say whose spend this "
+            "was: the balance fell 1000 -> 998 (2 Anlas)", BODY_GEN,
+            state=CHAINED, account=dataclasses.replace(ACCOUNT, fixed=998))
     refused("LOCK present is refused", 10, "LOCK present", BODY_GEN,
             state=LOCKED)
     refused("INFLIGHT present is refused", 10, "INFLIGHT present", BODY_GEN,
@@ -1677,9 +2611,41 @@ try:
     LATE = scratch_state("late_debit")
     LATE.write_row(probe_row(PROOF_I2I))
     LATE.write_row(ledger_row(998, ledger_id="after-the-probe"))
-    refused("a proof the NEXT read refutes (a late debit of 2) is refused for "
-            "good", 1, "REFUTED", BODY_I2I, proofs=(PROOF_I2I,), state=LATE,
+    late_failed = [v for v in guard.evaluate(
+        BODY_I2I, dataclasses.replace(ACCOUNT, fixed=998), (PROOF_I2I,), LATE,
+        url=GENERATE_URL) if v.ok is not True]
+    expect("a debit landing BETWEEN the probe and the next row REFUTES the "
+           "proof FOR GOOD (1) and refuses the chain (9) as an AMBIGUOUS "
+           "boundary: the probe's own request went out, so risk R4's late "
+           "debit and a friend's spend are byte-identical there",
+           ([v.condition for v in late_failed],
+            [v.ok for v in late_failed],
+            ["REFUTED" in v.message and "risk R4" in v.message
+             for v in late_failed if v.condition == 1],
+            # the fall is already written down and the read just taken is
+            # level with the chain, so the note says THAT before it describes
+            # the boundary: the author is never pointed at the wrong event
+            [v.message.startswith("NOT the balance read just taken")
+             and "AMBIGUOUS BOUNDARY" in v.message
+             for v in late_failed if v.condition == 9]),
+           ([1, 9], [False, False], [True], [True]))
+    LATE_ACKED = scratch_state("late_debit_acked")
+    LATE_ACKED.write_row(probe_row(PROOF_I2I))
+    LATE_ACKED.write_row(ledger_row(998, ledger_id="after-the-probe"))
+    LATE_ACKED.write_row(drift_ack("ack-late", PROOF_I2I.ledger_id,
+                                   "after-the-probe", 1000, 998))
+    refused("...and SIGNING that boundary does not bring it back: the chain "
+            "is re-baselined so work can go on, and img2img stays refused. "
+            "THE MONEY ESCAPE: without this, one typed figure re-arms the "
+            "action whose cost is the open question and OURS still reads 0",
+            1, "REFUTED", BODY_I2I, proofs=(PROOF_I2I,), state=LATE_ACKED,
             account=dataclasses.replace(ACCOUNT, fixed=998))
+    expect("...and the signature really did re-baseline the chain: condition "
+           "9 passes over the same ledger, so only condition 1 refuses",
+           [(v.condition, v.ok) for v in guard.evaluate(
+               BODY_I2I, dataclasses.replace(ACCOUNT, fixed=998),
+               (PROOF_I2I,), LATE_ACKED, url=GENERATE_URL)
+            if v.condition in (1, 9)], [(1, False), (9, True)])
     PENDING = scratch_state("pending_proof")
     PENDING.write_row(probe_row(PROOF_I2I))
     refused("a pending proof whose next read is a refill (+50) is refuted: a "
@@ -1738,19 +2704,34 @@ try:
                 "later_unread", probe_row(PROOF_I2I),
                 pair_row(1000, 1000, "i2i-unread", account_after=None,
                          delta=None, locked=True)))
-    refused("...and by a debit landing after a clean later img2img call (the "
-            "next read is 995)", 1, "a late charge", BODY_I2I,
-            proofs=(PROOF_I2I,), state=ledger_of(
-                "later_late_debit", probe_row(PROOF_I2I),
-                pair_row(1000, 1000, "i2i-clean"),
-                pair_row(995, 995, "chain-charged", action="generate",
-                         kind="refused", locked=True)),
+    LATE_AFTER_CALL = (probe_row(PROOF_I2I), pair_row(1000, 1000, "i2i-clean"),
+                       pair_row(995, 995, "chain-charged", action="generate",
+                                kind="refused", locked=True))
+    after_call_failed = [v for v in guard.evaluate(
+        BODY_I2I, dataclasses.replace(ACCOUNT, fixed=995), (PROOF_I2I,),
+        ledger_of("later_late_debit", *LATE_AFTER_CALL), url=GENERATE_URL)
+        if v.ok is not True]
+    expect("...and a debit landing AFTER a clean later img2img call refutes "
+           "it too: that call went out, so the fall in the read that follows "
+           "it is R4's own shape and cannot be told from somebody else's",
+           ([v.condition for v in after_call_failed],
+            [v.ok for v in after_call_failed],
+            ["REFUTED" in v.message for v in after_call_failed]),
+           ([1, 9], [False, False], [True, False]))
+    refused("...and signing exactly that boundary still does not let it "
+            "through: a signature re-baselines the CHAIN, never a proof",
+            1, "REFUTED", BODY_I2I, proofs=(PROOF_I2I,), state=ledger_of(
+                "later_late_debit_acked", *LATE_AFTER_CALL,
+                drift_ack("ack-after", "i2i-clean", "chain-charged",
+                          1000, 995)),
             account=dataclasses.replace(ACCOUNT, fixed=995))
-    expect("...and by THIS read when it is below the last img2img call's after "
-           "(condition 9 fails beside it)",
-           guard.proof_standing(PROOF_I2I, [probe_row(PROOF_I2I),
-                                            pair_row(1000, 1000, "i2i-clean")],
-                                995)[0], False)
+    expect("...and THIS read, below the last img2img call's after, refutes it "
+           "for good and says R4 in so many words",
+           (lambda r: (r[0], "risk R4" in r[1], "REFUTED" in r[1]))(
+               guard.proof_standing(PROOF_I2I,
+                                    [probe_row(PROOF_I2I),
+                                     pair_row(1000, 1000, "i2i-clean")], 995)),
+           (False, True, True))
     passes("but a later CLEAN img2img call and a charged GENERATE call leave "
            "it standing", BODY_I2I, proofs=(PROOF_I2I,), state=ledger_of(
                "later_other_pair", probe_row(PROOF_I2I),
@@ -2076,30 +3057,61 @@ try:
     scripted(REQ_I2I, [sub(1000), zipped(), sub(1000)], state=seq)
     t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(995)], state=seq)
     lock_text = lock_text_of(seq)
-    expect("a debit landing after a CLEAN production img2img: refused (9), "
-           "LOCK naming the proof it refutes",
-           (getattr(exc, "condition", None), "refutes its proof" in lock_text,
-            "img2img is charged: stay on the generate track" in lock_text),
-           (9, True, True))
+    expect("a debit landing AFTER a clean production img2img is refused (9) "
+           "as an AMBIGUOUS boundary, and LOCK names the proof it refutes "
+           "FOR GOOD -- it never says 'img2img is charged', because nothing "
+           "measured that, and never calls the drop somebody else's",
+           (getattr(exc, "condition", None), "AMBIGUOUS BOUNDARY" in lock_text,
+            "REFUTES its proof" in lock_text,
+            "img2img is charged" in lock_text,
+            "EXTERNAL DRIFT" in lock_text),
+           (9, True, True, False, False))
     if seq.locked():
         os.remove(seq.lock_path)
     t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(995), zipped(),
                                                    sub(995)], state=seq)
-    expect("...LOCK deleted: img2img is refused (1) as REFUTED, no POST",
+    expect("...LOCK deleted by hand: img2img is STILL refused and sends "
+           "nothing -- on the UNSIGNED boundary (9)",
+           (getattr(exc, "condition", None), "AMBIGUOUS BOUNDARY" in str(exc),
+            pattern), (9, True, [GET]))
+    ack_code, _ack_out = acknowledge(seq)
+    expect("...signing it leaves LOCK exactly where it was: only the author "
+           "removes that", (ack_code, seq.locked()), (0, True))
+    os.remove(seq.lock_path)   # the author, after checking the account
+    t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(995), zipped(),
+                                                   sub(995)], state=seq)
+    expect("...and img2img is STILL refused, now on its refuted proof (1), "
+           "with NOTHING sent: the signature freed the chain so the work can "
+           "go on, and left the action whose cost is in question locked",
            (getattr(exc, "condition", None), "REFUTED" in str(exc), pattern),
            (1, True, [GET]))
+    t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(995), zipped(),
+                                                   sub(995)], state=seq)
+    expect("...while generate, which never needed a proof, sends again: "
+           "signing a boundary unblocks the work, never the open question",
+           (exc, pattern), (None, [GET, POST, GET]))
     seq = proven_pair("late_after_generate")
     scripted(REQ_GEN, [sub(1000), zipped(), sub(1000)], state=seq)
     t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(995)], state=seq)
     expect("but a debit landing after a GENERATE call names no proof in LOCK",
-           (getattr(exc, "condition", None), "refutes its proof"
+           (getattr(exc, "condition", None), "REFUTES its proof"
             in lock_text_of(seq)), (9, False))
     if seq.locked():
         os.remove(seq.lock_path)
     t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(995), zipped(),
                                                    sub(995)], state=seq)
-    expect("...and img2img is still sent once LOCK is gone: the proof stands",
-           (exc, pattern), (None, [GET, POST, GET]))
+    expect("...and img2img is refused only on the unsigned boundary, never "
+           "on its proof: the fall sits behind a GENERATE row, so nothing "
+           "about the img2img probe moved",
+           (getattr(exc, "condition", None), "REFUTED" in str(exc)),
+           (9, False))
+    acknowledge(seq)
+    if seq.locked():
+        os.remove(seq.lock_path)
+    t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(995), zipped(),
+                                                   sub(995)], state=seq)
+    expect("...and once that boundary is signed img2img is sent: the proof "
+           "stood the whole time", (exc, pattern), (None, [GET, POST, GET]))
     t, st, row, exc, pattern = scripted(probe_i2i, [sub(1000), zipped(),
                                                     sub(1000)], probe=True)
     expect("a probe without the author's flag is refused before any request",
@@ -2574,15 +3586,20 @@ try:
         cy = rect[1] + (box[1] + box[3]) / 2
         return (snap(cx / width), snap(cy / height))
 
-    layouts = [(name, r.layout, r.poses) for name, r in
-               sorted(recipes.RECIPES.items())]
+    layouts = [(name, r.layout, r.poses, COLOURS, DEFAULT_GARMENTS)
+               for name, r in sorted(recipes.RECIPES.items())]
+    layouts += [(f"wizard_girl {name}", r.layout, r.poses,
+                 r.identity.as_dict(), r.identity.garments)
+                for name, r in ((n, recipes.get_recipe(n, "wizard_girl"))
+                                for n in ("walk", "run", "jump"))]
     layouts += [(f"strip({n},{w},{h})", mannequin.strip(n, w, h),
-                 mannequin.POSES["walk"][:n])
+                 mannequin.POSES["walk"][:n], COLOURS, DEFAULT_GARMENTS)
                 for n, w, h in ((5, 1216, 832), (3, 1024, 1024),
                                 (4, 1024, 1024), (2, 640, 512))]
-    for name, layout, poses in layouts:
+    for name, layout, poses, colours, garments in layouts:
         try:
-            png, centers = mannequin.render_init(layout, poses, COLOURS)
+            png, centers = mannequin.render_init(layout, poses, colours,
+                                                 garments=garments)
         except Exception as exc:  # noqa: BLE001 - reported
             asserted.append(1)
             failures.append(f"{name}: render_init")
@@ -3255,20 +4272,43 @@ try:
     if r4.locked():
         with open(r4.lock_path, encoding="utf-8") as handle:
             lock_text = handle.read()
-    expect("R4 via the CLI: the probe's debit lands late -- refused (9), LOCK "
-           "naming the probe whose proof it refutes",
-           (code, [p.action for p in r4.proofs()], "refutes its proof" in
-            lock_text, "stay on the generate track" in lock_text),
-           (2, ["img2img"], True, True))
+    expect("R4 via the CLI: a debit landing BETWEEN the probe and the next "
+           "read is an AMBIGUOUS boundary -- refused, and LOCK names the "
+           "proof it refutes FOR GOOD rather than calling the drop external",
+           (code, [p.action for p in r4.proofs()],
+            "AMBIGUOUS BOUNDARY" in lock_text,
+            "REFUTES its proof" in lock_text,
+            "EXTERNAL DRIFT" in lock_text),
+           (2, ["img2img"], True, True, False))
     if r4.locked():
         os.remove(r4.lock_path)   # the author, after checking the account
     recorder = tp.RecordingTransport([sub(998), zipped(), sub(998)])
     code, out, err = cli_call(["run", "walk", "--action", "img2img", "--seed",
                                str(SEED)], recorder, r4)
-    expect("...LOCK deleted by hand: production img2img is STILL refused (1), "
-           "one GET, no POST",
-           (code, "REFUTED" in err, [c.method for c in recorder.calls]),
-           (2, True, ["GET"]))
+    expect("...LOCK deleted by hand: production img2img is STILL refused and "
+           "sends nothing -- on the unsigned boundary AND on the refutation",
+           (code, "AMBIGUOUS BOUNDARY" in err, "REFUTED" in err,
+            [c.method for c in recorder.calls]), (2, True, False, ["GET"]))
+    ack_code, ack_out = acknowledge(r4)
+    if r4.locked():
+        os.remove(r4.lock_path)
+    recorder = tp.RecordingTransport([sub(998), zipped(), sub(998)])
+    code, out, err = cli_call(["run", "walk", "--action", "img2img", "--seed",
+                               str(SEED)], recorder, r4)
+    expect("...and once the boundary is SIGNED the books say so on their own "
+           "lines -- and img2img still sends NOTHING: the signature cleared "
+           "the chain, not the proof, and the command said which proof "
+           "stayed refuted while it wrote the row",
+           (ack_code, "ours spent    +0 Anlas" in ack_out,
+            "theirs        -2 Anlas" in ack_out,
+            "REFUTED for good" in ack_out, code,
+            [c.method for c in recorder.calls]),
+           (0, True, True, True, 2, ["GET"]))
+    expect("...and THAT is the money escape closed: on the same ledger at "
+           "HEAD's reading, one typed figure would have re-armed img2img "
+           "while `ours` still read 0",
+           ("REFUTED" in err, guard.proof_standing(
+               r4.proofs()[0], r4.rows(), 998)[0]), (True, False))
 
     # -- a probe answered 200 with no image proves nothing, via the CLI ------
     hollow_cli = scratch_state("hollow_probe_cli")
@@ -3342,10 +4382,13 @@ try:
     lost_cli.save_blob(b"{}", "json")
     code, out, err = cli_call(["account"], tp.RecordingTransport([sub(1000)]),
                               lost_cli)
-    expect("account on a LOST ledger prints the balance and says the chain "
-           "cannot start", (code, "sum           1000" in out,
-                            "chain         CANNOT START" in out),
-           (0, True, True))
+    expect("account on a LOST ledger prints the balance, says the chain "
+           "cannot be read, and REFUSES: a status line that cannot follow "
+           "the money is not an exit 0",
+           (code, "sum           1000" in out,
+            "chain         CANNOT BE READ" in out,
+            "verdict       REFUSED" in out),
+           (2, True, True, True))
 
     # -- --character: the outfit reaches the body; an unknown one builds nothing
     code, out, err = cli_call(plan_argv + ["--character", "scout_blue_scarf"],
@@ -3360,6 +4403,22 @@ try:
             [("blue scarf" in line) for line in base_lines],
             [("blue scarf" in line) for line in frame_lines],
             "red scarf" in out), (0, True, [True], [True] * 5, False))
+    code, out, err = cli_call(plan_argv + ["--character", "wizard_girl"],
+                              None, scratch_state("plan_wizard"))
+    base_lines = [line for line in out.splitlines()
+                  if line.startswith("base caption")]
+    frame_lines = [line for line in out.splitlines()
+                   if line.startswith("frame ")]
+    expect("plan --character wizard_girl: exit 0, the name printed, 1girl and "
+           "her dress in the base caption, every frame caption opening "
+           "'girl,', and no boy word in the whole plan",
+           (code, "character     wizard_girl\n" in out,
+            [("1girl" in line and "red dress" in line) for line in base_lines],
+            [line.split(") ", 1)[-1].startswith("girl, blonde hair,")
+             for line in frame_lines],
+            sorted(set(re.findall(r"[a-z]+", out.lower()))
+                   & {"boy", "boys", "male", "man", "men"})),
+           (0, True, [True], [True] * 5, []))
     code, out, err = cli_call(plan_argv, None,
                               scratch_state("plan_default_character"))
     expect("...while plan with no --character prints scout and its red scarf",
@@ -3635,6 +4694,755 @@ try:
                "briefly held", held_state.inflight(), False)
     finally:
         os.replace, os.remove = real_replace, real_remove
+
+    # =======================================================================
+    print("\n8b. the money: which measurement a fall was, whose it was, and "
+          "the figures a reader meets when nobody has typed anything")
+    # =======================================================================
+    # A balance can fall in two places and they are NOT the same measurement.
+    # INSIDE one of our rows (its own after below its own before) the drop is
+    # ours: LOCK, refused for good, the proof refuted for good, and nothing
+    # here may soften it. BETWEEN two rows it is a BOUNDARY, and the only
+    # thing the ledger knows about it is whether the earlier row SENT
+    # anything: a `refused` row sent nothing, so the drop is EXTERNAL; a
+    # `generation` row did, so a debit the server applied after that row's
+    # own after-read (risk R4) is byte-identical to somebody else's spend,
+    # and the boundary is AMBIGUOUS and stays that way until the author
+    # records a hand check.
+    #
+    # THE FIGURES MUST TELL THE TRUTH WITH NOBODY SIGNING ANYTHING. The
+    # measured ledger this pass was written against holds 1911 Anlas of
+    # falls and printed `theirs +0` over them.
+    #
+    # Every rule below is bounded from both sides and proved red by a MUTANT
+    # COPY of the module under test. `mutant` refuses to build one unless the
+    # text it mutates appears EXACTLY ONCE in the shipped file, so a mutant
+    # that compiles at all is the sentinel that the copy is the code under
+    # test and not a stale duplicate of it.
+    MUTATIONS: list[tuple[str, str]] = []
+
+    def mutant(relpath: str, *pairs, tag: str):
+        """A COPY of `relpath` with each (old, new) applied, imported alone."""
+        path = os.path.join(_bootstrap.REPO_ROOT, relpath)
+        with io.open(path, encoding="utf-8") as handle:
+            source = handle.read()
+        for old, new in pairs:
+            if source.count(old) != 1:
+                raise AssertionError(
+                    f"mutant {tag}: {relpath} contains {old!r} "
+                    f"{source.count(old)} times, wanted exactly 1 -- the copy "
+                    f"is not the code under test")
+            source = source.replace(old, new)
+        name = f"_mutant_{tag}"
+        module = types.ModuleType(name)
+        module.__file__ = path
+        sys.modules[name] = module   # @dataclass looks its own module up
+        try:
+            exec(compile(source, f"{path} [mutant {tag}]", "exec"),
+                 module.__dict__)
+        finally:
+            sys.modules.pop(name, None)
+        return module
+
+    def goes_red(label, relpath, pairs, call, tag):
+        """`call(module)` must answer differently on the mutant: law 5's
+        other half, run on every suite pass rather than once by hand."""
+        real = call(sys.modules[relpath.replace("/", ".")[:-3]])
+        broken = call(mutant(relpath, *pairs, tag=tag))
+        MUTATIONS.append((f"{relpath} :: {pairs[0][0].strip()[:56]}",
+                          f"{real} -> {broken}"))
+        expect(label, broken != real, True)
+
+    def cli_run(argv, state, module=cli):
+        """(exit code, everything printed) for one CLI command, no network."""
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = module.main(argv, transport=None, state=state)
+        return code, out.getvalue() + err.getvalue()
+
+    DRIFT_MODEL = BODY_I2I["model"]
+
+    def row_of(ledger_id, kind, before, after,
+               *, utc="2026-09-17T12:00:00.000000Z", **fields):
+        row = dict.fromkeys(LEDGER_FIELDS)
+        row.update(
+            ledger_id=ledger_id, kind=kind, utc_time=utc,
+            account_before=Account(3, True, None, before, 0).as_row(),
+            account_after=(None if after is None
+                           else Account(3, True, None, after, 0).as_row()),
+            delta=(None if after is None else after - before), locked=False)
+        row.update(fields)
+        return row
+
+    def gen_row(ledger_id, before, after, **fields):
+        fields.setdefault("action", "img2img")
+        fields.setdefault("model", DRIFT_MODEL)
+        fields.setdefault("http_status", 200)
+        fields.setdefault("output_png_sha256", "cd" * 32)
+        return row_of(ledger_id, "generation", before, after, **fields)
+
+    def refused_row(ledger_id, balance, **fields):
+        """A row that SENT NOTHING: the guard refused after the balance read."""
+        fields.setdefault("refusal_condition", 9)
+        return row_of(ledger_id, "refused", balance, balance, **fields)
+
+    def stated(state, *rows):
+        for row in rows:
+            state.write_row(row)
+        return state
+
+    D_PROOF = Proof("img2img", DRIFT_MODEL, "1216x832", "2026-09-17", "probe")
+    PROBE = gen_row("probe", 1000, 1000, verdict="probe",
+                    utc="2026-09-17T10:00:00.000000Z")
+    CALL = gen_row("call", 1000, 1000, utc="2026-09-17T11:00:00.000000Z")
+    SEEN = refused_row("seen", 800, action="img2img", model=DRIFT_MODEL,
+                       utc="2026-09-17T13:40:41.000000Z")
+    ACK = drift_ack("ack", "call", "seen", 1000, 800)
+    CHARGED = gen_row("charged", 1000, 900, utc="2026-09-17T15:00:00.000000Z")
+    # An EXTERNAL boundary is a fall across a window in which this tool sent
+    # NOTHING: two `refused` rows, the guard having refused each one after
+    # reading the balance and before any byte left.
+    EXT1 = refused_row("ext1", 1000, utc="2026-09-17T11:00:00.000000Z")
+    EXT2 = refused_row("ext2", 800, utc="2026-09-17T13:40:41.000000Z")
+
+    # -- (a) a charge INSIDE one of our rows: ours, and nothing softens it --
+    for label, rows_in in (
+            ("with no signature in the ledger", [PROBE, CALL, CHARGED]),
+            ("with a signed boundary already in the ledger",
+             [PROBE, gen_row("g1", 1000, 1000, action="generate"),
+              refused_row("seen-g", 800),
+              drift_ack("ack-g", "g1", "seen-g", 1000, 800),
+              gen_row("charged", 800, 700)])):
+        standing, why = guard.proof_standing(D_PROOF, rows_in, None)
+        expect(f"a charge INSIDE one of our img2img rows refutes for good, "
+               f"{label}",
+               (standing, "INSIDE that row" in why, "IS CHARGED" in why),
+               (False, True, True))
+    goes_red("...proved red: drop the within-row comparison and the charge "
+             "reads as no charge at all", "tools/nai/guard.py",
+             [("        if (before is not None and after < before) or (\n"
+               "                _is_number(delta) and delta < 0):",
+               "        if False and ((before is not None and after < before) "
+               "or (\n                _is_number(delta) and delta < 0)):")],
+             lambda g: g.proof_standing(D_PROOF, [PROBE, CALL, CHARGED],
+                                        None)[0], tag="within_row_blind")
+    for label, seed_rows in (
+            ("with no signature in the ledger",
+             [row_of("old", "generation", 800, 800)]),
+            ("with a signed boundary in the ledger",
+             [gen_row("old", 1000, 1000), refused_row("seen", 800),
+              drift_ack("ack", "old", "seen", 1000, 800)])):
+        charged_state = scratch_state("within_row")
+        _t, st_c, row_c, exc_c, _p = scripted(
+            REQ_GEN, [sub(800), zipped(), sub(790)],
+            state=stated(charged_state, *seed_rows))
+        with io.open(st_c.lock_path, encoding="utf-8") as handle:
+            lock_text = handle.read()
+        expect(f"run_request still LOCKs on a charge inside its own row, "
+               f"{label}, and its LOCK says WHICH measurement that was",
+               (row_c["delta"], row_c["locked"], st_c.locked(), exc_c,
+                "OUR CHARGE, measured INSIDE" in lock_text,
+                "`acknowledge-drift` cannot touch it" in lock_text,
+                "EXTERNAL DRIFT" in lock_text),
+               (-10, True, True, None, True, True, False))
+
+    # -- (b) the classifier: what the earlier row SENT, and nothing else ----
+    external = guard.open_boundary([EXT1, EXT2])
+    ambiguous = guard.open_boundary([CALL, SEEN])
+    expect("a boundary whose earlier row SENT NOTHING is EXTERNAL; one whose "
+           "earlier row sent a request of ours is AMBIGUOUS. The ledger "
+           "knows that and nothing else about whose money it was",
+           (external.cause, external.ambiguous, external.delta,
+            ambiguous.cause, ambiguous.ambiguous, ambiguous.delta),
+           ("external", False, -200, "ambiguous", True, -200))
+    expect("...and the EXTERNAL note says what was measured and whose "
+           "judgement the rest is, never that a cause was measured",
+           ("nothing this tool sent was MEASURED as charged"
+            in guard.boundary_note(external),
+            "your judgement, not a measurement"
+            in guard.boundary_note(external),
+            "not a charge for anything this tool sent"
+            in guard.boundary_note(external)), (True, True, False))
+    expect("...and the AMBIGUOUS note says outright that the tool cannot "
+           "tell a late charge of ours from somebody else's spend",
+           ("CANNOT say whose spend this was"
+            in guard.boundary_note(ambiguous),
+            "risk R4" in guard.boundary_note(ambiguous),
+            "byte-identical" in guard.boundary_note(ambiguous)),
+           (True, True, True))
+    goes_red("...proved red: let the classifier forget what the earlier row "
+             "sent and an ambiguous boundary reads as somebody else's",
+             "tools/nai/guard.py",
+             [('    if row.get("kind") != "generation":\n        return ""',
+               '    if True:\n        return ""')],
+             lambda g: g.open_boundary([CALL, SEEN]).cause, tag="sent_blind")
+
+    # -- (c) THE MONEY ESCAPE: a provider that debits one minute late -------
+    # Five img2img rows, each with before == after == delta 0, each one's
+    # before-read 10 BELOW the previous row's after-read: the server debits
+    # after our after-read. Nothing shows a non-zero in-row delta anywhere,
+    # and the account goes 1000 -> 950 with every Anlas of it spent by this
+    # tool. The reading under review booked all 50 to THEIRS, left `ours` at
+    # 0 and re-armed img2img after five typed figures.
+    LATE_ROWS = [gen_row("r0", 1000, 1000, verdict="probe",
+                         utc="2026-09-17T16:26:04.000000Z")]
+    for index in range(1, 6):
+        LATE_ROWS.append(gen_row(f"r{index}", 1000 - 10 * index,
+                                 1000 - 10 * index,
+                                 utc=f"2026-09-17T16:2{index}:04.000000Z"))
+    LATE_PROOF = Proof("img2img", DRIFT_MODEL, "1216x832", "2026-09-17", "r0")
+    late_gaps = guard.open_boundaries(LATE_ROWS)
+    expect("an asynchronous debit lands at a boundary: five falls, every one "
+           "AMBIGUOUS, and the proof REFUTED for good -- not pending, "
+           "because the row before each fall sent a request of ours",
+           ([gap.cause for gap in late_gaps],
+            sum(gap.delta for gap in late_gaps),
+            guard.proof_standing(LATE_PROOF, LATE_ROWS, None)[0]),
+           (["ambiguous"] * 5, -50, False))
+    LATE_STATE = stated(scratch_state("late_debits"), *LATE_ROWS)
+    code, printed = cli_run(["acknowledge-drift", "--anlas", "10", "--by",
+                             "phil", "--checked", "the usage page"],
+                            LATE_STATE)
+    expect("`acknowledge-drift` REFUSES every one of them: it signs only a "
+           "boundary across which this tool sent nothing, and writes nothing",
+           (code, len(LATE_STATE.rows()), "AMBIGUOUS BOUNDARY" in printed,
+            "resolve-boundary" in printed), (2, 6, True, True))
+    for _round in range(5):
+        gap = guard.open_boundary(LATE_STATE.rows())
+        code, printed = cli_run(
+            ["resolve-boundary", "--anlas", str(-gap.delta), "--attribute",
+             "ours", "--by", "phil", "--checked",
+             "the provider usage page shows these as mine"], LATE_STATE)
+        expect_true(f"resolve-boundary signs {gap.previous_row}->"
+                    f"{gap.observed_row} at {-gap.delta} Anlas", code == 0)
+    books = guard.accounting(LATE_STATE.rows())
+    _code, printed = cli_run(["ledger", "--last", "12"], LATE_STATE)
+    expect("...and signed as OURS the 50 Anlas land on their own line, in NO "
+           "figure that says somebody else spent them, while `ours spent` "
+           "keeps saying what was MEASURED inside our rows: 0",
+           (books.ours_spent, books.ours_signed, books.theirs_signed,
+            books.unsigned, "ours by hand  -50 Anlas" in printed,
+            "theirs        +0 Anlas" in printed),
+           (0, -50, 0, 0, True, True))
+    expect("...and after all five signatures img2img is STILL refused for "
+           "good. THE ESCAPE: under the reading this pass replaced, the same "
+           "five figures re-armed it while `ours` read 0",
+           (guard.proof_standing(LATE_PROOF, LATE_STATE.rows(), None)[0],
+            [v.ok for v in guard.evaluate(
+                BODY_I2I, Account(3, True, None, 950, 0), (LATE_PROOF,),
+                LATE_STATE, url=GENERATE_URL) if v.condition in (1, 9)]),
+           (False, [False, True]))
+    goes_red("...proved red: let the proof read the chain's allowance and "
+             "one signature re-arms the action whose cost is the question",
+             "tools/nai/guard.py",
+             [("        if next_before < probe_after:\n"
+               "            return late(probe_row, next_before, probe_after)\n"
+               "        if next_before != probe_after:",
+               "        allowed = expected_next_read(rows, probe_row, "
+               "after_row, probe_after, next_before)\n"
+               "        if next_before < allowed:\n"
+               "            return late(probe_row, next_before, probe_after)\n"
+               "        if next_before != allowed:"),
+              ("        if following is not None and following < after:",
+               "        if following is not None and following < "
+               "expected_next_read(rows, row, following_row, after, "
+               "following):")],
+             lambda g: g.proof_standing(LATE_PROOF, LATE_STATE.rows(),
+                                        None)[0], tag="proof_reads_allowance")
+
+    # -- (d) the books with NOBODY signing anything -------------------------
+    UNSIGNED = [gen_row("u1", 1000, 1000), refused_row("u2", 800),
+                gen_row("u3", 800, 800), refused_row("u4", 700)]
+    books = guard.accounting(UNSIGNED)
+    UNSIGNED_STATE = stated(scratch_state("unsigned_books"), *UNSIGNED)
+    _code, printed = cli_run(["ledger", "--last", "10"], UNSIGNED_STATE)
+    expect("300 Anlas have left the account and nobody has typed a command: "
+           "`unsigned` says so, names both boundaries, and is in NO other "
+           "figure. This is the line whose absence made the books read "
+           "`theirs +0` over 1911 Anlas of real falls",
+           (books.unsigned, len(books.open_boundaries), books.theirs_signed,
+            books.ours_spent, "UNSIGNED      -300 Anlas across 2" in printed,
+            "u1->u2 (-200" in printed and "u3->u4 (-100" in printed),
+           (-300, 2, 0, 0, True, True))
+    expect("...and the per-row listing marks each fall WHERE it happened, "
+           "rather than leaving two balances to be compared by eye",
+           (printed.count("left the account here, UNSIGNED"),
+            "200 Anlas left the account here, UNSIGNED (AMBIGUOUS: 1000 -> "
+            "800)" in printed), (2, True))
+    goes_red("...proved red: report only the first boundary and the figure a "
+             "reader carries away is short", "tools/nai/guard.py",
+             [("    return tuple(filter(None, (_boundary(rows, links[index], "
+               "links[index + 1])\n                               for index "
+               "in range(len(links) - 1))))",
+               "    return tuple(filter(None, (_boundary(rows, links[index], "
+               "links[index + 1])\n                               for index "
+               "in range(len(links) - 1))))[:1]")],
+             lambda g: g.accounting(UNSIGNED).unsigned, tag="first_gap_only")
+    SIGNED_ONE = UNSIGNED + [drift_ack("s1", "u1", "u2", 1000, 800)]
+    books = guard.accounting(SIGNED_ONE)
+    expect("...signing one of them moves exactly that one out of `unsigned` "
+           "and into `theirs`; the other is untouched",
+           (books.unsigned, books.theirs_signed,
+            [gap.previous_row for gap in books.open_boundaries]),
+           (-100, -200, ["u3"]))
+
+    # -- (e) OURS is never netted, in either direction ----------------------
+    NETTED = [gen_row("refilled", 1000, 1500), gen_row("spent", 1500, 1000)]
+    books = guard.accounting(NETTED)
+    NET_STATE = stated(scratch_state("netted"), *NETTED)
+    _code, printed = cli_run(["ledger", "--last", "4"], NET_STATE)
+    expect("a refill that landed INSIDE one row can never cancel a charge "
+           "measured INSIDE another: 500 spent and 500 refilled are two "
+           "figures, and the tool says it was charged 500",
+           (books.ours_spent, books.ours_refilled, books.refilled_rows,
+            "ours spent    -500 Anlas" in printed,
+            "ours refilled +500 Anlas" in printed,
+            "ours spent    +0" in printed),
+           (-500, 500, ("refilled",), True, True, False))
+    expect("...and the words beside the figure state the same sign "
+           "convention the arithmetic uses: after-read minus before-read",
+           ("each row's OWN after-read minus its own before-read" in printed,
+            "before-read minus its own after-read" in printed), (True, False))
+    goes_red("...proved red: net the two directions into one figure and a "
+             "charge of 500 reports as nothing at all", "tools/nai/guard.py",
+             [("        if after < before:\n            spent += after - "
+               "before\n        elif after > before:",
+               "        if after != before:\n            spent += after - "
+               "before\n        elif False:")],
+             lambda g: g.accounting(NETTED).ours_spent, tag="ours_netted")
+    goes_red("...proved red: invert the printed sign convention and the "
+             "sentence disagrees with the number beside it", "tools/nai/cli.py",
+             [('f"after-read minus its own before-read, so a charge shows '
+               'negative. "', 'f"before-read minus its own after-read. "')],
+             lambda c: "after-read minus its own before-read" in cli_run(
+                 ["ledger", "--last", "4"], NET_STATE, module=c)[1],
+             tag="sign_words_inverted")
+
+    # -- (f) no figure is ever added to another -----------------------------
+    MIXED = stated(scratch_state("mixed_books"),
+                   gen_row("a", 20000, 19993, action="generate"),
+                   gen_row("call", 19993, 19993),
+                   refused_row("seen", 18247),
+                   drift_ack("ack2", "call", "seen", 19993, 18247))
+    _code, printed = cli_run(["ledger", "--last", "4"], MIXED)
+    expect("`ledger` prints every figure and NEVER their sum: -7 and -1746 "
+           "are both there, -1753 is nowhere",
+           ("ours spent    -7 Anlas" in printed,
+            "theirs        -1746 Anlas" in printed, "1753" in printed),
+           (True, True, False))
+    goes_red("...proved red: add one total line and the sum appears",
+             "tools/nai/cli.py",
+             [("    if books.unmeasured:",
+               '    lines.append(f"total {books.ours_spent + '
+               'books.theirs_signed}")\n    if books.unmeasured:')],
+             lambda c: "1753" in cli_run(["ledger", "--last", "4"],
+                                         MIXED, module=c)[1],
+             tag="summed_total")
+    expect("...and the drift row is listed as an accounting entry -- the "
+           "boundary it signs, as whose, by whom, on what check -- not as a "
+           "request with every column blank",
+           ("between call and seen" in printed, "as theirs" in printed,
+            "by phil" in printed, "checked the usage page" in printed,
+            "seed -" in printed.split("ack2")[1].split("\n")[0]),
+           (True, True, True, True, False))
+
+    # -- (g) one boundary, one signature ------------------------------------
+    TWICE = [CALL, SEEN, ACK, drift_ack("ack-again", "call", "seen", 1000, 800)]
+    expect_raises("two signatures at ONE boundary are refused outright, both "
+                  "rows named: the alternative is `theirs` counting the same "
+                  "money twice", ValueError,
+                  lambda: guard.accounting(TWICE),
+                  "are signed TWICE", "'ack'", "'ack-again'")
+    goes_red("...proved red: let the second one through and theirs doubles",
+             "tools/nai/guard.py",
+             [("            if (earlier.previous_row, earlier.observed_row) "
+               "== (\n                    signature.previous_row, "
+               "signature.observed_row):",
+               "            if False and (earlier.previous_row, "
+               "earlier.observed_row) == (\n                    "
+               "signature.previous_row, signature.observed_row):")],
+             lambda g: str(outcome(lambda: g.accounting(TWICE).theirs_signed)),
+             tag="double_signature")
+    RACE = stated(scratch_state("race"), EXT1, EXT2)
+    stale = guard.open_boundary(RACE.rows())
+    code_a, _out_a = cli_run(["acknowledge-drift", "--anlas", "200", "--by",
+                              "phil", "--checked", "the usage page"], RACE)
+    code_b, out_b = cli_run(["acknowledge-drift", "--anlas",
+                             str(-stale.delta), "--by", "phil", "--checked",
+                             "the usage page"], RACE)
+    expect("...and the CLI cannot make one: the second process re-reads the "
+           "ledger inside its own hold and finds the boundary gone",
+           (code_a, code_b, len(RACE.rows()),
+            "nothing to sign" in out_b or "changed while" in out_b),
+           (0, 2, 3, True))
+    HELD = stated(scratch_state("held_inflight"), EXT1, EXT2)
+    HELD.acquire_inflight("some-other-process", 800)
+    code, printed = cli_run(["acknowledge-drift", "--anlas", "200", "--by",
+                             "phil", "--checked", "the usage page"], HELD)
+    expect("a signature is refused while INFLIGHT says a request of ours is "
+           "in the air: that is the tool's own statement that this is NOT a "
+           "window in which nothing of ours was outstanding",
+           (code, len(HELD.rows()), "INFLIGHT is present" in printed,
+            "some-other-process" in printed), (2, 2, True, True))
+    HELD.release_inflight("some-other-process")
+    STRAY = [EXT1, EXT2, drift_ack("stray", "nowhere", "elsewhere", 1000, 800)]
+    expect_raises("a signature naming a boundary that is not two rows side "
+                  "by side is refused, not counted in full while the real "
+                  "gap stays open", ValueError,
+                  lambda: guard.accounting(STRAY),
+                  "are not two rows side by side")
+
+    # -- (h) the boundary nobody can blame is answerable, never terminal ----
+    LOST = [gen_row("lost", 1000, None, locked=True, http_status=None,
+                    output_png_sha256=None),
+            refused_row("after-lost", 900)]
+    gap = guard.open_boundary(LOST)
+    expect("a fall after a row whose own after-read FAILED is AMBIGUOUS, not "
+           "a raise: it is read, classified and reported, because a raise "
+           "from a function every command calls bricks an append-only "
+           "ledger for good",
+           (gap.cause, gap.high, gap.low, "after-read failed" in gap.why,
+            "resolve-boundary" in guard.boundary_note(gap)),
+           ("ambiguous", 1000, 900, True, True))
+    LOST_STATE = stated(scratch_state("lost_after"), *LOST)
+    code, printed = cli_run(["resolve-boundary", "--anlas", "100",
+                             "--attribute", "ours", "--by", "phil",
+                             "--checked", "the usage page, by hand"],
+                            LOST_STATE)
+    expect("...and the command the message names really clears it: the "
+           "ledger is usable again, and the 100 is on the books as ours by "
+           "hand rather than quietly gone",
+           (code, guard.open_boundary(LOST_STATE.rows()),
+            guard.accounting(LOST_STATE.rows()).ours_signed,
+            guard.accounting(LOST_STATE.rows()).unmeasured),
+           (0, None, -100, ("lost",)))
+    _t, _st, _row, exc, pattern = scripted(
+        REQ_GEN, [sub(900), zipped(), sub(900)], state=LOST_STATE)
+    expect("...and a run goes through afterwards: before this, the only exit "
+           "from that ledger was hand-editing a money file",
+           (exc, pattern), (None, [GET, POST, GET]))
+    goes_red("...proved red: raise on the unclassifiable boundary again and "
+             "the ledger is a dead end", "tools/nai/guard.py",
+             [('        why = (f"the balance after ledger row '
+               '{earlier.get(\'ledger_id\')} was "',
+               '        raise ValueError("check the account by hand")\n'
+               '        why = (f"the balance after ledger row '
+               '{earlier.get(\'ledger_id\')} was "')],
+             lambda g: str(outcome(lambda: g.open_boundary(LOST)))[:40],
+             tag="lost_after_raises")
+    expect("...and a row whose after-read failed is counted in NO figure, "
+           "and the EXTERNAL wording never claims every row of ours measured "
+           "both sides of itself",
+           ("every row of ours measured the balance on both sides"
+            in guard.boundary_note(external),
+            "listed separately" in guard.boundary_note(external)),
+           (False, True))
+
+    # -- (i) the refusal names the drop THIS call saw, with its own figure --
+    OLD_GAP = stated(scratch_state("old_gap"),
+                     gen_row("old-a", 10000, 10000,
+                             utc="2026-09-17T09:00:00.000000Z"),
+                     refused_row("old-b", 8000,
+                                 utc="2026-09-17T12:00:00.000000Z"),
+                     gen_row("new-a", 8000, 8000,
+                             utc="2026-09-17T12:30:00.000000Z"))
+    _t, _st, _row, exc, pattern = scripted(REQ_GEN, [sub(7990)],
+                                           state=OLD_GAP)
+    message = str(exc)
+    expect("a call that sees 8000 -> 7990 is told about THAT, first, with "
+           "the 10 it saw -- and the older 2000 gap is listed after it. The "
+           "live LOCK this pass was written against blamed a drop from three "
+           "hours earlier and printed its figure instead",
+           (getattr(exc, "condition", None),
+            message.index("8000 -> 7990")
+            < message.index("old-a->old-b (-2000)"),
+            "(10 Anlas)" in message, "1 OTHER unsigned boundary" in message,
+            "-2000 Anlas in all" in message),
+           (9, True, True, True, True))
+    expect("...and the command it prints for the drop just seen names the "
+           "row that recorded it, so it can actually be typed",
+           (f"--observed {_st.rows()[-1]['ledger_id']}" in message,
+            "not yet a ledger row" in message), (True, False))
+    goes_red("...proved red: report the oldest open gap first and the "
+             "author is pointed at the wrong event with the wrong figure",
+             "tools/nai/run.py",
+             [("    if this_read:\n        gaps.insert(0, live_boundary(",
+               "    if this_read and False:\n        gaps.insert(0, "
+               "live_boundary(")],
+             lambda r: str(outcome(lambda: r._chain_note(
+                 OLD_GAP, 8000, 7990,
+                 row_of("pending", "refused", 7990, 7990),
+                 guard.open_boundaries(OLD_GAP.rows()), "charged")))[:90],
+             tag="oldest_gap_first")
+    if OLD_GAP.locked():
+        os.remove(OLD_GAP.lock_path)
+
+    # -- (j) the sibling routes: account, plan and the run route agree ------
+    SIB = stated(scratch_state("sibling_account"),
+                 gen_row("s-lost", 1000, None, locked=True, http_status=None,
+                         output_png_sha256=None))
+    def account_run(state, balance, module=cli):
+        """`account` against a scripted balance read, no socket."""
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            code = module.main(["account"], state=state,
+                               transport=tp.RecordingTransport([sub(balance)]))
+        return code, out.getvalue()
+
+    code, printed = account_run(SIB, 900)
+    expect("`account` classifies with the SAME function the run route uses: "
+           "over a ledger whose last row's after-read failed it says "
+           "AMBIGUOUS, and never that nothing this tool sent was charged",
+           (code, "AMBIGUOUS BOUNDARY" in printed,
+            "Nothing this tool sent was charged" in printed,
+            "EXTERNAL DRIFT" in printed), (2, True, False, False))
+    expect("...and its last line is a WHOLE-STATE verdict, so a reassuring "
+           "word never sits on the same screen as an open boundary",
+           ("verdict       REFUSED" in printed,
+            "free tier     usable" in printed), (True, False))
+    goes_red("...proved red: hard-code the chain sentence again and the "
+             "account route states a cause the run route refuses to state",
+             "tools/nai/cli.py",
+             [('            gaps.insert(0, guard.live_boundary(rows, '
+               'previous, account.sum))',
+               '            gaps.insert(0, guard.live_boundary(rows, '
+               'previous, account.sum));'
+               ' _out("Nothing this tool sent was charged")')],
+             lambda c: "Nothing this tool sent was charged"
+             in account_run(SIB, 900, module=c)[1], tag="account_hardcoded")
+    PLAN_STATE = stated(scratch_state("plan_drift"), CALL, SEEN)
+    code, printed = cli_run(["plan", "walk", "--action", "generate",
+                             "--seed", str(SEED)], PLAN_STATE)
+    expect("`plan` is offline and open_drift is pure, so a plan over books "
+           "with money missing says so and REFUSES: it used to print "
+           "'every offline condition passes' over a certain refusal",
+           (code, " 9 [FAIL]" in printed,
+            "every offline condition passes" in printed,
+            "AMBIGUOUS BOUNDARY" in printed), (2, True, False, True))
+    goes_red("...proved red: skip the ledger half offline and plan gives a "
+             "clean bill over an open boundary", "tools/nai/guard.py",
+             [("    if gaps:\n        return Verdict(9, False, "
+               "boundaries_note(gaps, this_read=False))",
+               "    if gaps and False:\n        return Verdict(9, False, "
+               "boundaries_note(gaps, this_read=False))")],
+             lambda g: [v.ok for v in g.evaluate(
+                 BODY_GEN, None, (), PLAN_STATE, url=GENERATE_URL)
+                 if v.condition == 9], tag="plan_blind_offline")
+
+    # -- (k) what the signing command prints --------------------------------
+    SIGN = stated(scratch_state("sign_output"), PROBE, CALL, SEEN)
+    SIGN.add_proof(D_PROOF)
+    code, printed = cli_run(["resolve-boundary", "--anlas", "200",
+                             "--attribute", "theirs", "--by", "phil",
+                             "--checked",
+                             "the provider usage page, and my friend said so",
+                             "--note", "a friend, on the shared account"],
+                            SIGN)
+    row = SIGN.rows()[-1]
+    expect("a signing command writes ONE row carrying everything a reader "
+           "needs a month later: both balances, the delta, the two ids, who "
+           "signed, as whose, and what he checked",
+           (code, row["kind"], row["delta"], row["account_before"]["sum"],
+            row["account_after"]["sum"], row["drift_previous_row"],
+            row["drift_observed_row"], row["drift_acknowledged_by"],
+            row["drift_attribution"], row["drift_checked"] is not None),
+           (0, "drift", -200, 1000, 800, "call", "seen", "phil", "theirs",
+            True))
+    expect("...and it SAYS what it did not do: the proof it could not "
+           "restore is printed with its standing beside it",
+           ("re-baselined" in printed, "proof         img2img" in printed,
+            "REFUTED for good" in printed,
+            "never measures an action free" in printed),
+           (True, True, True, True))
+    expect("...and signing did not move that proof, which is the whole rule",
+           guard.proof_standing(D_PROOF, SIGN.rows(), None)[0], False)
+    TWO_OPEN = stated(scratch_state("two_open"), EXT1, EXT2,
+                      refused_row("more", 800), refused_row("seen3", 750))
+    code, printed = cli_run(["acknowledge-drift", "--anlas", "200", "--by",
+                             "phil", "--checked", "the usage page"], TWO_OPEN)
+    expect("...and STILL OPEN is a figure and a boundary, never a bare "
+           "window: the second gap is named, priced and given its command",
+           (code, "STILL OPEN" in printed, "(50 Anlas)" in printed,
+            "more" in printed.split("STILL OPEN")[1]), (0, True, True, True))
+    LOCKED_SIGN = stated(scratch_state("sign_locked"), EXT1, EXT2)
+    LOCKED_SIGN.lock("seen", "check_nai fixture")
+    _code, locked_out = cli_run(["acknowledge-drift", "--anlas", "200",
+                                 "--by", "phil", "--checked",
+                                 "the usage page"], LOCKED_SIGN)
+    expect("signing NEVER deletes LOCK: one that could would be able to "
+           "clear the LOCK a charge measured INSIDE one of our rows wrote",
+           (LOCKED_SIGN.locked(), "never deletes it" in locked_out),
+           (True, True))
+    expect("a figure that is not the one measured is refused, and writes "
+           "nothing",
+           cli_run(["acknowledge-drift", "--anlas", "199", "--by", "phil",
+                    "--checked", "the usage page"],
+                   stated(scratch_state("wrong_figure"), EXT1, EXT2))[0], 2)
+    expect("a signature with nothing recorded about what was checked is "
+           "refused by the parser, before the ledger is read at all",
+           cli_run(["acknowledge-drift", "--anlas", "200", "--by", "phil",
+                    "--checked", "  "],
+                   stated(scratch_state("unchecked"), EXT1, EXT2))[0], 2)
+    CHARGE_ONLY = stated(scratch_state("charge_not_boundary"), PROBE, CALL,
+                         CHARGED, gen_row("next", 900, 900))
+    code, printed = cli_run(["acknowledge-drift", "--anlas", "100", "--by",
+                             "phil", "--checked", "the usage page"],
+                            CHARGE_ONLY)
+    expect("a charge INSIDE a row shows at NO boundary, so there is nothing "
+           "for a signature to attach to: the command says exactly that and "
+           "writes nothing",
+           (code, len(CHARGE_ONLY.rows()), "nothing to sign" in printed,
+            "INSIDE one of our own rows is not signed here" in printed),
+           (2, 4, True, True))
+
+    # -- (l) the messages print commands that work --------------------------
+    LIVE = stated(scratch_state("live_read"), PROBE)
+    standing, why = guard.proof_standing(D_PROOF, LIVE.rows(), 900)
+    expect("a live read below the probe refutes it and prints NO timestamp "
+           "it does not have -- the second half of that window is not a row",
+           (standing, "None" in why, "risk R4" in why), (False, False, True))
+    live = guard.live_boundary(LIVE.rows(), 1000, 900)
+    note = guard.boundary_note(live)
+    expect("...and a boundary whose later side is a live read prints no "
+           "command at all: nothing can sign a read that is not written "
+           "down, and a printed command that exits 2 is worse than none",
+           ("not yet a ledger row" in note, "--anlas 100" in note,
+            "-> None" in live.window), (True, False, False))
+    printed_command = [word for word in
+                       guard.boundary_note(external).split("`")
+                       if word.startswith("python -m tools.nai")]
+    head, _sep, _quoted = printed_command[0].partition("--checked")
+    argv = head.split()[3:] + ["--checked", "the provider usage page"]
+    argv[argv.index("NAME")] = "phil"
+    code, _printed = cli_run(argv, stated(scratch_state("printed_command"),
+                                          EXT1, EXT2))
+    expect("...and the command an EXTERNAL note prints is one that runs: "
+           "typed exactly as printed (with a name) it exits 0",
+           (code, argv[0]), (0, "acknowledge-drift"))
+
+    # -- (m) _refuted_note walks the chain, never the raw rows --------------
+    # the proof stands over these rows -- the fall is behind a GENERATE row,
+    # and the boundary it left is signed -- so the new row is what refutes it
+    NOTE_STATE = stated(scratch_state("refuted_note"), PROBE, CALL,
+                        gen_row("g-mid", 1000, 1000, action="generate"),
+                        refused_row("seen-n", 800),
+                        drift_ack("sig-last", "g-mid", "seen-n", 1000, 800))
+    NOTE_STATE.add_proof(D_PROOF)
+    note = run._refuted_note(NOTE_STATE, gen_row("fresh", 800, 750))
+    expect("the LOCK text names the last row that SENT something, never a "
+           "signature annotation sitting at the end of the ledger",
+           ("sig-last" in note, "seen-n" in note, "REFUTES its proof" in note),
+           (False, True, True))
+    goes_red("...proved red: read rows[-1] positionally and the text calls "
+             "an annotation 'a later img2img call'", "tools/nai/run.py",
+             [("    links = chain_rows(rows)\n    last_id = "
+               "links[-1].get(\"ledger_id\") if links else None",
+               "    last_id = rows[-1].get(\"ledger_id\") if rows else None")],
+             lambda r: "sig-last" in r._refuted_note(
+                 NOTE_STATE, gen_row("fresh", 800, 750)),
+             tag="refuted_note_positional")
+    expect("...and it names the proof as REFUTED FOR GOOD, which is what the "
+           "author reads before deciding about money",
+           guard.proof_standing(D_PROOF, NOTE_STATE.rows(), None)[0], True)
+
+    # -- (n) a drift row is a drift row, and nothing else -------------------
+    SHAPE = scratch_state("drift_shape")
+    expect_raises("a drift row carrying an action is refused: the whitelist "
+                  "keeps it from ever reading as a generation", ValueError,
+                  lambda: SHAPE.write_row(dict(ACK, action="img2img",
+                                               model=DRIFT_MODEL)),
+                  "a drift row fills only", "also fills ['action', 'model']")
+    for masquerade, named in (({"verdict": "probe"}, "['verdict']"),
+                              ({"http_status": 200}, "['http_status']"),
+                              ({"output_png_sha256": "ab" * 32},
+                               "['output_png_sha256']"),
+                              ({"strip": "walk", "sprite_sha256": "ab" * 32},
+                               "['sprite_sha256', 'strip']"),
+                              ({"locked": True}, "['locked']")):
+        expect_raises(f"...nor one carrying {sorted(masquerade)}", ValueError,
+                      lambda m=masquerade: SHAPE.write_row(dict(ACK, **m)),
+                      "a drift row fills only", named)
+    expect_raises("...nor one that does not say WHOSE the money was",
+                  ValueError,
+                  lambda: SHAPE.write_row(dict(ACK, drift_attribution="maybe")),
+                  "not one of ('theirs', 'ours')")
+    expect_raises("...nor one with nothing recorded about what was checked",
+                  ValueError,
+                  lambda: SHAPE.write_row(dict(ACK, drift_checked=None)),
+                  "its drift_checked is None")
+    expect_raises("a GENERATION row that fills a drift field is refused too "
+                  "-- the other half of the same rule", ValueError,
+                  lambda: SHAPE.write_row(dict(CALL, drift_previous_row="x")),
+                  "may not fill ['drift_previous_row']")
+    expect("a drift row proves nothing: probe_row_problem reads its kind "
+           "first, so it is never a probe and never becomes a proof",
+           guard.probe_row_problem(ACK).startswith(
+               "it is not a img2img/infill probe row (kind 'drift'"), True)
+    STRAY_ROW = drift_ack("stray", "elsewhere", "elsewhere2", 900, 800)
+    expect("a drift row sitting where the row after a probe would be is "
+           "STEPPED OVER, not read as that row's balance",
+           guard.proof_standing(D_PROOF, [PROBE, STRAY_ROW, CALL], None)[0],
+           True)
+    goes_red("...proved red: let the chain keep drift rows and an annotation "
+             "becomes the read that judges the probe", "tools/nai/guard.py",
+             [('    return [row for row in rows if row.get("kind") != '
+               'DRIFT_KIND]', "    return list(rows)")],
+             lambda g: g.proof_standing(D_PROOF, [PROBE, STRAY_ROW, CALL],
+                                        None)[0], tag="chain_keeps_drift")
+    goes_red("...proved red: drop the whitelist and a drift row can be "
+             "written wearing an action", "tools/nai/model.py",
+             [("    filled = sorted(key for key, value in row.items()",
+               "    filled = [] and sorted(key for key, value in row.items()")],
+             lambda m: m.drift_row_problem(dict(ACK, action="img2img")),
+             tag="whitelist_off")
+
+    # -- (o) one signature covers ONE boundary, exactly ---------------------
+    LATER_GAP = [PROBE, CALL, SEEN, gen_row("after", 800, 800),
+                 refused_row("seen2", 600), ACK]
+    later_gap = guard.open_boundary(LATER_GAP)
+    expect("a signature does not cover a LATER drop, not even one of the "
+           "same size: that boundary is open on its own",
+           (later_gap.previous_row, later_gap.observed_row, later_gap.delta),
+           ("after", "seen2", -200))
+    BIGGER = [PROBE, CALL, refused_row("seen", 700), ACK]  # ACK names call->seen
+    bigger = guard.open_boundary(BIGGER)
+    expect("...and it does not cover a LARGER drop at its own boundary: the "
+           "residual 100 stays open, measured from the re-baselined 800",
+           (bigger.high, bigger.low, bigger.delta), (800, 700, -100))
+    goes_red("...proved red: let the expected read follow the balance down "
+             "and the residual disappears", "tools/nai/guard.py",
+             [("    return high + allowed\n",
+               "    return high + allowed if low is None else "
+               "min(high + allowed, low)\n")],
+             lambda g: g.open_boundary(BIGGER), tag="residual_absorbed")
+    goes_red("...proved red: an allowance not keyed on ITS OWN boundary "
+             "stops telling the gaps apart", "tools/nai/guard.py",
+             [("               if signature.previous_row == previous_row\n"
+               "               and signature.observed_row == observed_row)",
+               "               if True or (signature.previous_row == "
+               "previous_row\n               and signature.observed_row == "
+               "observed_row))")],
+             lambda g: str(outcome(lambda: g.open_boundary(LATER_GAP)))[:40],
+             tag="allowance_global")
+    FORGED = [PROBE, CALL, CHARGED,
+              drift_ack("forge", "call", "charged", 1000, 900)]
+    expect("a signature forged onto the boundary in FRONT of a charged row "
+           "cannot absorb it: that boundary never fell, so it is refused",
+           (guard.proof_standing(D_PROOF, FORGED, None)[0],
+            str(outcome(lambda: guard.open_boundary(FORGED)))[:68]),
+           (False, "ValueError: ledger rows 'call' -> 'charged' are signed "
+                   "for 100 Anlas"))
+    goes_red("...proved red: let a signature exceed the drop it records and "
+             "the forgery is allowed for", "tools/nai/guard.py",
+             [("    if allowed < 0 and low is not None and "
+               "low > high + allowed:", "    if False:")],
+             lambda g: str(outcome(lambda: g.open_boundary(FORGED)))[:30],
+             tag="allowance_unbounded")
+
+    print("\n  mutation table -- each mutant compiled from the shipped file, "
+          "its mutated text found there exactly once:")
+    for where, shift in MUTATIONS:
+        print(f"    {where:<74} {shift}")
 
 finally:
     shutil.rmtree(SCRATCH, ignore_errors=True)

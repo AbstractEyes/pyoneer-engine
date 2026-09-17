@@ -8,11 +8,17 @@ COMMANDS
 --------
 account                     GET the subscription once; print tier, active,
                             grace, fixed, purchased, sum, the chain verdict
-                            against the ledger, LOCK / INFLIGHT presence.
-                            Writes NOTHING (no row, no LOCK). Exit 0 when
-                            tier 3, active and not in grace, else 2.
+                            against the ledger, EVERY open boundary in full
+                            (the same classifier and the same wording the run
+                            route refuses with), every accounting figure, and
+                            LOCK / INFLIGHT presence. The last line is a
+                            WHOLE-STATE verdict, not the tier alone. Writes
+                            NOTHING (no row, no LOCK). Exit 0 only when the
+                            tier is free-usable AND nothing is outstanding;
+                            2 otherwise.
 render <recipe> [--character NAME] [--out PNG]
-                            mannequin.render_init in the character's colours;
+                            mannequin.render_init in the character's colours
+                            and garments;
                             write the init PNG (default
                             <state>/renders/<character>_<recipe>_init.png, so
                             two characters never share a file); print the
@@ -83,7 +89,40 @@ pixelize PNG --recipe R [--character NAME] [--palette PNG] [--ledger-id ID]
 ledger [--last N]           Print the last N rows (default 10), one line
                             each: ledger id, kind, action, model, seed, HTTP
                             status, sum before -> after, delta, locked,
-                            refusal condition, verdict. No network.
+                            refusal condition, verdict -- a `drift` row in
+                            its own shape (the boundary it signs, as whose,
+                            by whom) and a marker line wherever the balance
+                            fell BETWEEN two rows -- then every accounting
+                            figure, which are never added together. No
+                            network.
+acknowledge-drift --anlas N --by NAME --checked TEXT [--previous ID]
+                  [--observed ID] [--note TEXT]
+                            Sign ONE EXTERNAL boundary: a fall the ledger
+                            shows between one row's after-read and the next
+                            row's before-read, where the earlier row SENT
+                            NOTHING, so no request of ours can have caused
+                            it. --anlas must be exactly the figure measured
+                            and --checked says what was looked at, because
+                            calling a drop somebody else's is a judgement,
+                            not a measurement. Appends one `drift` row and
+                            prints every figure, every still-open boundary
+                            and each proof's standing. That row re-baselines
+                            THAT ONE BOUNDARY for the chain; it NEVER
+                            restores a proof, never deletes LOCK, and can
+                            never reach a charge measured INSIDE one of our
+                            own rows. Exit 0 when a row was written, 2
+                            otherwise. No network.
+resolve-boundary --anlas N --attribute theirs|ours --by NAME --checked TEXT
+                 [--previous ID] [--observed ID] [--note TEXT]
+                            The louder verb, for an AMBIGUOUS boundary: the
+                            earlier row SENT a request of ours, so a debit
+                            the server applied after that row's own
+                            after-read (risk R4) and somebody else's spend
+                            are byte-identical here. Records the author's
+                            hand check and WHICH SIDE he attributes it to;
+                            `ours` is counted on its own line as his
+                            judgement, never as a measurement. Same
+                            guarantees, same exits.
 
 INVARIANTS
 ----------
@@ -140,14 +179,16 @@ import json
 import os
 import secrets
 import sys
+from datetime import datetime, timezone
 from typing import Callable, Sequence
 
 from tools.nai import (characters, guard, mannequin, masks, post, recipes,
                        request, run)
 from tools.nai import transport as nai_transport
-from tools.nai.model import (GENERATE_URL, INPAINT_STRENGTH_KEY,
-                             PROBE_MAX_ANLAS, SEED_MAX, SEED_MIN, OPUS_TIER,
-                             DEFAULT_COLOURS, VARIANTS)
+from tools.nai.model import (DRIFT_ATTRIBUTIONS, DRIFT_KIND, GENERATE_URL,
+                             INPAINT_STRENGTH_KEY,
+                             LEDGER_FIELDS, PROBE_MAX_ANLAS, SEED_MAX,
+                             SEED_MIN, OPUS_TIER, DEFAULT_COLOURS, VARIANTS)
 from tools.nai.state import (REPO_ROOT, RENDERS_DIR, SPRITES_DIR,
                              STATE_SUBPATH, State, main_checkout, scrub_text)
 from tools.nai.transport import Transport
@@ -203,6 +244,38 @@ def _character_option(p: argparse.ArgumentParser) -> None:
                    default=characters.DEFAULT_CHARACTER,
                    help=f"a character file stem under tools/nai/characters/ "
                         f"(default {characters.DEFAULT_CHARACTER})")
+
+
+def _acknowledged_by(value: str) -> str:
+    """A name an acknowledgement is signed with: 1-64 printable ASCII.
+
+    An acknowledgement nobody signed is an acknowledgement nobody can ask
+    about later, so the argparse type refuses it (exit 2) before the ledger
+    is read.
+    """
+    text = value.strip()
+    if not text or len(text) > 64 or not all(32 <= ord(c) < 127 for c in text):
+        raise argparse.ArgumentTypeError(
+            f"--by takes 1-64 printable ASCII characters naming who is "
+            f"recording this drop, got {value!r}")
+    return text
+
+
+def _checked_text(value: str) -> str:
+    """What the author says he checked: 3-400 printable ASCII characters.
+
+    Refused by argparse (exit 2) before the ledger is read, like `--by`. A
+    boundary is signed on a judgement, so the judgement is recorded with it;
+    "it is theirs" with nothing behind it is what this argument exists to
+    stop being the only outcome on offer.
+    """
+    text = " ".join(value.split())
+    if not (3 <= len(text) <= 400) or not all(32 <= ord(c) < 127
+                                              for c in text):
+        raise argparse.ArgumentTypeError(
+            f"--checked takes 3-400 printable ASCII characters saying what "
+            f"you checked before signing, got {value!r}")
+    return text
 
 
 def _ledger_options(p: argparse.ArgumentParser) -> None:
@@ -286,9 +359,52 @@ def build_parser() -> argparse.ArgumentParser:
                    help="lever P8")
     p.add_argument("--out", default=None)
 
-    p = command("ledger", help="print the last ledger rows")
+    p = command("ledger", help="print the last ledger rows and the two "
+                                "accounting figures")
     p.add_argument("--last", type=int, default=10)
+
+    p = command("acknowledge-drift",
+                help="sign an EXTERNAL boundary: a fall across a window in "
+                     "which this tool sent nothing")
+    _signing_options(p, checked="what you checked before calling this drop "
+                                "somebody else's -- the provider's own usage "
+                                "page, who else uses the account")
+
+    p = command("resolve-boundary",
+                help="record a hand check at an AMBIGUOUS boundary, where a "
+                     "request of ours could be the cause")
+    _signing_options(p, checked="what you checked by hand: the provider's "
+                                "own usage page, the other person, the "
+                                "timestamps")
+    p.add_argument("--attribute", choices=DRIFT_ATTRIBUTIONS, required=True,
+                   help="whose the money was, as you found it: `theirs` or "
+                        "`ours` (a charge of ours that landed late). Neither "
+                        "restores a refuted proof")
     return parser
+
+
+def _signing_options(p: argparse.ArgumentParser, *, checked: str) -> None:
+    """The options both signing verbs take, declared ONCE.
+
+    `--checked` is required on both: a signature is the author's judgement
+    about a shared account, and a figure with nobody's reasoning beside it
+    is exactly what a reader cannot use a month later.
+    """
+    p.add_argument("--anlas", type=int, required=True,
+                   help="the exact number of Anlas that fell; a figure that "
+                        "is not the measured one is refused")
+    p.add_argument("--by", type=_acknowledged_by, required=True,
+                   metavar="NAME", help="who is signing this boundary")
+    p.add_argument("--checked", type=_checked_text, required=True,
+                   metavar="TEXT", help=checked)
+    p.add_argument("--previous", default=None, metavar="LEDGER_ID",
+                   help="the ledger id on the earlier side of the boundary; "
+                        "without it, the oldest open boundary this verb may "
+                        "sign")
+    p.add_argument("--observed", default=None, metavar="LEDGER_ID",
+                   help="the ledger id on the later side of the boundary")
+    p.add_argument("--note", default=None,
+                   help="anything else worth recording, in ASCII")
 
 
 # ---------------------------------------------------------------------------
@@ -448,37 +564,78 @@ def _cmd_account(args, transport, state: State) -> int:
     _out(f"fixed         {account.fixed}")
     _out(f"purchased     {account.purchased}")
     _out(f"sum           {account.sum}")
+    problems: list[str] = []
+    gaps: list = []
+    unreadable = None
     try:
+        rows = state.rows()
+        gaps = list(guard.open_boundaries(rows))
         previous = state.last_balance()
     except ValueError as exc:
-        _out(f"chain         CANNOT START: {exc}")
+        unreadable = scrub_text(exc)
+        problems.append("the balance chain cannot be read")
+        _out(f"chain         CANNOT BE READ: {unreadable}")
     else:
         verdict = guard.chain_verdict(previous, account.sum)
+        if verdict == "charged":
+            # THE SAME CLASSIFIER THE RUN ROUTE USES. This line used to
+            # state, as fact, that nothing this tool sent was charged --
+            # including in the one case guard refuses to classify -- and to
+            # advise signing our own possible charge off as somebody else's.
+            gaps.insert(0, guard.live_boundary(rows, previous, account.sum))
         meaning = {
             "first": "empty ledger, nothing to compare",
             "ok": "equals the last ledger row",
             "refill": "above the last ledger row (a refill)",
-            "charged": "BELOW the last ledger row: the next run will write "
-                       "LOCK",
+            "charged": "BELOW the last ledger row -- see the boundary below",
         }[verdict]
+        if verdict != "charged" and gaps:
+            meaning += (", but the chain BELOW it is broken: see the "
+                        "boundaries below")
         _out(f"chain         {verdict}: last row {_fmt(previous)}, now "
              f"{account.sum} -- {meaning}")
+    if unreadable is None:
+        _out("boundaries    " + ("none open" if not gaps else
+                                 f"{len(gaps)} OPEN, "
+                                 f"{sum(g.delta for g in gaps):+d} Anlas"))
+        for gap in gaps:
+            problems.append(f"{gap.previous_row}->{gap.observed_row} unsigned")
+            _out(f"              {guard.boundary_note(gap)}")
+    try:
+        for line in _accounting_lines(state):
+            _out(line)
+    except ValueError as exc:
+        problems.append("the books cannot be read")
+        _out(f"accounting    CANNOT BE READ: {scrub_text(exc)}")
     _out(f"LOCK          {'PRESENT ' + state.lock_path if state.locked() else 'absent'}")
     _out(f"INFLIGHT      {'PRESENT ' + state.inflight_path if state.inflight() else 'absent'}")
     free = (account.tier == OPUS_TIER and account.active is True
             and account.grace is not True)
-    _out("free tier     " + ("usable" if free else
-                             "NOT usable: needs tier 3, active, not in grace"))
-    return EXIT_OK if free else EXIT_REFUSED
+    if not free:
+        problems.append("the tier is not free-usable (needs tier 3, active, "
+                        "not in grace)")
+    if state.locked():
+        problems.append("LOCK present")
+    if state.inflight():
+        problems.append("INFLIGHT present")
+    # THE LAST LINE IS THE WHOLE STATE, not the tier alone: "free tier
+    # usable" used to read as the bottom line while LOCK, an unsigned
+    # boundary and an unreadable chain sat on the same screen.
+    _out("verdict       " + ("free tier usable, nothing outstanding"
+                             if not problems else
+                             f"REFUSED: {'; '.join(problems)}"))
+    return EXIT_OK if free and not problems else EXIT_REFUSED
 
 
 def _cmd_render(args, transport, state: State) -> int:
     recipe = recipes.get_recipe(args.recipe, args.character)
     colours = recipe.identity.as_dict()
+    garments = recipe.identity.garments
     out = args.out or os.path.join(state.root, RENDERS_DIR,
                                    f"{args.character}_{recipe.name}_init.png")
     assert_untracked_output(out)
-    png, centers = mannequin.render_init(recipe.layout, recipe.poses, colours)
+    png, centers = mannequin.render_init(recipe.layout, recipe.poses, colours,
+                                         garments=garments)
     if args.out is None:
         state.subdir(RENDERS_DIR)
     _write_all([(out, png)])
@@ -489,8 +646,9 @@ def _cmd_render(args, transport, state: State) -> int:
          f"k={layout.k}, {layout.count} frames")
     for i, center in enumerate(centers):
         _out(f"frame {i}       center {center}")
-    _out(f"params sha256 "
-         f"{mannequin.params_sha256(layout, recipe.poses, colours)}")
+    params = mannequin.params_sha256(layout, recipe.poses, colours,
+                                     garments=garments)
+    _out(f"params sha256 {params}")
     _out(f"png sha256    {hashlib.sha256(png).hexdigest()}")
     return EXIT_OK
 
@@ -534,8 +692,13 @@ def _cmd_plan(args, transport, state: State) -> int:
         title = guard.CONDITION_TITLES.get(verdict.condition, "")
         if verdict.condition not in guard.OFFLINE_CONDITIONS:
             mark = "needs the live account read"
-        elif verdict.ok is None and verdict.condition == 1:
-            mark = "needs the live account read"   # a proof pending its read
+        elif verdict.ok is None:
+            # condition 1 with a proof pending its read, or condition 9 with
+            # its ledger half clean and only the live balance missing. A
+            # condition 9 that FAILS offline -- an unsigned boundary already
+            # in the ledger -- falls through to FAIL below, so `plan` can
+            # never report a clean bill over books with money missing.
+            mark = "needs the live account read"
         elif verdict.ok is True:
             mark = "ok"
         else:
@@ -666,7 +829,8 @@ def _cmd_pixelize(args, transport, state: State) -> int:
         hashlib.sha256(png).hexdigest()[:12])
     assert_untracked_output(out_dir)
     _, centers = mannequin.render_init(recipe.layout, recipe.poses,
-                                       recipe.identity.as_dict())
+                                       recipe.identity.as_dict(),
+                                       garments=recipe.identity.garments)
     result = post.pixelize(
         png, recipe.layout, centers=centers, ground=recipe.ground,
         hold_arc=recipe.hold_arc, palette_png=palette, colours=args.colours,
@@ -710,14 +874,299 @@ def _cmd_pixelize(args, transport, state: State) -> int:
     return EXIT_OK if validation["ok"] else EXIT_REJECTED
 
 
+def _accounting_lines(state: State) -> list[str]:
+    """Every accounting figure, one per line, NEVER added together.
+
+    Each command that summarises the ledger prints these same lines from
+    this one function, so a reader sees the same words wherever he looks and
+    a mutation of it turns every route red.
+
+    THE LINE THAT HAD TO EXIST is `unsigned`: money the ledger MEASURED
+    leaving the account at a boundary nobody has signed for. Without it the
+    default state of these books was "nothing left the account" until the
+    author typed a command -- on a real ledger, `theirs +0` printed directly
+    under seventeen rows across which 1911 Anlas had gone. The spent and
+    refilled halves of OURS are separate for the same reason: netting them
+    lets a refill inside one row cancel a charge measured inside another.
+    """
+    books = guard.accounting(state.rows())
+    lines = [
+        f"ours spent    {books.ours_spent:+d} Anlas across "
+        f"{books.rows_counted} rows this tool wrote -- each row's OWN "
+        f"after-read minus its own before-read, so a charge shows negative. "
+        f"THIS is what the tool has been measured to cost.",
+        f"ours refilled {books.ours_refilled:+d} Anlas that arrived INSIDE "
+        f"one of our own rows"
+        + (f" ({', '.join(books.refilled_rows)})" if books.refilled_rows
+           else "")
+        + " -- never netted against what was spent.",
+        f"theirs        {books.theirs_signed:+d} Anlas across "
+        f"{books.signatures_counted} signature(s), the part recorded by hand "
+        f"as SOMEBODY ELSE'S on a shared account. A judgement, not a "
+        f"measurement.",
+    ]
+    if books.ours_signed:
+        lines.append(f"ours by hand  {books.ours_signed:+d} Anlas signed at "
+                     f"an AMBIGUOUS boundary as a late charge of ours, from "
+                     f"a hand check rather than a measurement.")
+    if books.unsigned:
+        listed = ", ".join(f"{gap.previous_row}->{gap.observed_row} "
+                           f"({gap.delta:+d}{', AMBIGUOUS' if gap.ambiguous else ''})"
+                           for gap in books.open_boundaries)
+        lines.append(f"UNSIGNED      {books.unsigned:+d} Anlas across "
+                     f"{len(books.open_boundaries)} boundary(ies) NOT in any "
+                     f"figure above: {listed}. This money HAS left the "
+                     f"account. Sign each one -- acknowledge-drift for an "
+                     f"external boundary, resolve-boundary for an ambiguous "
+                     f"one.")
+    if books.unmeasured:
+        lines.append(f"unmeasured    {len(books.unmeasured)} row(s) whose "
+                     f"after-read failed, counted in NO figure above: "
+                     f"{', '.join(books.unmeasured)}")
+    return lines
+
+
+def _sign_boundary(args, state: State, *, external: bool) -> int:
+    """`acknowledge-drift` and `resolve-boundary`: ONE implementation.
+
+    The two verbs differ in exactly three things -- which class of boundary
+    they may sign, what `drift_attribution` they write, and how loud they
+    are -- so everything else is here and neither can grow its own copy of
+    the rule (CLAUDE.md's sibling-route warning).
+
+    THE SEQUENCE, in this order, because it is money:
+      * refuse while INFLIGHT exists. A signature is a claim about a window
+        in which nothing of ours was outstanding, and INFLIGHT is this
+        tool's own statement that something is.
+      * hold INFLIGHT ourselves across the read and the write, so two
+        processes cannot both read the ledger before either appends and sign
+        one boundary twice; re-read the ledger inside the hold and refuse if
+        the boundary or the figure moved.
+      * refuse an --anlas that is not the figure measured, and refuse a
+        boundary of the wrong class for this verb.
+      * write ONE `drift` row, then print the books, every still-open
+        boundary IN FULL, and what the signature did NOT do.
+
+    It never deletes LOCK -- a signature that could would be able to clear
+    the LOCK a charge measured INSIDE one of our own rows wrote -- and it
+    never restores a proof: `guard.proof_standing` reads no allowance, and
+    the command prints each proof's standing before and after so the author
+    can see that for himself.
+    """
+    verb = "acknowledge-drift" if external else "resolve-boundary"
+    if state.inflight():
+        _err(f"refused: INFLIGHT is present under {state.root} "
+             f"({state.inflight_detail()}). A request of ours is recorded as "
+             f"outstanding, so this is not a window in which nothing of ours "
+             f"was in the air, and signing it now could book our own charge "
+             f"to somebody else. Finish or resolve that request first.")
+        return EXIT_REFUSED
+
+    def chosen(rows):
+        """The boundary this command is about, or (None, message)."""
+        gaps = guard.open_boundaries(rows)
+        if not gaps:
+            return None, ("nothing to sign: no unsigned fall between two "
+                          "ledger rows.")
+        if args.previous is None and args.observed is None:
+            wanted = [gap for gap in gaps if gap.ambiguous != external]
+            if not wanted:
+                return None, (f"nothing for {verb} to sign: every open "
+                              f"boundary is "
+                              f"{'ambiguous' if external else 'external'}. "
+                              f"{guard.boundaries_note(gaps)}")
+            return wanted[0], ""
+        wanted = [gap for gap in gaps
+                  if (args.previous in (None, gap.previous_row)
+                      and args.observed in (None, gap.observed_row))]
+        if not wanted:
+            return None, (f"no open boundary matches --previous "
+                          f"{args.previous!r} --observed {args.observed!r}. "
+                          f"{guard.boundaries_note(gaps)}")
+        return wanted[0], ""
+
+    rows = state.rows()
+    gap, why = chosen(rows)
+    if gap is None:
+        _err(f"refused: {why}")
+        _out("A charge measured INSIDE one of our own rows is not signed "
+             "here: read LOCK, check the account by hand.")
+        return EXIT_REFUSED
+    if gap.ambiguous == external:
+        _err(f"refused: {guard.boundary_note(gap)}")
+        return EXIT_REFUSED
+    if args.anlas != -gap.delta:
+        _err(f"refused: --anlas {args.anlas} is not the {-gap.delta} Anlas "
+             f"that fell: {gap.describe}. Type the figure you are signing "
+             f"for; one signature covers one boundary, exactly.")
+        return EXIT_REFUSED
+
+    before_standing = _proof_standing(state)
+    holder = f"{verb}-{state.new_ledger_id()}"
+    try:
+        state.acquire_inflight(holder, gap.low)
+    except guard.Refused as exc:
+        _err(f"refused: {exc.message} Another process may be signing this "
+             f"same boundary; nothing was written.")
+        return EXIT_REFUSED
+    try:
+        fresh = state.rows()
+        again, _why = chosen(fresh)
+        if again != gap:
+            _err(f"refused: the ledger changed while this command was "
+                 f"reading it -- the boundary is now "
+                 f"{'nothing' if again is None else again.describe}, not "
+                 f"{gap.describe}. Nothing was written; run {verb} again.")
+            return EXIT_REFUSED
+        row = dict.fromkeys(LEDGER_FIELDS)
+        row.update({
+            "ledger_id": state.new_ledger_id(),
+            "kind": DRIFT_KIND,
+            "utc_time": datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%S.%fZ"),
+            "account_before": {"sum": gap.high},
+            "account_after": {"sum": gap.low},
+            "delta": gap.delta,
+            "reason": scrub_text(args.note) if args.note else None,
+            "drift_previous_row": gap.previous_row,
+            "drift_observed_row": gap.observed_row,
+            "drift_acknowledged_by": scrub_text(args.by),
+            "drift_attribution": "theirs" if external else args.attribute,
+            "drift_checked": scrub_text(args.checked),
+        })
+        state.write_row(row)
+    finally:
+        state.release_inflight(holder)
+    _out(f"recorded      {row['ledger_id']}")
+    _out(f"boundary      {gap.describe}")
+    _out(f"as            {row['drift_attribution']}"
+         + ("" if external else " -- your judgement at an AMBIGUOUS "
+                               "boundary, not a measurement"))
+    _out(f"by            {row['drift_acknowledged_by']}")
+    _out(f"checked       {row['drift_checked']}")
+    if row["reason"]:
+        _out(f"note          {row['reason']}")
+    for line in _accounting_lines(state):
+        _out(line)
+    still = guard.open_boundaries(state.rows())
+    _out("chain         " + ("re-baselined: this boundary no longer refuses"
+                             if not still else
+                             f"STILL OPEN: {guard.boundaries_note(still)}"))
+    for line in _proof_lines(before_standing, _proof_standing(state)):
+        _out(line)
+    _out("LOCK          " + (f"PRESENT {state.lock_path} -- this command "
+                             f"never deletes it. Read it, check the account, "
+                             f"then delete it by hand." if state.locked()
+                             else "absent"))
+    return EXIT_OK
+
+
+def _proof_standing(state: State) -> dict:
+    """{(action, model): guard.proof_standing's ok} over the ledger as it is.
+
+    Read either side of a signature so the command can SAY whether signing
+    moved a proof. It must not: `guard.proof_standing` reads no allowance,
+    so a signature can never re-arm img2img, and printing the two sides is
+    how the author sees that rather than being told it.
+    """
+    try:
+        rows, proofs = state.rows(), state.proofs()
+    except ValueError:
+        return {}
+    return {(proof.action, proof.model): guard.proof_standing(proof, rows,
+                                                              None)[0]
+            for proof in proofs}
+
+
+def _proof_lines(before: dict, after: dict) -> list[str]:
+    """One line per proof, saying whether the signature moved it. It cannot."""
+    lines = []
+    for pair, was in before.items():
+        now = after.get(pair)
+        action, model = pair
+        word = {True: "stands", False: "REFUTED for good",
+                None: "pending the next balance read"}
+        lines.append(f"proof         {action} ({model}): {word[now]}"
+                     + ("" if now == was else
+                        f" -- it was {word[was]} before this row; a signature "
+                        f"must never move a proof, so this is a defect"))
+    if lines:
+        lines.append("              A signature records WHOSE money left a "
+                     "shared account. It never measures an action free: a "
+                     "refuted proof is re-measured by removing it from "
+                     "proofs.json by hand and probing again.")
+    return lines
+
+
+def _cmd_acknowledge_drift(args, transport, state: State) -> int:
+    """Sign an EXTERNAL boundary as somebody else's. See `_sign_boundary`."""
+    return _sign_boundary(args, state, external=True)
+
+
+def _cmd_resolve_boundary(args, transport, state: State) -> int:
+    """Record a hand check at an AMBIGUOUS boundary. See `_sign_boundary`.
+
+    The louder verb, and deliberately harder to type: at an ambiguous
+    boundary a request of ours went out, so a debit the server applied late
+    (risk R4) and somebody else's spend are byte-identical in this ledger.
+    `--attribute` makes the author say which he found, after `--checked`
+    makes him say what he looked at.
+    """
+    return _sign_boundary(args, state, external=False)
+
+
 def _cmd_ledger(args, transport, state: State) -> int:
     rows = state.rows()
     if not rows:
         _out(f"ledger is empty: {state.ledger_path}")
+        for line in _accounting_lines(state):
+            _out(line)
         return EXIT_OK
-    for row in state.last_rows(args.last):
+    try:
+        signed = {(s.previous_row, s.observed_row): s
+                  for s in guard.signatures(rows)}
+        open_gaps = {(g.previous_row, g.observed_row): g
+                     for g in guard.open_boundaries(rows)}
+    except ValueError as exc:
+        signed, open_gaps = {}, {}
+        _out(f"boundaries    CANNOT BE READ: {scrub_text(exc)}")
+    shown = state.last_rows(args.last)
+    previous_link = None
+    for row in shown:
+        if row.get("kind") == DRIFT_KIND:
+            # A SIGNATURE IS NOT A REQUEST, so it does not wear a request's
+            # columns: the row a reader must be able to reconstruct the day
+            # from is the boundary, as whose, by whom, on what check.
+            _out("  ".join((
+                _fmt(row.get("ledger_id")), "drift",
+                f"{_sum_of(row.get('account_before'))} -> "
+                f"{_sum_of(row.get('account_after'))}",
+                f"{_fmt(row.get('delta'))}",
+                f"between {_fmt(row.get('drift_previous_row'))} and "
+                f"{_fmt(row.get('drift_observed_row'))}",
+                f"as {_fmt(row.get('drift_attribution'))}",
+                f"by {_fmt(row.get('drift_acknowledged_by'))}",
+                f"checked {_fmt(row.get('drift_checked'))}",
+            )) + (f"  note {row['reason']}" if row.get("reason") else ""))
+            continue
         before = _sum_of(row.get("account_before"))
         after = _sum_of(row.get("account_after"))
+        key = (None if previous_link is None
+               else (str(previous_link.get("ledger_id")),
+                     str(row.get("ledger_id"))))
+        # THE GAP IS MARKED WHERE IT HAPPENED. Fourteen lines of an
+        # unchanged balance followed by a lower one said nothing about the
+        # money that left between them.
+        if key in open_gaps:
+            gap = open_gaps[key]
+            _out(f"  -- {-gap.delta} Anlas left the account here, UNSIGNED "
+                 f"({'AMBIGUOUS' if gap.ambiguous else 'external'}: "
+                 f"{gap.high} -> {gap.low}) --")
+        elif key in signed:
+            sign = signed[key]
+            _out(f"  -- {-sign.delta} Anlas left the account here, signed as "
+                 f"{sign.attribution} by {sign.by} (row {sign.ledger_id}) --")
+        previous_link = row
         _out("  ".join((
             _fmt(row.get("ledger_id")),
             _fmt(row.get("kind")),
@@ -731,6 +1180,8 @@ def _cmd_ledger(args, transport, state: State) -> int:
             f"refused {_fmt(row.get('refusal_condition'))}",
             f"verdict {_fmt(row.get('verdict'))}",
         )))
+    for line in _accounting_lines(state):
+        _out(line)
     return EXIT_OK
 
 
@@ -743,6 +1194,8 @@ _COMMANDS: dict[str, Callable[..., int]] = {
     "probe": _cmd_probe,
     "pixelize": _cmd_pixelize,
     "ledger": _cmd_ledger,
+    "acknowledge-drift": _cmd_acknowledge_drift,
+    "resolve-boundary": _cmd_resolve_boundary,
 }
 
 

@@ -54,7 +54,10 @@ Under `data/nai/` in the MAIN checkout of the repository, which is gitignored
 and must stay so; every git worktree of it resolves the same directory
 (`state.default_root`), so one LOCK guards the account:
 
-    data/nai/ledger.jsonl    append-only, one row per attempt (model.LEDGER_FIELDS)
+    data/nai/ledger.jsonl    append-only, one row per attempt, plus a `drift`
+                             row per SIGNED boundary -- one the author
+                             acknowledged as external, or resolved by hand
+                             (model.LEDGER_FIELDS, model.ROW_KINDS)
     data/nai/proofs.json     the (action, model) pairs measured free
     data/nai/LOCK            present = refuse everything (author deletes it)
     data/nai/INFLIGHT        present = a request is in flight (or crashed)

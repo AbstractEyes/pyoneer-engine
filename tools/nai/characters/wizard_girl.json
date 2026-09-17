@@ -1,0 +1,21 @@
+{
+  "subject": "girl",
+  "tags": "blonde hair, wizard hat, purple headwear, red dress, purple cape, cape, high heels, blue footwear",
+  "anchor": "blonde hair, wizard hat, red dress, purple cape, blue footwear",
+  "garments": {
+    "hat": "wizard",
+    "cape": true,
+    "neck": "none",
+    "legwear": "dress",
+    "footwear": "heels"
+  },
+  "colours": {
+    "skin": "#E8B48C",
+    "hair": "#E8C85A",
+    "belt": "#5A3A1E",
+    "dress": "#C83232",
+    "heels": "#1E5AF0",
+    "cape": "#8C3CC8",
+    "hat": "#5A28A0"
+  }
+}

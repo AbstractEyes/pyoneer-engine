@@ -54,30 +54,47 @@ INVARIANTS
   (risk R4). `proof_standing` accepts a proof only when the balance read that
   FOLLOWS the probe -- the next ledger row's account_before, or, while there
   is none, the read being judged -- equals the probe's account_after. Any
-  other value refutes it for good (a refill can hide a charge), and a proof
-  naming no probe row of its own pair in the ledger counts for nothing.
-* A LATER CHARGE REFUTES IT TOO. Every `generation` row of the proof's
-  (action, model) after its probe is scanned: a balance that fell across it,
-  a balance after it that was never read, or a balance lower at the read
-  that follows it (a late debit) refutes the proof for good. A confirmed
-  proof is evidence about the account at the time of the probe, not a
-  licence the account's own later answer cannot withdraw.
+  other value refutes it for good (a fall is R4's own shape, and a rise can
+  hide a charge), and a proof naming no probe row of its own pair in the
+  ledger counts for nothing.
+* A LATER FALL REFUTES IT TOO. Every `generation` row of the proof's
+  (action, model) after its probe is scanned. A balance that fell INSIDE one
+  of them (its own after below its own before) refutes the proof for good:
+  that row's two reads bracket one request of ours and nothing else, so the
+  charge is ours. A balance after it that was never read refutes it too. And
+  a fall in the read that FOLLOWS one of those rows refutes it for good as
+  well -- that request went out, so R4's late debit and somebody else's
+  spend are byte-identical there, and the unsafe reading is the one that
+  counts. A confirmed proof is evidence about the account at the time of the
+  probe, not a licence the account's own later answer cannot withdraw.
+* NO SIGNATURE REACHES A PROOF. `proof_standing` reads no allowance at all:
+  `acknowledge-drift` and `resolve-boundary` re-baseline the CHAIN, so the
+  author can keep working, and can never re-arm img2img. The one way back is
+  to remove the proof by hand and probe again.
+* THE TWO MEASUREMENTS ARE NEVER MIXED. See the block above `Boundary`:
+  within a row is OURS and LOCKs for good; between two rows is a boundary,
+  EXTERNAL only when the earlier row sent nothing and AMBIGUOUS whenever a
+  request of ours could be its cause, refused until it is signed and then
+  recorded on its own line. `accounting` reports every figure separately --
+  measured, signed and unsigned -- and adds none of them together.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Mapping, Sequence
 
 from tools.nai.model import (ACTION_BODY_KEYS, ACTIONS, ALLOWED_ENDPOINTS,
-                             DIM_MULTIPLE, IMG2IMG_KEY, INFILL_FULL_REPAINT,
+                             CHAIN_KINDS, DIM_MULTIPLE, DRIFT_KIND,
+                             IMG2IMG_KEY, INFILL_FULL_REPAINT,
                              INPAINT_STRENGTH_KEY, MAX_AREA, MAX_FRAMES,
                              MAX_STEPS, MIN_DIM, MODELS_BY_ACTION, N_SAMPLES,
                              NEVER_SEND_KEYS, NEVER_SEND_PREFIXES, OPUS_TIER,
                              PROBE_STEPS, PROBE_STRENGTH, PROOF_ACTIONS,
                              QUALITY_TAIL, TOKEN_BUDGET, TOKENS_PER_WORD,
                              UC_PRESET_NONE, Account, Proof, Request,
-                             model_for, on_grid)
+                             drift_row_problem, model_for, on_grid)
 
 if TYPE_CHECKING:  # state imports Refused from here; no runtime cycle
     from tools.nai.state import State
@@ -92,14 +109,18 @@ CONDITION_TITLES: Mapping[int, str] = {
     6: "1..6 frames, centers on the grid and distinct, arrays parallel",
     7: "ASCII captions, token budget, rating:general closes the base caption",
     8: "account is Opus (tier 3), active, not in grace period",
-    9: "balance chain unbroken: before == previous after, or a refill",
+    9: "balance chain unbroken: no UNSIGNED fall between our rows, and "
+       "before == previous after, or a refill",
     10: "no LOCK file and no INFLIGHT file",
     11: "endpoint is POST https://image.novelai.net/ai/generate-image",
     12: "one generation request per process (run.run_request latch)",
 }
 
-OFFLINE_CONDITIONS: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 10, 11)
-"""What `plan` can judge with no network: everything but 8 and 9."""
+OFFLINE_CONDITIONS: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 9, 10, 11)
+"""What `plan` can judge with no network. Condition 9 is here for its LEDGER
+half: an unsigned boundary already written down is a refusal a plan can see
+coming. Only its live half -- the balance now -- needs the network, so a plan
+over a clean ledger still reports 9 as ok=None, and 8 always is."""
 
 
 class Refused(Exception):
@@ -153,6 +174,536 @@ def _row_sum(row: Mapping[str, object], key: str) -> int | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# TWO KINDS OF MONEY MOVEMENT, AND THEY ARE NEVER THE SAME MEASUREMENT
+# ---------------------------------------------------------------------------
+# WITHIN A ROW: account_after.sum < account_before.sum. That row's OWN two
+# reads bracket ONE request this tool sent, so the drop is OURS. It writes
+# LOCK, refuses everything after it, and refutes that action's proof for
+# good. Nothing below can absorb, clear or excuse it -- the comparison is
+# inside one row, so no signature can reach it.
+#
+# BETWEEN TWO ROWS: one row's account_after.sum, then the NEXT row's
+# account_before.sum, lower. NO ROW OF OURS LIES BETWEEN THOSE TWO READS --
+# which is NOT the same claim as "nothing of ours was charged there". A
+# provider may debit asynchronously, and a charge the server applied after
+# the earlier row's own after-read (risk R4) lands at exactly this boundary,
+# byte-identical to somebody else's spend. So a fallen boundary is
+# CLASSIFIED, never assumed:
+#
+#   EXTERNAL   the earlier row SENT NOTHING -- a `refused` row, written
+#              after the balance was read and before any byte left. No
+#              request of ours was outstanding across that window, so the
+#              drop cannot be a late charge of ours. `acknowledge-drift`
+#              signs it, and the author still records what he checked.
+#   AMBIGUOUS  the earlier row is a `generation`: a request of ours went out
+#              (or may have -- an interrupted POST is recorded the same
+#              way), or that row's own after-read failed. A late charge for
+#              THAT request and a friend's spend cannot be told apart from
+#              this ledger. `acknowledge-drift` refuses it; the louder
+#              `resolve-boundary` records the author's own hand check and
+#              WHICH SIDE he attributes it to, and that attribution is
+#              reported as his judgement, never as a measurement.
+#
+# A signature re-baselines exactly the ONE boundary it names, for the chain
+# `chain_verdict` walks. IT NEVER RESTORES A PROOF: `proof_standing` reads
+# no allowance at all, so no signature can re-arm img2img -- the R4 rule
+# this engine has always stated stands (see `model.Proof`).
+
+_UTC_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+EXTERNAL = "external"
+AMBIGUOUS = "ambiguous"
+LIVE_ROW = "(this balance read, not yet a ledger row)"
+
+
+@dataclass(frozen=True)
+class Boundary:
+    """One fall between two balance reads, and WHY it is classed as it is.
+
+    `high` is the balance the earlier read left the chain at (a signature's
+    allowance already applied), `low` the one the later read saw. `delta` is
+    negative. `cause` is EXTERNAL or AMBIGUOUS and `why` says, in words,
+    what makes it ambiguous ("" when it is not). `live` marks the one case
+    that is not yet a pair of rows: a balance read this process just took,
+    which nothing can sign until a row records it.
+    """
+    previous_row: str
+    observed_row: str
+    high: int
+    low: int
+    cause: str = EXTERNAL
+    why: str = ""
+    previous_time: str | None = None
+    observed_time: str | None = None
+    live: bool = False
+
+    @property
+    def delta(self) -> int:
+        """low - high: NEGATIVE. Never added to anything a row measured."""
+        return self.low - self.high
+
+    @property
+    def ambiguous(self) -> bool:
+        """Whether a request of ours could be the cause of this fall."""
+        return self.cause == AMBIGUOUS
+
+    @property
+    def window(self) -> str:
+        """The reads' timestamps and the time between them, in words.
+
+        ONLY THE TIMESTAMPS THERE ARE. The elapsed time needs both; one
+        timestamp is quoted alone; none at all says so. Nothing is guessed,
+        and an absent timestamp is never printed as "None".
+        """
+        start_text, end_text = self.previous_time, self.observed_time
+        if start_text and end_text:
+            try:
+                start = datetime.strptime(start_text, _UTC_FORMAT)
+                end = datetime.strptime(end_text, _UTC_FORMAT)
+            except ValueError:
+                return f"{start_text} -> {end_text}"
+            seconds = int((end - start).total_seconds())
+            sign = "-" if seconds < 0 else ""
+            seconds = abs(seconds)
+            return (f"{start_text} -> {end_text}, {sign}{seconds // 3600}h "
+                    f"{seconds % 3600 // 60}m {seconds % 60}s apart")
+        if start_text:
+            return f"the earlier read was at {start_text}"
+        if end_text:
+            return f"the later read was at {end_text}"
+        return "neither read carries a timestamp"
+
+    @property
+    def describe(self) -> str:
+        """The ONE phrase every route prints for this boundary.
+
+        `cli._cmd_account`'s list, `acknowledge-drift`'s STILL OPEN line and
+        every refusal print THIS, so two routes cannot describe one drop in
+        two ways, and no route can print a bare window as a verdict.
+        """
+        return (f"{self.high} -> {self.low} ({-self.delta} Anlas) between "
+                f"ledger row {self.previous_row} and "
+                f"{'' if self.live else 'ledger row '}{self.observed_row} "
+                f"({self.window})")
+
+
+def chain_rows(rows: Sequence[Mapping[str, object]]) -> list:
+    """`rows` without the signature annotations: the links in the chain.
+
+    A `drift` row measured nothing; it says what happened between two rows
+    that did. Everything that walks the chain positionally -- the previous
+    balance, the row after a probe, the read that follows a later call --
+    walks THIS list, so an annotation can never be taken for the next
+    request. Pure.
+    """
+    return [row for row in rows if row.get("kind") != DRIFT_KIND]
+
+
+@dataclass(frozen=True)
+class Signature:
+    """One `drift` row: what the author recorded at ONE boundary, as whose.
+
+    `attribution` is "theirs" (somebody else's spend) or "ours" (a charge of
+    ours that landed late, recorded by hand at an AMBIGUOUS boundary).
+    `checked` is what he says he checked. `delta` is negative.
+    """
+    previous_row: str
+    observed_row: str
+    high: int
+    low: int
+    attribution: str
+    by: str
+    checked: str
+    ledger_id: str
+
+    @property
+    def delta(self) -> int:
+        return self.low - self.high
+
+
+def signatures(rows: Sequence[Mapping[str, object]]) -> tuple:
+    """Every signature in `rows`, in file order.
+
+    ValueError, naming the row, for a `drift` row `model.drift_row_problem`
+    rejects: a money row this cannot read is never treated as absent. And
+    ValueError naming BOTH rows when two of them sign the SAME boundary --
+    one gap takes exactly one signature, and two would count the same money
+    twice and re-baseline the chain twice. Pure.
+    """
+    out: list = []
+    for row in rows:
+        if row.get("kind") != DRIFT_KIND:
+            continue
+        problem = drift_row_problem(row)
+        if problem is not None:
+            raise ValueError(f"ledger row {row.get('ledger_id')!r} says it "
+                             f"records a boundary, but {problem}")
+        signature = Signature(
+            previous_row=str(row["drift_previous_row"]),
+            observed_row=str(row["drift_observed_row"]),
+            high=_row_sum(row, "account_before"),
+            low=_row_sum(row, "account_after"),
+            attribution=str(row["drift_attribution"]),
+            by=str(row["drift_acknowledged_by"]),
+            checked=str(row["drift_checked"]),
+            ledger_id=str(row.get("ledger_id")))
+        for earlier in out:
+            if (earlier.previous_row, earlier.observed_row) == (
+                    signature.previous_row, signature.observed_row):
+                raise ValueError(
+                    f"ledger rows {signature.previous_row!r} -> "
+                    f"{signature.observed_row!r} are signed TWICE, by ledger "
+                    f"row {earlier.ledger_id!r} and by ledger row "
+                    f"{signature.ledger_id!r}: one boundary takes exactly one "
+                    f"signature, and two would count the same money twice. "
+                    f"Neither command writes a second one, so this file was "
+                    f"edited by hand: take one of the two rows back out")
+        out.append(signature)
+    return tuple(out)
+
+
+def signed_allowance(rows: Sequence[Mapping[str, object]],
+                     previous_row: object, observed_row: object) -> int:
+    """How much is signed for at EXACTLY this boundary; 0 or below.
+
+    Keyed on BOTH ledger ids, so a signature covers the one gap it names and
+    no other one, earlier or later. Either id None -- a live read, which no
+    row can sit inside -- answers 0. READ BY THE CHAIN ONLY:
+    `proof_standing` never calls this, so no signature can restore a proof.
+    Pure.
+    """
+    if previous_row is None or observed_row is None:
+        return 0
+    return sum(signature.delta for signature in signatures(rows)
+               if signature.previous_row == previous_row
+               and signature.observed_row == observed_row)
+
+
+def expected_next_read(rows: Sequence[Mapping[str, object]],
+                       earlier: Mapping[str, object],
+                       later: "Mapping[str, object] | None",
+                       high: int, low: "int | None") -> int:
+    """What the read after `earlier` must show, a signature at THIS boundary
+    allowed.
+
+    `high` is the balance `earlier` left, `low` the one that followed it.
+    THE ONE PLACE a signature is allowed to move a comparison, and the chain
+    is its only caller.
+
+    ValueError when MORE is signed for at this boundary than ever fell
+    across it: a signature can only ever record a drop that happened, and a
+    comparison this cannot justify is never waved through (law 7). `later`
+    None means the live read, which no row sits inside, so the allowance is
+    0 and this answers `high`.
+    """
+    allowed = signed_allowance(
+        rows, earlier.get("ledger_id"),
+        None if later is None else later.get("ledger_id"))
+    if allowed < 0 and low is not None and low > high + allowed:
+        raise ValueError(
+            f"ledger rows {earlier.get('ledger_id')!r} -> "
+            f"{None if later is None else later.get('ledger_id')!r} "
+            f"are signed for {-allowed} Anlas of external drift, but the "
+            f"balance only went {high} -> {low} across them: a signature can "
+            f"never exceed the drop it records")
+    return high + allowed
+
+
+def _sent(row: Mapping[str, object]) -> str:
+    """What `row` put on the wire, in words; "" when it sent nothing.
+
+    A `refused` row sent nothing: the guard refused it after the balance was
+    read and before any byte left. A `generation` row sent, or may have --
+    an interrupted POST is recorded with no status and could still have
+    reached the server, so it counts as sent here. THIS IS THE ONE TEST that
+    decides EXTERNAL from AMBIGUOUS, on both the written and the live
+    boundary, so a mutation of it turns both red.
+    """
+    if row.get("kind") != "generation":
+        return ""
+    status = row.get("http_status")
+    what = f"a {row.get('action')} of {row.get('model')}"
+    if _is_int(status):
+        return f"{what} that reached the server (HTTP {status})"
+    return (f"{what} whose response never arrived, so whether it reached the "
+            f"server at all is unknown")
+
+
+def _boundary(rows: Sequence[Mapping[str, object]],
+              earlier: Mapping[str, object],
+              later: Mapping[str, object]) -> "Boundary | None":
+    """The UNSIGNED part of the drop between two adjacent chain rows.
+
+    None when the balance did not fall across them, or when a signature
+    covers the whole fall. ValueError -- never a pass -- only when the
+    balance genuinely cannot be READ across the boundary: the later row has
+    no integer account_before.sum, or the earlier row read no integer
+    balance on either side of itself. A boundary that can be read but cannot
+    be BLAMED is AMBIGUOUS, which is a verdict the author can answer
+    (`resolve-boundary`), not a raise he could only hand-edit his way out
+    of: an append-only ledger must never hold a row that makes every later
+    call raise for good.
+    """
+    low = _row_sum(later, "account_before")
+    if low is None:
+        raise ValueError(f"ledger row {later.get('ledger_id')!r} has no "
+                         f"integer account_before.sum, so the balance chain "
+                         f"cannot be read across it")
+    why = ""
+    high = _row_sum(earlier, "account_after")
+    if high is None:
+        high = _row_sum(earlier, "account_before")
+        if high is None:
+            raise ValueError(f"ledger row {earlier.get('ledger_id')!r} read "
+                             f"no integer balance on either side of itself, "
+                             f"so the chain cannot be read across it")
+        why = (f"the balance after ledger row {earlier.get('ledger_id')} was "
+               f"never read -- that row's own after-read failed -- so a "
+               f"charge the request itself caused would show at exactly this "
+               f"boundary")
+    else:
+        sent = _sent(earlier)
+        if sent:
+            why = (f"ledger row {earlier.get('ledger_id')} sent {sent}, so a "
+                   f"debit the server applied AFTER that row's own after-read "
+                   f"(risk R4) would show at exactly this boundary")
+    expected = expected_next_read(rows, earlier, later, high, low)
+    if low >= expected:
+        return None
+    return Boundary(previous_row=str(earlier.get("ledger_id")),
+                    observed_row=str(later.get("ledger_id")),
+                    high=expected, low=low,
+                    cause=AMBIGUOUS if why else EXTERNAL, why=why,
+                    previous_time=earlier.get("utc_time"),
+                    observed_time=later.get("utc_time"))
+
+
+def open_boundaries(rows: Sequence[Mapping[str, object]]) -> tuple:
+    """EVERY unsigned fall between two of our rows, oldest first.
+
+    ONE function answers both questions -- the refusal ("is there one?") and
+    the books ("how much is unsigned, and where?") -- so a mutation of the
+    walk turns both red and neither can grow its own copy (CLAUDE.md's
+    sibling-route warning). Condition 9 fails while this answers anything,
+    so a between-row drop is refused every time it is seen and is never
+    absorbed by the refused row that observed it. A drop measured INSIDE one
+    row is not here: that one is ours, and `run.run_request` LOCKs on it
+    where it happens.
+
+    ValueError for a boundary that cannot be read (`_boundary`). Pure.
+    """
+    links = chain_rows(rows)
+    return tuple(filter(None, (_boundary(rows, links[index], links[index + 1])
+                               for index in range(len(links) - 1))))
+
+
+def open_boundary(rows: Sequence[Mapping[str, object]]) -> "Boundary | None":
+    """The oldest unsigned boundary in `rows`, or None.
+
+    `open_boundaries` with one taken off the front, so a command that asks
+    for one and a command that lists them all can never disagree.
+    """
+    return next(iter(open_boundaries(rows)), None)
+
+
+def live_boundary(rows: Sequence[Mapping[str, object]], high: int, low: int,
+                  *, observed_row: object = None,
+                  observed_time: object = None) -> Boundary:
+    """The drop a LIVE balance read sees below the chain, as a Boundary.
+
+    `high` is `state.last_balance()`, `low` the read just taken. The earlier
+    side is the last row that measured a balance, so `_sent` decides this
+    one's cause exactly as it decides a written boundary's. `observed_row`
+    names the row that WRITES this read down (step 6's refused row) when
+    there is one, and the note then prints a command that can really be
+    typed; without it the boundary is `live`, and nothing can sign it until
+    a row records it. ValueError when no chain row precedes the read.
+    """
+    links = chain_rows(rows)
+    if not links:
+        raise ValueError("a live balance read below the chain needs a chain: "
+                         "this ledger holds no row that measured a balance")
+    earlier = links[-1]
+    why = ""
+    sent = _sent(earlier)
+    if sent:
+        why = (f"ledger row {earlier.get('ledger_id')} sent {sent}, so a "
+               f"debit the server applied AFTER that row's own after-read "
+               f"(risk R4) would show at exactly this boundary")
+    return Boundary(previous_row=str(earlier.get("ledger_id")),
+                    observed_row=(LIVE_ROW if observed_row is None
+                                  else str(observed_row)),
+                    high=high, low=low,
+                    cause=AMBIGUOUS if why else EXTERNAL, why=why,
+                    previous_time=earlier.get("utc_time"),
+                    observed_time=(None if observed_time is None
+                                   else str(observed_time)),
+                    live=observed_row is None)
+
+
+def boundary_note(boundary: Boundary) -> str:
+    """The ONE sentence every route prints for one fallen boundary.
+
+    IT SAYS WHAT WAS MEASURED AND WHAT WAS NOT, and never states a cause it
+    did not measure: an EXTERNAL boundary had no request of ours
+    outstanding, and calling the drop somebody else's is STILL the author's
+    judgement; an AMBIGUOUS one had, and this tool cannot tell a late charge
+    of ours from a friend's spend. Condition 9's verdict,
+    `run.run_request`'s LOCK text and `cli._cmd_account` all call this, so
+    there is one wording and a mutation of it turns every route red. Pure.
+    """
+    fell = f"the balance fell {boundary.describe}"
+    if boundary.ambiguous:
+        note = (f"AMBIGUOUS BOUNDARY -- this tool CANNOT say whose spend this "
+                f"was: {fell}. {boundary.why}. No row of ours lies between "
+                f"those two reads, so nothing this tool sent was MEASURED as "
+                f"charged -- and nothing measured that it was not. A late "
+                f"charge of ours and somebody else's spend on a shared "
+                f"account are byte-identical here.")
+        how = (f" `acknowledge-drift` cannot sign this one, and deleting LOCK "
+               f"does not clear it. Check the provider's own usage page and "
+               f"whoever else uses the account, then record what you found: "
+               f"`python -m tools.nai resolve-boundary --previous "
+               f"{boundary.previous_row} --observed {boundary.observed_row} "
+               f"--anlas {-boundary.delta} --attribute ours|theirs --by NAME "
+               f"--checked \"what you looked at\"`.")
+    else:
+        note = (f"EXTERNAL DRIFT -- no request of ours was outstanding across "
+                f"it: {fell}. Ledger row {boundary.previous_row} sent nothing "
+                f"(the guard refused it before any byte left) and no row of "
+                f"ours lies between those two reads, so nothing this tool "
+                f"sent was MEASURED as charged here. On a shared account the "
+                f"likeliest cause is somebody else's spend; recording it as "
+                f"theirs is your judgement, not a measurement. Rows whose own "
+                f"after-read failed are listed separately, and this says "
+                f"nothing about them.")
+        how = (f" Sign it with `python -m tools.nai acknowledge-drift "
+               f"--previous {boundary.previous_row} --observed "
+               f"{boundary.observed_row} --anlas {-boundary.delta} --by NAME "
+               f"--checked \"what you looked at\"`.")
+    if boundary.live:
+        how = (" This read is not a ledger row yet, so no command can sign it "
+               "as it stands: the next run writes the refused row that "
+               "records it, and it can be signed once it is written down.")
+    return note + how
+
+
+def boundaries_note(boundaries: Sequence[Boundary], *,
+                    this_read: bool = True) -> str:
+    """`boundary_note` for the FIRST, then every other open boundary named.
+
+    The caller puts the boundary THIS call observed at the front, so the
+    author always reads about the drop that just happened rather than the
+    oldest one on the books, and never carries away a figure that is short.
+    `this_read` False says out loud that the run was stopped by something
+    recorded earlier. ValueError for an empty sequence: there is no note
+    about nothing. Pure.
+    """
+    if not boundaries:
+        raise ValueError("boundaries_note needs at least one boundary")
+    opening = "" if this_read else (
+        "NOT the balance read just taken -- that one is level with the "
+        "chain; a boundary recorded EARLIER is open: ")
+    note = opening + boundary_note(boundaries[0])
+    rest = boundaries[1:]
+    if not rest:
+        return note
+    listed = ", ".join(f"{other.previous_row}->{other.observed_row} "
+                       f"({other.delta:+d})" for other in rest)
+    return (f"{note} AND {len(rest)} OTHER unsigned boundary(ies), "
+            f"{sum(other.delta for other in rest):+d} Anlas in all: "
+            f"{listed}. None of that is in `theirs` either.")
+
+
+@dataclass(frozen=True)
+class Accounting:
+    """The figures that answer different questions, NEVER ONE FIGURE.
+
+    MEASURED, from our own rows' two reads, which bracket one request of
+    ours and nothing else:
+      `ours_spent`    the sum of the NEGATIVE in-row deltas: 0 or below, and
+                      THE one number that says what this tool has cost.
+      `ours_refilled` the sum of the positive ones -- a refill that landed
+                      between one row's own two reads. Kept apart so it can
+                      never cancel a charge measured inside another row.
+    RECORDED BY HAND, at a boundary, which measured nothing about who spent:
+      `theirs_signed` what the author attributed to somebody else.
+      `ours_signed`   what he attributed to US at an AMBIGUOUS boundary --
+                      his judgement after a hand check, not a measurement.
+    MEASURED AND UNATTRIBUTED, which is the default state of a shared
+    account and the figure that used to be invisible:
+      `unsigned`      the sum of every open boundary's delta, with
+                      `open_boundaries` naming them. Money that HAS left the
+                      account and that nobody has signed for. It is in no
+                      other figure, and it is never 0 merely because nobody
+                      typed a command.
+    `unmeasured` names the rows whose after-read failed (in no figure at
+    all) and `refilled_rows` the rows that rose inside themselves.
+    NO FIGURE HERE IS EVER ADDED TO ANOTHER: a single total would answer no
+    question and would hide the one fact worth seeing at a glance.
+    """
+    ours_spent: int
+    ours_refilled: int
+    theirs_signed: int
+    ours_signed: int
+    unsigned: int
+    open_boundaries: tuple
+    rows_counted: int
+    signatures_counted: int
+    unmeasured: tuple
+    refilled_rows: tuple
+
+
+def accounting(rows: Sequence[Mapping[str, object]]) -> Accounting:
+    """Every figure in `Accounting` over `rows`.
+
+    ValueError (law 7: the books never fall back to a plausible figure) when
+    a signature cannot be read, when two sign one boundary, when one names a
+    pair of rows that are not adjacent links in this chain, when one exceeds
+    the drop it records, or when the chain cannot be read across a boundary.
+    Pure.
+    """
+    spent = refilled = 0
+    counted = 0
+    unmeasured: list = []
+    refilled_rows: list = []
+    links = chain_rows(rows)
+    for row in links:
+        before = _row_sum(row, "account_before")
+        after = _row_sum(row, "account_after")
+        if before is None or after is None:
+            unmeasured.append(str(row.get("ledger_id")))
+            continue
+        counted += 1
+        if after < before:
+            spent += after - before
+        elif after > before:
+            refilled += after - before
+            refilled_rows.append(str(row.get("ledger_id")))
+    signed = signatures(rows)
+    adjacent = {(str(links[index].get("ledger_id")),
+                 str(links[index + 1].get("ledger_id")))
+                for index in range(len(links) - 1)}
+    for signature in signed:
+        if (signature.previous_row, signature.observed_row) not in adjacent:
+            raise ValueError(
+                f"ledger row {signature.ledger_id!r} signs for "
+                f"{-signature.delta} Anlas between ledger rows "
+                f"{signature.previous_row!r} and {signature.observed_row!r}, "
+                f"which are not two rows side by side in this chain: a "
+                f"signature names the boundary it covers, and this one names "
+                f"none, so the money it carries is counted in nothing")
+    gaps = open_boundaries(rows)
+    return Accounting(
+        ours_spent=spent, ours_refilled=refilled,
+        theirs_signed=sum(s.delta for s in signed if s.attribution == "theirs"),
+        ours_signed=sum(s.delta for s in signed if s.attribution == "ours"),
+        unsigned=sum(gap.delta for gap in gaps), open_boundaries=gaps,
+        rows_counted=counted, signatures_counted=len(signed),
+        unmeasured=tuple(unmeasured), refilled_rows=tuple(refilled_rows))
+
+
 def probe_row_problem(row: Mapping[str, object]) -> str | None:
     """Why ledger `row` cannot prove its (action, model) free; None when it can.
 
@@ -204,35 +755,42 @@ def proof_standing(proof: Proof, rows: Sequence[Mapping[str, object]],
 
     `rows` is the ledger in file order; `current_sum` is the balance read
     being judged, or None offline. Returns (True, why) when confirmed,
-    (None, why) when only the next balance read can tell (offline, no row
-    after the probe yet), (False, why) otherwise:
+    (None, why) ONLY when nothing has been read since the probe (offline,
+    no row after it yet), (False, why) otherwise:
       * no row in `rows` has the proof's ledger_id, or that row is not a
         `generation` row with verdict "probe" for the proof's (action,
         model), or `probe_row_problem` finds it proves nothing (no 2xx, no
         extracted image, a balance that moved, LOCK);
-      * the row after the probe row has an account_before.sum that is not
-        the probe's account_after.sum (a late charge, or a refill that can
-        hide one) -- refuted for good;
-      * there is no row after it and `current_sum` differs from the probe's
-        account_after.sum;
-      * any LATER `generation` row of the same (action, model) -- the one
-        that confirmed the probe included -- has an account_after.sum below
-        its account_before.sum, or a negative delta, or no integer
-        account_after.sum at all (its after-read failed); or the balance
-        read that follows it (the next row's account_before.sum, or
-        `current_sum` when it is the last row) is below its
-        account_after.sum -- refuted for good. A rise across or after such
-        a call does NOT refute: the next call of the pair measures again,
-        and a charge there refutes it then.
-    Pure: reads nothing but its arguments.
+      * the read that FOLLOWS the probe -- the next chain row's
+        account_before.sum, or `current_sum` while there is no next row --
+        is not the probe's account_after.sum. BELOW it: the probe's own
+        request went out, so a debit the server applied after the probe's
+        after-read (risk R4) lands exactly there and cannot be told from
+        somebody else's spend; the safe reading of an unreadable fall is
+        that the action is charged. ABOVE it: a rise can hide a charge.
+        Either way REFUTED FOR GOOD;
+      * any LATER `generation` row of the same (action, model) has an
+        account_after.sum below its account_before.sum, or a negative delta,
+        or no integer account_after.sum at all (its after-read failed), or
+        the read that follows IT is below its account_after.sum -- the same
+        R4 reading, refuted for good. A RISE across or after such a call
+        does not refute by itself: the next call of the pair measures again.
+
+    NO SIGNATURE IS READ HERE. `signed_allowance` and `expected_next_read`
+    re-baseline the CHAIN and nothing else, so no `acknowledge-drift` and no
+    `resolve-boundary` can turn a refuted proof back into a standing one and
+    re-arm img2img. An author who believes the fall was somebody else's
+    removes the proof from proofs.json by hand and probes again, paying the
+    probe's cost knowingly. Pure: reads nothing but its arguments.
     """
     pair = f"({proof.action}, {proof.model})"
-    index = next((i for i, row in enumerate(rows)
+    links = chain_rows(rows)
+    index = next((i for i, row in enumerate(links)
                   if row.get("ledger_id") == proof.ledger_id), None)
     if index is None:
         return False, (f"the proof for {pair} names ledger row "
                        f"{proof.ledger_id!r}, which is not in the ledger")
-    probe_row = rows[index]
+    probe_row = links[index]
     if not (probe_row.get("kind") == "generation"
             and probe_row.get("verdict") == "probe"
             and probe_row.get("action") == proof.action
@@ -244,19 +802,52 @@ def proof_standing(proof: Proof, rows: Sequence[Mapping[str, object]],
         return False, (f"the proof for {pair} names probe row "
                        f"{proof.ledger_id!r}, which proves nothing: {problem}")
     probe_after = _row_sum(probe_row, "account_after")
-    advice = (f"{proof.action} stays refused: {proof.action} is charged, so "
-              f"stay on the generate track. Re-measuring it means the author "
-              f"removes that proof from proofs.json by hand and probes again")
-    refuted = (f"proof for {pair} REFUTED: the probe {proof.ledger_id} left "
-               f"the balance at {probe_after}, and the next balance read")
-    late = "a late charge, or a refill that can hide one. " + advice
-    if index + 1 < len(rows):
-        after_row = rows[index + 1]
+    remeasure = (f"Re-measuring it means the author removes that proof from "
+                 f"proofs.json by hand and probes again")
+    charged = (f"{proof.action} stays refused: {proof.action} IS CHARGED -- a "
+               f"drop measured INSIDE one of our own {proof.action} rows, "
+               f"between that request's own before-read and after-read. Stay "
+               f"on the generate track. {remeasure}")
+    unclear = (f"{proof.action} stays refused: this proof can no longer be "
+               f"trusted. NOTHING measured a charge inside an "
+               f"{proof.action} row -- the balance simply cannot be followed "
+               f"across this point, and a rise can hide a charge. {remeasure}")
+
+    def late(row, fell_to: int, left_at: int) -> tuple[bool, str]:
+        """A fall in the read that FOLLOWS one of our own sent rows.
+
+        Refuted FOR GOOD, and the words say exactly why the tool cannot be
+        kinder: that row's request went out, so a debit the server applied
+        after its own after-read is indistinguishable from a friend's
+        spend, and a signature at that boundary is a judgement about a
+        shared account -- never a measurement that this action is free.
+        """
+        return False, (
+            f"proof for {pair} REFUTED: ledger row {row.get('ledger_id')} "
+            f"sent a request of ours and left the balance at {left_at}, and "
+            f"the next balance read was {fell_to}, BELOW it. A debit the "
+            f"server applied after that row's own after-read (risk R4) looks "
+            f"exactly like this, and so does somebody else's spend on a "
+            f"shared account: nothing here can tell them apart, so the "
+            f"unsafe reading is the one that counts. Signing that boundary "
+            f"as somebody else's records WHO the author believes spent it; "
+            f"it never restores this proof. {unclear}")
+
+    if index + 1 < len(links):
+        after_row = links[index + 1]
         next_before = _row_sum(after_row, "account_before")
+        if next_before is None:
+            return False, (f"proof for {pair} REFUTED: the balance before "
+                           f"ledger row {after_row.get('ledger_id')}, the row "
+                           f"after the probe, was never read. {unclear}")
+        if next_before < probe_after:
+            return late(probe_row, next_before, probe_after)
         if next_before != probe_after:
-            return False, (f"{refuted} (ledger row "
-                           f"{after_row.get('ledger_id')}) was {next_before}: "
-                           f"{late}")
+            return False, (f"proof for {pair} REFUTED: the probe "
+                           f"{proof.ledger_id} left the balance at "
+                           f"{probe_after}, and the next balance read (ledger "
+                           f"row {after_row.get('ledger_id')}) was "
+                           f"{next_before}, above it. {unclear}")
         confirmed = (True, f"proof for {pair} confirmed by ledger row "
                            f"{after_row.get('ledger_id')}")
     elif current_sum is None:
@@ -264,11 +855,16 @@ def proof_standing(proof: Proof, rows: Sequence[Mapping[str, object]],
                       f"confirms it")
     elif current_sum == probe_after:
         return True, f"proof for {pair} confirmed by this balance read"
+    elif current_sum < probe_after:
+        return late(probe_row, current_sum, probe_after)
     else:
-        return False, f"{refuted} (this one) is {current_sum}: {late}"
+        return False, (f"proof for {pair} REFUTED: the probe "
+                       f"{proof.ledger_id} left the balance at {probe_after} "
+                       f"and this balance read is {current_sum}, above it. "
+                       f"{unclear}")
 
-    for later in range(index + 1, len(rows)):
-        row = rows[later]
+    for later in range(index + 1, len(links)):
+        row = links[later]
         if not (row.get("kind") == "generation"
                 and row.get("action") == proof.action
                 and row.get("model") == proof.model):
@@ -281,17 +877,19 @@ def proof_standing(proof: Proof, rows: Sequence[Mapping[str, object]],
         delta = row.get("delta")
         if after is None:
             return False, (f"{where}: the balance after it was never read, so "
-                           f"it may have been charged. {advice}")
+                           f"it may have been charged and nothing can tell "
+                           f"that apart from drift. {unclear}")
         if (before is not None and after < before) or (
                 _is_number(delta) and delta < 0):
             return False, (f"{where}: the balance fell {before} -> {after} "
-                           f"across it. {advice}")
-        following = (_row_sum(rows[later + 1], "account_before")
-                     if later + 1 < len(rows) else current_sum)
+                           f"INSIDE that row -- between its own before-read "
+                           f"and its own after-read, with only that one "
+                           f"request between them. {charged}")
+        following_row = links[later + 1] if later + 1 < len(links) else None
+        following = (_row_sum(following_row, "account_before")
+                     if following_row is not None else current_sum)
         if following is not None and following < after:
-            return False, (f"{where}: it left the balance at {after} and the "
-                           f"next balance read was {following}, a late "
-                           f"charge. {advice}")
+            return late(row, following, after)
     return confirmed
 
 
@@ -620,6 +1218,27 @@ def _c11(url: object) -> tuple[bool, str]:
     return False, f"POST {url!r} is not an allowlisted generation endpoint"
 
 
+def _offline_chain(state: State) -> Verdict:
+    """Condition 9 with no account read: the half that CAN be judged offline.
+
+    `open_boundaries` is pure and reads only the ledger, so a plan over a
+    ledger holding an unsigned fall says so and FAILS -- a condition that
+    can be checked offline is checked, and False is never a pass. Only the
+    live half (is the balance now below the chain?) stays ok=None, so the
+    invariant "a condition that cannot be checked is not a pass" is
+    untouched. Without this, `plan` gave a clean bill to a state in which
+    the next run was certain to refuse and write LOCK.
+    """
+    try:
+        gaps = open_boundaries(state.rows())
+    except ValueError as exc:
+        return Verdict(9, False, f"the balance chain cannot be read: {exc}")
+    if gaps:
+        return Verdict(9, False, boundaries_note(gaps, this_read=False))
+    return Verdict(9, None, "no unsigned boundary in the ledger; the live "
+                            "balance read is what is still missing")
+
+
 def _judge(condition: int, fn, *args) -> Verdict:
     """Run one body condition; a malformed body fails it, never raises. Only
     condition 1 ever answers ok=None (a proof pending the next read)."""
@@ -670,8 +1289,19 @@ def evaluate(body: Mapping[str, object], account: Account | None,
        with QUALITY_TAIL; no character caption or uc contains "rating:".
     8  account.tier == OPUS_TIER, account.active is True, account.grace is
        not True. ok=None when account is None.
-    9  chain_verdict(state.last_balance(), account.sum) != "charged".
-       ok=None when account is None.
+    9  TWO DIFFERENT MEASUREMENTS, and this condition is about only one of
+       them. `guard.open_boundaries(state.rows())` finds no UNSIGNED fall
+       between two of our rows, AND chain_verdict(state.last_balance(),
+       account.sum) != "charged" (a live read below the chain is the same
+       drop, not yet written down). Every open boundary is reported, THE ONE
+       THIS CALL SAW FIRST, through `boundaries_note` -- which says which of
+       the two measurements it is, what was NOT measured, and the command
+       that signs it. A drop measured INSIDE one of our rows is NOT this
+       condition: that one is ours, `run.run_request` LOCKs where it
+       happens, condition 10 refuses on the LOCK, and no signature clears
+       it. With account None this condition is still judged OFFLINE over the
+       ledger (`_offline_chain`): an unsigned boundary fails it there too,
+       and only the live half is ok=None.
     10 not state.locked() and not state.inflight().
     11 ("POST", url) in model.ALLOWED_ENDPOINTS.
 
@@ -691,7 +1321,7 @@ def evaluate(body: Mapping[str, object], account: Account | None,
 
     if account is None:
         verdicts.append(Verdict(8, None, "needs the live account read"))
-        verdicts.append(Verdict(9, None, "needs the live account read"))
+        verdicts.append(_offline_chain(state))
     else:
         problems = []
         if not (_is_int(account.tier) and account.tier == OPUS_TIER):
@@ -703,20 +1333,24 @@ def evaluate(body: Mapping[str, object], account: Account | None,
         verdicts.append(Verdict(8, not problems, "; ".join(problems) or
                                 f"tier {account.tier}, active, not in grace"))
         try:
+            rows = state.rows()
+            gaps = list(open_boundaries(rows))
             previous = state.last_balance()
         except ValueError as exc:
             verdicts.append(Verdict(
-                9, False, f"the ledger cannot give the previous balance: {exc}"))
+                9, False, f"the balance chain cannot be read: {exc}"))
         else:
             chain = chain_verdict(previous, account.sum)
-            if chain == "charged":
-                verdicts.append(Verdict(
-                    9, False, f"balance fell from {previous} to {account.sum} "
-                              f"since the last ledger row: an unexplained charge"))
+            this_read = chain == "charged"
+            if this_read:
+                gaps.insert(0, live_boundary(rows, previous, account.sum))
+            if gaps:
+                verdicts.append(Verdict(9, False, boundaries_note(
+                    gaps, this_read=this_read)))
             else:
                 verdicts.append(Verdict(
                     9, True, f"chain {chain}: previous {previous}, now "
-                             f"{account.sum}"))
+                             f"{account.sum}; no unsigned boundary"))
 
     locked, inflight = state.locked(), state.inflight()
     if locked or inflight:

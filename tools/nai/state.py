@@ -39,10 +39,16 @@ INVARIANTS
   refuses any other key set, a `kind` outside model.ROW_KINDS, and any row
   whose serialised text contains "Authorization", "Bearer " or "pst-", or a
   string value longer than 4096 characters (base64 never enters the ledger).
+  It also refuses a `drift` row model.drift_row_problem rejects, and a row
+  of any OTHER kind that fills a model.DRIFT_ROW_FIELDS key -- so a drift
+  row cannot be written as a generation and a generation cannot claim to be
+  somebody else's spend.
   `validate_row` is that same refusal without the write, so `run` can prove
   a row is writable BEFORE it sends anything; `write_row` calls it.
-* THE CHAIN. `last_balance()` is the `account_after.sum` of the LAST row
-  (both kinds carry one). An empty ledger answers None -- unless blobs/ or
+* THE CHAIN. `last_balance()` is the `account_after.sum` of the last row
+  that MEASURED a balance -- a `generation` or a `refused` row; a `drift`
+  row is an annotation on the boundary between two of those and is stepped
+  over. An empty ledger answers None -- unless blobs/ or
   proofs.json already exist under the root: a request was sent from here
   before, so the ledger is LOST, not new, and `last_balance` RAISES rather
   than let the next read chain as a first run. A last row without a balance
@@ -93,7 +99,9 @@ import time
 from datetime import datetime, timezone
 
 from tools.nai.guard import Refused  # noqa: F401  (acquire_inflight raises it)
-from tools.nai.model import LEDGER_FIELDS, ROW_KINDS, Proof
+from tools.nai.model import (DRIFT_KIND, DRIFT_ROW_FIELDS,
+                             LEDGER_FIELDS, ROW_KINDS, Proof,
+                             drift_row_problem)
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
@@ -379,8 +387,16 @@ class State:
         A charge that call caused then shows as a decrease on the next read
         and LOCKs again. Without this, a failed after-read would make every
         later invocation raise forever, since the ledger is append-only.
+
+        A `drift` row is STEPPED OVER: it measured no balance of its own, it
+        signs for a fall between two rows that did. The chain value is the
+        last row that actually read the account. A signed boundary still
+        re-baselines the chain, because the row that OBSERVED the lower
+        balance is itself a link (a `refused` row with after == before), and
+        `guard.open_boundaries` is what keeps that row from re-baselining it
+        silently BEFORE it is signed.
         """
-        rows = self.rows()
+        rows = [row for row in self.rows() if row.get("kind") != DRIFT_KIND]
         if not rows:
             history = self.history()
             if history:
@@ -426,6 +442,19 @@ class State:
         if row["kind"] not in ROW_KINDS:
             raise ValueError(f"ledger row kind {row['kind']!r} is not one of "
                              f"{ROW_KINDS}")
+        drift_fields = [key for key in DRIFT_ROW_FIELDS
+                        if row.get(key) is not None]
+        if row["kind"] == DRIFT_KIND:
+            problem = drift_row_problem(row)
+            if problem is not None:
+                raise ValueError(f"a {DRIFT_KIND} row records a fall somebody "
+                                 f"else caused between two of our rows, but "
+                                 f"{problem}")
+        elif drift_fields:
+            raise ValueError(f"a {row['kind']!r} row may not fill "
+                             f"{drift_fields}: those fields belong to a "
+                             f"{DRIFT_KIND} row, which measures nothing "
+                             f"itself")
         long = _long_strings(row)
         if long:
             raise ValueError(f"ledger row strings longer than {MAX_ROW_STRING} "

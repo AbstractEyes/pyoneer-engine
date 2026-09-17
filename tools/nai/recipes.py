@@ -18,13 +18,16 @@ INVARIANTS
   ends with model.QUALITY_TAIL, which ends with model.RATING_TAG; no
   character caption and no UC ever contains "rating:" (model.Recipe
   validates the recipe; `frames_for` re-asserts on what it builds).
-* A CHARACTER CAPTION IS `boy, <ANCHOR>, from side, facing right, <POSE
-  WORDS>`: it starts with boy/girl/other, carries no count, no quality and
-  no rating tag. Count tags (`1boy`) live only in the base caption. The
-  per-tag rule is characters.tag_problem, the same function a character
-  file's tags and anchor are refused by -- and `build_recipe` applies it
-  again to the Identity it is handed, because an Identity built in code
-  (`dataclasses.replace`) never passed the loader.
+* A CHARACTER CAPTION IS `<subject>, <ANCHOR>, from side, facing right,
+  <POSE WORDS>`: it starts with the identity's own subject noun (`boy` or
+  `girl`, model.Subject.noun), carries no count, no quality and no rating
+  tag. The COUNT (`1boy`, `1girl`) is that same subject's count_tag and
+  lives only in the base caption, which also fills every recipe sentence's
+  `{noun}` from it -- one subject, three spellings, one source. The per-tag
+  rule is characters.tag_problem, the same function a character file's tags
+  and anchor are refused by, judged against that subject -- and
+  `build_recipe` applies it again to the Identity it is handed, because an
+  Identity built in code (`dataclasses.replace`) never passed the loader.
 * A RECIPE FITS THE TOKEN BUDGET FOR EVERY RECIPE OR IS NOT BUILT.
   `build_recipe` counts words exactly as guard condition 7 does (guard's
   own `_WORD_RE`, model.TOKENS_PER_WORD, model.TOKEN_BUDGET) over the base
@@ -36,9 +39,10 @@ INVARIANTS
 * A RECIPE IS BUILT FOR A CHARACTER. `get_recipe`, `make_request` and
   `context_for` take `character` (a file under tools/nai/characters/,
   default characters.DEFAULT_CHARACTER) and build the base caption, every
-  character caption and the mannequin colours from THAT file, on every call
-  -- the default included -- so an outfit change is a data file, never an
-  edit here. `RECIPES` is the same three recipes built for the `IDENTITY`
+  character caption, the mannequin colours AND the garments it draws them
+  on (`render_init(..., garments=recipe.identity.garments)`) from THAT
+  file, on every call -- the default included -- so an outfit change is a
+  data file, never an edit here. `RECIPES` is the same three recipes built for the `IDENTITY`
   literal; scout.json reproduces that literal exactly (tools/check_nai.py
   pins it), so the brief's caption pins hold for the default character. An
   unknown character raises, listing the files that exist.
@@ -85,7 +89,8 @@ from tools.nai.model import (ACTIONS, DEFAULT_IMG2IMG_NOISE,
                              QUALITY_TAIL, RATING_RX, STRENGTH_BAND,
                              TOKEN_BUDGET, TOKENS_PER_WORD, UC_PRESET_NONE,
                              Frame, Identity, Layout, LedgerContext, Recipe,
-                             Request, model_for, on_grid)
+                             Request, garments_problem, model_for, on_grid,
+                             subject)
 
 OPAQUE_ALPHA_MIN = 254
 """An RGBA source counts as opaque when no alpha is below this. 254, not 255:
@@ -117,28 +122,31 @@ IDENTITY = Identity(
 # Caption pieces (brief 3.2-3.4)
 # ---------------------------------------------------------------------------
 
-BASE_HEAD = ("1boy, multiple views, pixel art, sprite sheet, full body, "
-             "from side")
+BASE_VIEWS = "multiple views, pixel art, sprite sheet, full body, from side"
+"""What follows the count tag at the head of every base caption. The COUNT
+itself is the identity's subject (model.Subject.count_tag, `1boy` or
+`1girl`), written here and nowhere else."""
 BASE_STYLE = ("simple background, grey background, limited palette, "
               "flat color, black outline")
-CHARACTER_PREFIX = "boy"
 CHARACTER_VIEW = "from side, facing right"
 
 # NEGATIVE, every recipe's negative prompt, is imported from model: it is
 # spelled there because characters.tag_problem refuses its tags.
 
+# The sentences carry ONE `{noun}` each: the identity's subject noun, so
+# "the same boy" and "the same girl" are one sentence, not two that can drift.
 WALK_SENTENCE = (
-    "a retro video game walk cycle: the same boy drawn five times in one row "
-    "from left to right, four walking poses then one standing pose, every "
+    "a retro video game walk cycle: the same {noun} drawn five times in one "
+    "row from left to right, four walking poses then one standing pose, every "
     "copy facing right, all feet on the same ground line")
 RUN_SENTENCE = (
-    "a retro video game run cycle: the same boy drawn six times in two rows "
-    "of three, every copy facing right and leaning forward, the feet in each "
-    "row on the same ground line")
+    "a retro video game run cycle: the same {noun} drawn six times in two "
+    "rows of three, every copy facing right and leaning forward, the feet in "
+    "each row on the same ground line")
 JUMP_SENTENCE = (
-    "a retro video game jump sequence: the same boy drawn five times in one "
-    "row from left to right, crouching, leaping up, at the top of the jump, "
-    "falling, landing, every copy facing right")
+    "a retro video game jump sequence: the same {noun} drawn five times in "
+    "one row from left to right, crouching, leaping up, at the top of the "
+    "jump, falling, landing, every copy facing right")
 
 WALK_CONTACT = ("walking, mid-stride, legs apart, front heel on ground, "
                 "arms swinging")
@@ -161,13 +169,15 @@ JUMP_WORDS: tuple[str, ...] = (
 
 
 def _base(verb: str, sentence: str, identity: Identity) -> str:
-    return (f"{BASE_HEAD}, {verb}, {BASE_STYLE}, {identity.tags}, "
-            f"{sentence}, {QUALITY_TAIL}")
+    who = subject(identity.subject)
+    return (f"{who.count_tag}, {BASE_VIEWS}, {verb}, {BASE_STYLE}, "
+            f"{identity.tags}, {sentence.format(noun=who.noun)}, "
+            f"{QUALITY_TAIL}")
 
 
 def _caption_text(identity: Identity, pose_words: str) -> str:
-    return (f"{CHARACTER_PREFIX}, {identity.anchor}, {CHARACTER_VIEW}, "
-            f"{pose_words}")
+    return (f"{subject(identity.subject).noun}, {identity.anchor}, "
+            f"{CHARACTER_VIEW}, {pose_words}")
 
 
 RECIPE_NAMES: tuple[str, ...] = ("walk", "run", "jump")
@@ -218,8 +228,12 @@ def build_recipe(name: str, identity: Identity, source: str | None = None
     base caption, its anchor in every character caption, its colours in the
     init. Everything else about a strip is the same for every character.
 
-    ValueError for an unknown recipe name; for a tag of identity.tags or
-    identity.anchor that characters.tag_problem refuses; and for an identity
+    ValueError for an unknown recipe name; for an identity whose `subject`
+    is not one of model.SUBJECT_NAMES or whose `garments` are not legal
+    (model.garments_problem); for colours that are not exactly the parts
+    those garments draw (characters.parts_problem); for a tag of
+    identity.tags or identity.anchor that characters.tag_problem refuses --
+    judged against THIS identity's subject; and for an identity
     `budget_problem` refuses -- each naming `source` (the character file)
     when given, else "identity".
     """
@@ -227,13 +241,24 @@ def build_recipe(name: str, identity: Identity, source: str | None = None
         raise ValueError(f"unknown recipe {name!r}; legal: "
                          f"{', '.join(sorted(RECIPE_NAMES))}")
     where = "identity" if source is None else f"character file {source}"
+    try:
+        subject(identity.subject)
+    except ValueError as exc:
+        raise ValueError(f"{where}, field 'subject': {exc}") from exc
+    garment_bad = garments_problem(identity.garments)
+    if garment_bad is not None:
+        raise ValueError(f"{where}, field 'garments': {garment_bad}")
+    parts_bad = characters.parts_problem(dict(identity.colours),
+                                         identity.garments)
+    if parts_bad is not None:
+        raise ValueError(f"{where}, field 'colours': {parts_bad}")
     for field, text in (("tags", identity.tags), ("anchor", identity.anchor)):
         for tag in text.split(","):
-            problem = characters.tag_problem(tag)
+            problem = characters.tag_problem(tag, identity.subject)
             if problem is not None:
                 raise ValueError(
-                    f"{where}, field {field!r}: carries the {problem} "
-                    f"{tag.strip()!r}; {characters.TAG_PROBLEMS[problem]}")
+                    f"{where}, field {field!r}: "
+                    f"{characters.tag_refusal(tag, problem, identity.subject)}")
     over = budget_problem(identity)
     if over is not None:
         raise ValueError(f"{where}, fields 'tags' and 'anchor': {over}")
@@ -298,14 +323,20 @@ def get_recipe(name: str, character: str = characters.DEFAULT_CHARACTER
 
 
 def character_caption(identity: Identity, pose_words: str) -> str:
-    """f"{CHARACTER_PREFIX}, {identity.anchor}, {CHARACTER_VIEW}, {pose_words}".
+    """f"{subject noun}, {identity.anchor}, {CHARACTER_VIEW}, {pose_words}".
+
+    The noun is model.subject(identity.subject).noun -- `boy` or `girl`, the
+    same word the base caption counts.
 
     ValueError when pose_words carries a rating tag (model.RATING_RX) or is
     not ASCII. The finished caption is checked as a whole too -- the anchor
     is author text and is the sibling route into the same caption -- so
-    ValueError also when any tag of it fails characters.tag_problem (a
-    control character, a rating, count, quality, view or negative tag, or a
-    rating word).
+    ValueError also when any tag of it fails
+    `characters.tag_problem(tag, identity.subject)` (a control character, a
+    rating, count, quality, view or negative tag, a rating word, or a word
+    naming a subject other than this identity's; the noun this function
+    writes is that subject's own, so a caption that opens with the wrong one
+    is refused here).
     """
     if not isinstance(pose_words, str):
         raise ValueError(f"pose words must be a string, got {pose_words!r}")
@@ -318,12 +349,12 @@ def character_caption(identity: Identity, pose_words: str) -> str:
     if not caption.isascii():
         raise ValueError(f"character caption is not ASCII: {caption!r}")
     for tag in caption.split(","):
-        problem = characters.tag_problem(tag)
+        problem = characters.tag_problem(tag, identity.subject)
         if problem is not None:
-            raise ValueError(f"character caption carries the {problem} "
-                             f"{tag.strip()!r}; "
-                             f"{characters.TAG_PROBLEMS[problem]}: "
-                             f"{caption!r}")
+            raise ValueError(
+                f"character caption "
+                f"{characters.tag_refusal(tag, problem, identity.subject)}: "
+                f"{caption!r}")
     return caption
 
 
@@ -408,7 +439,8 @@ def make_request(recipe_name: str, action: str, seed: int, *,
 
     Always: recipe = get_recipe(recipe_name, character); (init_png, centers) =
     mannequin.render_init(recipe.layout, recipe.poses,
-    recipe.identity.as_dict()); frames = frames_for(recipe, centers); model
+    recipe.identity.as_dict(), garments=recipe.identity.garments); frames =
+    frames_for(recipe, centers); model
     = model.model_for(action, variant) with variant default "full"; ucPreset
     = UC_PRESET_NONE[model]; width/height from the layout; steps and scale
     default to model.DEFAULT_STEPS / DEFAULT_SCALE; base_caption and
@@ -460,7 +492,8 @@ def make_request(recipe_name: str, action: str, seed: int, *,
 
     layout = recipe.layout
     init_png, centers = render_init(layout, recipe.poses,
-                                    recipe.identity.as_dict())
+                                    recipe.identity.as_dict(),
+                                    garments=recipe.identity.garments)
     common = dict(
         action=action, model=model, seed=seed,
         base_caption=recipe.base_caption, negative=recipe.negative,
@@ -531,7 +564,8 @@ def context_for(recipe_name: str, *,
 
     strip = recipe name; target_cell = cell; target_rect = the cell's
     rect_canvas when cell is not None; mannequin_sha256 =
-    mannequin.params_sha256(layout, poses, the CHARACTER's colours); the rest
+    mannequin.params_sha256(layout, poses, the CHARACTER's colours, its
+    garments); the rest
     copied. The ledger has no character column: the row's base_caption names
     the outfit. ValueError for a cell that is not an int inside the recipe's
     layout, and for an unknown character (get_recipe).
@@ -550,7 +584,8 @@ def context_for(recipe_name: str, *,
         phase=phase, lever_changed=lever_changed, target_cell=cell,
         target_rect=rect,
         mannequin_sha256=params_sha256(recipe.layout, recipe.poses,
-                                       recipe.identity.as_dict()),
+                                       recipe.identity.as_dict(),
+                                       garments=recipe.identity.garments),
         probe_flag_used=probe_flag_used,
     )
 

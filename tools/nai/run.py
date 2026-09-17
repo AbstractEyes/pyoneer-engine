@@ -22,16 +22,24 @@ THE SEQUENCE (every step is part of the contract)
     ledger_id = state.new_ledger_id(); cid = new_correlation_id().
  5. before = tools.nai.transport.read_account(transport). A failure
     propagates: no request is sent and no row is written.
- 6. verdict = guard.chain_verdict(state.last_balance(), before.sum). A
-    ledger that cannot give the previous balance (a malformed last row, or
-    a LOST ledger: see state.last_balance) -> Refused(9), no row, no LOCK --
-    a row would restart the chain from here and forget the loss.
-    "charged" -> state.lock(ledger_id, reason), write a `refused` row
-    (refusal_condition 9, locked true), raise Refused(9). The reason names
-    every proof this refused row refutes -- decided by guard.proof_standing
-    itself, over the ledger without and with that row -- so a late debit
-    after a probe, or after a later call of a proven pair, says "<action> is
-    charged: stay on the generate track" (and the guard refuses it for good).
+ 6. guard.chain_verdict(state.last_balance(), before.sum) and
+    guard.open_boundaries(state.rows()). A ledger that cannot give the
+    previous balance, or a boundary whose balances cannot be READ at all (a
+    malformed row, a LOST ledger: see state.last_balance) -> Refused(9), no
+    row, no LOCK -- a row would restart the chain from here and forget the
+    loss.
+    An unsigned fall, whether already in the ledger or seen live by this
+    call's own before-read -> state.lock(ledger_id, reason), write a
+    `refused` row (refusal_condition 9, locked true), raise Refused(9).
+    THE REASON SAYS WHICH BOUNDARY STOPPED THIS CALL, FIRST, with the
+    figure: `_chain_note` puts the drop this before-read saw at the front
+    (named by the refused row about to be written, so the command it prints
+    can be typed) and lists every older gap after it. It classifies rather
+    than assumes -- EXTERNAL only where the earlier row SENT NOTHING,
+    AMBIGUOUS wherever a request of ours could be the cause -- and it never
+    says an action is charged. The reason also names every proof this row
+    refutes FOR GOOD -- decided by guard.proof_standing itself, over the
+    ledger without and with that row.
  7. guard.assert_free(body, before, state.proofs(), state,
     url=model.GENERATE_URL, probe=probe). Refused(n) for n in 1-9 or 11 ->
     write a `refused` row, re-raise. Refused(10) here -> no row, re-raise.
@@ -117,8 +125,10 @@ from datetime import datetime, timezone
 
 import tools.nai.transport as nai_transport
 from tools.nai import masks
-from tools.nai.guard import (Refused, assert_free, chain_verdict,
-                             probe_row_problem, proof_standing)
+from tools.nai.guard import (Refused, assert_free, boundaries_note,
+                             chain_rows, chain_verdict, live_boundary,
+                             open_boundaries, probe_row_problem,
+                             proof_standing)
 from tools.nai.model import (CORRELATION_ID_LEN, GENERATE_URL,
                              IMG2IMG_KEY, INPAINT_STRENGTH_KEY, LEDGER_FIELDS,
                              PROOF_ACTIONS, TIMEOUT_S, Account, LedgerContext,
@@ -154,11 +164,20 @@ def _refuted_note(state: State, new_row: dict) -> str:
     """Step 6's text naming every proof that `new_row` refutes.
 
     A proof is named when guard.proof_standing did not refuse it over the
-    ledger as it stands and does refuse it once `new_row` is appended -- the
-    same function the guard runs, so the note names exactly the proofs the
-    next img2img or infill will be refused on. An unreadable proofs.json
+    ledger as it stands and does refuse it (ok False, NOT ok None) once
+    `new_row` is appended -- the same function the guard runs, so the note
+    names exactly the proofs the next img2img or infill will be refused on
+    FOR GOOD -- which now includes a fall in the read that FOLLOWS one of
+    that pair's own sent rows, because a late debit for that request (risk
+    R4) and somebody else's spend are byte-identical, and no signature
+    undoes it. An unreadable proofs.json
     is said so instead of raising: LOCK is written either way, and the guard
     refuses on it by itself.
+
+    The row it names is the last link in `guard.chain_rows`, never `rows[-1]`
+    -- a signature annotation sits in the ledger and sent nothing, and naming
+    one as "a later img2img call" in the text the author reads to decide
+    about money is exactly the confusion the chain filter exists to stop.
     """
     rows = state.rows()
     try:
@@ -167,18 +186,50 @@ def _refuted_note(state: State, new_row: dict) -> str:
         return (f" proofs.json cannot be read ({exc}), so no proof was "
                 f"checked against this read.")
     note = ""
-    last_id = rows[-1].get("ledger_id") if rows else None
+    links = chain_rows(rows)
+    last_id = links[-1].get("ledger_id") if links else None
     for proof in proofs:
-        was, _why = proof_standing(proof, rows, None)
+        was, _ = proof_standing(proof, rows, None)
         now, _why = proof_standing(proof, rows + [new_row], None)
         if was is not False and now is False:
             what = (f"the {proof.action} probe" if last_id == proof.ledger_id
                     else f"a later {proof.action} call")
             note += (f" Ledger row {last_id} was {what} of "
-                     f"{proof.model}: this read refutes its proof (probe "
-                     f"{proof.ledger_id}), so {proof.action} stays refused -- "
-                     f"{proof.action} is charged: stay on the generate track.")
+                     f"{proof.model}: this read REFUTES its proof (probe "
+                     f"{proof.ledger_id}) for good, so {proof.action} stays "
+                     f"refused. {_why}")
     return note
+
+
+def _chain_note(state: State, previous: int | None, before: int,
+                new_row: dict, open_gaps, chain: str) -> str:
+    """Step 6's text: WHICH boundary stopped THIS call, then every older one.
+
+    THE DROP THIS CALL SAW COMES FIRST. When `chain` is "charged" the
+    before-read just taken is below the chain, and `new_row` -- the refused
+    row this step is about to write -- is the row that records it, so the
+    boundary is named with `new_row`'s own id and the command the note
+    prints can really be typed. Older unsigned boundaries are listed after
+    it, with their figures, so no refusal ever reports the oldest gap and
+    leaves the author with a figure that is short.
+
+    `guard.boundaries_note` is the one wording, shared with condition 9's
+    verdict and `cli._cmd_account`, so a mutation of it turns every route
+    red -- and it classifies rather than assumes: EXTERNAL only where the
+    earlier row sent nothing, AMBIGUOUS wherever a request of ours could be
+    the cause. Raises ValueError when nothing fell: step 6 only calls this
+    when something did.
+    """
+    gaps = list(open_gaps)
+    this_read = chain == "charged"
+    if this_read:
+        gaps.insert(0, live_boundary(state.rows(), previous, before,
+                                     observed_row=new_row.get("ledger_id"),
+                                     observed_time=new_row.get("utc_time")))
+    if not gaps:
+        raise ValueError(f"the balance went {previous} -> {before} but no "
+                         f"boundary accounts for it; nothing is sent")
+    return boundaries_note(gaps, this_read=this_read)
 
 
 def _base_row(req: Request, body: dict, context: LedgerContext, *,
@@ -309,21 +360,21 @@ def run_request(req: Request, transport: Transport, state: State, *,
     # 6. the chain
     try:
         previous = state.last_balance()
+        open_gaps = open_boundaries(state.rows())
     except ValueError as exc:
-        raise Refused(9, f"the ledger cannot give the previous balance, so "
-                         f"nothing is sent and no row is written: {exc}") from None
+        raise Refused(9, f"the balance chain cannot be read, so nothing is "
+                         f"sent and no row is written: {exc}") from None
     chain = chain_verdict(previous, before.sum)
-    if chain == "charged":
-        probe_note = _refuted_note(state, refused_row(
-            chain, Refused(9, "chain check"), locked=True))
-        exc = Refused(9, f"balance fell from {previous} to {before.sum} since "
-                         f"the last ledger row: an unexplained charge of "
-                         f"{previous - before.sum}; LOCK written.{probe_note}")
-        state.lock(ledger_id, f"chain check: the previous ledger row ended at "
-                              f"{previous}, the read before {ledger_id} shows "
-                              f"{before.sum}.{probe_note} Check the account, "
-                              f"then delete LOCK by hand.")
-        state.write_row(refused_row(chain, exc, locked=True))
+    if open_gaps or chain == "charged":
+        pending = refused_row(chain, Refused(9, "chain check"), locked=True)
+        note = _chain_note(state, previous, before.sum, pending, open_gaps,
+                           chain)
+        probe_note = _refuted_note(state, pending)
+        exc = Refused(9, f"{note}{probe_note} LOCK written; nothing was sent.")
+        state.lock(ledger_id, f"chain check before {ledger_id}: {note}"
+                              f"{probe_note} Check the account, then delete "
+                              f"LOCK by hand.")
+        state.write_row(pending)
         raise exc
 
     # 7. the guard
@@ -403,9 +454,13 @@ def run_request(req: Request, transport: Transport, state: State, *,
             row["account_after"] = after.as_row()
             row["delta"] = delta
             if delta < 0:
-                reason = (f"balance fell by {-delta} ({before.sum} -> "
-                          f"{after.sum}) across {ledger_id} ({body['action']} "
-                          f"{body['model']})")
+                reason = (f"OUR CHARGE, measured INSIDE {ledger_id}: the "
+                          f"balance fell by {-delta} ({before.sum} -> "
+                          f"{after.sum}) between that request's own "
+                          f"before-read and its own after-read, with only "
+                          f"this {body['action']} of {body['model']} between "
+                          f"them. This is not external drift and "
+                          f"`acknowledge-drift` cannot touch it")
                 if body["action"] in PROOF_ACTIONS:   # a probe or not
                     reason += (f"; {body['action']} is charged: stay on the "
                                f"generate track")
