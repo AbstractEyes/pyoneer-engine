@@ -159,3 +159,15 @@ data/maps/tilesets/
 # one prefix swap away, with its provenance in data/audio/CREDITS.md.
 # data/audio/ is deliberately NOT listed here.
 data/sound/
+
+# ---------------------------------------------------------------------------
+# Secrets
+# ---------------------------------------------------------------------------
+# Keys live in the Windows USER environment, never in a file here: the NovelAI
+# key is NAI_KEY, read with os.environ. These patterns exist so a dotenv file
+# someone creates anyway cannot be committed. tools/check_secrets.py is the
+# second net, for a key pasted into a tracked file under any name.
+.env
+.env.*
+*.env
+!.env.example

@@ -141,6 +141,10 @@ data/maps/starter.tmx               THE shipped map. main.py boots it, the
 data/graphics/ then data/art/       art: the untracked override, then the
                                     tracked generated pack
 data/sound/ then data/audio/        audio: the same two-root rule, same order
+NAI_KEY                             the NovelAI key: a Windows USER environment
+                                    variable, read with os.environ. Never a
+                                    literal, a file, a log line or a commit --
+                                    tools/check_secrets.py names a pst- token
 ```
 
 A minimal driven top-down body declares

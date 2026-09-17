@@ -11,7 +11,7 @@ looking for a credential, so re-adding that exact file was silently green
 across the whole suite. That is law 5's shape in its purest form -- not a gate
 proved in one direction, but no gate at all.
 
-WHAT THIS CANNOT DO. Six limits, and a reader who believes otherwise is worse
+WHAT THIS CANNOT DO. Seven limits, and a reader who believes otherwise is worse
 off than one who knows them. The last one was found by ADVERSARIALLY PROBING
 this detector with twelve credential shapes it had never been shown; five were
 caught, seven were not, and the seven are written down rather than quietly
@@ -39,9 +39,27 @@ hoped about:
     module's public surface (`scan_source` over `git cat-file` output); do not
     put it on the roster until there is a written allowlist of already-rotated
     blobs to subtract from it.
-  * IT READS ONLY UTF-8. A credential inside a PNG or a WAV is invisible to
-    it; the tracked files that cannot be decoded are COUNTED and reported as
-    skipped on every run, rather than silently passing.
+  * ALL THREE DETECTORS READ UTF-8 (with or without a BOM) AND UTF-16 BEHIND
+    A BOM. EVERYTHING ELSE GETS DETECTOR 3 ALONE, OR NOTHING. A file that
+    starts `FF FE` or `FE FF` is decoded as UTF-16, because that is what
+    Windows PowerShell 5.1 writes on a `>` redirect and what `reg export`
+    writes. A UTF-8 BOM is dropped before parsing, because `ast.parse` refuses
+    a leading U+FEFF and a BOM `.py` used to lose its whole literal pass. A
+    file that is NOT valid UTF-8 and carries no UTF-16 BOM -- a cp1252 `.md`
+    with a curly apostrophe, PowerShell 5.1 `Set-Content`, `set > env.txt` --
+    is read as latin-1 BYTES and handed to detector 3 only: a provider token
+    is ASCII, so no codepage guess is needed to see one, while detectors 1
+    and 2 would be reading a guess. Those files are COUNTED as not-UTF-8 in
+    the summary. BOM-LESS UTF-16LE -- what PowerShell 5.1's `>>` appends onto
+    a BOM-less UTF-8 file -- is valid UTF-8 whenever its text is ASCII, with a
+    NUL after every character; the NOVELAI entry's provider view deletes the
+    NULs and reads it, and nothing else does. A file with NUL bytes that is
+    not valid UTF-8 and carries no run of 32 UTF-16 ASCII characters is BINARY
+    (PNG, OGG, WAV -- the longest such run in the 11 tracked binaries is 6)
+    and is SKIPPED and counted as skipped. Still invisible: a credential
+    inside a binary with no such run, a key inside compressed or encoded
+    bytes, a name-bound or entropy-only credential in a non-UTF-8 file, and
+    any encoding whose ASCII range is not ASCII bytes (UTF-32, EBCDIC).
   * IT WALKS TRACKED FILES ONLY, because an untracked scratch file is nobody's
     business and a check that fails on one is a check people turn off.
   * IT DOES NOT READ CODE INSIDE A PYTHON STRING. A config blob embedded as a
@@ -65,11 +83,50 @@ hoped about:
         deliberately -- this module's own decoys rely on it (see `decoy`).
         This is an EVASION shape, and evasion is not the threat model: the
         incident this check exists for was a plain module constant.
+        Detector 3 reads a little further, and no further than the parser:
+        every string literal as the parser joined it (adjacent literals, even
+        wrapped across lines), every run of CONSECUTIVE literal operands in a
+        `+` chain, and an f-string's literal parts with its placeholders
+        dropped -- so `"pst-" + "<body>"` and `f"pst-<half>{x}<half>"` are
+        named. `"pst-" + BODY` is not: a NAME is never resolved, and only
+        detector 2 reading BODY's own literal stands behind that shape.
       - A HEX KEY UNDER AN INNOCENT NAME -- see THE HEX LIMIT below.
       - A POSITIONAL ARGUMENT: `connect("db", "svc", "Xk29qLm4Pz")` binds the
         credential to no name at all, so detector 1 has nothing to read and a
         ten-character password has no entropy signal for detector 2. Nothing
         short of taint-tracking catches this one.
+  * THE PROVIDER VIEW IS THE NOVELAI ENTRY'S ALONE, AND IT UNDOES A FIXED
+    LIST OF WRAPPINGS, NOT EVERY ONE. It deletes NULs, then spaces out a CSI
+    control sequence (colour, erase-line, cursor, empty-parameter reset) whose
+    ESC is real or escaped as backslash-u001b or backslash-x1b in either hex
+    case, backslash-033, backslash-e or backtick-e; backslash-uXXXX and
+    backslash-xXX in either hex case; a backslash or a PowerShell backtick
+    before one of n r t 0 a b f v e; and `%XX` in either hex case. No other
+    pattern and no other detector reads it: run for every provider it made an
+    `Authorization` value out of an escaped newline and prose. The view only
+    ever SEPARATES, so its one over-reading is the opposite kind: an escaped
+    BACKSLASH before one of those letters (a Windows path in JSON,
+    `\\\\new`), or a backtick code span opening on one, is read as an escape,
+    so `npst-<64 mixed characters>` there would be named.
+    Still missed, each measured by a verifier (the last two are not misses):
+      - UTF-16LE WITH a BOM, then an 8-bit append (`Out-File -Encoding utf8`).
+      - ESC lost in a copy: shown as an arrow (U+2190), as `^[`, or dropped.
+      - A colour reset BETWEEN `pst-` and the body (grep colouring a match).
+      - A CJK or kana character before the token in BOM-less UTF-16LE.
+      - A non-UTF-8 file with NULs and no 32-character UTF-16 run: skipped.
+      - Every provider but novelai in BOM-less UTF-16LE: no view, no NULs out.
+      - Double percent-encoding: `%2520`.
+      - Octal byte runs: `\\342\\200\\231`.
+      - Quoted-printable: `=E2=80=99`.
+      - Eight-digit backslash-U, and PyYAML's backslash-N, -L and -P.
+      - A name-resolved Python split: `"pst-" + BODY`.
+      - Label only: `NOVELAI_API_KEY=<tok>` is reported as credential-shaped name.
+      - Accepted false positive: a 64+ `pst-` slug with A-Z, a-z and 0-9.
+    Placement: a token the raw-line reading sees as a PREFIX of a longer
+    literal -- `("pst-<64>" "abc")` -- is reported twice, once at each
+    length, because `_dedupe` merges only equal lengths; both are on the
+    same line. A tracked path that is not UTF-8 makes the sweep raise, naming
+    the byte, rather than skip it.
 
 NO PATH IS EXEMPT, and that is deliberate: the historical defect lived under
 a `tests/` directory. An "it is only a test fixture" exemption would have made
@@ -106,6 +163,13 @@ paying for: a gate added to one route while its sibling grows without it.
      vocabulary it contains: a provider-prefixed token, a PEM private key
      header, a JWT, an `Authorization` value, a connection URL carrying
      `user:password@`, and a credential handed over in a URL QUERY STRING.
+     On a `.py` it reads twice: the raw lines, and every string the PARSER
+     sees, so a token split across adjacent literals or `+` is still one
+     token (see `_literal_runs`). Both readings run every pattern over the
+     text AS WRITTEN, and the novelai pattern alone again over its PROVIDER
+     VIEW (`provider_view`), where an escape, a control sequence, a
+     percent-encoded byte and a NUL no longer sit in front of a token
+     pretending to be a letter.
      Detector 3 exists because detectors 1 and 2 both miss those last two
      twice over -- `DATABASE_URL` ends in a POINTER suffix and a `scheme://`
      value is declared trivial, while `?api_key=...` welds the name to the
@@ -178,13 +242,18 @@ from __future__ import annotations
 import _bootstrap  # noqa: F401  (must precede engine imports)
 
 import ast
+import codecs
 import io
 import json
 import math
 import os
+import random
 import re
+import shutil
+import string
 import subprocess
 import sys
+import tempfile
 import time
 import tokenize
 
@@ -323,6 +392,7 @@ _XML_PAIRS = (
 # Detector 3. Name-blind and vocabulary-blind: these shapes ARE credentials,
 # so neither a pointer suffix nor the word `example` inside them buys silence.
 # Measured over the tracked tree: 0 hits, every pattern.
+_NOVELAI_LABEL = "novelai persistent token"
 _STRUCTURAL = (
     ("aws access key id",
      re.compile(r"\b(?:A3T[A-Z0-9]{2}|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\b")),
@@ -334,6 +404,56 @@ _STRUCTURAL = (
     ("google api key", re.compile(r"\bAIza[A-Za-z0-9_\-]{35}\b")),
     ("openai-style key", re.compile(r"\bsk-(?:ant-)?[A-Za-z0-9_\-]{20,}")),
     ("stripe key", re.compile(r"\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}\b")),
+    # `pst-` + 64 URL-safe characters. The author's real one lives in the
+    # Windows user environment as NAI_KEY and is read with os.environ, which
+    # no detector flags. Every guard reads the TOKEN and never the rest of the
+    # line, and each is pinned from both sides and proved by mutation:
+    #
+    #   a 64-character FLOOR, and 64 is MEASURED rather than chosen: two REAL
+    #     persistent tokens, one revoked and one live, were tested as booleans
+    #     only and never printed. Both carry a body of EXACTLY 64 characters,
+    #     all inside [A-Za-z0-9_-], each with an uppercase letter, a lowercase
+    #     letter and a digit, and both match this rule. The floor used to be
+    #     40, and 40 named every dated slug and branch name that happened to
+    #     carry a capital and a digit (`report-pst-2026-09-16-...-NOTES.md`,
+    #     `claude/pst-fix-2026-09-16-UTF16-BOM-...`); under 64 characters all
+    #     of those are silent now. A body of 64 is named and one of 63 is not.
+    #   a LOOKBEHIND that refuses a LETTER OR DIGIT before `pst-` (`xpst-`,
+    #     `Xpst-`, `7pst-`, `inputpst-` are somebody's identifier) and ACCEPTS
+    #     everything else, `_` and `-` included. It carries NO escape
+    #     alternative any more: `provider_view` has already turned `\n`,
+    #     `\u2019`, `\u001b[K`, `%20`, a PowerShell backtick escape and a
+    #     NUL into a space or nothing
+    #     before this runs, so an escape's letter never reaches the lookbehind.
+    #     The escape alternative it replaces read only `\n` `\r` `\t`, and was
+    #     measured missing 0/2000 behind a `json.dumps` smart quote, an escaped
+    #     ANSI colour code and a `%20`.
+    #   an UPPERCASE letter, a LOWERCASE letter AND a DIGIT, each looked for
+    #     only inside the token's own charset. The first draft looked for a
+    #     capital-or-digit with a lookahead that could run off the token, so a
+    #     lowercase slug followed by `(PR 42)` depended on where the regex
+    #     happened to stop. A random 64-character URL-safe body lacks a digit
+    #     with probability (54/64)**64 ~ 1.9e-5 and a capital or a lowercase
+    #     letter with (38/64)**64 ~ 3e-15; the seeded 20000-body sample below
+    #     re-measures that on every run. A dated lowercase slug has no
+    #     capital, an all-caps placeholder (`pst-` + `X`*64, or
+    #     `YOUR_..._TOKEN_GOES_HERE_000`) has no lowercase, and a Title-Case
+    #     slug has no digit, so all three stay silent.
+    #
+    # Stated misses. This ASSUMES a mixed-case URL-safe alphabet of at least
+    # 64: a token whose real alphabet were lowercase-only or hex, or a future
+    # format with a shorter body, would be missed outright. ACCEPTED FALSE-
+    # POSITIVE CLASS: a slug that starts `pst-`, runs 64+ characters and
+    # carries a capital, a lowercase letter and a digit fires, and a row in
+    # PROVIDER_MUST_NAME pins it firing, so the class is a recorded decision
+    # rather than a surprise. Measured 2026-09-16: `git grep -ni "pst-"` over
+    # the tracked tree names no file but this one. Detector 2 already catches
+    # many of these shapes by entropy, which is why the fixtures for this entry
+    # assert its LABEL rather than a bare hit -- see PROVIDER_MUST_NAME.
+    (_NOVELAI_LABEL,
+     re.compile(r"(?<![A-Za-z0-9])pst-"
+                r"(?=[A-Za-z0-9_\-]*[A-Z])(?=[A-Za-z0-9_\-]*[a-z])"
+                r"(?=[A-Za-z0-9_\-]*[0-9])[A-Za-z0-9_\-]{64,}")),
     ("private key block",
      re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----")),
     ("json web token",
@@ -480,11 +600,101 @@ def keyish_value(value: str) -> bool:
 
 
 def structural_credential(text: str) -> str | None:
-    """Detector 3 over one line or one literal: the label, or None."""
+    """Detector 3 over one line or one literal: the label, or None. Reads the
+    provider view exactly as `_scan_structural` does, through the same call."""
+    view = provider_view(text)
     for label, pattern in _STRUCTURAL:
-        if pattern.search(text):
+        if _provider_search(label, pattern, text, view):
             return label
     return None
+
+
+# THE PROVIDER VIEW. Every provider pattern guards the ONE character before its
+# prefix, and every serialiser a key passes through on its way into a tracked
+# file puts something letter-shaped there. Measured by two verifiers, each a
+# total miss (0 of 2000) before this existed: `json.dumps` writes a smart quote
+# as `\u2019`, so the character before `pst-` is the escape's last hex digit; a
+# chat transcript writes a colour code as `\u001b[32m`, so it is `m`; a URL
+# writes a space as `%20`, so it is `0`; and PowerShell 5.1's `>>` appends
+# UTF-16LE with no BOM, so every character is followed by a NUL. Each is
+# replaced by ONE SPACE -- a NUL is deleted -- and nothing here can match or
+# remove a newline, so a line number read off the view is the line number of
+# the text. A space only ever SEPARATES; the one thing that joins is deleting a
+# NUL, which is what BOM-less UTF-16 needs.
+#
+#   NULs are deleted FIRST, before any substitution: in `>>`-appended UTF-16LE
+#   an escaped newline is `\ NUL n NUL`, and it is an escape only once the NULs
+#   are gone. A corpus row pins that order.
+#   (a) a CSI control sequence -- ESC, `[`, parameters from `0-9;?` (none at
+#       all is `ESC[m`), ONE final letter of either case: colour, erase-line
+#       `ESC[K`, cursor `ESC[1G` `ESC[H`, `ESC[?25h`. The ESC is real, or
+#       escaped as `\u001b` or `\x1b` in either hex case, `\033`, `\e`, or
+#       PowerShell's backtick-e. Tried FIRST, or (b) and (c) eat its head and
+#       leave `[32m` in front of the token;
+#   (b) `\uXXXX` and `\xXX`, either hex case (System.Text.Json and Jackson
+#       write UPPERCASE; Python and Go write lowercase);
+#   (c) a BACKSLASH or a PowerShell BACKTICK before one of `_ESCAPE_LETTERS`;
+#   (d) a percent-encoded byte `%XX`, either hex case.
+#
+# It is a SECOND reading, never a replacement: the pattern still reads the text
+# as written first, because a connection URL whose password is spelled `p%40ss`
+# is a credential the view would break in two at the `%40`.
+#
+# AND IT IS THE NOVELAI ENTRY'S ALONE (`_READS_VIEW`). Run for every provider,
+# verifier B measured it making credentials the file does not contain: an
+# escaped newline welds `Bearer` to the next word of prose, and a `%2F` or an
+# escaped newline puts a word boundary in front of `sk-learn-...`. HEAD fired
+# on none of those, so every other pattern reads the text as written, only.
+_ESCAPE_LETTERS = "nrt0abfve"          # one string for BOTH escape characters
+_READS_VIEW = frozenset((_NOVELAI_LABEL,))
+_PROVIDER_NOISE = re.compile(
+    r"(?:\x1b|\\(?:u001[bB]|x1[bB]|033|e)|`e)\[[0-9;?]*[A-Za-z]"
+    r"|\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{2}"
+    r"|[\\`][" + _ESCAPE_LETTERS + r"]"
+    r"|%[0-9A-Fa-f]{2}")
+
+
+def provider_view(text: str) -> str:
+    """`text` with NULs deleted, THEN escapes, control sequences and
+    percent-encoding spaced out -- for the patterns in `_READS_VIEW` only.
+    Detectors 1 and 2 never read it: an entropy test over a view is a second
+    chance to cry wolf, and so is every other provider pattern."""
+    return _PROVIDER_NOISE.sub(" ", text.replace("\x00", ""))
+
+
+def _provider_search(label: str, pattern, text: str, view: str):
+    """The first match in the text AS WRITTEN; failing that, and only for a
+    pattern in `_READS_VIEW`, the first match in its provider view."""
+    match = pattern.search(text)
+    if match is None and label in _READS_VIEW:
+        match = pattern.search(view)
+    return match
+
+
+def _lines(source: str) -> list[str]:
+    """Physical lines, split on `\\n` ALONE -- the separator `decode_text`
+    leaves and the one the parser counts. `str.splitlines` also breaks on
+    U+0085, and a cp1252 ellipsis read as latin-1 IS U+0085, so every line
+    after one was placed a line late."""
+    return source.split("\n")
+
+
+def _placed(lines: list[str], first: int, last: int, text: str, match) -> int:
+    """The physical line a literal-pass hit belongs on. The first line of the
+    literal whose text carries the whole match, which is where the raw-line
+    pass found it too; otherwise, for a token the source wrote in PIECES, the
+    literal's first line plus the newlines before the match, never past its
+    last. Counting the VALUE's newlines alone put a token behind an ESCAPED
+    `\\n` in a triple-quoted literal one line late, and it was reported twice.
+    The line's provider view is NOT consulted, and that is not an omission:
+    only the novelai pattern reads a view, its match never includes the
+    character before `pst-`, and the view only inserts SPACES except where it
+    deletes a NUL -- which `ast.parse` refuses, so no parsed line has one."""
+    token = match.group(0)
+    for number in range(first, min(last, len(lines)) + 1):
+        if token in lines[number - 1]:
+            return number
+    return min(last, first + text.count("\n", 0, match.start()))
 
 
 # ------------------------------------------------------------------ findings
@@ -565,6 +775,66 @@ def _string_value(node) -> str | None:
     return None
 
 
+def _literal_text(node) -> str | None:
+    """A str constant's value, or an f-string's LITERAL parts joined with its
+    placeholders dropped. The f-string half is a deliberate over-reading, not
+    a fact about the runtime value: it exists so a token split round a
+    placeholder -- `f"pst-<half>{sep}<half>"` -- is still read as one."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(piece.value for piece in node.values
+                       if isinstance(piece, ast.Constant)
+                       and isinstance(piece.value, str))
+    return None
+
+
+def _literal_runs(tree):
+    """(first line, last line, text) for every run of literal text a Python
+    file carries AS THE PARSER SEES IT, for detector 3. The raw-line reading
+    is blind to a token the source wrote in pieces, and three joins close the
+    ordinary spellings of that without evaluating anything:
+
+      * a str constant -- adjacent literals, even wrapped across lines, are
+        already ONE constant by the time the parser hands them over;
+      * a `+` chain, flattened, each run of CONSECUTIVE literal operands
+        joined: `x + "a" + "b"` contains `ab` at runtime whatever `x` is,
+        and `"a" + x + "b"` is not read as `ab`. A NAME is never resolved;
+      * an f-string, through `_literal_text`.
+
+    A chain is read once, from its outermost `+`, and its literal operands
+    are not read again on their own -- a shorter read of the same operand is
+    a second finding of a different length, which `_dedupe` cannot merge."""
+    in_chain: set[int] = set()
+    for node in ast.walk(tree):
+        if id(node) in in_chain:
+            continue
+        if not (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)):
+            text = _literal_text(node)
+            if text is not None:
+                yield node.lineno, getattr(node, "end_lineno", node.lineno), text
+            continue
+        run: list = []
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            in_chain.add(id(current))
+            if isinstance(current, ast.BinOp) and isinstance(current.op, ast.Add):
+                stack.extend((current.right, current.left))
+                continue
+            text = _literal_text(current)
+            if text is None:
+                if run:
+                    yield (run[0].lineno, run[-1].end_lineno,
+                           "".join(_literal_text(n) for n in run))
+                run = []
+            else:
+                run.append(current)
+        if run:
+            yield (run[0].lineno, run[-1].end_lineno,
+                   "".join(_literal_text(n) for n in run))
+
+
 # ---------------------------------------------------------------- the routes
 
 def _scan_structural(path: str, source: str) -> list[Finding]:
@@ -581,9 +851,10 @@ def _scan_structural(path: str, source: str) -> list[Finding]:
         r"(?:^|[^A-Za-z0-9])("
         + "|".join(sorted(_QUERY_WORDS, key=len, reverse=True))
         + r")s?(?:[^A-Za-z0-9]|$)", re.IGNORECASE)
-    for number, line in enumerate(source.splitlines(), 1):
+    for number, line in enumerate(_lines(source), 1):
+        view = provider_view(line)
         for label, pattern in _STRUCTURAL:
-            match = pattern.search(line)
+            match = _provider_search(label, pattern, line, view)
             if match:
                 found.append(Finding(path, number, "<literal>",
                                      match.group(0), label))
@@ -601,7 +872,7 @@ def _scan_structural(path: str, source: str) -> list[Finding]:
 def _text_names(path: str, source: str, offset: int = 0) -> list[Finding]:
     """Detector 1, line form."""
     found: list[Finding] = []
-    for number, line in enumerate(source.splitlines(), 1 + offset):
+    for number, line in enumerate(_lines(source), 1 + offset):
         for match in _TEXT_ASSIGN.finditer(line):
             name, value = match.group("name"), match.group("value")
             if credential_name(name) and not trivial_value(value):
@@ -619,7 +890,7 @@ def _text_names(path: str, source: str, offset: int = 0) -> list[Finding]:
 def _text_tokens(path: str, source: str) -> list[Finding]:
     """Detector 2, line form."""
     found: list[Finding] = []
-    for number, line in enumerate(source.splitlines(), 1):
+    for number, line in enumerate(_lines(source), 1):
         for token in _TEXT_TOKEN.findall(line):
             if keyish_value(token):
                 found.append(Finding(path, number, "<token>", token,
@@ -711,6 +982,27 @@ def _scan_python(path: str, source: str) -> list[Finding]:
             found.append(Finding(path, getattr(node, "lineno", 1), "<literal>",
                                  value, "high-entropy key-shaped literal"))
 
+    # Detector 3 again, over the strings the PARSER sees. The raw-line pass in
+    # `_scan_structural` already reads every line of this file; this pass is
+    # for a token the source wrote in PIECES. Each string is read as the parser
+    # decoded it, FIRST and by every pattern -- a DSN whose password carries
+    # `%40` and is split across adjacent literals is named by that reading
+    # alone -- and then, for a pattern in `_READS_VIEW` only, through its
+    # provider view, because a decoded literal still carries `%20`, a real ESC
+    # control sequence, and a raw string's `\n`, which is the case the raw-line
+    # pass cannot rescue when the token is also split. A hit is placed by
+    # `_placed`, so a token both passes see lands on ONE line at ONE length.
+    lines = _lines(source)
+    for first, last, text in _literal_runs(tree):
+        view = provider_view(text)
+        for label, pattern in _STRUCTURAL:
+            viewed = label in _READS_VIEW and view != text
+            for read in ((text, view) if viewed else (text,)):
+                for match in pattern.finditer(read):
+                    found.append(Finding(path,
+                                         _placed(lines, first, last, read, match),
+                                         "<literal>", match.group(0), label))
+
     # Detector 1 over comments, which the AST cannot see.
     for line, text in _python_comments(source):
         found.extend(_text_names(path, text, offset=line - 1))
@@ -726,7 +1018,7 @@ def _scan_json(path: str, source: str) -> list[Finding] | None:
         document = json.loads(source)
     except (ValueError, RecursionError):
         return None
-    lines = source.splitlines()
+    lines = _lines(source)
     found: list[Finding] = []
 
     def locate(name: str, value: str) -> int:
@@ -771,27 +1063,132 @@ def scan_source(path: str, source: str) -> list[Finding]:
     return _dedupe(found + _text_names(path, source) + _text_tokens(path, source))
 
 
+_UTF16_BOMS = (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)
+
+# How `scan_file` read a file: TEXT ran all three detectors, BYTES ran detector
+# 3 alone over a latin-1 reading of a file that is not UTF-8, and None is a
+# binary that was skipped.
+TEXT, BYTES = "text", "bytes"
+
+# A file with NUL bytes that is not UTF-8 is BINARY unless it carries this: 32
+# UTF-16 ASCII characters in a row, a printable byte then a zero byte. Measured
+# over the 11 tracked binaries (nine PNG, an OGG, a WAV): the longest such run
+# in any of them is 6. A novelai token alone is a run of 68, so no floor at or
+# under that can skip a file carrying one IN UTF-16; what 32 decides is a file
+# whose token is in its 8-bit text beside a short UTF-16 run, and a corpus row
+# pins it from both sides -- a run of exactly 32 is read, a WAV's 31 is not.
+_UTF16_ASCII_RUN = re.compile(rb"(?:[\t\n\r\x20-\x7e]\x00){32}")
+
+
+def _one_newline(text: str) -> str:
+    """Every line ending as `\\n`, exactly as a text-mode `open` did before
+    this module read bytes -- plus `\\r NUL \\n`, which is a CRLF of BOM-less
+    UTF-16LE read as UTF-8 or latin-1, and which the two replacements after it
+    would otherwise count as TWO lines."""
+    return text.replace("\r\x00\n", "\n").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def decode_text(raw: bytes) -> str:
+    """A tracked file's text, or UnicodeDecodeError. UTF-16 ONLY behind its
+    byte-order mark, which is the one encoding signal that is not a guess --
+    Windows PowerShell 5.1's `>` redirect and `reg export` both write one, and
+    both used to be skipped as unreadable. UTF-8 through `utf-8-sig`, so a BOM
+    is dropped rather than handed to `ast.parse` as U+FEFF, which refuses it
+    and silently took the whole literal pass off a BOM `.py`."""
+    if raw.startswith(_UTF16_BOMS):
+        text = raw.decode("utf-16")                  # the codec eats the BOM
+    else:
+        text = raw.decode("utf-8-sig")
+    return _one_newline(text)
+
+
 def scan_file(path: str, relative: str | None = None):
-    """Returns (findings, readable). `readable` is False for a file that does
-    not decode as UTF-8 -- a PNG, a WAV -- which this check cannot see into."""
+    """Returns (findings, how). `how` is TEXT for a file `decode_text` reads;
+    BYTES for one that is not UTF-8 -- read as latin-1, detector 3 only,
+    because a provider token is ASCII in every codepage and a name or an
+    entropy reading of a guessed codepage is a guess; and None for a binary
+    (NUL bytes and no UTF-16 ASCII run) or a file that cannot be opened,
+    which this check cannot see into and counts as skipped."""
     try:
-        with open(path, encoding="utf-8") as handle:
-            source = handle.read()
-    except (UnicodeDecodeError, OSError):
-        return [], False
-    return scan_source(relative or path, source), True
+        with open(path, "rb") as handle:
+            raw = handle.read()
+    except OSError:
+        return [], None
+    name = relative or path
+    try:
+        source = decode_text(raw)
+    except UnicodeDecodeError:
+        if b"\x00" in raw and not _UTF16_ASCII_RUN.search(raw):
+            return [], None
+        source = _one_newline(raw.decode("latin-1"))
+        return _dedupe(_scan_structural(name, source)), BYTES
+    return scan_source(name, source), TEXT
 
 
-def tracked_files() -> list[str] | None:
-    """Every tracked path, or None when git cannot answer."""
+def split_ls_files(raw: bytes) -> list[str]:
+    """`git ls-files -z` output as paths, decoded as UTF-8 EXPLICITLY. With
+    `-z` git neither quotes nor escapes a path, it writes the path's bytes,
+    and those are UTF-8. The previous reader passed `text=True`, which
+    decodes with the LOCALE -- cp1252 on the author's machine -- so `é`
+    arrived as two characters naming no file, which was then skipped as
+    unopenable in silence; and a path holding byte 0x81 (`ā` is C4 81),
+    undefined in cp1252, made the pipe's reader thread raise, left stdout
+    None, and killed the check on an AttributeError."""
+    return [p for p in raw.decode("utf-8").split("\0") if p.strip()]
+
+
+def tracked_files(root: str = ROOT) -> list[str] | None:
+    """Every tracked path under `root`. None ONLY when git cannot be started
+    at all; a git that starts and does not answer raises RuntimeError naming
+    why, because an empty or unread tree must never pass as a clean one."""
     try:
-        out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT,
-                             capture_output=True, text=True, timeout=60)
-    except Exception:                                        # pragma: no cover
+        out = subprocess.run(["git", "ls-files", "-z"], cwd=root,
+                             capture_output=True, timeout=60)
+    except OSError:                                          # pragma: no cover
         return None
-    if out.returncode != 0:                                  # pragma: no cover
+    except subprocess.TimeoutExpired as exc:                 # pragma: no cover
+        raise RuntimeError(f"git ls-files timed out after {exc.timeout}s "
+                           f"in {root}") from exc
+    if out.returncode != 0 or out.stdout is None:
+        stderr = (out.stderr or b"").decode("utf-8", "replace").strip()
+        raise RuntimeError(f"git ls-files exited {out.returncode} in {root}: "
+                           f"{stderr or 'no output'}")
+    try:
+        return split_ls_files(out.stdout)
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(f"git ls-files in {root} printed a path that is not "
+                           f"UTF-8 at byte {exc.start}") from exc
+
+
+def sweep(root: str = ROOT) -> dict | None:
+    """Every tracked file under `root` through `scan_file` -- the tree
+    assertion's whole input. None ONLY when git cannot be started at all.
+    A git that starts and FAILS is not an empty tree: its error is a line of
+    `verdict`, the very list the tree assertion demands be empty. It used to
+    be a separate assertion, and deleting that one line left the check green
+    over a sweep of nothing, because git works on the author's tree; a
+    corpus row now sweeps a broken repository through this function."""
+    report = {"error": None, "findings": [], "swept": 0, "as_bytes": 0,
+              "skipped": 0}
+    try:
+        tracked = tracked_files(root)
+    except RuntimeError as exc:
+        report["error"] = str(exc)
+        tracked = []
+    if tracked is None:                                      # pragma: no cover
         return None
-    return [p for p in out.stdout.split("\0") if p.strip()]
+    for relative in tracked:
+        hits, how = scan_file(os.path.join(root, relative), relative)
+        if how is None:
+            report["skipped"] += 1
+            continue
+        report["swept"] += 1
+        report["as_bytes"] += how == BYTES
+        report["findings"].extend(hits)
+    report["verdict"] = (
+        ([f"git ls-files failed: {report['error']}"] if report["error"] else [])
+        + [str(hit) for hit in report["findings"]])
+    return report
 
 
 # ------------------------------------------------------- one file, on demand
@@ -812,10 +1209,13 @@ if "--scan" in sys.argv:
     # Exit 1 means a credential was found, which is the same polarity the
     # suite uses.
     target_path = sys.argv[sys.argv.index("--scan") + 1]
-    hits, readable = scan_file(target_path, os.path.basename(target_path))
-    if not readable:
-        print(f"unreadable (not UTF-8): {target_path}")
+    hits, how = scan_file(target_path, os.path.basename(target_path))
+    if how is None:
+        print(f"skipped: binary (not UTF-8, NUL bytes, no UTF-16 text run) "
+              f"or unopenable: {target_path}")
         sys.exit(2)
+    if how == BYTES:
+        print("not UTF-8: read as bytes, detector 3 (provider patterns) only")
     for hit in hits:
         print(f"  HIT  {hit}")
     print(f"{len(hits)} finding(s) in {os.path.basename(target_path)}")
@@ -869,6 +1269,22 @@ _DSN = decoy("postgres://svc:", "Xk29qLm4Pz", "@db.internal:5432/app")
 # Step 5 caught exactly that, for the second time this pass.
 _QUERY_KEY = decoy("Zk84Lq", "02MnRvTt")
 _QUERY_SHORT = decoy("Qv71m", "Lz4Bn")
+# A NovelAI persistent token's shape: `pst-` and 64 URL-safe characters, both
+# `_` and `-` included on purpose. The prefix is its own part so no line of
+# this file ever spells `pst-` followed by the body.
+_NOVELAI = decoy("pst-", "Xk29qLm4PzRt7Bd2", "Nc04WpaB3kZq91Lm",
+                 "Qv71mLz4BnRt9X_e", "Zk84Lq02MnRvTt-y")
+# The floor, from BOTH sides, with the same high-entropy alphabet: `_NOVELAI`
+# is a body of exactly 64 -- the length both real tokens measured -- and this
+# is one of 63, every character class present in both, so the only thing that
+# separates them is the number the floor names.
+_NOVELAI_63 = _NOVELAI[:-1]
+_NOVELAI_BODY = _NOVELAI[len("pst-"):]
+# THE ACCEPTED FALSE-POSITIVE CLASS: a 71-character dated slug carrying a
+# capital, a lowercase letter and a digit. Assembled, because spelled out it
+# would fire on this file.
+_NOVELAI_SLUG = decoy("pst-", "2026-09-16", "-Collision", "-Companion",
+                      "-Migration", "-Notes-And", "-Followups", "-For-Review")
 
 # 1. THE POSITIVE CORPUS -- the ways a credential actually gets written. Each
 #    entry is a SHAPE, named so a reader can see which route it exercises and
@@ -1023,6 +1439,15 @@ MUST_NOT_FIRE = [
      "d3: a session IDENTIFIER is a pointer, not the credential"),
     ('HEADERS = {"Content-Type": "application/json"}',
      "a hyphenated header that names no credential"),
+    ('NAI_KEY = os.environ["NAI_KEY"]',
+     "the NovelAI key read from the user environment, which is where it lives"),
+    ('NAI_KEY = os.environ.get("NAI_KEY")',
+     "the same through .get with no fallback"),
+    ('NAI_ENV = "NAI_KEY"', "the environment variable's NAME is a pointer"),
+    ('NAI_KEY = os.environ.get("NAI_KEY", "")',
+     "the NovelAI read with an EMPTY fallback -- no `pst-` in it, so this row "
+     "pins detector 1's empty-value rule and no novelai regex change can "
+     "turn it red; the rows that can are in TEXT_MUST_NOT_FIRE"),
 ]
 for snippet, why in MUST_NOT_FIRE:
     hits = scan_source("corpus.py", snippet)
@@ -1091,16 +1516,553 @@ TEXT_MUST_NOT_FIRE = [
      "tmx: a pointer name in the attribute form obeys the same rule"),
     ("map.tmx", '  <property name="pyoneer_collision" value="Collision"/>',
      "tmx: the shipped collision declaration"),
+    ("notes.md", "NAI_KEY", "md: the NovelAI variable's NAME, alone"),
+    ("notes.md", "Compare the pst-v2 draft against pst-final before merging.",
+     "md: a SHORT pst- word in prose -- the half the novelai floor exists for"),
+    ("notes.md", "see pst-migration-notes-for-the-collision-companion-layer (PR 42)",
+     "md: a lowercase pst- slug with no digit and no capital in the token and "
+     "both later on the line"),
+    # The slugs verifier B measured FIRING under the old 40-character floor:
+    # each carries a capital, a lowercase letter and a digit, and each body is
+    # 40 to 63 characters, so the floor's value is the only thing silencing
+    # it. A floor back at 40 turns all four red.
+    ("notes.md",
+     "docs/history/report-pst-2026-09-16-collision-companion-migration-NOTES.md",
+     "md: a dated report filename with a capitalised tail, 46 characters"),
+    ("notes.md", "branch claude/pst-fix-2026-09-16-UTF16-BOM-decode-in-check-secrets",
+     "md: a branch name, 48 characters"),
+    ("server.log", "started pst-run-20260916T100000Z-abc123def456-worker-01 ok",
+     "log: a run identifier, 43 characters"),
+    ("notes.md", "NAI_KEY=pst-Your_Persistent_Token_Goes_Here_" + "0" * 10,
+     "md: a Title-Case placeholder with a digit tail, 42 characters"),
+    # Each row below pins ONE lookahead from both directions: removing it makes
+    # the token satisfy the rest, and widening it from the token's charset to
+    # `.*` lets the trailing text on the same line satisfy it instead. Every
+    # body here is OVER the 64 floor, or the floor would silence it first and
+    # the lookahead would be untested.
+    ("notes.md", "see pst-2026-09-16-collision-companion-migration-notes-and-"
+                 "followups-for-review (PR 42)",
+     "md: the CAPITAL lookahead -- a dated lowercase slug over the floor has "
+     "digits and lowercase and no capital, and `PR` sits later on the line"),
+    ("notes.md",
+     "see pst-Migration-Notes-For-The-Collision-Companion-Layer-And-Its-"
+     "Followup-Review (PR 42)",
+     "md: the DIGIT lookahead -- a Title-Case slug over the floor has capitals "
+     "and lowercase and no digit, and `42` sits later on the line"),
+    ("notes.md",
+     "NAI_KEY=pst-YOUR_PERSISTENT_TOKEN_GOES_HERE_" + "0" * 32 + " (paste yours)",
+     "md: the LOWERCASE lookahead -- an all-caps placeholder with digits has "
+     "no lowercase letter, and `paste yours` sits later on the line"),
+    (".env", "NAI_KEY=pst-" + "X" * 64,
+     "env: an all-caps placeholder body with neither digit nor lowercase"),
 ]
 for text_path, body, why in TEXT_MUST_NOT_FIRE:
     expect(f"silent: {why}", [str(h) for h in scan_source(text_path, body)], [])
 
+# 3a. A PROVIDER ENTRY MUST NAME ITSELF. A bare `bool(hits)` cannot prove a
+#     detector 3 entry is alive when detector 2 already reads the same string
+#     by entropy -- measured before the novelai entry existed: a synthetic
+#     `pst-` token under `NAI_KEY` in a .py, in prose and in a tmx attribute
+#     was ALREADY caught (as a high-entropy literal), while the same token in a
+#     python comment and on a dotenv `NAI_KEY=` line was not caught at all. So
+#     a dead regex would leave a bool corpus green on three of five shapes.
+#     These rows assert the LABEL is among the verdicts, which only the entry
+#     under test can produce. Not the exact verdict list: on half these shapes
+#     detector 2 legitimately reads a run of a DIFFERENT length beside it --
+#     `_<token>_`, `auth-<token>`, the body operand of a `+` -- and a row that
+#     demanded detector 2's silence would be asserting something about
+#     detector 2. PROVIDER_MUST_NOT_NAME is the other half: the label ABSENT,
+#     whatever detector 2 says, which is what lets its negatives carry a real
+#     high-entropy body instead of one chosen to dodge the entropy test.
+PROVIDER_MUST_NAME = [
+    # THE PROVIDER VIEW, one row per thing it spaces out, each on a route with
+    # no parser behind it so the raw-line reading is the only reader. The
+    # escaped letters first -- `n`, `r`, `t` are the ones the deleted escape
+    # lookbehind knew about.
+    ("conf.json", '{"note": "my NovelAI key:\\n%s"}' % _NOVELAI, _NOVELAI_LABEL,
+     "json: after an escaped NEWLINE inside a one-line string"),
+    ("transcript.jsonl",
+     '{"role": "user", "content": "persistent token\\t%s"}' % _NOVELAI,
+     _NOVELAI_LABEL, "jsonl: after an escaped TAB in a chat transcript line"),
+    ("deploy.yaml", 'voice_note: "rotated\\r%s"' % _NOVELAI, _NOVELAI_LABEL,
+     "yaml: after an escaped CARRIAGE RETURN in a quoted scalar"),
+    ("corpus.py", 'print("NovelAI token:\\n%s")' % _NOVELAI, _NOVELAI_LABEL,
+     "py: after an escaped newline in a print"),
+    # The lookbehind's ACCEPTING half: punctuation that is not a letter/digit.
+    ("notes.md", "the key is _%s_ and nothing else" % _NOVELAI, _NOVELAI_LABEL,
+     "md: a token in _italics_, underscore before `pst-`"),
+    ("server.log", "2026-09-16T12:00:01 accepted auth-%s" % _NOVELAI,
+     _NOVELAI_LABEL, "log: `auth-<token>`, a hyphen before `pst-`"),
+    # A backslash is not an escape LETTER: a Windows path puts one directly
+    # before the token, and a view that ate `\p` would hide it. Written the
+    # way PowerShell 5.1's `>>` appends it -- UTF-16LE with no BOM, read as
+    # UTF-8, a NUL after every character -- because written plainly the text
+    # AS WRITTEN already names it and a greedy view is never noticed.
+    # Measured: the plain row survived a view widened to backslash-[a-z].
+    ("paths.txt", "\0".join("C:\\Users\\me\\" + _NOVELAI) + "\0",
+     _NOVELAI_LABEL, "txt: a BACKSLASH before `pst-` in a Windows path, "
+     "NUL-interleaved, so only the view reads it"),
+    # The floor's accepting side. Its refusing side is PROVIDER_MUST_NOT_NAME.
+    ("notes.md", "token %s rotated" % _NOVELAI, _NOVELAI_LABEL,
+     "md: a body of EXACTLY 64 characters, on the floor -- the length both "
+     "real tokens measured"),
+    ("notes.md", "docs/history/report-%s.md" % _NOVELAI_SLUG, _NOVELAI_LABEL,
+     "md: THE ACCEPTED FALSE POSITIVE -- a 71-character dated slug with a "
+     "capital and a digit fires, and that is recorded, not overlooked"),
+    # The rest of the view: what `json.dumps(ensure_ascii=True)` writes for a
+    # character the editor saves under data/project/, what a transcript
+    # writes for a colour code, what a URL writes for a space, and a
+    # percent-encoded DSN whose `%40` the view must NOT be the only reader of.
+    ("scripts.json", json.dumps({"say": "key\u2019" + _NOVELAI}), _NOVELAI_LABEL,
+     "json: an ESCAPED SMART QUOTE `\\u2019` directly before the token, as "
+     "json.dumps writes it"),
+    ("scripts.json", '{"html": "\\u003cb\\u003e%s"}' % _NOVELAI, _NOVELAI_LABEL,
+     "json: a Go-style HTML escape `\\u003e` directly before the token"),
+    ("session.jsonl",
+     json.dumps({"type": "tool_result", "content": "\x1b[32m%s\x1b[0m" % _NOVELAI}),
+     _NOVELAI_LABEL,
+     "jsonl: an ESCAPED ANSI colour code `\\u001b[32m` directly before the token "
+     "-- tried before `\\uXXXX`, or `[32m` is left in front of it"),
+    ("build.log", "\x1b[1;32m%s\x1b[0m" % _NOVELAI, _NOVELAI_LABEL,
+     "log: a REAL ESC colour code directly before the token"),
+    ("repr.txt", "echo -e '\\x1b[32m%s'" % _NOVELAI, _NOVELAI_LABEL,
+     "txt: a colour code escaped as `\\x1b[32m`"),
+    ("run.sh", "printf '\\033[32m%s\\033[0m'" % _NOVELAI, _NOVELAI_LABEL,
+     "sh: a colour code escaped in octal as `\\033[32m`"),
+    ("repr.txt", "'voice key:\\xa0%s'" % _NOVELAI, _NOVELAI_LABEL,
+     "txt: a Python repr's `\\xa0` directly before the token"),
+    ("corpus.py", 'NOTE = "pasted as%%20%s"' % _NOVELAI, _NOVELAI_LABEL,
+     "py: a PERCENT-ENCODED space `%20` before the token in a string"),
+    ("corpus.py", "# pasted as%%20%s" % _NOVELAI, _NOVELAI_LABEL,
+     "py: the same `%20` in a COMMENT, which only the raw-line reading sees"),
+    ("corpus.py",
+     'NAI_KEY = (\n    "note%%20%s"\n    "%s"\n)' % (_NOVELAI[:36], _NOVELAI[36:]),
+     _NOVELAI_LABEL,
+     "py: `%20` before a token SPLIT across adjacent literals -- no physical "
+     "line holds it, so only the literal pass's own provider view can name it"),
+    ("notes.md", "connect to %s" % decoy("postgres://svc:", "Xk29%40qLm4Pz",
+                                        "@db.internal:5432/app"),
+     "url with inline credentials",
+     "md: a DSN whose password carries `%40` -- the view breaks it in two, so "
+     "the text AS WRITTEN must still be read first"),
+    ("corpus.py",
+     'DATABASE_URL = (\n    "%s"\n    "%s"\n)'
+     % (decoy("postgres://svc:", "Xk29%40"), decoy("qLm4Pz", "@db.internal:5432/app")),
+     "url with inline credentials",
+     "py: the same `%40` DSN SPLIT across adjacent literals -- no physical line "
+     "holds it and the view breaks it, so the literal pass must read the "
+     "parser's text as written, not only its view"),
+    # Python pieces, which the raw-line reading cannot join. `_literal_runs`.
+    ("corpus.py", 'NAI_KEY = "pst-" + "%s"' % _NOVELAI_BODY, _NOVELAI_LABEL,
+     "py: `\"pst-\" + body`, an explicit concatenation"),
+    ("corpus.py",
+     'NAI_KEY = "pst-" + "%s" + "%s"' % (_NOVELAI_BODY[:32], _NOVELAI_BODY[32:]),
+     _NOVELAI_LABEL, "py: a 32 + 32 split behind the prefix"),
+    ("corpus.py",
+     'NAI_KEY = (\n    "%s"\n    "%s"\n)' % (_NOVELAI[:36], _NOVELAI[36:]),
+     _NOVELAI_LABEL, "py: ADJACENT literals wrapped across two lines"),
+    ("corpus.py", 'NAI_KEY = f"%s{SEP}%s"' % (_NOVELAI[:36], _NOVELAI[36:]),
+     _NOVELAI_LABEL, "py: an f-string split round a placeholder"),
+    ("corpus.py", 'NAI_KEY = PREFIX + "%s" + "%s"' % (_NOVELAI[:36], _NOVELAI[36:]),
+     _NOVELAI_LABEL,
+     "py: consecutive literals AFTER a name in a `+` chain still join"),
+    ("corpus.py", 'NAI_KEY = "%s"' % _NOVELAI, _NOVELAI_LABEL,
+     "py: a novelai token under the very name its environment variable has"),
+    ("corpus.py", 'voice = os.environ.get("NAI_KEY", "%s")' % _NOVELAI,
+     _NOVELAI_LABEL,
+     "py: a committed novelai FALLBACK beside a correct NAI_KEY read"),
+    ("corpus.py", "# NovelAI: %s" % _NOVELAI, _NOVELAI_LABEL,
+     "py: a novelai token in a COMMENT, which detector 2 never reads"),
+    (".env", "NAI_KEY=%s" % _NOVELAI, _NOVELAI_LABEL,
+     "env: a novelai token welded to its name by `=` -- detector 2 reads one "
+     "unkeyish run and `NAI_KEY` carries no credential word"),
+    ("notes.md", "Paste your token (%s) into the prompt strip." % _NOVELAI,
+     _NOVELAI_LABEL, "md: a novelai token bare in prose"),
+    ("conf.json", '{\n  "novelai": {\n    "persistent": "%s"\n  }\n}' % _NOVELAI,
+     _NOVELAI_LABEL, "json: a novelai token nested and pretty-printed"),
+    ("fixture.tmx",
+     '  <property name="pyoneer_param_voice" value="%s"/>' % _NOVELAI,
+     _NOVELAI_LABEL, "tmx: a novelai token in an xml attribute value"),
+]
+# The other one-letter escapes, and the four characters verifier A
+# measured 0/2000 behind as `json.dumps` writes them -- a non-breaking space, a
+# zero-width space, an ellipsis, an em dash (the smart quote is a row above).
+PROVIDER_MUST_NAME += [
+    ("escapes.log", "key\\%s%s" % (_letter, _NOVELAI), _NOVELAI_LABEL,
+     "log: after an escaped `\\%s`" % _letter) for _letter in "fvb0ea"]
+# THE WIDENED VIEW, one row for every spelling a mutant could drop. The letters
+# are SPELLED here, never read off `_ESCAPE_LETTERS`: a loop over the constant
+# under test cannot notice a letter deleted from it. PowerShell's backtick
+# escapes are what a hand-typed `"key:`n<token>"` puts in front of the token.
+PROVIDER_MUST_NAME += [
+    ("profile.ps1", '$note = "voice key:`%s%s"' % (_letter, _NOVELAI),
+     _NOVELAI_LABEL, "ps1: after a PowerShell backtick escape `%s" % _letter)
+    for _letter in "nrt0abfve"]
+# A CSI sequence is not only colour: a spinner erases its line with `ESC[K` or
+# `ESC[2K`, moves with `ESC[1G`, homes with `ESC[H`, shows the cursor with
+# `ESC[?25h`; `tput sgr0` and git reset with the EMPTY-parameter `ESC[m`; GNU
+# grep --color=always writes `ESC[01;31mESC[K`.
+PROVIDER_MUST_NAME += [
+    ("build.log", _csi + _NOVELAI, _NOVELAI_LABEL,
+     "log: a real ESC sequence %s directly before the token" % ascii(_csi)[1:-1])
+    for _csi in ("\x1b[m", "\x1b[K", "\x1b[2K", "\x1b[1G", "\x1b[?25h",
+                 "\x1b[H", "\x1b[01;31m\x1b[K")]
+PROVIDER_MUST_NAME += [
+    ("session.jsonl", '{"content": "\\u001B[32m%s"}' % _NOVELAI, _NOVELAI_LABEL,
+     "jsonl: an escaped ESC in UPPERCASE hex, as System.Text.Json and Jackson "
+     "write it"),
+    ("session.jsonl", '{"content": "\\u001b[m%s"}' % _NOVELAI, _NOVELAI_LABEL,
+     "jsonl: an escaped EMPTY-parameter reset `ESC[m`"),
+    ("session.jsonl", '{"content": "working\\r\\u001b[K%s"}' % _NOVELAI,
+     _NOVELAI_LABEL, "jsonl: a progress line's escaped CR and erase-line"),
+    ("run.sh", "echo -e '\\x1B[32m%s'" % _NOVELAI, _NOVELAI_LABEL,
+     "sh: `\\x1B[32m`, hand-written in UPPERCASE hex"),
+    ("run.sh", "printf '\\033[2K%s'" % _NOVELAI, _NOVELAI_LABEL,
+     "sh: `\\033[2K`, an octal ESC before an erase-line"),
+    ("styles.yaml", 'banner: "\\e[32m%s"' % _NOVELAI, _NOVELAI_LABEL,
+     "yaml: `\\e[32m`, the ESC escape of bash and PyYAML"),
+    ("profile.ps1", 'Write-Host "`e[32m%s"' % _NOVELAI, _NOVELAI_LABEL,
+     "ps1: PowerShell 7's backtick-e ESC before a colour code"),
+    ("scripts.json", '{"html": "\\u003Cb\\u003E%s"}' % _NOVELAI, _NOVELAI_LABEL,
+     "json: an UPPERCASE-hex unicode escape, as System.Text.Json writes `>`"),
+    ("repr.txt", "'voice key:\\xA0%s'" % _NOVELAI, _NOVELAI_LABEL,
+     "txt: an UPPERCASE-hex `\\xA0` directly before the token"),
+    ("corpus.py", 'CALLBACK = "https%%3A%%2F%%2Fx%%2Fy%%3Ftoken%%3D%s"' % _NOVELAI,
+     _NOVELAI_LABEL, "py: `%3D` before the token, a LETTER in the hex"),
+    ("corpus.py", 'NOTE = "pasted as%%3d%s"' % _NOVELAI, _NOVELAI_LABEL,
+     "py: a LOWERCASE `%3d` before the token"),
+    ("notes.md", "keys%%2C%s" % _NOVELAI, _NOVELAI_LABEL,
+     "md: `%2C`, a percent-encoded comma, before the token"),
+]
+PROVIDER_MUST_NAME += [
+    ("tables.json", json.dumps({"note": "key" + _char + _NOVELAI}),
+     _NOVELAI_LABEL, "json: after json.dumps's %s" % ascii(_char)[1:-1])
+    for _char in " ​…—"]
+for text_path, body, label, why in PROVIDER_MUST_NAME:
+    expect(f"names {label}: {why}",
+           label in [h.why for h in scan_source(text_path, body)], True)
+
+PROVIDER_MUST_NOT_NAME = [
+    ("notes.md", "token %s rotated" % _NOVELAI_63, _NOVELAI_LABEL,
+     "md: a body of 63 characters, ONE under the floor"),
+    ("notes.md", "see x%s" % _NOVELAI, _NOVELAI_LABEL,
+     "md: a LETTER before `pst-` -- somebody's identifier, not the token"),
+    ("notes.md", "see X%s" % _NOVELAI, _NOVELAI_LABEL,
+     "md: a CAPITAL before `pst-` -- the refused class is not lowercase-only"),
+    ("notes.md", "see 7%s" % _NOVELAI, _NOVELAI_LABEL,
+     "md: a DIGIT before `pst-`, the other half of the alphanumeric class"),
+    # The deleted escape lookbehind's letters WITHOUT their backslash. A view
+    # or a lookbehind that forgot the backslash reads every identifier ending
+    # in n, r or t as an escape.
+    ("notes.md", "see input%s" % _NOVELAI, _NOVELAI_LABEL,
+     "md: `inputpst-`, an identifier ending in t, no backslash"),
+    ("notes.md", "see owner%s" % _NOVELAI, _NOVELAI_LABEL,
+     "md: `ownerpst-`, an identifier ending in r, no backslash"),
+    ("notes.md", "see hidden%s" % _NOVELAI, _NOVELAI_LABEL,
+     "md: `hiddenpst-`, an identifier ending in n, no backslash"),
+    # A NAME between two literals is never resolved: `_literal_runs` must
+    # restart its run at the name, not carry `pst-` across it.
+    ("corpus.py", 'NAI_KEY = "pst-" + SEP + "%s"' % _NOVELAI_BODY, _NOVELAI_LABEL,
+     "py: `\"pst-\" + SEP + body` -- a name between the two literals"),
+    # THE VIEW IS NOVELAI'S ALONE. Each of these was named by another provider
+    # pattern reading the view and by nothing else -- verifier B, synthetic,
+    # and HEAD fired on none of them. Written as `json.dumps` writes them.
+    ("notes.json", '{"note": "see\\nBearer tokens_are_described_in_the_auth_docs"}',
+     "http authorization value",
+     "json: an escaped newline BEFORE the word Bearer, then prose"),
+    ("notes.json", '{"note": "Bearer\\ntokens_are_described_in_the_auth_docs"}',
+     "http authorization value",
+     "json: the word Bearer, an escaped newline, then prose"),
+    ("notes.json",
+     '{"note": "## Basic\\ndata/graphics/tilesets/System/TileA2 is the sheet"}',
+     "http authorization value",
+     "json: a Basic heading, an escaped newline, then a path"),
+    ("notes.json", '{"note": "see\\nsk-something-longer-than-twenty"}',
+     "openai-style key", "json: an escaped newline before an `sk-` slug"),
+    ("corpus.py",
+     'TUTORIAL = "https%3A%2F%2Fexample.org%2Fsk-learn-classification-tutorial"',
+     "openai-style key",
+     "py: `%2F` before an `sk-` slug, which the raw lines AND the literal pass "
+     "would both have named through the view"),
+]
+for text_path, body, label, why in PROVIDER_MUST_NOT_NAME:
+    expect(f"does not name {label}: {why}",
+           label in [h.why for h in scan_source(text_path, body)], False)
+
+# ONCE, AND ON THE RIGHT LINE. A `.py` is read by detector 3 twice -- raw lines
+# and `_literal_runs` -- so a token both readings see must land on one line at
+# one length or it is reported twice. Every provider finding is listed with
+# its line; other detectors' findings are filtered out, for the reason above.
+PROVIDER_PLACED = [
+    ("corpus.py", 'X = """\nabout the key\n%s\n"""' % _NOVELAI,
+     [(3, _NOVELAI_LABEL)],
+     "py: a token on the THIRD line of a triple-quoted literal is placed on "
+     "line 3, where the raw-line reading also found it"),
+    ("corpus.py", 'print("NovelAI token:\\n%s")' % _NOVELAI,
+     [(1, _NOVELAI_LABEL)],
+     "py: an ESCAPED newline in a one-line literal is not a new line"),
+    ("corpus.py", 'NAI_KEY = "%s" + "%s" + "%s"'
+     % (_NOVELAI[:40], _NOVELAI[40:], _NOVELAI_BODY[:8]),
+     [(1, _NOVELAI_LABEL)],
+     "py: a three-operand `+` chain is read ONCE, from its outermost `+` -- "
+     "its inner `+` alone already spells a 64-character body"),
+    ("corpus.py", 'X = """\nabout the key\\n%s\n"""' % _NOVELAI,
+     [(2, _NOVELAI_LABEL)],
+     "py: an ESCAPED `\\n` inside a TRIPLE-QUOTED literal is not a physical "
+     "line -- counting the value's newlines put it on line 3 as well"),
+]
+for text_path, body, placed, why in PROVIDER_PLACED:
+    expect(f"places: {why}",
+           [(h.line, h.why) for h in scan_source(text_path, body)
+            if h.why == _NOVELAI_LABEL], placed)
+
+# A STATED LIMIT, pinned so the docstring cannot outlive it: a credential-shaped
+# NAME outranks the provider label in `_dedupe` at the same line and length. The
+# token is still reported, once -- as a credential-shaped name.
+expect("dedupe: `NOVELAI_API_KEY=<token>` is reported once, as a "
+       "credential-shaped name and not as the novelai label",
+       [(h.line, h.why) for h in scan_source(".env", "NOVELAI_API_KEY=%s" % _NOVELAI)],
+       [(1, "credential-shaped name")])
+
+# 3a'. RECALL, measured rather than argued. Every row above is one token; the
+#      three lookaheads are a claim about a whole ALPHABET, so a seeded sample
+#      of random 64-character URL-safe bodies re-measures it on every run.
+#      Expected misses are 20000 * 1.9e-5 ~ 0.4 (a body with no digit); a guard
+#      that quietly narrowed the alphabet -- a floor above 64, a required `_`
+#      -- misses thousands. The bodies are never printed, only counted.
+_NOVELAI_RE = dict(_STRUCTURAL)[_NOVELAI_LABEL]
+# Built, not spelled: the alphabet written out as one literal is itself a
+# 64-character high-entropy run, and step 5 went red on it.
+_URL_SAFE = string.ascii_letters + string.digits + "_-"
+_sampler = random.Random(20260916)
+_sample_misses = sum(
+    1 for _ in range(20000)
+    if not _NOVELAI_RE.search("pst-" + "".join(_sampler.choices(_URL_SAFE, k=64))))
+print(f"  ..   novelai recall sample : {_sample_misses} of 20000 random "
+      f"64-character bodies missed")
+expect("novelai recall: at most 3 of 20000 random URL-safe bodies missed",
+       _sample_misses <= 3, True)
+
+# 3a''. THE ENCODING ROUTE, through `scan_file`, which is what the tree sweep
+#       calls -- `scan_source` is handed text and never sees a byte. A key in
+#       a file Windows PowerShell 5.1 wrote with `>` arrives as UTF-16LE behind
+#       FF FE; `reg export` writes the same; and a genuinely binary file must
+#       still be skipped rather than decoded into noise.
+with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as _scratch:
+    def _written(name: str, data: bytes) -> str:
+        where = os.path.join(_scratch, name)
+        with open(where, "wb") as handle:
+            handle.write(data)
+        return where
+
+    _line = "NAI_KEY=%s\r\n" % _NOVELAI
+    for _codec, _bom in (("utf-16-le", codecs.BOM_UTF16_LE),
+                         ("utf-16-be", codecs.BOM_UTF16_BE)):
+        _hits, _how = scan_file(
+            _written(f"nai-{_codec}.txt", _bom + _line.encode(_codec)),
+            f"nai-{_codec}.txt")
+        expect(f"encoding: a BOM-marked {_codec} .txt is READ as text",
+               _how, TEXT)
+        expect(f"encoding: ...and names {_NOVELAI_LABEL} on line 1",
+               [(h.line, h.why) for h in _hits], [(1, _NOVELAI_LABEL)])
+    expect("encoding: a PNG header is still skipped as binary",
+           scan_file(_written("sprite.png", b"\x89PNG\r\n\x1a\n" + bytes(16)),
+                     "sprite.png"), ([], None))
+    expect("encoding: an FF FE file that is not valid UTF-16 is skipped too",
+           scan_file(_written("odd.bin", codecs.BOM_UTF16_LE + b"\x00"),
+                     "odd.bin"), ([], None))
+
+    def _provider_lines_at(where: str, name: str):
+        """A raise is a VERDICT here, not a traceback: a codec that dies on
+        one file kills the whole sweep, and must turn one row red."""
+        try:
+            hits, how = scan_file(where, name)
+        except Exception as exc:
+            return f"raised {type(exc).__name__}"
+        return [(h.line, h.why) for h in hits if h.why == _NOVELAI_LABEL], how
+
+    def _provider_lines(name: str, data: bytes):
+        return _provider_lines_at(_written(name, data), name)
+
+    # CRLF, past line 1. `_one_newline` must fold `\r\n` BEFORE it folds a bare
+    # `\r`, or every CRLF is two lines and line 3 is reported as 5.
+    expect("encoding: a CRLF .md with the token on line 3 reports line 3",
+           _provider_lines("crlf.md", ("one\r\ntwo\r\nkey %s\r\n"
+                                       % _NOVELAI).encode("ascii")),
+           ([(3, _NOVELAI_LABEL)], TEXT))
+    # A UTF-8 BOM. `ast.parse` refuses U+FEFF, and the fallback line route
+    # cannot join a token split across adjacent literals.
+    expect("encoding: a UTF-8-BOM .py with the token wrapped across adjacent "
+           "literals is named",
+           _provider_lines("bom.py", codecs.BOM_UTF8 + (
+               'NAI_KEY = (\n    "%s"\n    "%s"\n)\n'
+               % (_NOVELAI[:36], _NOVELAI[36:])).encode("utf-8")),
+           ([(2, _NOVELAI_LABEL)], TEXT))
+    # PowerShell 5.1 `>>` onto a BOM-less UTF-8 file: UTF-16LE, no BOM. All
+    # ASCII, it is valid UTF-8 with a NUL after every character, so it takes
+    # the TEXT route and only the view's NUL deletion lets detector 3 read it;
+    # `\r NUL \n` is one line ending, not two.
+    _header = "# voice notes\r\n".encode("utf-8")
+    expect("encoding: BOM-less UTF-16LE appended after a UTF-8 header is "
+           "named, on its own line 3",
+           _provider_lines("appended.md", _header + (
+               "rotated today\r\nNAI_KEY=%s\r\n" % _NOVELAI).encode("utf-16-le")),
+           ([(3, _NOVELAI_LABEL)], TEXT))
+    # The same append carrying one non-ASCII character is NOT valid UTF-8 and
+    # has NUL bytes -- the shape a binary has too -- and its UTF-16 ASCII run
+    # is what keeps it from being skipped as one.
+    expect("encoding: BOM-less UTF-16LE with a non-ASCII character is read as "
+           "bytes and named",
+           _provider_lines("appended-accent.md", _header + (
+               "clé tournée\r\nNAI_KEY=%s\r\n"
+               % _NOVELAI).encode("utf-16-le")),
+           ([(3, _NOVELAI_LABEL)], BYTES))
+    # A legacy codepage. 0x92 is a curly apostrophe and 0x85 an ellipsis in
+    # cp1252; to latin-1 0x85 is U+0085, which `str.splitlines` calls a line
+    # break, so the token on line 2 was placed on line 3.
+    expect("encoding: a cp1252 .md with a curly apostrophe and an ellipsis is "
+           "read as bytes and names the token on line 2",
+           _provider_lines("cp1252.md", ("Tom’s voice key…\r\n"
+                                         "NAI_KEY=%s\r\n"
+                                         % _NOVELAI).encode("cp1252")),
+           ([(2, _NOVELAI_LABEL)], BYTES))
+    # Line folding runs on the BYTES route too. A CRLF file cannot show it --
+    # split on `\n` alone, CRLF still counts right -- so this one ends its lines
+    # with a bare CR, as a classic Mac editor does.
+    expect("encoding: a bare-CR cp1252 file names the token on line 3",
+           _provider_lines("classic-cr.md", b"Tom\x92s voice key\rrotated\r"
+                           b"NAI_KEY=" + _NOVELAI.encode("ascii") + b"\r"),
+           ([(3, _NOVELAI_LABEL)], BYTES))
+    # latin-1, not cp1252: cp1252 leaves 0x81 0x8D 0x8F 0x90 0x9D UNDEFINED, and
+    # 0x90 is the low byte of an arrow in UTF-16LE. Decoded as cp1252 they
+    # raise, and one such file ends the whole sweep.
+    expect("encoding: a non-UTF-8 file holding the five bytes cp1252 leaves "
+           "undefined is read, not raised on",
+           _provider_lines("undefined.md", b"voice key \x81\x8d\x8f\x90\x9d\r\n"
+                           b"NAI_KEY=" + _NOVELAI.encode("ascii") + b"\r\n"),
+           ([(2, _NOVELAI_LABEL)], BYTES))
+    # ...and latin-1, not UTF-8 with `replace`: a pasted cp1252 document puts a
+    # NO-BREAK SPACE (0xA0) after `Bearer`. latin-1 keeps it as U+00A0, which
+    # `\s` matches; `replace` turns it into U+FFFD, which it does not.
+    _hits, _how = scan_file(_written("pasted.md", b"curl -H \"Authorization: Bearer\xa0"
+                                     + _SEED.encode("ascii") + b"\" https://api/x\r\n"),
+                            "pasted.md")
+    expect("encoding: a cp1252 no-break space after Bearer is still whitespace",
+           ([h.why for h in _hits], _how), (["http authorization value"], BYTES))
+    # DETECTOR 3 ALONE on the BYTES route. The TEXT route names both lines of
+    # this file at once -- a credential-shaped binding and a generated key --
+    # and a name or an entropy reading of a latin-1 GUESS is a guess.
+    _hits, _how = scan_file(_written("legacy.env", (
+        b"# Tom\x92s settings\r\npassword=" + _QUERY_SHORT.encode("ascii")
+        + b"\r\nseed: " + _SEED.encode("ascii") + b"\r\n")), "legacy.env")
+    expect("encoding: a cp1252 .env gets detector 3 only -- no credential-shaped "
+           "name and no high-entropy finding",
+           ([str(h) for h in _hits], _how), ([], BYTES))
+    # NULs are deleted BEFORE escapes are spaced. PowerShell 5.1 `>>` appending
+    # a JSON line: its escaped newline is backslash NUL n NUL, an escape only
+    # once the NULs are gone -- substituted first, the `n` is left before `pst-`.
+    expect("encoding: an escaped newline INSIDE NUL-interleaved UTF-16LE is "
+           "named on line 2",
+           _provider_lines("appended.jsonl", b'{"role": "system"}\r\n' + (
+               '{"content": "my key:\\n%s"}\r\n' % _NOVELAI).encode("utf-16-le")),
+           ([(2, _NOVELAI_LABEL)], TEXT))
+    # THE UTF-16 RUN FLOOR, from both sides. 32 sits between the longest run in
+    # the tracked binaries (6) and the shortest line worth reading; a novelai
+    # token alone is 68, so this floor matters for what ELSE is in the file. A
+    # UTF-8 .env carrying the token in its own 8-bit text, with an accented
+    # line `>>` appended, has a run of EXACTLY 32 -- tab, CR and LF counted --
+    # and must be read; a WAV whose UTF-16 device name is 31 is still binary.
+    expect("encoding: a token in 8-bit text beside a UTF-16LE run of exactly "
+           "32 is read as bytes and named",
+           _provider_lines("deploy.env", b"NAI_KEY=" + _NOVELAI.encode("ascii")
+                           + b"\r\n" + ("caf\xe9\tmodified by deploy.ps1 at 9am"
+                                        "\r\n\xe9").encode("utf-16-le")),
+           ([(1, _NOVELAI_LABEL)], BYTES))
+    expect("encoding: a WAV whose longest UTF-16 ASCII run is 31 is still "
+           "skipped as binary",
+           scan_file(_written("chime.wav", b"RIFF\x24\x08\x00\x00WAVEfmt "
+                              b"\x10\x00\x00\x00"
+                              + "Microsoft Sound Mapper - Output".encode("utf-16-le")
+                              + b"\xff\xfe\x81\x00"), "chime.wav"),
+           ([], None))
+
+    # TRACKED PATHS. Decoded from git's bytes as UTF-8, directly and then end
+    # to end through a throwaway repository. `ā` is C4 81 in UTF-8, and
+    # 0x81 is the byte cp1252 does not define -- the one that crashed the
+    # reader thread.
+    _odd_name = "notes-āé.md"
+    expect("paths: git -z bytes holding a UTF-8 path decode to that path",
+           split_ls_files(b"a.md\0" + _odd_name.encode("utf-8") + b"\0")
+           == ["a.md", _odd_name], True)
+    # ...and a path that is NOT UTF-8 raises, naming nothing silently. Decoded
+    # with `replace` or `surrogateescape` it would name no file on disk and be
+    # skipped as unopenable -- a tracked file nobody swept.
+    _latin_path = b"a.md\0caf\xe9.md\0"
+    try:
+        _split = f"returned {split_ls_files(_latin_path)!r}"
+    except UnicodeDecodeError:
+        _split = "raised UnicodeDecodeError"
+    expect("paths: git -z bytes holding a path that is not UTF-8 RAISE",
+           _split, "raised UnicodeDecodeError")
+    if shutil.which("git") is None:                          # pragma: no cover
+        print("  SKIP git is not installed -- the throwaway repository was not built")
+    else:
+        _repo = os.path.join(_scratch, "repo")
+        os.makedirs(_repo)
+        with open(os.path.join(_repo, _odd_name), "wb") as _handle:
+            _handle.write(("voice\nNAI_KEY=%s\n" % _NOVELAI).encode("utf-8"))
+        try:
+            for _args in (["init", "-q"], ["add", "--", _odd_name]):
+                subprocess.run(["git", *_args], cwd=_repo, capture_output=True,
+                               timeout=60, check=True)
+            _listed = tracked_files(_repo)
+        except Exception as exc:
+            _listed = [f"raised {type(exc).__name__}"]
+        expect("paths: a tracked path carrying U+0101 and U+00E9 is listed "
+               "exactly", _listed == [_odd_name], True)
+        # A git that RUNS and fails must not read as an empty, clean tree. A
+        # `.git` FILE pointing nowhere fails the same way whatever repository
+        # the scratch directory happens to sit inside.
+        _broken = os.path.join(_scratch, "broken")
+        os.makedirs(_broken)
+        with open(os.path.join(_broken, ".git"), "w", encoding="ascii") as _handle:
+            _handle.write("gitdir: nowhere-at-all\n")
+        try:
+            _answer = f"returned {tracked_files(_broken)!r}"
+        except RuntimeError:
+            _answer = "raised RuntimeError"
+        expect("paths: a git that runs and fails RAISES rather than answering",
+               _answer, "raised RuntimeError")
+        # The SWEEP step 4 runs, over that same broken repository: its verdict,
+        # the list step 4 demands be empty, carries the failure.
+        _broken_sweep = sweep(_broken)
+        expect("paths: a sweep over a git that fails is RED, never a clean tree",
+               [line.startswith("git ls-files failed:")
+                for line in _broken_sweep["verdict"]], [True])
+        expect("paths: ...and a sweep over the working one names the token",
+               [(h.line, h.why) for h in sweep(_repo)["findings"]],
+               [(2, _NOVELAI_LABEL)])
+        expect("paths: ...and the file behind it is read and names the token",
+               [_provider_lines_at(os.path.join(_repo, p), p)
+                for p in (_listed or [])],
+               [([(2, _NOVELAI_LABEL)], TEXT)])
+    # Reading bytes gave up the text-mode `open`'s newline translation, and
+    # exactly one reader noticed, measured over every corpus row in CRLF and
+    # CR form: `_python_comments` splits on `\n` alone, so in a file that
+    # ends its lines with a bare CR every comment is reported on LINE 1.
+    _hits, _readable = scan_file(
+        _written("classic.py", b"x = 1\r# password = Xk29qLm4Pz\r"), "classic.py")
+    expect("encoding: a bare-CR .py keeps its comment on line 2",
+           [(h.line, h.why) for h in _hits], [(2, "credential-shaped name")])
+
 print(f"  ..   positive corpus       : "
-      f"{len(MUST_FIRE) + 1 + len(TEXT_MUST_FIRE)} shapes, all caught "
-      f"({len(MUST_FIRE) + 1} python, {len(TEXT_MUST_FIRE)} text)")
+      f"{len(MUST_FIRE) + 1 + len(TEXT_MUST_FIRE) + len(PROVIDER_MUST_NAME)} "
+      f"shapes, all caught ({len(MUST_FIRE) + 1} python, "
+      f"{len(TEXT_MUST_FIRE)} text, {len(PROVIDER_MUST_NAME)} named by provider)")
 print(f"  ..   negative corpus       : "
       f"{len(MUST_NOT_FIRE) + len(TEXT_MUST_NOT_FIRE)} shapes, all silent "
-      f"({len(MUST_NOT_FIRE)} python, {len(TEXT_MUST_NOT_FIRE)} text)")
+      f"({len(MUST_NOT_FIRE)} python, {len(TEXT_MUST_NOT_FIRE)} text), plus "
+      f"{len(PROVIDER_MUST_NOT_NAME)} not named by provider")
 
 # 3b. REDACTION, asserted rather than believed. The module docstring claims
 #     this is STRUCTURAL -- that `Finding` keeps a length and never the value
@@ -1127,36 +2089,27 @@ for _label, _hit in (("hand-built", _hand), ("scanned", _scanned[0])):
 
 # 4. The tree as it stands is CLEAN. This is the assertion the roster row is
 #    for: it is the one that goes red when somebody commits the next one.
-tracked = tracked_files()
-if tracked is None:                                          # pragma: no cover
-    print("  SKIP git ls-files is unavailable -- the tree was not swept")
+started = time.perf_counter()
+_tree = sweep()
+if _tree is None:                                            # pragma: no cover
+    print("  SKIP git is not installed -- the tree was not swept")
 else:
-    started = time.perf_counter()
-    swept = 0
-    unreadable = 0
-    entropy_hits = 0
-    structural_hits = 0
-    tree_findings: list[Finding] = []
-    for relative in tracked:
-        hits, readable = scan_file(os.path.join(ROOT, relative), relative)
-        if not readable:
-            unreadable += 1
-            continue
-        swept += 1
-        tree_findings.extend(hits)
-        entropy_hits += sum(1 for h in hits if _rank(h.why) == 2)
-        structural_hits += sum(1 for h in hits if _rank(h.why) == 1)
-    print(f"  ..   tracked files swept   : {swept} "
-          f"({unreadable} binary/undecodable, skipped) "
+    if _tree["error"]:
+        print(f"  ..   git ls-files FAILED   : {_tree['error']}")
+    print(f"  ..   tracked files swept   : {_tree['swept']} "
+          f"({_tree['as_bytes']} not UTF-8, read as bytes for detector 3 only; "
+          f"{_tree['skipped']} binary, skipped) "
           f"in {time.perf_counter() - started:.1f}s")
-    print(f"  ..   detector 2 hits, tree : {entropy_hits} "
+    print(f"  ..   detector 2 hits, tree : "
+          f"{sum(1 for h in _tree['findings'] if _rank(h.why) == 2)} "
           f"(a non-zero number here is the cry-wolf failure)")
-    print(f"  ..   detector 3 hits, tree : {structural_hits} "
+    print(f"  ..   detector 3 hits, tree : "
+          f"{sum(1 for h in _tree['findings'] if _rank(h.why) == 1)} "
           f"(same, and these carry a provider's name)")
-    for hit in tree_findings:
+    for hit in _tree["findings"]:
         print(f"       HIT {hit}")
-    expect("no tracked file carries a plaintext credential",
-           [str(h) for h in tree_findings], [])
+    expect("git ls-files answered and no tracked file carries a plaintext "
+           "credential", _tree["verdict"], [])
 
 # 5. This module is full of credential-shaped strings, so it is its own
 #    hardest negative -- and the sweep above does NOT cover it while the file
