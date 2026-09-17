@@ -11,21 +11,25 @@ account                     GET the subscription once; print tier, active,
                             against the ledger, LOCK / INFLIGHT presence.
                             Writes NOTHING (no row, no LOCK). Exit 0 when
                             tier 3, active and not in grace, else 2.
-render <recipe> [--out PNG] mannequin.render_init; write the init PNG (default
-                            <state>/renders/<recipe>_init.png); print the
-                            centers and the params sha256. No network. An
-                            existing file with DIFFERENT bytes is never
-                            overwritten (exit 1).
-plan <recipe> --action generate|img2img [--seed N] [--strength S]
-     [--noise N] [--variant full|curated] [--steps N] [--scale X]
-     [--color-correct] [--from PNG]
+render <recipe> [--character NAME] [--out PNG]
+                            mannequin.render_init in the character's colours;
+                            write the init PNG (default
+                            <state>/renders/<character>_<recipe>_init.png, so
+                            two characters never share a file); print the
+                            character, the centers and the params sha256. No
+                            network. An existing file with DIFFERENT bytes is
+                            never overwritten (exit 1).
+plan <recipe> --action generate|img2img [--character NAME] [--seed N]
+     [--strength S] [--noise N] [--variant full|curated] [--steps N]
+     [--scale X] [--color-correct] [--from PNG]
                             --from (img2img only) is the source of a
                             consistency re-pass (brief 3.5), a layout-sized
                             RGB or opaque RGBA PNG; the mannequin init
                             otherwise. The ledger's init_png_sha256 names
                             it, so chained passes (at most 2) can be seen.
                             DRY RUN. recipes.make_request, request.build_body,
-                            then print a summary of request.redacted(body)
+                            then print the character and a summary of
+                            request.redacted(body)
                             (model, action, size, steps, seed, strength,
                             noise, base caption, each frame's caption and
                             center, request sha256) and one line per
@@ -38,11 +42,12 @@ plan <recipe> --action generate|img2img [--seed N] [--strength S]
 run <recipe> --action generate|img2img [same options as plan]
      [--lever NAME] [--round N] [--phase TEXT] [--strip-version N]
                             EXACTLY ONE generation via run.run_request with
-                            recipes.context_for(...). Prints ledger id,
+                            recipes.context_for(...). Prints the character,
+                            ledger id,
                             balance before / after, delta, HTTP status,
                             output blob path, and LOCK if written.
-infill <recipe> --cell N --from PNG [--strength S] [--noise N]
-     [--variant full|curated] [--keep-cell] [--seed N]
+infill <recipe> --cell N --from PNG [--character NAME] [--strength S]
+     [--noise N] [--variant full|curated] [--keep-cell] [--seed N]
      [--lever NAME] [--round N] [--phase TEXT] [--strip-version N]
                             EXACTLY ONE infill. --from is the accepted strip
                             (layout-sized RGB or opaque RGBA PNG, such as the
@@ -52,6 +57,7 @@ infill <recipe> --cell N --from PNG [--strength S] [--noise N]
                             masks.composite(source, output, cell rect) as a
                             blob and prints its path.
 probe img2img|infill --accept-max-2-anlas [--variant full|curated] [--seed N]
+                            Always the default character (no --character).
                             WITHOUT the flag: print what the probe costs at
                             worst (model.PROBE_MAX_ANLAS) and that only the
                             author may pass the flag; exit 2; no network at
@@ -59,15 +65,16 @@ probe img2img|infill --accept-max-2-anlas [--variant full|curated] [--seed N]
                             run.run_request(probe=True, context with
                             probe_flag_used True). Prints whether a proof row
                             was written.
-pixelize PNG --recipe R [--palette PNG] [--ledger-id ID] [--strip-version N]
-     [--colours N] [--remove-orphans] [--out DIR]
+pixelize PNG --recipe R [--character NAME] [--palette PNG] [--ledger-id ID]
+     [--strip-version N] [--colours N] [--remove-orphans] [--out DIR]
                             post.pixelize with the recipe's layout, ground,
                             hold_arc, fps_hint and the centers from
                             mannequin.render_init. Writes strip.png,
                             strip.json (the sidecar), frame_<i>.png and (when
                             --palette is absent) palette.png under DIR
-                            (default <state>/sprites/<recipe>/<first 12 hex
-                            of the input PNG's sha256>/). A file already
+                            (default <state>/sprites/<character>/<recipe>/
+                            <first 12 hex of the input PNG's sha256>/). A
+                            file already
                             there with DIFFERENT bytes is never overwritten
                             (exit 1, nothing written): a frozen reference
                             palette or an accepted strip is not replaced
@@ -93,6 +100,14 @@ INVARIANTS
   the row printed.
 * --seed absent -> a seed from `secrets` in [SEED_MIN, SEED_MAX], printed
   before anything is sent so the author can repeat it.
+* --character NAME (render, plan, run, infill, pixelize; default
+  characters.DEFAULT_CHARACTER) is a file stem under tools/nai/characters/.
+  An unknown name is an argparse error (exit 2, the available files listed)
+  before any command body runs, so nothing is built, read or sent; a
+  malformed file is refused by its loader, and a file whose tags and anchor
+  exceed the token budget in ANY recipe by recipes.build_recipe (exit 1
+  each), before a mannequin is drawn or a request exists.
+  The character is spelled into every default output path it changes.
 * THE PROBE FLAG IS HUMAN-ONLY. Its absence refuses before any network
   call; nothing in this package sets it on anyone's behalf. No option may
   be ABBREVIATED (every parser has allow_abbrev=False): argparse would
@@ -127,7 +142,8 @@ import secrets
 import sys
 from typing import Callable, Sequence
 
-from tools.nai import guard, mannequin, masks, post, recipes, request, run
+from tools.nai import (characters, guard, mannequin, masks, post, recipes,
+                       request, run)
 from tools.nai import transport as nai_transport
 from tools.nai.model import (GENERATE_URL, INPAINT_STRENGTH_KEY,
                              PROBE_MAX_ANLAS, SEED_MAX, SEED_MIN, OPUS_TIER,
@@ -170,6 +186,25 @@ def _generation_options(p: argparse.ArgumentParser) -> None:
                         "of the mannequin init (at most 2 chained passes)")
 
 
+def _character_name(value: str) -> str:
+    """argparse `type` for --character: the name when it is one of
+    characters.available(), else ArgumentTypeError listing the files."""
+    try:
+        names = characters.available()
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    if value not in names:
+        raise argparse.ArgumentTypeError(characters.unknown_character(value))
+    return value
+
+
+def _character_option(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--character", type=_character_name, metavar="NAME",
+                   default=characters.DEFAULT_CHARACTER,
+                   help=f"a character file stem under tools/nai/characters/ "
+                        f"(default {characters.DEFAULT_CHARACTER})")
+
+
 def _ledger_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--lever", default=None,
                    help="the ONE lever this round changes (ledger)")
@@ -180,7 +215,7 @@ def _ledger_options(p: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     """The argparse tree for every command in the module docstring."""
-    recipe_names = sorted(recipes.RECIPES)
+    recipe_names = sorted(recipes.RECIPE_NAMES)
     parser = argparse.ArgumentParser(
         prog="python -m tools.nai",
         description="NovelAI V4.5 sprite pipeline, Opus free tier only. "
@@ -197,22 +232,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = command("render", help="draw a mannequin init; no network")
     p.add_argument("recipe", choices=recipe_names)
+    _character_option(p)
     p.add_argument("--out", default=None)
 
     p = command("plan", help="dry run: build and judge one request")
     p.add_argument("recipe", choices=recipe_names)
     p.add_argument("--action", choices=("generate", "img2img"), required=True)
+    _character_option(p)
     _generation_options(p)
 
     p = command("run", help="send EXACTLY ONE generate or img2img")
     p.add_argument("recipe", choices=recipe_names)
     p.add_argument("--action", choices=("generate", "img2img"), required=True)
+    _character_option(p)
     _generation_options(p)
     _ledger_options(p)
 
     p = command("infill", help="send EXACTLY ONE infill of one cell")
     p.add_argument("recipe", choices=recipe_names)
     p.add_argument("--cell", type=int, required=True)
+    _character_option(p)
     p.add_argument("--from", dest="source", required=True,
                    help="the accepted strip, a layout-sized RGB PNG")
     p.add_argument("--strength", type=float, default=None,
@@ -237,6 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = command("pixelize", help="post-process a strip; no network")
     p.add_argument("png")
     p.add_argument("--recipe", choices=recipe_names, required=True)
+    _character_option(p)
     p.add_argument("--palette", default=None,
                    help="the character's reference palette (mode-P PNG)")
     p.add_argument("--ledger-id", default=None)
@@ -433,10 +473,10 @@ def _cmd_account(args, transport, state: State) -> int:
 
 
 def _cmd_render(args, transport, state: State) -> int:
-    recipe = recipes.get_recipe(args.recipe)
+    recipe = recipes.get_recipe(args.recipe, args.character)
     colours = recipe.identity.as_dict()
     out = args.out or os.path.join(state.root, RENDERS_DIR,
-                                   f"{recipe.name}_init.png")
+                                   f"{args.character}_{recipe.name}_init.png")
     assert_untracked_output(out)
     png, centers = mannequin.render_init(recipe.layout, recipe.poses, colours)
     if args.out is None:
@@ -444,6 +484,7 @@ def _cmd_render(args, transport, state: State) -> int:
     _write_all([(out, png)])
     layout = recipe.layout
     _out(f"render        {out}")
+    _out(f"character     {args.character}")
     _out(f"layout        {layout.name} {layout.width}x{layout.height} "
          f"k={layout.k}, {layout.count} frames")
     for i, center in enumerate(centers):
@@ -457,9 +498,10 @@ def _cmd_render(args, transport, state: State) -> int:
 def _cmd_plan(args, transport, state: State) -> int:
     _out(f"plan          {args.recipe} {args.action} (dry run: nothing is "
          f"sent)")
+    _out(f"character     {args.character}")
     seed = _seed(args.seed)
     req = recipes.make_request(args.recipe, args.action, seed,
-                               **_overrides(args))
+                               character=args.character, **_overrides(args))
     body = request.build_body(req)
     shown = request.redacted(body)
     params = shown["parameters"]
@@ -513,11 +555,13 @@ def _cmd_plan(args, transport, state: State) -> int:
 
 def _cmd_run(args, transport, state: State) -> int:
     _out(f"run           {args.recipe} {args.action} (ONE request)")
+    _out(f"character     {args.character}")
     seed = _seed(args.seed)
     req = recipes.make_request(args.recipe, args.action, seed,
-                               **_overrides(args))
+                               character=args.character, **_overrides(args))
     context = recipes.context_for(
-        args.recipe, strip_version=args.strip_version, round=args.round,
+        args.recipe, character=args.character,
+        strip_version=args.strip_version, round=args.round,
         phase=args.phase, lever_changed=args.lever)
     row = _send(req, transport, state, probe=False, context=context)
     return _sent_exit(row)
@@ -525,6 +569,7 @@ def _cmd_run(args, transport, state: State) -> int:
 
 def _cmd_infill(args, transport, state: State) -> int:
     _out(f"infill        {args.recipe} cell {args.cell} (ONE request)")
+    _out(f"character     {args.character}")
     with open(args.source, "rb") as handle:
         source = handle.read()
     seed = _seed(args.seed)
@@ -536,16 +581,19 @@ def _cmd_infill(args, transport, state: State) -> int:
         overrides["inpaint_strength"] = args.strength
     if args.noise is not None:
         overrides["noise"] = args.noise
-    req = recipes.make_request(args.recipe, "infill", seed, **overrides)
+    req = recipes.make_request(args.recipe, "infill", seed,
+                               character=args.character, **overrides)
     context = recipes.context_for(
-        args.recipe, cell=args.cell, strip_version=args.strip_version,
-        round=args.round, phase=args.phase, lever_changed=args.lever)
+        args.recipe, character=args.character, cell=args.cell,
+        strip_version=args.strip_version, round=args.round,
+        phase=args.phase, lever_changed=args.lever)
     row = _send(req, transport, state, probe=False, context=context)
     status = row.get("http_status")
     if (isinstance(status, int) and 200 <= status < 300
             and row.get("output_png_sha256")):
         returned = state.read_blob(row["output_png_sha256"], "png")
-        rect = recipes.get_recipe(args.recipe).layout.cells[args.cell].rect_canvas
+        rect = recipes.get_recipe(
+            args.recipe, args.character).layout.cells[args.cell].rect_canvas
         merged = masks.composite(source, returned, rect)
         _sha, rel = state.save_blob(merged, "png")
         _out(f"composite     {os.path.normpath(os.path.join(state.root, rel))}")
@@ -606,7 +654,7 @@ def _write_all(files: list[tuple[str, bytes]]) -> None:
 
 
 def _cmd_pixelize(args, transport, state: State) -> int:
-    recipe = recipes.get_recipe(args.recipe)
+    recipe = recipes.get_recipe(args.recipe, args.character)
     with open(args.png, "rb") as handle:
         png = handle.read()
     palette = None
@@ -614,7 +662,7 @@ def _cmd_pixelize(args, transport, state: State) -> int:
         with open(args.palette, "rb") as handle:
             palette = handle.read()
     out_dir = args.out or os.path.join(
-        state.root, SPRITES_DIR, recipe.name,
+        state.root, SPRITES_DIR, args.character, recipe.name,
         hashlib.sha256(png).hexdigest()[:12])
     assert_untracked_output(out_dir)
     _, centers = mannequin.render_init(recipe.layout, recipe.poses,
@@ -638,6 +686,7 @@ def _cmd_pixelize(args, transport, state: State) -> int:
     sidecar = result.sidecar
     validation = result.validation
     _out(f"pixelize      {args.png} as {recipe.name} ({recipe.layout.name})")
+    _out(f"character     {args.character}")
     _out(f"grid          k={result.k} phase={list(result.phase)}")
     _out(f"frames        {sidecar['count']} x {sidecar['frame_w']}x"
          f"{sidecar['frame_h']}, anchor_x {sidecar['anchor_x']}, "

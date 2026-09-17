@@ -2,8 +2,10 @@
 
 WHAT IT DOES
 ------------
-Turns a recipe (walk, run, jump) into sprite strips: it draws a grey-keyed
-mannequin init at source scale, builds ONE NovelAI image request from it
+Turns a recipe (walk, run, jump) for a character (a data file under
+tools/nai/characters/, default scout) into sprite strips: it draws a
+grey-keyed mannequin init at source scale, builds ONE NovelAI image request
+from it
 (generate, img2img or infill), sends that request only after a guard has
 proved it belongs to the free class, records the balance before and after in
 an append-only ledger, and post-processes the returned image into real pixel
@@ -11,12 +13,12 @@ art (one grid size, one palette, block-mode downscale, keyed background,
 baseline-aligned frames, a sidecar JSON).
 
     .venv/Scripts/python.exe -m tools.nai account
-    .venv/Scripts/python.exe -m tools.nai render <recipe> [--out PNG]
-    .venv/Scripts/python.exe -m tools.nai plan <recipe> --action generate|img2img [--seed N] [--strength S] [--noise N]
-    .venv/Scripts/python.exe -m tools.nai run <recipe> --action generate|img2img [--seed N] [--strength S] [--noise N] [--from PNG]
-    .venv/Scripts/python.exe -m tools.nai infill <recipe> --cell N --from PNG [--strength S]
+    .venv/Scripts/python.exe -m tools.nai render <recipe> [--character NAME] [--out PNG]
+    .venv/Scripts/python.exe -m tools.nai plan <recipe> --action generate|img2img [--character NAME] [--seed N] [--strength S] [--noise N]
+    .venv/Scripts/python.exe -m tools.nai run <recipe> --action generate|img2img [--character NAME] [--seed N] [--strength S] [--noise N] [--from PNG]
+    .venv/Scripts/python.exe -m tools.nai infill <recipe> --cell N --from PNG [--character NAME] [--strength S]
     .venv/Scripts/python.exe -m tools.nai probe img2img|infill --accept-max-2-anlas
-    .venv/Scripts/python.exe -m tools.nai pixelize PNG --recipe R [--palette PNG]
+    .venv/Scripts/python.exe -m tools.nai pixelize PNG --recipe R [--character NAME] [--palette PNG]
     .venv/Scripts/python.exe -m tools.nai ledger [--last N]
 
 `plan`, `render`, `pixelize` and `ledger` never touch the network. `account`
@@ -57,8 +59,8 @@ and must stay so; every git worktree of it resolves the same directory
     data/nai/LOCK            present = refuse everything (author deletes it)
     data/nai/INFLIGHT        present = a request is in flight (or crashed)
     data/nai/blobs/          <sha256>.png | .zip | .json, content-addressed
-    data/nai/renders/        mannequin inits written by `render`
-    data/nai/sprites/        pixelized strips, frames and sidecars
+    data/nai/renders/        mannequin inits written by `render`, <character>_<recipe>_init.png
+    data/nai/sprites/        pixelized strips, frames and sidecars, <character>/<recipe>/<sha12>/
 
 Inside a checkout nothing is written outside `data/nai/` -- not `data/art/`
 (tracked; promoting a sprite there is the author's decision), not

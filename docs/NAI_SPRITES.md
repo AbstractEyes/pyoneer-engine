@@ -104,7 +104,7 @@ at most once each, printing the ledger id, both balances and the delta. With no
 | command | network | example |
 |---|---|---|
 | `account` | reads the balance only; writes nothing | `account` |
-| `render` | none | `render walk` writes `data/nai/renders/walk_init.png` |
+| `render` | none | `render walk` writes `data/nai/renders/scout_walk_init.png` |
 | `plan` | none: a dry run that prints the request and every offline guard verdict | `plan walk --action img2img --seed 1234567` |
 | `run` | one generate or img2img | `run walk --action generate --seed 1234567 --round 1 --lever seed` |
 | `infill` | one infill of one cell | `infill walk --cell 2 --from data/nai/blobs/<sha256>.png` |
@@ -120,6 +120,74 @@ re-pass on an accepted strip instead of the mannequin init. The ledger's
 after 2 chained passes and go back to the mannequin. For later strips, give
 `pixelize` the walk's reference palette with `--palette`. `render` and
 `pixelize` never overwrite a file whose bytes differ.
+
+## Changing the outfit
+
+An outfit is a data file, never a code edit: one JSON object in
+`tools/nai/characters/<name>.json`, picked with `--character <name>`. The
+default, `scout.json`, is held equal to the brief's identity by
+`tools/check_nai.py`, so copy it to a new name instead of editing it.
+`scout_blue_scarf.json` is the first copy:
+
+```json
+{
+  "tags": "brown hair, short hair, blue scarf, blue tunic, brown belt, tan pants, brown boots",
+  "anchor": "brown hair, blue scarf, blue tunic",
+  "colours": {
+    "skin": "#E8B48C", "hair": "#6B4226", "scarf": "#46A5E6", "tunic": "#3C64C8",
+    "belt": "#5A3A1E", "pants": "#C8A064", "boots": "#7A4A24"
+  }
+}
+```
+
+`tags` goes into the base caption, `anchor` into every frame's caption, and
+`colours` paints the mannequin init. A file that breaks a rule is refused
+before anything is built, with a message naming the file and the field:
+
+- exactly the fields `tags`, `anchor` and `colours`, and no key written twice
+- `colours` names exactly `skin`, `hair`, `scarf`, `tunic`, `belt`, `pants`
+  and `boots`, each as `#RRGGBB`
+- tags are printable ASCII (no tab, newline or NUL) and comma-separated,
+  with no empty tag; spacing around the commas does not matter
+- no count (`1boy`, `2 girls`, `multiple girls`, `no humans`), no `rating:`
+  tag and no quality-tail tag (`very aesthetic`, `masterpiece`, `no text`),
+  in either field: the recipe writes those once, into the base caption
+- no rating word (`nsfw`, `explicit`, `nude`, ...) and no view that fights
+  the recipe's side view (`facing left`, `from behind`, `facing viewer`,
+  ...); and no tag that is exactly one of the negative prompt's tags
+  (`blurry`, `watermark`), though `cropped jacket` is fine
+- these tag rules judge what the model reads: NovelAI's `{}`, `[]` and
+  `1.5::...::` wrappers are looked through, and a count or a refused word is
+  found inside a longer tag too (`brown hair 2girls`, `{nsfw}`)
+- every anchor tag is also a tag in `tags`, word for word and in the same
+  case
+- every colour sits at least 48 away (straight-line RGB distance) from the
+  grey key `#808080` and from the outline `#202020`, and the darker copies
+  the mannequin draws of it (x0.7 for the far arm and leg, x0.6 for inner
+  lines) each sit at least 40 away from the grey key, so a light grey such as
+  `#B7B7B7` is refused: its far leg would be drawn in the key colour and
+  keyed out. Nothing checks one outfit colour against another, so keep a
+  scarf clearly apart from the tunic yourself: the init only separates
+  colours it can see.
+
+One more rule is judged when the recipe is built rather than when the file
+is read: the tags and anchor must fit the token budget in every recipe, not
+only the one you ask for. The anchor is repeated in every frame, six times
+for `run`, so a long anchor is refused for `walk` too, with a message naming
+the file, before anything is drawn or sent.
+
+Look at the init, then send one request with it:
+
+```powershell
+.venv/Scripts/python.exe -m tools.nai render walk --character scout_blue_scarf
+.venv/Scripts/python.exe -m tools.nai run walk --action generate --character scout_blue_scarf
+```
+
+`render` writes `data/nai/renders/scout_blue_scarf_walk_init.png`, beside
+scout's `scout_walk_init.png` rather than over it. `plan`, `infill` and
+`pixelize` take the same option, and `pixelize` writes under
+`sprites/<character>/`; `probe` always uses scout. The ledger has no character
+column: a row's `base_caption` names the outfit it was made for.
 
 ## The loop
 
@@ -176,8 +244,8 @@ cannot be found that way and keeps its own: send from one checkout only.
 | `proofs.json` | the proof rows |
 | `LOCK`, `INFLIGHT` | refusal markers |
 | `blobs/` | requests and responses by sha256 |
-| `renders/` | mannequin renders |
-| `sprites/<recipe>/` | strips, frames, sidecars and palettes |
+| `renders/` | mannequin renders, `<character>_<recipe>_init.png` |
+| `sprites/<character>/<recipe>/` | strips, frames, sidecars and palettes |
 
 Inside a checkout, the CLI writes only under `data/nai/`: `data/art/`,
 `data/maps/`, `data/reference/` and `tools/` are all refused, so no command

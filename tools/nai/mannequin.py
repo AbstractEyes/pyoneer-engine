@@ -76,10 +76,10 @@ from typing import Mapping, Sequence
 
 from PIL import Image, ImageFilter
 
-from tools.nai.model import (BACKGROUND_RGB, DIM_MULTIPLE, H_SRC,
-                             IDENTITY_PARTS, INIT_K, MASK_ALIGN, MAX_AREA,
-                             MIN_DIM, OUTLINE_RGB, CellSpec, Layout, Pose,
-                             snap)
+from tools.nai.model import (BACKGROUND_RGB, DIM_MULTIPLE, FAR_SHADE, H_SRC,
+                             IDENTITY_PARTS, INIT_K, INNER_SHADE, MASK_ALIGN,
+                             MAX_AREA, MIN_DIM, OUTLINE_RGB, CellSpec, Layout,
+                             Pose, shade, snap)
 
 # ---------------------------------------------------------------------------
 # Skeleton (source pixels)
@@ -100,7 +100,8 @@ UPPER_ARM = 7
 FOREARM = 6
 ARM_W = 2
 HAND_PX = 2
-FAR_SHADE = 0.7
+# FAR_SHADE and INNER_SHADE are imported from model (and hashed below like
+# every skeleton constant): characters judges the shades a colour is drawn in.
 
 BACK_HAIR = 2
 """Hair columns at the back of the head below HAIR_ROWS: the back of the skull
@@ -111,7 +112,6 @@ EYE_COL = 6
 SHOULDER_DROP = 1.5
 SCARF_TAIL = 3
 SCARF_TAIL_W = 2
-INNER_SHADE = 0.6
 DRAW_VERSION = 1
 """Bump when the drawing code changes in a way no constant above names."""
 
@@ -278,8 +278,8 @@ RGB = tuple[int, int, int]
 _Pixels = dict[tuple[int, int], tuple[RGB, str]]
 
 
-def _shade(rgb: RGB, factor: float) -> RGB:
-    return tuple(int(round(c * factor)) for c in rgb)  # type: ignore[return-value]
+_shade = shade
+"""model.shade, the one shade rule characters judges a colour by."""
 
 
 def _limb_dir(deg: float) -> tuple[float, float]:

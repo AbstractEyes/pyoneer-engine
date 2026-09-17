@@ -1,0 +1,13 @@
+{
+  "tags": "brown hair, short hair, blue scarf, blue tunic, brown belt, tan pants, brown boots",
+  "anchor": "brown hair, blue scarf, blue tunic",
+  "colours": {
+    "skin": "#E8B48C",
+    "hair": "#6B4226",
+    "scarf": "#46A5E6",
+    "tunic": "#3C64C8",
+    "belt": "#5A3A1E",
+    "pants": "#C8A064",
+    "boots": "#7A4A24"
+  }
+}

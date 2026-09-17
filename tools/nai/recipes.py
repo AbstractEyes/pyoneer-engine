@@ -5,11 +5,12 @@ OWNER: implementer B.
 RESPONSIBILITY
 --------------
 Hold the example character (`IDENTITY`, brief 3.1), the three strip recipes
-(`RECIPES`: walk, run, jump; brief 3.2-3.4), turn a recipe plus computed
-centers into wire frames (`frames_for`), and assemble a complete
-`model.Request` for one action (`make_request`) -- rendering the mannequin,
-applying the author's strength default and band, and building the infill
-mask and init.
+(`RECIPES`: walk, run, jump; brief 3.2-3.4), build those recipes for any
+character file (`build_recipe`, `get_recipe(name, character=...)`), turn a
+recipe plus computed centers into wire frames (`frames_for`), and assemble a
+complete `model.Request` for one action (`make_request`) -- rendering the
+mannequin, applying the author's strength default and band, and building the
+infill mask and init.
 
 INVARIANTS
 ----------
@@ -19,7 +20,28 @@ INVARIANTS
   validates the recipe; `frames_for` re-asserts on what it builds).
 * A CHARACTER CAPTION IS `boy, <ANCHOR>, from side, facing right, <POSE
   WORDS>`: it starts with boy/girl/other, carries no count, no quality and
-  no rating tag. Count tags (`1boy`) live only in the base caption.
+  no rating tag. Count tags (`1boy`) live only in the base caption. The
+  per-tag rule is characters.tag_problem, the same function a character
+  file's tags and anchor are refused by -- and `build_recipe` applies it
+  again to the Identity it is handed, because an Identity built in code
+  (`dataclasses.replace`) never passed the loader.
+* A RECIPE FITS THE TOKEN BUDGET FOR EVERY RECIPE OR IS NOT BUILT.
+  `build_recipe` counts words exactly as guard condition 7 does (guard's
+  own `_WORD_RE`, model.TOKENS_PER_WORD, model.TOKEN_BUDGET) over the base
+  caption and every character caption of EVERY recipe in RECIPE_NAMES, and
+  refuses the identity when the worst one is over, naming the source and
+  'tags' and 'anchor' -- so a character file that fits walk but not run is
+  refused for walk too, before any request exists, instead of passing at
+  load and failing at plan.
+* A RECIPE IS BUILT FOR A CHARACTER. `get_recipe`, `make_request` and
+  `context_for` take `character` (a file under tools/nai/characters/,
+  default characters.DEFAULT_CHARACTER) and build the base caption, every
+  character caption and the mannequin colours from THAT file, on every call
+  -- the default included -- so an outfit change is a data file, never an
+  edit here. `RECIPES` is the same three recipes built for the `IDENTITY`
+  literal; scout.json reproduces that literal exactly (tools/check_nai.py
+  pins it), so the brief's caption pins hold for the default character. An
+  unknown character raises, listing the files that exist.
 * CENTERS COME FROM `mannequin.render_init`, never from a literal, for every
   action -- generate included.
 * STRENGTH (author): img2img `strength` defaults to model.DEFAULT_STRENGTH
@@ -48,21 +70,22 @@ from __future__ import annotations
 
 import io
 import math
-import re
 from types import MappingProxyType
 from typing import Mapping, Sequence
 
 from PIL import Image, UnidentifiedImageError
 
-from tools.nai import masks
+from tools.nai import characters, masks
+from tools.nai.guard import _WORD_RE as WORD_RE
 from tools.nai.mannequin import LAYOUTS, POSES, params_sha256, render_init
 from tools.nai.model import (ACTIONS, DEFAULT_IMG2IMG_NOISE,
                              DEFAULT_INFILL_NOISE, DEFAULT_INPAINT_STRENGTH,
                              DEFAULT_SCALE, DEFAULT_STEPS, DEFAULT_STRENGTH,
-                             INFILL_FULL_REPAINT, NOISE_RANGE, QUALITY_TAIL,
-                             STRENGTH_BAND, UC_PRESET_NONE, Frame, Identity,
-                             Layout, LedgerContext, Recipe, Request,
-                             model_for, on_grid)
+                             INFILL_FULL_REPAINT, NEGATIVE, NOISE_RANGE,
+                             QUALITY_TAIL, RATING_RX, STRENGTH_BAND,
+                             TOKEN_BUDGET, TOKENS_PER_WORD, UC_PRESET_NONE,
+                             Frame, Identity, Layout, LedgerContext, Recipe,
+                             Request, model_for, on_grid)
 
 OPAQUE_ALPHA_MIN = 254
 """An RGBA source counts as opaque when no alpha is below this. 254, not 255:
@@ -70,7 +93,9 @@ a generator that hides metadata in the alpha channel's low bit still sends an
 opaque picture."""
 
 # ---------------------------------------------------------------------------
-# Identity (brief 3.1; the author replaces these)
+# Identity (brief 3.1). The author changes an outfit with a character file,
+# tools/nai/characters/<name>.json, never here: characters/scout.json is this
+# literal, and tools/check_nai.py pins the two equal.
 # ---------------------------------------------------------------------------
 
 IDENTITY = Identity(
@@ -99,16 +124,8 @@ BASE_STYLE = ("simple background, grey background, limited palette, "
 CHARACTER_PREFIX = "boy"
 CHARACTER_VIEW = "from side, facing right"
 
-NEGATIVE = (
-    "nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, "
-    "bad quality, jpeg artifacts, very displeasing, chromatic aberration, "
-    "dithering, halftone, screentone, logo, too many watermarks, watermark, "
-    "signature, text, blurry, 3d, realistic, gradient background, "
-    "detailed background, scenery, shadow, cropped, out of frame, "
-    "from behind, facing viewer"
-)
-"""V4.5 Full Heavy minus `multiple views`, `negative space`, `blank page`,
-plus sprite negatives; `nsfw` first. Same text for Curated (ucPreset 3)."""
+# NEGATIVE, every recipe's negative prompt, is imported from model: it is
+# spelled there because characters.tag_problem refuses its tags.
 
 WALK_SENTENCE = (
     "a retro video game walk cycle: the same boy drawn five times in one row "
@@ -143,35 +160,102 @@ JUMP_WORDS: tuple[str, ...] = (
 )
 
 
-def _base(verb: str, sentence: str) -> str:
-    return (f"{BASE_HEAD}, {verb}, {BASE_STYLE}, {IDENTITY.tags}, "
+def _base(verb: str, sentence: str, identity: Identity) -> str:
+    return (f"{BASE_HEAD}, {verb}, {BASE_STYLE}, {identity.tags}, "
             f"{sentence}, {QUALITY_TAIL}")
 
 
+def _caption_text(identity: Identity, pose_words: str) -> str:
+    return (f"{CHARACTER_PREFIX}, {identity.anchor}, {CHARACTER_VIEW}, "
+            f"{pose_words}")
+
+
+RECIPE_NAMES: tuple[str, ...] = ("walk", "run", "jump")
+
+_RECIPE_WORDS: Mapping[str, tuple[str, str, tuple[str, ...]]] = \
+    MappingProxyType({
+        "walk": ("walking", WALK_SENTENCE,
+                 (WALK_CONTACT, WALK_PASS, WALK_CONTACT, WALK_PASS,
+                  WALK_IDLE)),
+        "run": ("running", RUN_SENTENCE, (RUN_CONTACT, RUN_PASS,
+                                          RUN_FLIGHT) * 2),
+        "jump": ("jumping", JUMP_SENTENCE, JUMP_WORDS),
+    })
+"""Per recipe: (base-caption verb, sentence, pose words per frame) -- the
+text `build_recipe` writes and `caption_words` counts, from ONE table."""
+
+
+def caption_words(name: str, identity: Identity) -> int:
+    """The words guard condition 7 counts for recipe `name` built for
+    `identity`: guard's `_WORD_RE` over the base caption plus every character
+    caption. KeyError for an unknown recipe name."""
+    verb, sentence, pose_words = _RECIPE_WORDS[name]
+    captions = [_base(verb, sentence, identity)] + [
+        _caption_text(identity, words) for words in pose_words]
+    return sum(len(WORD_RE.findall(text)) for text in captions)
+
+
+def budget_problem(identity: Identity) -> str | None:
+    """None when every recipe in RECIPE_NAMES built for `identity` fits
+    model.TOKEN_BUDGET (TOKENS_PER_WORD * caption_words); otherwise the
+    refusal text for the recipe with the most words."""
+    worst = max(RECIPE_NAMES, key=lambda n: caption_words(n, identity))
+    words = caption_words(worst, identity)
+    tokens = TOKENS_PER_WORD * words
+    if tokens <= TOKEN_BUDGET:
+        return None
+    frames = len(_RECIPE_WORDS[worst][2])
+    return (f"recipe {worst} would carry {words} words ~ {tokens:g} tokens, "
+            f"over the token budget of {TOKEN_BUDGET} (the tags once in its "
+            f"base caption, the anchor in each of its {frames} frame "
+            f"captions); every recipe is judged, so shorten 'tags' or "
+            f"'anchor'")
+
+
+def build_recipe(name: str, identity: Identity, source: str | None = None
+                 ) -> Recipe:
+    """Recipe `name` (one of RECIPE_NAMES) for `identity`: its tags in the
+    base caption, its anchor in every character caption, its colours in the
+    init. Everything else about a strip is the same for every character.
+
+    ValueError for an unknown recipe name; for a tag of identity.tags or
+    identity.anchor that characters.tag_problem refuses; and for an identity
+    `budget_problem` refuses -- each naming `source` (the character file)
+    when given, else "identity".
+    """
+    if name not in RECIPE_NAMES:
+        raise ValueError(f"unknown recipe {name!r}; legal: "
+                         f"{', '.join(sorted(RECIPE_NAMES))}")
+    where = "identity" if source is None else f"character file {source}"
+    for field, text in (("tags", identity.tags), ("anchor", identity.anchor)):
+        for tag in text.split(","):
+            problem = characters.tag_problem(tag)
+            if problem is not None:
+                raise ValueError(
+                    f"{where}, field {field!r}: carries the {problem} "
+                    f"{tag.strip()!r}; {characters.TAG_PROBLEMS[problem]}")
+    over = budget_problem(identity)
+    if over is not None:
+        raise ValueError(f"{where}, fields 'tags' and 'anchor': {over}")
+    verb, sentence, pose_words = _RECIPE_WORDS[name]
+    layout, fps_hint, hold_arc = {
+        "walk": (LAYOUTS["L5"], 8, False),
+        "run": (LAYOUTS["G6"], 12, False),
+        "jump": (LAYOUTS["L5"], 10, True),
+    }[name]
+    return Recipe(
+        name=name, layout=layout,
+        base_caption=_base(verb, sentence, identity),
+        negative=NEGATIVE,
+        frame_poses=tuple(zip(pose_words, POSES[name])),
+        identity=identity, fps_hint=fps_hint, hold_arc=hold_arc,
+    )
+
+
 RECIPES: Mapping[str, Recipe] = MappingProxyType({
-    "walk": Recipe(
-        name="walk", layout=LAYOUTS["L5"],
-        base_caption=_base("walking", WALK_SENTENCE), negative=NEGATIVE,
-        frame_poses=tuple(zip(
-            (WALK_CONTACT, WALK_PASS, WALK_CONTACT, WALK_PASS, WALK_IDLE),
-            POSES["walk"])),
-        identity=IDENTITY, fps_hint=8, hold_arc=False,
-    ),
-    "run": Recipe(
-        name="run", layout=LAYOUTS["G6"],
-        base_caption=_base("running", RUN_SENTENCE), negative=NEGATIVE,
-        frame_poses=tuple(zip(
-            (RUN_CONTACT, RUN_PASS, RUN_FLIGHT) * 2, POSES["run"])),
-        identity=IDENTITY, fps_hint=12, hold_arc=False,
-    ),
-    "jump": Recipe(
-        name="jump", layout=LAYOUTS["L5"],
-        base_caption=_base("jumping", JUMP_SENTENCE), negative=NEGATIVE,
-        frame_poses=tuple(zip(JUMP_WORDS, POSES["jump"])),
-        identity=IDENTITY, fps_hint=10, hold_arc=True,
-    ),
-})
-"""fps_hint values are DESIGN starting points for the sidecar, not research."""
+    name: build_recipe(name, IDENTITY) for name in RECIPE_NAMES})
+"""The default mapping: every recipe built for `IDENTITY`. fps_hint values
+are DESIGN starting points for the sidecar, not research."""
 
 OVERRIDE_KEYS: frozenset[str] = frozenset({
     "variant", "steps", "scale", "strength", "noise", "color_correct",
@@ -195,49 +279,51 @@ if frozenset().union(*_ACTION_KEYS.values()) != OVERRIDE_KEYS or set(
     raise RuntimeError("recipes: _ACTION_KEYS disagrees with OVERRIDE_KEYS "
                        "or model.ACTIONS")
 
-_COUNT_TAG = re.compile(r"\d+\s*(?:boy|girl|other)s?")
-_QUALITY_TAGS: frozenset[str] = frozenset(
-    t.strip() for t in QUALITY_TAIL.split(","))
 
+def get_recipe(name: str, character: str = characters.DEFAULT_CHARACTER
+               ) -> Recipe:
+    """Recipe `name` built for the character file `character`:
+    build_recipe(name, characters.load(character)).
 
-def get_recipe(name: str) -> Recipe:
-    """RECIPES[name]; ValueError listing the recipe names when unknown."""
-    if not isinstance(name, str) or name not in RECIPES:
+    ValueError listing the recipe names when `name` is unknown -- judged
+    first -- and listing the available character files when `character` is
+    unknown; the file's own refusal when it is malformed; build_recipe's
+    refusal, naming the file, when it is over the token budget.
+    """
+    if not isinstance(name, str) or name not in RECIPE_NAMES:
         raise ValueError(f"unknown recipe {name!r}; legal: "
-                         f"{', '.join(sorted(RECIPES))}")
-    return RECIPES[name]
+                         f"{', '.join(sorted(RECIPE_NAMES))}")
+    return build_recipe(name, characters.load(character),
+                        source=characters.file_for(character))
 
 
 def character_caption(identity: Identity, pose_words: str) -> str:
     """f"{CHARACTER_PREFIX}, {identity.anchor}, {CHARACTER_VIEW}, {pose_words}".
 
-    ValueError when pose_words contains "rating:" or is not ASCII. The
-    finished caption is checked as a whole too -- the anchor is author text
-    and is the sibling route into the same caption -- so ValueError also when
-    any tag of it carries "rating:", is a count tag (`1boy`, `2girls`), or is
-    one of QUALITY_TAIL's tags.
+    ValueError when pose_words carries a rating tag (model.RATING_RX) or is
+    not ASCII. The finished caption is checked as a whole too -- the anchor
+    is author text and is the sibling route into the same caption -- so
+    ValueError also when any tag of it fails characters.tag_problem (a
+    control character, a rating, count, quality, view or negative tag, or a
+    rating word).
     """
     if not isinstance(pose_words, str):
         raise ValueError(f"pose words must be a string, got {pose_words!r}")
-    if "rating:" in pose_words:
+    if RATING_RX.search(pose_words.lower()):
         raise ValueError(f"a rating tag belongs only at the end of the base "
                          f"caption, not in pose words {pose_words!r}")
     if not pose_words.isascii():
         raise ValueError(f"pose words are not ASCII: {pose_words!r}")
-    caption = (f"{CHARACTER_PREFIX}, {identity.anchor}, {CHARACTER_VIEW}, "
-               f"{pose_words}")
+    caption = _caption_text(identity, pose_words)
     if not caption.isascii():
         raise ValueError(f"character caption is not ASCII: {caption!r}")
-    for tag in (t.strip() for t in caption.split(",")):
-        if "rating:" in tag:
-            raise ValueError(f"character caption carries a rating tag "
-                             f"{tag!r}: {caption!r}")
-        if _COUNT_TAG.fullmatch(tag):
-            raise ValueError(f"character caption carries a count tag "
-                             f"{tag!r}; counts live in the base caption only")
-        if tag in _QUALITY_TAGS:
-            raise ValueError(f"character caption carries the quality tag "
-                             f"{tag!r}; quality lives in the base caption only")
+    for tag in caption.split(","):
+        problem = characters.tag_problem(tag)
+        if problem is not None:
+            raise ValueError(f"character caption carries the {problem} "
+                             f"{tag.strip()!r}; "
+                             f"{characters.TAG_PROBLEMS[problem]}: "
+                             f"{caption!r}")
     return caption
 
 
@@ -315,11 +401,12 @@ def _source_png(value: object, layout: Layout) -> bytes:
     return data
 
 
-def make_request(recipe_name: str, action: str, seed: int,
+def make_request(recipe_name: str, action: str, seed: int, *,
+                 character: str = characters.DEFAULT_CHARACTER,
                  **overrides: object) -> Request:
-    """A complete Request for one strip and one action.
+    """A complete Request for one strip and one action, for one character.
 
-    Always: recipe = get_recipe(recipe_name); (init_png, centers) =
+    Always: recipe = get_recipe(recipe_name, character); (init_png, centers) =
     mannequin.render_init(recipe.layout, recipe.poses,
     recipe.identity.as_dict()); frames = frames_for(recipe, centers); model
     = model.model_for(action, variant) with variant default "full"; ucPreset
@@ -354,7 +441,7 @@ def make_request(recipe_name: str, action: str, seed: int,
     if unknown:
         raise TypeError(f"make_request() got unknown keyword(s) {unknown}; "
                         f"legal: {sorted(OVERRIDE_KEYS)}")
-    recipe = get_recipe(recipe_name)
+    recipe = get_recipe(recipe_name, character)
     if action not in ACTIONS:
         raise ValueError(f"unknown action {action!r}; legal: {ACTIONS}")
     stray = sorted(set(overrides) - _ACTION_KEYS[action])
@@ -433,18 +520,23 @@ def make_request(recipe_name: str, action: str, seed: int,
                    inpaint_strength=inpaint, noise=noise)
 
 
-def context_for(recipe_name: str, *, cell: int | None = None,
+def context_for(recipe_name: str, *,
+                character: str = characters.DEFAULT_CHARACTER,
+                cell: int | None = None,
                 strip_version: int | None = None, round: int | None = None,
                 phase: str | None = None, lever_changed: str | None = None,
                 probe_flag_used: bool = False) -> LedgerContext:
-    """The LedgerContext for a request made from `recipe_name`.
+    """The LedgerContext for a request made from `recipe_name` for
+    `character`.
 
     strip = recipe name; target_cell = cell; target_rect = the cell's
     rect_canvas when cell is not None; mannequin_sha256 =
-    mannequin.params_sha256(layout, poses, identity colours); the rest copied.
-    ValueError for a cell that is not an int inside the recipe's layout.
+    mannequin.params_sha256(layout, poses, the CHARACTER's colours); the rest
+    copied. The ledger has no character column: the row's base_caption names
+    the outfit. ValueError for a cell that is not an int inside the recipe's
+    layout, and for an unknown character (get_recipe).
     """
-    recipe = get_recipe(recipe_name)
+    recipe = get_recipe(recipe_name, character)
     rect = None
     if cell is not None:
         if (not isinstance(cell, int) or isinstance(cell, bool)

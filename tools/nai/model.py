@@ -35,6 +35,7 @@ INVARIANTS
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping
@@ -61,6 +62,12 @@ def snap(v: float) -> float:
     if not math.isfinite(v) or v < 0.0 or v > 1.0:
         raise ValueError(f"snap() takes a value in [0, 1], got {v!r}")
     return GRID[min(4, max(0, math.floor(5 * v)))]
+
+
+def shade(rgb: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
+    """`rgb` x `factor`, each channel `int(round(c * factor))` -- THE shade
+    rule, drawn by mannequin and judged by characters."""
+    return tuple(int(round(c * factor)) for c in rgb)  # type: ignore[return-value]
 
 
 def on_grid(v: object) -> bool:
@@ -244,6 +251,26 @@ NEVER_SEND_PREFIXES: tuple[str, ...] = (
 RATING_TAG = "rating:general"
 QUALITY_TAIL = "very aesthetic, masterpiece, no text, rating:general"
 """Ends every base caption; appears in no character caption."""
+RATING_RX = re.compile(r"rating\s*:")
+"""A rating tag, however spaced (`rating:explicit`, `rating :explicit`),
+searched for in lower-cased text. `Recipe` refuses one anywhere in a base
+caption before its QUALITY_TAIL, and characters.tag_problem refuses one in
+any identity tag."""
+
+NEGATIVE = (
+    "nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, "
+    "bad quality, jpeg artifacts, very displeasing, chromatic aberration, "
+    "dithering, halftone, screentone, logo, too many watermarks, watermark, "
+    "signature, text, blurry, 3d, realistic, gradient background, "
+    "detailed background, scenery, shadow, cropped, out of frame, "
+    "from behind, facing viewer"
+)
+"""The negative prompt of every recipe (recipes.NEGATIVE re-exports it):
+V4.5 Full Heavy minus `multiple views`, `negative space`, `blank page`, plus
+sprite negatives; `nsfw` first. Same text for Curated (ucPreset 3). Spelled
+here, not in recipes, because characters.tag_problem refuses an identity tag
+that is one of its tags -- asking for what the negative prompt refuses -- and
+`characters` imports `model` only."""
 
 # ---------------------------------------------------------------------------
 # Pixel constants shared by mannequin, masks and post (brief 4, 5)
@@ -255,6 +282,13 @@ H_SRC = 40
 """Mannequin figure height in source pixels, uniform across every strip."""
 BACKGROUND_RGB: tuple[int, int, int] = (0x80, 0x80, 0x80)
 OUTLINE_RGB: tuple[int, int, int] = (0x20, 0x20, 0x20)
+FAR_SHADE = 0.7
+"""The mannequin draws the far arm and leg in each part's colour x this."""
+INNER_SHADE = 0.6
+"""The mannequin draws an inner line (a part's pixel 4-adjacent to a near
+limb) in that part's colour x this. Both shades are spelled here, not in
+mannequin, because characters judges every shade a colour is drawn in
+against BACKGROUND_RGB, and `characters` imports `model` only."""
 MASK_REPAINT_RGB: tuple[int, int, int] = (255, 255, 255)
 MASK_KEEP_RGB: tuple[int, int, int] = (0, 0, 0)
 MASK_ALIGN = 8
@@ -470,8 +504,9 @@ class Recipe:
     own baseline and each airborne frame (lift > 0) takes the first ground
     frame's shift (walk, run). Validated at construction (raises ValueError):
     frame count equals the layout's cell count, the base caption ends with
-    QUALITY_TAIL, no pose words mention RATING_TAG, all text is ASCII, and at
-    least one pose is grounded.
+    QUALITY_TAIL and carries no other rating tag (RATING_RX) before it, no
+    pose words carry a rating tag, all text is ASCII, and at least one pose
+    is grounded.
     """
     name: str
     layout: Layout
@@ -497,10 +532,16 @@ class Recipe:
             if not text.isascii():
                 raise ValueError(f"recipe {self.name}: non-ASCII text {text!r}")
         for words, _ in self.frame_poses:
-            if "rating:" in words:
+            if RATING_RX.search(words.lower()):
                 raise ValueError(
                     f"recipe {self.name}: a rating tag belongs only at the end "
                     f"of the base caption, not in pose words {words!r}")
+        head = self.base_caption[:-len(QUALITY_TAIL)]
+        if RATING_RX.search(head.lower()):
+            raise ValueError(
+                f"recipe {self.name}: a rating tag sits in the base caption "
+                f"before its closing {QUALITY_TAIL!r}; the rating is written "
+                f"once, at the end")
         if not any(p.lift == 0 for _, p in self.frame_poses):
             raise ValueError(f"recipe {self.name}: no grounded pose (lift 0)")
 

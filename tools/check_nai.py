@@ -41,6 +41,27 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
      author's band refuses 0.34 / 0.56 and noise and scale out of range; an
      opaque RGBA source is accepted and a transparent one refused -- and the
      builder refuses every request it cannot spell.
+ 1b. characters: an outfit is a data file. A legal file loads (spacing
+     normalised, parts in IDENTITY_PARTS order, the distance and shade
+     rules' boundaries accepted, near misses such as `cropped jacket`
+     accepted); every loader rule -- not JSON, not an object, a duplicate
+     key, an unknown or missing field or part, non-ASCII, a control
+     character, an empty tag, a count / rating / quality-tail / rating-word
+     / view / negative tag in tags or anchor, including through NovelAI's
+     `{}` and `1.5::` wrappers and inside a longer tag, an anchor tag that
+     is not a tag verbatim, bad hex, a colour within 48 of the grey key or
+     the outline, a colour whose x0.7 or x0.6 shade is within 40 of the key
+     -- is refused with ITS OWN message naming the file and the field, and
+     the same tag rule refuses a bad anchor through
+     `recipes.character_caption` and a bad Identity built in code through
+     `recipes.build_recipe`. `available` lists only legal stems of regular
+     files. A character over the token budget in ANY recipe is refused for
+     every recipe, naming the file, counted exactly as guard condition 7
+     counts (300 words builds and the guard agrees; 301 is refused). scout.json IS recipes.IDENTITY and the
+     default; the blue-scarf file differs from it ONLY in the scarf tag and
+     the scarf colour, reaches every caption and the init's pixels, and
+     leaves no red scarf in the body; an unknown character is refused,
+     listing the files.
   2. `guard.assert_free`: a legal generate, img2img and infill pass; every
      refusal condition of brief 2.2 -- and every sub-rule inside conditions
      1, 6 and 7 (image keys bound to the action, a proof the chain has not
@@ -98,7 +119,12 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
      sends nothing; `infill` sends the mannequin-in-source init and composites the
      returned cell; `render` never overwrites different bytes and no command
      writes inside a checkout outside data/nai/; a linked worktree resolves
-     the main checkout's state root and sees its LOCK.
+     the main checkout's state root and sees its LOCK. `--character`
+     reaches the plan's captions, an unknown name -- a path or a file name
+     included -- exits 2 before anything is built, read or sent, a file
+     the loader or the budget refuses exits 1 before a mannequin is drawn,
+     and the default render file and sprites directory differ per
+     character, each command printing the character's name.
 
 State lives in a temporary directory, never under data/nai/ or data/art/;
 the check asserts at the end that it did not create data/nai/.
@@ -177,18 +203,19 @@ os.environ["NAI_KEY"] = CANARY
 from PIL import Image, ImageChops, ImageFilter  # noqa: E402
 
 import tools.nai  # noqa: E402
-from tools.nai import (cli, guard, mannequin, masks, post, recipes,  # noqa: E402
-                       request, run)
+from tools.nai import (characters, cli, guard, mannequin, masks,  # noqa: E402
+                       post, recipes, request, run)
 from tools.nai import transport as tp  # noqa: E402
 from tools.nai.model import (BACKGROUND_RGB, DEFAULT_COLOURS,  # noqa: E402
-                             GENERATE_URL, GRID, IMG2IMG_KEY,
+                             GENERATE_URL, GRID, IDENTITY_PARTS, IMG2IMG_KEY,
                              INPAINT_STRENGTH_KEY, LEDGER_FIELDS, MAX_AREA,
                              MODEL_CURATED, MODEL_CURATED_INPAINTING,
                              MODEL_FULL, MODEL_FULL_INPAINTING,
                              NEVER_SEND_KEYS, NEVER_SEND_PREFIXES,
                              OUTLINE_RGB, PROBE_STRENGTH, QUALITY_TAIL,
                              RATING_TAG, SUBSCRIPTION_URL, Account, CellSpec,
-                             Frame, Layout, LedgerContext, Proof, on_grid,
+                             Frame, Identity, Layout, LedgerContext, Proof,
+                             on_grid,
                              snap)
 from tools.nai import state as nai_state  # noqa: E402
 from tools.nai.state import State  # noqa: E402
@@ -807,6 +834,540 @@ try:
                   lambda: recipes.character_caption(WALK.identity,
                                                     "walking, rating:general"),
                   "rating tag")
+
+    # =======================================================================
+    print("\n1b. characters: an outfit is a data file; a bad file is refused by name")
+    # =======================================================================
+    CHAR_DIR = os.path.join(SCRATCH, "characters")
+    os.makedirs(CHAR_DIR)
+    LEGAL_CHARACTER = {
+        "tags": "black hair,  green cloak , two-tone boots, 2 buttons, "
+                "boyish, aesthetic",
+        "anchor": "black hair ,green cloak",
+        # deliberately NOT in IDENTITY_PARTS order, and one part lower-case
+        "colours": {"boots": "#7a4a24", "skin": "#E8B48C", "hair": "#6B4226",
+                    "scarf": "#46A5E6", "tunic": "#3C64C8", "belt": "#5A3A1E",
+                    "pants": "#C8A064"},
+    }
+
+    def character_file(stem, doc=None, raw=None):
+        path = os.path.join(CHAR_DIR, f"{stem}.json")
+        with open(path, "wb") as handle:
+            handle.write(raw if raw is not None
+                         else json.dumps(doc).encode("ascii"))
+        return path
+
+    def legal_but(change):
+        doc = copy.deepcopy(LEGAL_CHARACTER)
+        change(doc)
+        return doc
+
+    WANT_LEGAL = Identity(
+        tags="black hair, green cloak, two-tone boots, 2 buttons, boyish, "
+             "aesthetic",
+        anchor="black hair, green cloak",
+        colours=(("skin", (0xE8, 0xB4, 0x8C)), ("hair", (0x6B, 0x42, 0x26)),
+                 ("scarf", (0x46, 0xA5, 0xE6)), ("tunic", (0x3C, 0x64, 0xC8)),
+                 ("belt", (0x5A, 0x3A, 0x1E)), ("pants", (0xC8, 0xA0, 0x64)),
+                 ("boots", (0x7A, 0x4A, 0x24))))
+    legal_path = character_file("legal", LEGAL_CHARACTER)
+    expect("a legal character file loads: tags and anchor re-joined with ', ', "
+           "colours in IDENTITY_PARTS order, lower-case hex read, '2 buttons', "
+           "'boyish' and 'aesthetic' are not count or quality tags",
+           outcome(lambda: characters.load_file(legal_path)), WANT_LEGAL)
+    expect("...the same file by name from its directory, and with a UTF-8 BOM",
+           (outcome(lambda: characters.load("legal", CHAR_DIR)),
+            outcome(lambda: characters.load_file(character_file(
+                "legal_bom", raw=b"\xef\xbb\xbf" + json.dumps(
+                    LEGAL_CHARACTER).encode("ascii"))))),
+           (WANT_LEGAL, WANT_LEGAL))
+
+    def set_colour(part, value):
+        return lambda d: d["colours"].__setitem__(part, value)
+
+    colour_pairs = ", ".join(f'"{k}": "{v}"'
+                             for k, v in LEGAL_CHARACTER["colours"].items())
+    DUPLICATE_RAW = ('{"tags": ' + json.dumps(LEGAL_CHARACTER["tags"])
+                     + ', "anchor": ' + json.dumps(LEGAL_CHARACTER["anchor"])
+                     + ', "colours": {' + colour_pairs
+                     + ', "scarf": "#C83C3C"}}').encode("ascii")
+    NON_ASCII_RAW = json.dumps(legal_but(lambda d: d.__setitem__(
+        "tags", d["tags"] + ", CAFE_TUNIC")), ensure_ascii=False).replace(
+        "CAFE_TUNIC", "caf\u00e9 tunic").encode("utf-8")
+    CHARACTER_REFUSALS = (
+        # (label, stem, doc, raw, field, the rule's own fragment)
+        ("a file that is not JSON", "not_json", None, b'{"tags": ', None,
+         "is not valid JSON"),
+        ("a JSON list instead of one object", "a_list", [LEGAL_CHARACTER],
+         None, None, "must be one JSON object"),
+        ("a colour part written twice", "duplicate", None, DUPLICATE_RAW,
+         "scarf", "duplicate key"),
+        ("an unknown field", "unknown_field",
+         legal_but(lambda d: d.__setitem__("hat", "red hat")), None, "hat",
+         "unknown field"),
+        ("a missing field", "missing_field",
+         legal_but(lambda d: d.pop("anchor")), None, "anchor",
+         "missing field"),
+        ("tags that are not a string", "tags_list",
+         legal_but(lambda d: d.__setitem__("tags", ["black hair"])), None,
+         "tags", "must be a non-empty string"),
+        ("non-ASCII tags (raw UTF-8)", "non_ascii_tags", None, NON_ASCII_RAW,
+         "tags", "is not ASCII"),
+        ("a non-ASCII anchor (JSON escape)", "non_ascii_anchor",
+         legal_but(lambda d: d.__setitem__("anchor", "black hair, gr\u00fcn")),
+         None, "anchor", "is not ASCII"),
+        ("an empty tag", "empty_tag",
+         legal_but(lambda d: d.__setitem__("tags", "black hair, , green cloak")),
+         None, "tags", "empty tag"),
+        ("a count tag in tags", "count_tags",
+         legal_but(lambda d: d.__setitem__("tags", "1boy, " + d["tags"])),
+         None, "tags", "count tag"),
+        ("a capitalised count tag in the anchor", "count_anchor",
+         legal_but(lambda d: d.__setitem__("anchor", "black hair, 2Girls")),
+         None, "anchor", "count tag"),
+        ("a 6+ count tag in tags", "count_plus",
+         legal_but(lambda d: d.__setitem__("tags", d["tags"] + ", 6+others")),
+         None, "tags", "count tag"),
+        ("a rating tag in tags", "rating_tags",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           d["tags"] + ", rating:general")),
+         None, "tags", "rating tag"),
+        ("a rating tag in the anchor", "rating_anchor",
+         legal_but(lambda d: d.__setitem__("anchor",
+                                           "black hair, rating:sensitive")),
+         None, "anchor", "rating tag"),
+        ("a quality-tail tag in tags", "quality_tags",
+         legal_but(lambda d: d.__setitem__("tags", d["tags"] + ", masterpiece")),
+         None, "tags", "quality tag"),
+        ("a quality-tail tag in the anchor, any case", "quality_anchor",
+         legal_but(lambda d: d.__setitem__("anchor",
+                                           "black hair, Very Aesthetic")),
+         None, "anchor", "quality tag"),
+        ("an anchor word that is not in tags", "anchor_word",
+         legal_but(lambda d: d.__setitem__("anchor", "black hair, red cloak")),
+         None, "anchor", "not a tag of 'tags'"),
+        ("an anchor tag assembled from tag words", "anchor_recombined",
+         legal_but(lambda d: d.__setitem__("anchor", "green hair")), None,
+         "anchor", "not a tag of 'tags'"),
+        ("colours that are not an object", "colours_string",
+         legal_but(lambda d: d.__setitem__("colours", "#E8B48C")), None,
+         "colours", "must be an object"),
+        ("an unknown part", "unknown_part",
+         legal_but(set_colour("cape", "#46A5E6")), None, "colours",
+         "unknown part"),
+        ("a missing part", "missing_part",
+         legal_but(lambda d: d["colours"].pop("boots")), None, "colours",
+         "missing part"),
+        ("hex with five digits", "hex_five",
+         legal_but(set_colour("scarf", "#46A5E")), None, "colours.scarf",
+         "is not a '#RRGGBB'"),
+        ("hex without the #", "hex_bare",
+         legal_but(set_colour("scarf", "46A5E6")), None, "colours.scarf",
+         "is not a '#RRGGBB'"),
+        ("hex with a digit that is not hex", "hex_g",
+         legal_but(set_colour("scarf", "#46A5EG")), None, "colours.scarf",
+         "is not a '#RRGGBB'"),
+        ("a colour written as a number", "hex_number",
+         legal_but(set_colour("scarf", 4630246)), None, "colours.scarf",
+         "is not a '#RRGGBB'"),
+        ("the grey key itself", "grey_key",
+         legal_but(set_colour("hair", "#808080")), None, "colours.hair",
+         "grey key background"),
+        ("a colour 47 from the grey key", "grey_47",
+         legal_but(set_colour("pants", "#AF8080")), None, "colours.pants",
+         "grey key background"),
+        ("a colour 47 from the outline", "outline_47",
+         legal_but(set_colour("belt", "#204F20")), None, "colours.belt",
+         "near-black outline"),
+        # -- what the model reads, not how the comma-separated tag is spelled
+        ("a count tag in NovelAI braces", "count_braces",
+         legal_but(lambda d: d.__setitem__("tags", "{2girls}, " + d["tags"])),
+         None, "tags", "count tag"),
+        ("a count tag in braces in the anchor", "count_braces_anchor",
+         legal_but(lambda d: d.__setitem__("anchor", "black hair, {2girls}")),
+         None, "anchor", "count tag"),
+        ("a count tag inside a numeric weight", "count_weight",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           "1.5::2girls::, " + d["tags"])),
+         None, "tags", "count tag"),
+        ("a count after a space inside one tag", "count_inside",
+         legal_but(lambda d: d.__setitem__("tags", "black hair 2girls, "
+                                           "green cloak")),
+         None, "tags", "count tag"),
+        ("a spaced count, '2 girls'", "count_spaced",
+         legal_but(lambda d: d.__setitem__("tags", d["tags"] + ", 2 girls")),
+         None, "tags", "count tag"),
+        ("a two-digit count, '10girls'", "count_ten",
+         legal_but(lambda d: d.__setitem__("tags", d["tags"] + ", 10girls")),
+         None, "tags", "count tag"),
+        ("'multiple girls'", "count_multiple",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           d["tags"] + ", multiple girls")),
+         None, "tags", "count tag"),
+        ("'no humans'", "count_no_humans",
+         legal_but(lambda d: d.__setitem__("tags", d["tags"] + ", no humans")),
+         None, "tags", "count tag"),
+        ("a quality-tail tag in braces", "quality_braces",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           "{masterpiece}, " + d["tags"])),
+         None, "tags", "quality tag"),
+        ("a newline inside a tag", "control_newline",
+         legal_but(lambda d: d.__setitem__("tags", "black hair\n2girls, "
+                                           "green cloak")),
+         None, "tags", "control character"),
+        ("a NUL inside a tag", "control_nul",
+         legal_but(lambda d: d.__setitem__("tags", "black hair\x00, "
+                                           "green cloak")),
+         None, "tags", "control character"),
+        ("a tab inside an anchor tag", "control_tab",
+         legal_but(lambda d: d.__setitem__("anchor", "black\thair")),
+         None, "anchor", "control character"),
+        ("a rating tag in braces", "rating_braces",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           "{rating:explicit}, " + d["tags"])),
+         None, "tags", "rating tag"),
+        ("a rating tag after a word in the anchor", "rating_inside",
+         legal_but(lambda d: d.__setitem__("anchor",
+                                           "black hair rating:explicit")),
+         None, "anchor", "rating tag"),
+        ("rating:general itself in braces, which no other rule refuses",
+         "rating_general_braces",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           d["tags"] + ", {rating:general}")),
+         None, "tags", "rating tag"),
+        ("a rating tag spaced before its colon", "rating_spaced",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           d["tags"] + ", rating :explicit")),
+         None, "tags", "rating tag"),
+        ("nsfw in tags", "rating_word_nsfw",
+         legal_but(lambda d: d.__setitem__("tags", "nsfw, " + d["tags"])),
+         None, "tags", "rating word"),
+        ("explicit and nude in tags", "rating_word_explicit",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           "explicit, nude, " + d["tags"])),
+         None, "tags", "rating word"),
+        ("nude in the anchor", "rating_word_anchor",
+         legal_but(lambda d: d.__setitem__("anchor", "black hair, nude")),
+         None, "anchor", "rating word"),
+        ("a contradicting view in the anchor", "view_anchor",
+         legal_but(lambda d: d.__setitem__(
+             "anchor", "from behind, facing viewer, facing left, black hair")),
+         None, "anchor", "view tag"),
+        ("facing left in braces in tags", "view_tags",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           d["tags"] + ", {facing left}")),
+         None, "tags", "view tag"),
+        ("a negative-prompt tag in tags", "negative_tags",
+         legal_but(lambda d: d.__setitem__("tags", d["tags"] + ", watermark")),
+         None, "tags", "negative tag"),
+        ("a negative-prompt tag in braces in the anchor", "negative_anchor",
+         legal_but(lambda d: d.__setitem__("anchor", "black hair, {blurry}")),
+         None, "anchor", "negative tag"),
+        ("a negative-prompt tag inside a numeric weight", "negative_weight",
+         legal_but(lambda d: d.__setitem__("tags",
+                                           d["tags"] + ", 1.5::watermark::")),
+         None, "tags", "negative tag"),
+        ("a negative-prompt tag in square brackets", "negative_square",
+         legal_but(lambda d: d.__setitem__("tags", d["tags"] + ", [[3d]]")),
+         None, "tags", "negative tag"),
+        ("a negative-prompt tag inside a negative weight", "negative_minus",
+         legal_but(lambda d: d.__setitem__("tags", d["tags"] + ", -1::logo::")),
+         None, "tags", "negative tag"),
+        ("an anchor tag that differs from its tag only in case",
+         "anchor_case",
+         legal_but(lambda d: d.__setitem__("anchor", "Black Hair, green cloak")),
+         None, "anchor", "not a tag of 'tags'"),
+        ("hex with eight digits", "hex_eight",
+         legal_but(set_colour("scarf", "#46A5E6FF")), None, "colours.scarf",
+         "is not a '#RRGGBB'"),
+        # -- the shades the mannequin draws, not only the base colour
+        ("a colour whose x0.7 shade IS the grey key", "shade_far_key",
+         legal_but(set_colour("pants", "#B7B7B7")), None, "colours.pants",
+         "x0.7 shade"),
+        ("a light grey whose x0.7 shade is 36.4 from the key", "shade_tunic",
+         legal_but(set_colour("tunic", "#D5D5D5")), None, "colours.tunic",
+         "x0.7 shade"),
+        ("a colour whose x0.7 shade is 5.2 from the key", "shade_far_near",
+         legal_but(set_colour("boots", "#BBBBBB")), None, "colours.boots",
+         "x0.7 shade"),
+        ("a colour whose x0.7 shade is 39.3 from the key", "shade_far_39",
+         legal_but(set_colour("skin", "#D69696")), None, "colours.skin",
+         "x0.7 shade"),
+        ("a colour whose x0.6 shade alone is 16 from the key", "shade_inner",
+         legal_but(set_colour("hair", "#F0D6D6")), None, "colours.hair",
+         "x0.6 shade"),
+        ("a colour whose x0.6 shade alone is 39.3 from the key",
+         "shade_inner_39",
+         legal_but(set_colour("belt", "#96E1E1")), None, "colours.belt",
+         "x0.6 shade"),
+    )
+    RULE_FRAGMENTS = {row[5] for row in CHARACTER_REFUSALS}
+    for label, stem, doc, raw, field, fragment in CHARACTER_REFUSALS:
+        path = character_file(stem, doc, raw)
+        where = [f"{stem}.json"] + ([f"field {field!r}"] if field else [])
+        caught = expect_raises(f"{label} is refused, naming the file and field",
+                               ValueError,
+                               lambda p=path: characters.load_file(p),
+                               *where, fragment)
+        expect(f"...with its own message and no other rule's",
+               sorted(other for other in RULE_FRAGMENTS - {fragment}
+                      if other in str(caught)), [])
+    boundary = []
+    for stem, change, part in (
+            ("grey_48", set_colour("pants", "#B08080"), "pants"),
+            ("outline_48", set_colour("belt", "#205020"), "belt")):
+        loaded = outcome(lambda c=change, s=stem: characters.load_file(
+            character_file(s, legal_but(c))))
+        boundary.append(loaded.colour(part) if isinstance(loaded, Identity)
+                        else loaded)
+    expect("...while 48 from the grey key and 48 from the outline both load",
+           boundary, [(0xB0, 0x80, 0x80), (0x20, 0x50, 0x20)])
+    expect("...and an anchor that is a subset of the tags loads",
+           getattr(outcome(lambda: characters.load_file(character_file(
+               "anchor_subset", legal_but(lambda d: d.__setitem__(
+                   "anchor", "green cloak"))))), "anchor", None),
+           "green cloak")
+    expect_raises("an unknown character name is refused, listing the files",
+                  ValueError, lambda: characters.load("nobody", CHAR_DIR),
+                  "unknown character 'nobody'", "legal (legal.json)")
+    expect_raises("...and a path in place of a name is an unknown name, never "
+                  "a file read", ValueError,
+                  lambda: characters.load(os.path.join("..", "characters",
+                                                       "legal"), CHAR_DIR),
+                  "unknown character")
+    shade_boundary = []
+    for stem, change, part in (
+            ("shade_far_40", set_colour("pants", "#7DB7B7"), "pants"),
+            ("shade_inner_40", set_colour("tunic", "#92D5D6"), "tunic")):
+        loaded = outcome(lambda c=change, s=stem: characters.load_file(
+            character_file(s, legal_but(c))))
+        shade_boundary.append(loaded.colour(part)
+                              if isinstance(loaded, Identity) else loaded)
+    expect("...while an x0.7 shade exactly 40 from the key (#7DB7B7) and an "
+           "x0.6 shade exactly 40 (#92D5D6) both load",
+           (shade_boundary,
+            [characters.distance_sq(mannequin._shade(rgb, factor),
+                                    BACKGROUND_RGB)
+             for rgb, factor in zip(shade_boundary, (0.7, 0.6))
+             if isinstance(rgb, tuple)]),
+           ([(0x7D, 0xB7, 0xB7), (0x92, 0xD5, 0xD6)], [1600, 1600]))
+    expect("...and the mannequin draws exactly the shades the loader judged",
+           (mannequin._shade is characters.shade,
+            (mannequin.FAR_SHADE, mannequin.INNER_SHADE),
+            tuple(factor for factor, _drawn in characters.SHADES)),
+           (True, (0.7, 0.6), (0.7, 0.6)))
+    NEAR_MISS_TAGS = ("black hair, green cloak, cropped jacket, logo patch, "
+                      "text on shirt, boy scout hat, other knee pad, "
+                      "sensitivity charm, backpack, 1.5::two-tone boots::, "
+                      "{{aesthetic}}")
+    expect("near misses load verbatim: a negative tag inside a longer tag, "
+           "boy/other without a count, a rating word inside a longer word, "
+           "and wrappers around legal tags",
+           getattr(outcome(lambda: characters.load_file(character_file(
+               "near_misses", legal_but(lambda d: d.__setitem__(
+                   "tags", NEAR_MISS_TAGS))))), "tags", None),
+           NEAR_MISS_TAGS)
+    LIST_DIR = os.path.join(SCRATCH, "character_listing")
+    os.makedirs(os.path.join(LIST_DIR, "dir.json"))
+    for listed in ("good_one.json", "...json", "Bad-Name.json", "x.y.json",
+                   ".json", "9lives.json", "notes.txt"):
+        with open(os.path.join(LIST_DIR, listed), "wb") as handle:
+            handle.write(json.dumps(LEGAL_CHARACTER).encode("ascii"))
+    expect("available lists only a legal stem of a regular .json file: not "
+           "'..', a capital or hyphen, a dot, an empty stem, a leading digit, "
+           "another extension or a directory named dir.json",
+           outcome(lambda: characters.available(LIST_DIR)), ("good_one",))
+    for smuggled in ("..", "dir", "x.y", "Bad-Name"):
+        expect_raises(f"...and load({smuggled!r}) from that directory is an "
+                      f"unknown character", ValueError,
+                      lambda n=smuggled: characters.load(n, LIST_DIR),
+                      f"unknown character {smuggled!r}",
+                      "good_one (good_one.json)")
+
+    # -- an Identity built in code: build_recipe applies the same tag rule ------
+    for field, bad, fragment in (
+            ("tags", recipes.IDENTITY.tags + ", {2girls}", "count tag"),
+            ("tags", recipes.IDENTITY.tags + ", {rating:explicit}",
+             "rating tag"),
+            ("anchor", "brown hair, nsfw", "rating word"),
+            ("anchor", "brown hair, facing left", "view tag")):
+        expect_raises(f"build_recipe refuses an in-code identity whose "
+                      f"{field} field carries a {fragment}", ValueError,
+                      lambda f=field, b=bad: recipes.build_recipe(
+                          "walk", dataclasses.replace(recipes.IDENTITY,
+                                                      **{f: b})),
+                      f"identity, field {field!r}", fragment)
+    saved_style = recipes.BASE_STYLE
+    recipes.BASE_STYLE = saved_style + ", rating:explicit"
+    try:
+        expect_raises("a rating tag anywhere in the base caption before its "
+                      "quality tail is refused by the Recipe itself",
+                      ValueError,
+                      lambda: recipes.build_recipe("walk", recipes.IDENTITY),
+                      "a rating tag sits in the base caption")
+    finally:
+        recipes.BASE_STYLE = saved_style
+
+    # -- the token budget: every recipe, counted as guard condition 7 counts --
+    RANGER_TAGS = ("silver hair, long hair, ponytail, green eyes, white "
+                   "headband, red scarf, blue tunic, brown leather gloves, "
+                   "brown belt, belt pouch, tan pants, knee pads, brown "
+                   "boots, short sword on back")
+    RANGER_ANCHOR = ("silver hair, ponytail, white headband, red scarf, blue "
+                     "tunic, brown leather gloves, belt pouch, short sword on "
+                     "back")
+    ranger_files = {}
+    for stem, tags in (
+            ("ranger", RANGER_TAGS),
+            ("ranger_301", RANGER_TAGS.replace(", green eyes", "")
+             .replace(", knee pads", "")),
+            ("ranger_300", RANGER_TAGS.replace(", green eyes", "")
+             .replace(", knee pads", "").replace("brown belt", "belt"))):
+        ranger_files[stem] = character_file(stem, legal_but(
+            lambda d, t=tags: d.update(tags=t, anchor=RANGER_ANCHOR)))
+    ranger = outcome(lambda: characters.load_file(ranger_files["ranger"]))
+    expect("the ranger file (14 tags, 8 anchor tags) counts 266 / 305 / 247 "
+           "words for walk / run / jump, as guard condition 7 counts",
+           ([outcome(lambda n=n: recipes.caption_words(n, ranger))
+             for n in ("walk", "run", "jump")], recipes.WORD_RE is guard._WORD_RE),
+           ([266, 305, 247], True))
+    for name in ("walk", "run", "jump"):
+        expect_raises(f"build_recipe({name!r}) refuses the ranger file: run is "
+                      f"over the budget, so every recipe is, naming the file",
+                      ValueError,
+                      lambda n=name: recipes.build_recipe(
+                          n, ranger, source=ranger_files["ranger"]),
+                      "ranger.json", "fields 'tags' and 'anchor'",
+                      "recipe run would carry 305 words ~ 457.5 tokens",
+                      "token budget of 450")
+    saved_dir = characters.CHARACTERS_DIR
+    characters.CHARACTERS_DIR = CHAR_DIR
+    try:
+        expect_raises("get_recipe for a character one word over (301 words ~ "
+                      "451.5 tokens) is refused, naming its file", ValueError,
+                      lambda: recipes.get_recipe("jump", "ranger_301"),
+                      os.path.normpath(ranger_files["ranger_301"]),
+                      "fields 'tags' and 'anchor'",
+                      "recipe run would carry 301 words ~ 451.5 tokens")
+        fit = outcome(lambda: recipes.make_request("run", "generate", SEED,
+                                                   character="ranger_300"))
+        fit_c7 = ([(v.ok, v.message) for v in guard.evaluate(
+            request.build_body(fit), None, (), scratch_state("budget_300"),
+            url=GENERATE_URL) if v.condition == 7]
+            if hasattr(fit, "frames") else fit)
+    finally:
+        characters.CHARACTERS_DIR = saved_dir
+    expect("...while exactly 300 words (450 tokens) builds, and guard condition "
+           "7 counts the same 300 and passes it",
+           fit_c7, [(True, "ASCII, 300 words ~ 450 tokens, rating closes the "
+                           "base")])
+
+    # -- the other route into a character caption: one tag rule ----------------
+    for bad_anchor, fragment in (("brown hair, 1boy", "count tag"),
+                                 ("brown hair, masterpiece", "quality tag"),
+                                 ("brown hair, rating:general", "rating tag"),
+                                 ("brown hair, {2girls}", "count tag"),
+                                 ("brown hair, from behind", "view tag"),
+                                 ("brown hair, blurry", "negative tag"),
+                                 ("brown hair\x00", "control character")):
+        expect_raises(f"character_caption refuses the anchor {bad_anchor!r}",
+                      ValueError,
+                      lambda a=bad_anchor: recipes.character_caption(
+                          dataclasses.replace(recipes.IDENTITY, anchor=a),
+                          "walking"), fragment)
+    expect("...while the scout anchor builds the pinned caption",
+           recipes.character_caption(recipes.IDENTITY, "walking"),
+           PIN_CAPTION + "walking")
+
+    # -- the shipped files ----------------------------------------------------
+    SCOUT = characters.load("scout")
+    BLUE = characters.load("scout_blue_scarf")
+    expect("scout.json IS recipes.IDENTITY -- tags, anchor and colours -- and "
+           "scout is the default character",
+           (SCOUT == recipes.IDENTITY, characters.DEFAULT_CHARACTER),
+           (True, "scout"))
+    expect("...so its tags and anchor are the brief's pinned identity text",
+           (SCOUT.tags, SCOUT.anchor),
+           (PIN_IDENTITY, "brown hair, red scarf, blue tunic"))
+    expect("get_recipe for the default character, and for scout, equals "
+           "RECIPES for every recipe",
+           [(recipes.get_recipe(n) == recipes.RECIPES[n],
+             recipes.get_recipe(n, character="scout") == recipes.RECIPES[n])
+            for n in ("walk", "run", "jump")], [(True, True)] * 3)
+
+    def tag_changes(a, b):
+        left, right = a.split(", "), b.split(", ")
+        return (len(left) == len(right),
+                [(x, y) for x, y in zip(left, right) if x != y])
+    expect("scout_blue_scarf differs from scout ONLY in the scarf tag, in tags "
+           "and in anchor",
+           (tag_changes(SCOUT.tags, BLUE.tags),
+            tag_changes(SCOUT.anchor, BLUE.anchor)),
+           ((True, [("red scarf", "blue scarf")]),
+            (True, [("red scarf", "blue scarf")])))
+    expect("...and ONLY in the scarf colour, a light sky blue #46A5E6",
+           ([part for part in IDENTITY_PARTS
+             if SCOUT.colour(part) != BLUE.colour(part)],
+            BLUE.colour("scarf")), (["scarf"], (0x46, 0xA5, 0xE6)))
+    expect("...which stays at least 48 (Euclidean RGB) from the tunic blue",
+           characters.distance_sq(BLUE.colour("scarf"), BLUE.colour("tunic"))
+           >= 48 * 48, True)
+    for name in ("walk", "run", "jump"):
+        blue_recipe = recipes.get_recipe(name, character="scout_blue_scarf")
+        blue_req = recipes.make_request(name, "generate", SEED,
+                                        character="scout_blue_scarf")
+        blue_text = json.dumps(request.build_body(blue_req))
+        expect(f"{name} for scout_blue_scarf: the brief's base caption with "
+               f"the scarf swapped, every character caption blue, and no "
+               f"red scarf anywhere in the body",
+               (blue_recipe.base_caption
+                == PIN_BASE[name].replace("red scarf", "blue scarf"),
+                blue_req.base_caption == blue_recipe.base_caption,
+                [f.caption for f in blue_req.frames]
+                == [PIN_CAPTION.replace("red scarf", "blue scarf") + words
+                    for words in PIN_POSES[name]],
+                "red scarf" in blue_text, blue_text.count("blue scarf")),
+               (True, True, True, False, 2 + 2 * len(PIN_POSES[name])))
+    RED_SCARF, BLUE_SCARF = SCOUT.colour("scarf"), BLUE.colour("scarf")
+
+    def scarf_shades(rgb):
+        return (rgb, mannequin._shade(rgb, mannequin.FAR_SHADE),
+                mannequin._shade(rgb, mannequin.INNER_SHADE))
+    blue_i2i = recipes.make_request("walk", "img2img", SEED,
+                                    character="scout_blue_scarf")
+    blue_init = opened(blue_i2i.image_png).convert("RGB")
+    scout_init = opened(INIT_PNG).convert("RGB")
+    blue_colours = {rgb for _n, rgb in blue_init.getcolors(1 << 20)}
+    scout_colours = {rgb for _n, rgb in scout_init.getcolors(1 << 20)}
+    recolour = dict(zip(scarf_shades(RED_SCARF), scarf_shades(BLUE_SCARF)))
+    expect("the blue img2img init draws the new scarf colour and no red "
+           "(base, x0.7 or x0.6); the scout init is the reverse",
+           (BLUE_SCARF in blue_colours,
+            sorted(set(scarf_shades(RED_SCARF)) & blue_colours),
+            RED_SCARF in scout_colours,
+            sorted(set(scarf_shades(BLUE_SCARF)) & scout_colours)),
+           (True, [], True, []))
+    expect("...and it IS the scout init with only the scarf pixels recoloured",
+           sum(1 for a, b in zip(scout_init.getdata(), blue_init.getdata())
+               if recolour.get(a, a) != b), 0)
+    expect("context_for names each character's own mannequin",
+           (recipes.context_for("walk").mannequin_sha256
+            == mannequin.params_sha256(L5, WALK.poses, SCOUT.as_dict()),
+            recipes.context_for("walk", character="scout_blue_scarf")
+            .mannequin_sha256
+            == mannequin.params_sha256(L5, WALK.poses, BLUE.as_dict()),
+            SCOUT.as_dict() != BLUE.as_dict()), (True, True, True))
+    for label, call in (
+            ("get_recipe", lambda: recipes.get_recipe(
+                "walk", character="scout_green")),
+            ("make_request", lambda: recipes.make_request(
+                "walk", "generate", SEED, character="scout_green")),
+            ("context_for", lambda: recipes.context_for(
+                "walk", character="scout_green"))):
+        expect_raises(f"{label} for an unknown character raises, listing the "
+                      f"shipped files", ValueError, call,
+                      "unknown character 'scout_green'", "scout.json",
+                      "scout_blue_scarf.json")
 
     # =======================================================================
     print("\n2. assert_free: the legal request passes, each refusal has its own reason")
@@ -2785,6 +3346,218 @@ try:
            "cannot start", (code, "sum           1000" in out,
                             "chain         CANNOT START" in out),
            (0, True, True))
+
+    # -- --character: the outfit reaches the body; an unknown one builds nothing
+    code, out, err = cli_call(plan_argv + ["--character", "scout_blue_scarf"],
+                              None, scratch_state("plan_blue"))
+    base_lines = [line for line in out.splitlines()
+                  if line.startswith("base caption")]
+    frame_lines = [line for line in out.splitlines()
+                   if line.startswith("frame ")]
+    expect("plan --character scout_blue_scarf: exit 0, the name printed, blue "
+           "scarf in the base caption and all 5 frame captions, no red scarf",
+           (code, "character     scout_blue_scarf\n" in out,
+            [("blue scarf" in line) for line in base_lines],
+            [("blue scarf" in line) for line in frame_lines],
+            "red scarf" in out), (0, True, [True], [True] * 5, False))
+    code, out, err = cli_call(plan_argv, None,
+                              scratch_state("plan_default_character"))
+    expect("...while plan with no --character prints scout and its red scarf",
+           (code, "character     scout\n" in out, "red scarf" in out,
+            "blue scarf" in out), (0, True, True, False))
+    BLUE_PARAMS = mannequin.params_sha256(L5, WALK.poses, BLUE.as_dict())
+
+    def blue_body_problems(body):
+        """Every way a sent body fails to be the blue-scarf walk."""
+        p = body["parameters"]
+        texts = ([body["input"]] + [c["prompt"] for c in p["characterPrompts"]]
+                 + [c["char_caption"] for c in
+                    p["v4_prompt"]["caption"]["char_captions"]])
+        problems = [f"text {i} has no blue scarf" for i, t in enumerate(texts)
+                    if "blue scarf" not in t]
+        if "red scarf" in json.dumps(body):
+            problems.append("red scarf in the body")
+        return problems
+    blue_run_state = scratch_state("run_blue")
+    recorder = tp.RecordingTransport([sub(1000), zipped(), sub(1000)])
+    code, out, err = cli_call(["run", "walk", "--action", "generate", "--seed",
+                               str(SEED), "--character", "scout_blue_scarf"],
+                              recorder, blue_run_state)
+    blue_rows = blue_run_state.rows()
+    expect("run --character scout_blue_scarf: exit 0, the name printed, the "
+           "POSTed body blue throughout, the ledger row's base caption and "
+           "mannequin sha256 the blue character's",
+           (code, "character     scout_blue_scarf\n" in out,
+            [blue_body_problems(post.body) for post in recorder.posts],
+            [("blue scarf" in (row.get("base_caption") or ""),
+              row.get("mannequin_sha256") == BLUE_PARAMS) for row in blue_rows]),
+           (0, True, [[]], [(True, True)]))
+    recorder = tp.RecordingTransport([sub(1000), (200, {},
+                                                  tp.fake_zip(elsewhere)),
+                                      sub(1000)])
+    code, out, err = cli_call(["infill", "walk", "--cell", "2", "--from",
+                               source_file, "--seed", str(SEED), "--character",
+                               "scout_blue_scarf"], recorder, infill_state)
+    sent_cell = (opened(base64.b64decode(recorder.posts[0].body["parameters"][
+        "image"])).convert("RGB").crop(rect2) if recorder.posts else None)
+    sent_colours = ({rgb for _n, rgb in sent_cell.getcolors(1 << 20)}
+                    if sent_cell is not None else set())
+    blue_last = infill_state.rows()[-1]
+    expect("infill --character scout_blue_scarf: exit 0, the name printed, the "
+           "body blue, the pasted mannequin's scarf blue and not red, the "
+           "ledger row the blue character's",
+           (code, "character     scout_blue_scarf\n" in out,
+            [blue_body_problems(post.body) for post in recorder.posts],
+            BLUE_SCARF in sent_colours, RED_SCARF in sent_colours,
+            "blue scarf" in (blue_last.get("base_caption") or ""),
+            blue_last.get("mannequin_sha256") == BLUE_PARAMS),
+           (0, True, [[]], True, False, True, True))
+    built: list[str] = []
+    saved_calls = (recipes.make_request, recipes.get_recipe,
+                   mannequin.render_init)
+
+    def counting(label, real):
+        def wrapper(*args, **kwargs):
+            built.append(label)
+            return real(*args, **kwargs)
+        return wrapper
+    recipes.make_request = counting("make_request", saved_calls[0])
+    recipes.get_recipe = counting("get_recipe", saved_calls[1])
+    mannequin.render_init = counting("render_init", saved_calls[2])
+    try:
+        for argv in (
+                ["plan", "walk", "--action", "generate", "--seed", str(SEED)],
+                ["run", "walk", "--action", "generate", "--seed", str(SEED)],
+                ["render", "walk"],
+                ["infill", "walk", "--cell", "2", "--from", source_file,
+                 "--seed", str(SEED)],
+                ["pixelize", strip_file, "--recipe", "walk"]):
+            recorder = tp.RecordingTransport([sub(1000), zipped(), sub(1000)])
+            unknown_state = scratch_state("unknown_character")
+            del built[:]
+            code, out, err = cli_call(argv + ["--character", "scout_green"],
+                                      recorder, unknown_state)
+            expect(f"{argv[0]} --character scout_green: exit 2 listing the "
+                   f"files; nothing built, read, sent or written",
+                   (code, "unknown character 'scout_green'" in err,
+                    "scout_blue_scarf.json" in err, out, list(built),
+                    recorder.calls, os.path.exists(unknown_state.root)),
+                   (2, True, True, "", [], [], False))
+        for how, smuggled in (
+                ("a relative path", os.path.join("..", "characters", "scout")),
+                ("an absolute path", os.path.join(characters.CHARACTERS_DIR,
+                                                  "scout")),
+                ("a file name", "scout.json")):
+            recorder = tp.RecordingTransport([sub(1000), zipped(), sub(1000)])
+            del built[:]
+            code, out, err = cli_call(plan_argv + ["--character", smuggled],
+                                      recorder, scratch_state("smuggled"))
+            expect(f"plan --character given {how} to scout: exit 2 at parse, "
+                   f"empty stdout, nothing built or sent",
+                   (code, "unknown character" in err, out, list(built),
+                    recorder.calls), (2, True, "", [], []))
+        CLI_CHAR_DIR = os.path.join(SCRATCH, "cli_characters")
+        os.makedirs(CLI_CHAR_DIR)
+        with open(os.path.join(characters.CHARACTERS_DIR, "scout.json"),
+                  "rb") as handle:
+            scout_doc = json.loads(handle.read())
+        refused_characters = {
+            "adv_nsfw": (dict(scout_doc, tags="nsfw, " + scout_doc["tags"]),
+                         "rating word"),
+            "adv_view": (dict(scout_doc,
+                              tags="from behind, facing viewer, facing left, "
+                                   + scout_doc["tags"],
+                              anchor="from behind, facing viewer, facing "
+                                     "left, brown hair"), "view tag"),
+            "adv_count": (dict(scout_doc,
+                               tags="{2girls}, " + scout_doc["tags"],
+                               anchor="{2girls}, brown hair"), "count tag"),
+            "adv_ranger": (dict(scout_doc, tags=RANGER_TAGS,
+                                anchor=RANGER_ANCHOR), "token budget"),
+        }
+        for stem, (doc, _fragment) in refused_characters.items():
+            with open(os.path.join(CLI_CHAR_DIR, f"{stem}.json"), "wb") as out_:
+                out_.write(json.dumps(doc).encode("ascii"))
+        with open(os.path.join(CLI_CHAR_DIR, "scout.json"), "wb") as out_:
+            out_.write(json.dumps(scout_doc).encode("ascii"))
+        saved_dir = characters.CHARACTERS_DIR
+        characters.CHARACTERS_DIR = CLI_CHAR_DIR
+        try:
+            for stem, (doc, fragment) in list(refused_characters.items()) + [
+                    ("adv_ranger", (None, "token budget"))]:
+                recipe_name = ("jump" if doc is None else "walk")
+                recorder = tp.RecordingTransport([sub(1000), zipped(),
+                                                  sub(1000)])
+                refused_state = scratch_state("refused_character")
+                del built[:]
+                code, out, err = cli_call(
+                    ["plan", recipe_name, "--action", "generate", "--seed",
+                     str(SEED), "--character", stem], recorder, refused_state)
+                expect(f"plan {recipe_name} --character {stem}: exit 1, the "
+                       f"{fragment} refusal names the file; no mannequin, no "
+                       f"request, no verdict, nothing sent or written",
+                       (code, fragment in err, f"{stem}.json" in err,
+                        "render_init" in built, "request sha256" in out,
+                        "verdict" in out, recorder.calls,
+                        os.path.exists(refused_state.root)),
+                       (1, True, True, False, False, False, [], False))
+        finally:
+            characters.CHARACTERS_DIR = saved_dir
+    finally:
+        (recipes.make_request, recipes.get_recipe,
+         mannequin.render_init) = saved_calls
+    code, out, err = cli_call(plan_argv + ["--char", "scout_blue_scarf"], None,
+                              scratch_state("plan_char_abbrev"))
+    expect("--char is not --character: exit 2, unrecognized",
+           (code, "unrecognized arguments" in err), (2, True))
+    code, out, err = cli_call(["probe", "img2img", "--character",
+                               "scout_blue_scarf", "--seed", str(SEED)],
+                              tp.RecordingTransport([sub(1000)]),
+                              scratch_state("probe_character"))
+    expect("probe takes no --character: it keeps the default (exit 2, "
+           "unrecognized)", (code, "unrecognized arguments" in err), (2, True))
+    per_character = scratch_state("outputs_per_character")
+    rendered, pixelized, named = {}, {}, {}
+    for name in ("scout", "scout_blue_scarf"):
+        code, out, err = cli_call(["render", "walk", "--character", name], None,
+                                  per_character)
+        named[name] = [f"character     {name}\n" in out]
+        lines = [line.split(None, 1)[1] for line in out.splitlines()
+                 if line.startswith("render ")]
+        data = None
+        if code == 0 and lines and os.path.isfile(lines[0]):
+            with open(lines[0], "rb") as handle:
+                data = handle.read()
+        rendered[name] = (code, os.path.basename(lines[0]) if lines else None,
+                          data)
+        code, out, err = cli_call(["pixelize", strip_file, "--recipe", "walk",
+                                   "--character", name], None, per_character)
+        named[name].append(f"character     {name}\n" in out)
+        lines = [line.split(None, 1)[1] for line in out.splitlines()
+                 if line.startswith("written ")]
+        pixelized[name] = (code in (0, 3), os.path.normcase(lines[0])
+                           if lines else None)
+    code, out, err = cli_call(["render", "walk"], None, per_character)
+    expect("render per character into one state: two files, each named for "
+           "its character, scout's bytes the init, blue's different; a "
+           "default render lands on scout's own file (exit 0)",
+           (rendered["scout"][:2], rendered["scout_blue_scarf"][:2],
+            rendered["scout"][2] == INIT_PNG,
+            rendered["scout_blue_scarf"][2] not in (None, INIT_PNG),
+            code, "scout_walk_init.png" in out),
+           ((0, "scout_walk_init.png"),
+            (0, "scout_blue_scarf_walk_init.png"), True, True, 0, True))
+    expect("render and pixelize each print the character they drew",
+           named, {"scout": [True, True], "scout_blue_scarf": [True, True]})
+    sha12 = hashlib.sha256(first_png).hexdigest()[:12]
+    expect("pixelize per character: the default sprites directory is "
+           "sprites/<character>/<recipe>/<sha12>/, so the two never share one",
+           (pixelized["scout"], pixelized["scout_blue_scarf"]),
+           ((True, os.path.normcase(os.path.join(
+               per_character.root, "sprites", "scout", "walk", sha12))),
+            (True, os.path.normcase(os.path.join(
+                per_character.root, "sprites", "scout_blue_scarf", "walk",
+                sha12)))))
 
     # -----------------------------------------------------------------------
     print("\n8b. a sync client holding a file: local file operations settle")
