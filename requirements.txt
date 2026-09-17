@@ -1,2 +1,25 @@
+# Every third-party import in main.py, scripts/, editor/ and tools/, and
+# nothing else. Measured by walking the AST of all 223 modules rather than
+# by freezing an environment: a venv accumulates, and a frozen list of what
+# happened to be installed is how a project acquires dependencies nobody
+# uses. Re-measure with:
+#
+#   python -c "import ast,os,sys;print(sorted({n.split('.')[0] for f in
+#   [os.path.join(r,x) for r,d,fs in os.walk('.') for x in fs
+#   if x.endswith('.py')] for n in
+#   [(getattr(a,'module',None) or '') if isinstance(a,ast.ImportFrom)
+#   else b.name for a in ast.walk(ast.parse(open(f,encoding='utf-8').read()))
+#   if isinstance(a,(ast.Import,ast.ImportFrom))
+#   for b in (a.names if isinstance(a,ast.Import) else [a])]
+#   if n and n.split('.')[0] not in sys.stdlib_module_names}))"
+#
 pygame~=2.6.0
 pytmx~=3.32
+
+# tools/: the sprite pipeline draws and pixelizes with it.
+pillow~=10.2.0
+
+# editor/ is built on it, and tools/nai_ui is the NovelAI composer window.
+# Essentials, not the full PySide6: nothing here imports WebEngine, Charts,
+# Multimedia or 3D, and the full wheel is several times the size.
+PySide6_Essentials~=6.11.1
