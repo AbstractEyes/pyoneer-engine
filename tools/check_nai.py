@@ -2786,6 +2786,83 @@ try:
                             "chain         CANNOT START" in out),
            (0, True, True))
 
+    # -----------------------------------------------------------------------
+    print("\n8b. a sync client holding a file: local file operations settle")
+    # -----------------------------------------------------------------------
+    # Measured 2026-09-17: the repo lives in Dropbox, and a real, already-sent
+    # request lost its bookkeeping to [WinError 32] on a blob's temp file.
+    class _Sleeps(list):
+        def __call__(self, seconds):
+            if len(self) > 1000:
+                raise AssertionError("_settle never stopped sleeping")
+            self.append(seconds)
+
+    def _held(times, result="done"):
+        calls = []
+
+        def operation(*args):
+            calls.append(args)
+            if len(calls) <= times:
+                raise PermissionError(32, "being used by another process")
+            return result
+        return operation, calls
+
+    naps = _Sleeps()
+    op, calls = _held(2)
+    expect("_settle returns once a held operation is released",
+           (nai_state._settle(op, "a", sleep=naps), len(calls), naps),
+           ("done", 3, [0.05, 0.1]))
+    naps = _Sleeps()
+    op, calls = _held(10 ** 6)
+    expect_raises("_settle gives up after its budget and raises the "
+                  "PermissionError unchanged", PermissionError,
+                  lambda: nai_state._settle(op, sleep=naps, budget=1.0),
+                  "another process")
+    expect("...having slept exactly its budget, no more",
+           round(sum(naps), 6), 1.0)
+    naps = _Sleeps()
+
+    def _missing(*_args):
+        raise FileNotFoundError("gone")
+    expect_raises("_settle does not retry anything but PermissionError",
+                  FileNotFoundError,
+                  lambda: nai_state._settle(_missing, sleep=naps))
+    expect("...and did not sleep for it", list(naps), [])
+
+    held_state = scratch_state("held")
+    real_replace, real_remove = os.replace, os.remove
+    replace_held = {"left": 2}
+    remove_held = {"left": 2}
+
+    def held_replace(src, dst):
+        if replace_held["left"] > 0:
+            replace_held["left"] -= 1
+            raise PermissionError(32, "being used by another process")
+        return real_replace(src, dst)
+
+    def held_remove(path):
+        if remove_held["left"] > 0:
+            remove_held["left"] -= 1
+            raise PermissionError(32, "being used by another process")
+        return real_remove(path)
+
+    os.replace, os.remove = held_replace, held_remove
+    try:
+        digest, rel = held_state.save_blob(b"held-by-dropbox", "json")
+        blob_dir = os.path.join(held_state.root, nai_state.BLOBS_DIR)
+        expect("save_blob lands its blob while the rename is briefly held",
+               (os.path.isfile(os.path.join(held_state.root, rel)),
+                sorted(n for n in os.listdir(blob_dir) if ".tmp-" in n)),
+               (True, []))
+        replace_held["left"] = 2
+        held_state.acquire_inflight("held-row", 1000)
+        remove_held["left"] = 2
+        held_state.release_inflight("held-row")
+        expect("release_inflight removes INFLIGHT while the delete is "
+               "briefly held", held_state.inflight(), False)
+    finally:
+        os.replace, os.remove = real_replace, real_remove
+
 finally:
     shutil.rmtree(SCRATCH, ignore_errors=True)
 

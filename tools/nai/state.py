@@ -65,6 +65,15 @@ INVARIANTS
 * Blobs are create-only: an existing <sha256>.<ext> is left as is (same name
   means same bytes). A new blob is written to a temp file and renamed into
   place, so a crash never leaves a partial blob under its final name.
+* A SYNC CLIENT CAN HOLD A FILE FOR A MOMENT. This repository lives in a
+  Dropbox folder, and Dropbox (or a virus scanner) opens a file the instant
+  it appears, so an `os.replace` or `os.remove` right after the write can
+  fail with a Windows sharing violation. Measured on 2026-09-17: a real,
+  already-sent request lost its bookkeeping to `[WinError 32]` on a blob's
+  temp file, and `run` LOCKed, correctly. Every rename and delete here goes
+  through `_settle`, which retries a PermissionError for at most
+  SETTLE_SECONDS and then raises it unchanged. This is a retry of a LOCAL
+  file operation; nothing in this package retries a network request.
 
 PUBLIC NAMES
 ------------
@@ -204,8 +213,33 @@ def _long_strings(value: object, path: str = "") -> list[str]:
     return found
 
 
+SETTLE_SECONDS = 5.0
+"""How long `_settle` keeps retrying a file operation another process holds."""
+
+
+def _settle(operation, *args, sleep=time.sleep, budget: float = SETTLE_SECONDS):
+    """`operation(*args)`, retrying ONLY PermissionError (a Windows sharing
+    violation while a sync client or scanner holds the file) with a doubling
+    delay from 0.05 s, until `budget` seconds of sleeping are spent; then the
+    last PermissionError is raised unchanged. Any other exception propagates
+    at once. `sleep` is injectable so the check never waits."""
+    delay, slept = 0.05, 0.0
+    while True:
+        try:
+            return operation(*args)
+        except PermissionError:
+            if slept >= budget:
+                raise
+            step = min(delay, budget - slept)
+            sleep(step)
+            slept += step
+            delay *= 2
+
+
 def _fsync_write(path: str, data: bytes, mode: str) -> None:
-    with open(path, mode) as handle:
+    # The OPEN is what a sync client's hold refuses; a retry never repeats a
+    # write, because PermissionError is raised before any byte is written.
+    with _settle(open, path, mode) as handle:
         handle.write(data)
         handle.flush()
         os.fsync(handle.fileno())
@@ -484,7 +518,7 @@ class State:
         if owner != ledger_id:
             raise ValueError(f"INFLIGHT belongs to {owner!r}, not {ledger_id!r}; "
                              f"left in place")
-        os.remove(self.inflight_path)
+        _settle(os.remove, self.inflight_path)
 
     # -- proofs ------------------------------------------------------------
 
@@ -526,10 +560,10 @@ class State:
         temp = f"{self.proofs_path}.tmp-{secrets.token_hex(4)}"
         try:
             _fsync_write(temp, data, "xb")
-            os.replace(temp, self.proofs_path)
+            _settle(os.replace, temp, self.proofs_path)
         finally:
             if os.path.exists(temp):
-                os.remove(temp)
+                _settle(os.remove, temp)
 
     # -- blobs -------------------------------------------------------------
 
@@ -549,10 +583,10 @@ class State:
             temp = f"{final}.tmp-{secrets.token_hex(4)}"
             try:
                 _fsync_write(temp, data, "xb")
-                os.replace(temp, final)
+                _settle(os.replace, temp, final)
             finally:
                 if os.path.exists(temp):
-                    os.remove(temp)
+                    _settle(os.remove, temp)
         return digest, f"{BLOBS_DIR}/{name}"
 
     def read_blob(self, sha256: str, ext: str) -> bytes:
