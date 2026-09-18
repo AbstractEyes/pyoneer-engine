@@ -172,8 +172,14 @@ def parallax_sheet() -> pygame.Surface:
 
     # Aerial perspective: the far ridge is mixed most of the way to the sky
     # behind it, which is what puts it BEHIND rather than merely above.
+    # `massif`, not `granite`: the terrain block is a material an author
+    # paints with and this is a mountain thirty miles away. They were one
+    # name, so repainting the terrain moved the sky -- and on a machine
+    # holding the author's own tilesets this backdrop is the ONLY generated
+    # sheet the starter map loads, which made it the only thing that could
+    # have moved the frame hash. See `#TAG:massif_is_not_granite`.
     sky_at_ridge = _sky_colour(FAR_BASE)
-    far = Ramp("granite", mix(ramp("granite").base, sky_at_ridge, 0.42))
+    far = Ramp("massif", mix(ramp("massif").base, sky_at_ridge, 0.42))
     _band(out, FAR_BASE - 26, NEAR_BASE + 4,
           lambda x, y: y >= FAR_BASE + _wave(x, FAR_RIDGE), far)
 
@@ -181,7 +187,12 @@ def parallax_sheet() -> pygame.Surface:
     _band(out, NEAR_BASE - 22, HEIGHT,
           lambda x, y: y >= NEAR_BASE + _wave(x, NEAR_RIDGE) - _tooth(x), near)
 
-    ground = Ramp("swamp", mix(ramp("swamp").shadow, SHADOW, 0.35))
+    # The nearest band is a SILHOUETTE, so it is mixed most of the way to
+    # SHADOW rather than a little of the way: at 0.35 it was the swamp
+    # palette's own brightness that decided whether the foreground read as
+    # foreground, and a repaint of `swamp` for reasons that had nothing to do
+    # with this picture pushed it past `check_art_sprites`'s floor.
+    ground = Ramp("swamp", mix(ramp("swamp").shadow, SHADOW, 0.72))
     _band(out, GROUND, HEIGHT, lambda x, y: y >= GROUND, ground)
     return out
 

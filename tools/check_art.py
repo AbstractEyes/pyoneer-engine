@@ -396,6 +396,22 @@ expect("...and so is anything under it",
 expect("the shipped pack is NOT ignored",
        sorted(ignored(shipped_relative(r)) for r in SHEETS),
        [False] * len(SHEETS))
+# NOT-IGNORED IS NOT TRACKED, and the difference is a whole sheet.
+# `TileA2_TopDown.png` was generated, written, measured by three checks and
+# never added: `git check-ignore` exits 1 for a file git has never heard of,
+# so the assertion above passed on it, `check_art` reported PASS, and a
+# fresh clone would have been missing a tileset with the suite green. What
+# the pack's promise actually claims is that git CARRIES the file.
+listed = subprocess.run(["git", "ls-files"]
+                        + [shipped_relative(r) for r in sorted(SHEETS)],
+                        cwd=REPO_ROOT, capture_output=True, text=True)
+carried = set(listed.stdout.split())
+expect("every sheet in the pack is tracked, not merely un-ignored",
+       sorted(shipped_relative(r) for r in SHEETS
+              if shipped_relative(r) not in carried), [])
+# And it has to be able to answer no, or the line above measures nothing.
+expect("...and a path git has never seen is not carried",
+       "data/art/tilesets/System/__never_added__.png" in carried, False)
 
 tracked = subprocess.run(["git", "ls-files", GRAPHICS_ROOT],
                          cwd=REPO_ROOT, capture_output=True, text=True)

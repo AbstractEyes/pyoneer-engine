@@ -1,12 +1,12 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written; every open item was re-measured on 2026-09-16 by the command beside it. -->
+<!-- pyoneer-stamp: hand-written; every open item was re-measured on 2026-09-16 by the command beside it, except items 48, 49 and 50, which were measured on 2026-09-18 by the commands beside them when the beatemup terrain sheet landed. -->
 
 # Next — what is open, and the command that measured it
 
 1. **Item numbers are permanent ids.** Code cites items by number: item 16 is
    cited from `scripts/core/event_manager.py` and `tools/check_event_queue.py`,
    and item 29 from `tools/check_editor.py`. So a number is never changed and
-   never reused. A new item takes the next unused number (**46**), and a
+   never reused. A new item takes the next unused number (**51**), and a
    closed item moves to *Closed* at the bottom and keeps its number.
 2. **Rank is the section, not the number.** Sections run from most to least
    expensive; within a section, earlier means more urgent.
@@ -321,6 +321,100 @@ is repository configuration, so it is the author's decision.
 
 ## Unbuilt, decided or deferred
 
+### 47. The top-down 32 has no cliff, no wall and no crop
+
+A top-down RPG map is ground plus the EDGE OF A PLATEAU, and there is no
+terrain on `TileA2_TopDown.png` that draws a drop. That is not an oversight
+in the table, it is a consequence of the view: `palette.overhead` forbids a
+lit vertical face, and a lit vertical face is the only thing that reads as a
+cliff from above. The same goes for a building's wall, which top-down art
+draws as a thick BAND of two rows rather than as one cell's face, and for
+farmland, despite `furrow` existing for exactly that fiction.
+
+So this is a FORMAT question and not a texture one, and it should be written
+down before somebody tries to answer it inside `VIEWS`: a Wang corner
+terrain is one cell deep, and a cliff is two. Either a third view whose
+`shade` is allowed a face, or a two-row band drawn outside the corner set.
+Three of the 32 slots currently go to `bone_field`, `marble` and `carpet`,
+which is where the room would come from.
+
+    .venv/Scripts/python.exe -c "import sys; sys.path.insert(0, 'tools'); import _bootstrap
+    from tools.art.terrain import TABLES
+    print(sorted(t.name for t in TABLES['topdown']))"
+    # -> 32 ground materials, no cliff, no wall, no crop
+
+
+### 48. Nothing writes `GameObject.priority`, so a belt-scroll stage cannot sort
+
+`BlitPool` sorts by depth, then priority, then insertion order, and
+`renderer.py` passes `priority=entity.priority` -- but the only assignment to
+`.priority` anywhere in `scripts/` is `blitpool.py` copying it back off a
+token. Two bodies on one layer therefore draw in SPAWN order. Top-down
+survives that; a beat-em-up does not, because the enemy standing behind you
+draws in front of you, and no floor art fixes it.
+
+One assignment per frame closes it, and it has to read the FEET:
+
+    entity.priority = int(entity.collision_point()[1])
+
+`collision_point()` is already the anchor the collision gate uses, so the
+sprite's anchor and its sort key stay one fact -- and sorting on the ground y
+rather than `transform.position.y` is what stops a jumping body swapping
+depth in mid-air. This is the first of the three seams above the `beatemup`
+terrain sheet (item 49 and item 50 are the others); the art landed on
+2026-09-18 and none of the three did.
+
+    grep -rn "\.priority = " scripts/
+    # -> 1 hit, blitpool.py copying it off a token. Nothing SETS it.
+
+### 49. `beatemup` has a view and a sheet and no movement behavior
+
+`tools/art/terrain.py` now draws a third sheet at a declared foreshortening of
+`k = 1/2` (`FORESHORTENING`), and nothing in `scripts/` reads that number. A
+belt-scroll body has to draw `dy_screen = k * dx_screen`, because a 16px cell
+is 16 wide on screen and depicts `16/k` world units deep, so isotropic world
+movement comes out twice too fast up the screen without it.
+
+**This is law 9's shape one level up, and worse for being smaller.** Law 9
+costs 16.7x and still looks like it works; this costs 2x and looks like the
+player is merely a bit quick going north.
+
+ONE class with a `depth_scale`, where `k = 1` is `topdown_move` exactly --
+not a second class, or the 19-sighting sibling warning gets its next entry.
+By law 2 the constant lives in `scripts/` and `tools/art/` imports it, never
+the reverse, so `FORESHORTENING` moves when this lands. Law 10 costs nothing
+here: `left right up down sprint` are all already bound in
+`config/inputs.json`.
+
+    grep -rn "beatemup" scripts/ editor/genres/ config/    # -> nothing
+    grep -rn "FORESHORTENING" --include=*.py . | grep -v .venv
+    # -> 2 hits, both inside tools/. No engine caller.
+
+### 50. The belt-scroll haze strip is a tileset nobody has drawn
+
+A receding plane wants to haze with distance, and that haze is a function of
+SCREEN y -- which a tile cannot carry, because a tile is 16 rows of screen
+and then it starts again. Measured on the design pass, a baked gradient steps
+**15x** harder at the 16px seam than inside a tile at every strength, and
+crosses the 2.3 L* just-noticeable difference at a drop of 2.59 L* per tile:
+a baked depth gradient is either invisible or banded, with nothing in
+between. The same arithmetic bands a baked vignette at every COLUMN seam,
+which is where nobody thinks to look.
+
+So it belongs outside the terrain sheet: one picture the height of the
+viewport, cut on the 16px grid the way `tools/art/parallax.py` already cuts
+one, on a tile layer with `pyoneer_parallax_x = 0` and
+`pyoneer_parallax_y = 0` so its source rect is pinned whatever the camera
+does. `Above1` at depth 55 is free, between `PlayerDepth` (50) and
+`Foreground` (60), and `pyoneer_opacity` is already read and clamped to 0..1
+so the strength is authorable with no new code.
+
+**Read, not painted** -- the four properties above come from
+`scripts/core/layer_profile.py`, `scripts/core/depth.py` and
+`tools/art/parallax.py`, and no map has been made to prove it.
+
+    grep -rln "pyoneer_parallax_y" data/maps/ demos/maps/   # -> no map does this
+
 ### 39. The unbuilt part of `docs/PLAN_SCENES.md` has no items of its own
 
 This item points there. Still unbuilt: a second map with a tileset shared
@@ -434,6 +528,7 @@ column before re-filing anything.
 
 | id | title | what closed it |
 |---|---|---|
+| 46 | `tools/baseline.json` needed re-blessing for the repainted parallax | blessed 2026-09-18, after the beatemup sheet moved the palette a second time. `frame_hash` alone: `5d1d2ad35acd80da` -> `646c1b0d22efd363` -- NOT the `c5d0d4fc598d42ec` this item predicted, because 29 urban bases landed between the writing and the blessing. Every other smoke field byte-identical |
 | 1 | `docs/BEHAVIORS.md`'s preamble declared the unregistered token `tile_collision` | the markdown cleanup, 2026-09-16: `grep -rn "tile_collision" docs/BEHAVIORS.md scripts/ --include=*.py --include=*.md` returns 0 |
 | 10 | Nothing refused a committed plaintext credential | `tools/check_secrets.py`, `0b6227c` (2026-09-10). The pre-commit half is item 43 |
 | 15 | The audio ops could not be reached from a running game | `0b6227c` (2026-09-10): scripts load at boot and the `action` verb starts a `ScriptRun`. The shortcut route was deleted |

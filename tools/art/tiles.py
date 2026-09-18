@@ -436,9 +436,70 @@ def swatch(colour: str) -> Draw:
 # The catalogue
 # --------------------------------------------------------------------------
 
-def _swatches() -> list[Item]:
+SWATCHES: tuple[str, ...] = (
+    "ash", "bark", "bone", "brick", "chalk", "clay", "cloth",
+    "cobble", "crystal", "deep_water", "dirt", "ember", "forest",
+    "gold", "granite", "grass", "gravel", "ice", "lava", "leaf",
+    "marble", "massif", "metal", "moss", "mud", "obsidian", "path",
+    "plank", "rug", "rust", "sand", "shallow", "skin", "snow",
+    "stone", "swamp", "tall_grass", "tile_floor", "void", "water",
+    "wood",
+)
+"""The swatch strip, FROZEN AND APPEND-ONLY.        #TAG:swatch_order_is_a_gid
+
+This used to be `sorted(BASES)`, and that is a tile index computed from a
+dict somebody else is free to grow. The strip is laid out FIRST, so every
+clutter tile and every prop on this sheet sits at an index that depends on
+how many colours the palette happens to carry -- and `data/maps/starter.tmx`
+paints from this tileset at `firstgid="769"`. Measured, adding the 29 urban
+bases for the `beatemup` sheet moved every clutter gid on the sheet by 29:
+the shipped map would have been silently repainted, with `TileC.png` the
+only file that changed and nothing anywhere saying why.
+
+So the order is a FILE FORMAT string (law 8), one per tile, and it is
+written down. A new colour does NOT join this strip: it is drawn where it is
+used, and `_verify_swatches` is what says so out loud -- every base is either
+in this tuple or named by a terrain table, so a colour nobody ever looks at
+still cannot exist. If a colour genuinely needs a swatch, APPEND it; never
+re-sort, because re-sorting is the same repaint by another route.
+"""
+
+
+def _verify_swatches() -> None:
+    """Every palette colour is LOOKED AT somewhere, and the strip is real.
+
+    The swatch strip's whole job was "one tile per palette entry, so no
+    colour goes unseen". Freezing it keeps the gids still and would quietly
+    drop that job, so the job is stated here instead and covers more than the
+    strip ever did: a colour is on this sheet, or it is a terrain on one of
+    the terrain sheets. A base in neither is a colour nobody has ever looked
+    at, and it will be wrong when somebody finally does.
+    """
     from .palette import BASES
-    return [Item(f"swatch_{name}", swatch(name)) for name in sorted(BASES)]
+    from .terrain import TABLES
+    if len(set(SWATCHES)) != len(SWATCHES):
+        raise ValueError("the swatch strip names a colour twice, so one tile "
+                         "of it is spent on a copy")
+    stray = sorted(set(SWATCHES) - set(BASES))
+    if stray:
+        raise ValueError(
+            f"the swatch strip names {', '.join(stray)}, which the palette "
+            f"no longer carries; the strip is a list of TILE INDICES, so a "
+            f"name cannot simply be dropped from it -- decide what that tile "
+            f"is now and say so")
+    painted = {terrain.palette for table in TABLES.values() for terrain in table}
+    unseen = sorted(set(BASES) - set(SWATCHES) - painted)
+    if unseen:
+        raise ValueError(
+            f"the palette carries {', '.join(unseen)} and nothing draws "
+            f"it: not a swatch on this sheet, not a terrain on any sheet. A "
+            f"colour nobody looks at is a colour that is wrong when somebody "
+            f"finally does -- append it to SWATCHES (never re-sort) or give "
+            f"it a terrain")
+
+
+def _swatches() -> list[Item]:
+    return [Item(f"swatch_{name}", swatch(name)) for name in SWATCHES]
 
 
 CLUTTER: tuple[Item, ...] = (
@@ -446,7 +507,10 @@ CLUTTER: tuple[Item, ...] = (
     Item("bush_dark", blob("forest", dots=3)),
     Item("shrub", blob("moss", squash=0.7, dots=2)),
     Item("rock", blob("stone", squash=0.8, dots=2)),
-    Item("rock_dark", blob("granite", squash=0.8, dots=2)),
+    # `cobble`, not `granite`: this item exists to be the DARKER rock
+    # beside `rock`, and `granite` is a pale rose stone now -- see
+    # `BASES` in palette.py. A name is not a colour.
+    Item("rock_dark", blob("cobble", squash=0.8, dots=2)),
     Item("clay_mound", blob("clay", squash=0.6)),
     Item("snow_drift", blob("snow", squash=0.5)),
     Item("pebbles", scatter("gravel", 4, 4)),
@@ -497,7 +561,7 @@ PROPS: tuple[Item, ...] = (
     Item("tree", tree("bark", "leaf"), columns=2, rows=3),
     Item("tree_autumn", tree("bark", "clay"), columns=2, rows=3),
     Item("pine", pine("bark", "forest"), columns=2, rows=3),
-    Item("boulder", blob("granite", squash=0.8, dots=5), columns=2, rows=2),
+    Item("boulder", blob("gravel", squash=0.8, dots=5), columns=2, rows=2),
     Item("big_bush", blob("forest", dots=6), columns=2, rows=2),
     Item("pillar", pillar("marble"), columns=1, rows=3),
     Item("pillar_broken", pillar("chalk"), columns=1, rows=2),
@@ -536,6 +600,8 @@ def layout(items: list[Item] | None = None) -> list[Placement]:
         shelf = max(shelf, item.rows)
     return placements
 
+
+_verify_swatches()
 
 PLACEMENTS: tuple[Placement, ...] = tuple(layout())
 

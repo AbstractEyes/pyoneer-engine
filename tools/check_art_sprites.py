@@ -436,6 +436,24 @@ expect_true(f"and the horizon is brighter than the zenith "
             horizon_band > sky_band + 20)
 expect_true("the picture is not two colours in a trenchcoat",
             len({pixel[:3] for column in columns for pixel in column}) > 40)
+# THE BAND NOBODY MEASURED, and the one that moved the frame hash.
+# The two assertions above pin the ground against the sky and the horizon
+# against the zenith; nothing pinned the FAR RIDGE against the sky it stands
+# in front of. So when `ramp("granite")` was repainted for the terrain sheet
+# the ridge rose to within 3.9 of L* of that sky and the backdrop lost its
+# middle distance -- silently, on the one generated sheet the starter map
+# loads on a machine that has the author's own tilesets, which is why the
+# smoke frame hash moved and the terrain sheet got the blame.
+# Against the sky AT THE RIDGE, not against a band of sky further up: this
+# sky brightens toward the horizon, so comparing the ridge with the zenith
+# flatters it by ten points and would have passed the defect at 8.
+ridge_band = band_luma(parallax_art.FAR_BASE + 8, parallax_art.FAR_BASE + 24)
+behind = parallax_art._sky_colour(parallax_art.FAR_BASE)
+behind_luma = 0.299 * behind[0] + 0.587 * behind[1] + 0.114 * behind[2]
+RIDGE_GAP = 20.0
+expect_true(f"the far ridge stands clear of the sky behind it "
+            f"({behind_luma - ridge_band:.1f} of luma, over {RIDGE_GAP})",
+            behind_luma - ridge_band > RIDGE_GAP)
 
 
 # --------------------------------------------------------------------------

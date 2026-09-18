@@ -95,15 +95,20 @@ class Body(NamedTuple):
     trouser: str
     boot: str
     accent: str
+    """A LOOK, not a colour. Both bodies wore `granite` while that name meant
+    a mauve-brown; it is a pale rose stone now, and pale rose trousers read
+    as bare legs. The palette entry moved and the outfit follows it, because
+    what was chosen here was a muted mid value under the skin and over the
+    boot -- which `cobble` is and `granite` no longer is."""
 
 
 SCOUT = Body(skin="skin", hair="clay", shirt="cloth",
-             trouser="granite", boot="bark", accent="gold")
+             trouser="cobble", boot="bark", accent="gold")
 """The four-direction body. Mid-value and warm, so it separates from grass,
 dirt and stone without being the brightest thing on the map."""
 
 RUNNER = Body(skin="skin", hair="obsidian", shirt="brick",
-              trouser="granite", boot="obsidian", accent="gold")
+              trouser="cobble", boot="obsidian", accent="gold")
 """The side-on body. A platformer draws it against sky as often as against
 ground, so it leans on the darkest hair and the reddest shirt the palette
 has: value contrast is what survives being 44 pixels wide over a gradient."""
