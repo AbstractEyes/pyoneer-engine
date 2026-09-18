@@ -121,9 +121,10 @@ if importlib.util.find_spec("PySide6") is None:
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from tools.nai import guard, model                             # noqa: E402
+from tools.nai import guard, model, recipes                    # noqa: E402
 from tools.nai import request as nai_request                   # noqa: E402
 from tools.nai.cli import build_parser                         # noqa: E402
+from tools.nai import mannequin                                # noqa: E402
 from tools.nai.mannequin import LAYOUTS                        # noqa: E402
 from tools.nai_ui import app, character_pane, request_pane     # noqa: E402
 from tools.nai_ui import run_pane, theme, widgets              # noqa: E402
@@ -224,6 +225,8 @@ SIGNATURES: tuple[tuple[str, str, str], ...] = (
     ("character_pane", "CharacterPane.state", "(self) -> 'CharacterState'"),
     ("character_pane", "CharacterPane.select", "(self, name: 'str') -> 'None'"),
     ("character_pane", "CharacterPane.reload", "(self) -> 'None'"),
+    ("character_pane", "CharacterPane.build", "(self) -> 'str'"),
+    ("character_pane", "CharacterPane.set_build", "(self, name: 'str') -> 'None'"),
     ("character_pane", "CharacterPane.edited_json", "(self) -> 'bytes'"),
     ("character_pane", "CharacterPane.problem", "(self) -> 'str'"),
     ("character_pane", "CharacterPane.save_as", "(self, name: 'str') -> 'str'"),
@@ -847,6 +850,148 @@ if "dress" in dict(colour_rows(pane)):
     fail("going back to pants left the dress row behind")
 report("the swatches are exactly model.garment_parts(garments), through "
        "six garment changes", len(failures) == before)
+
+
+# ---------------------------------------------------------------------------
+# 9b. EVERY FIELD OF THE FILE FORMAT HAS A CONTROL, and survives a round trip
+# ---------------------------------------------------------------------------
+# `edited_json` RAISES for a `characters.FIELDS` field this pane has no
+# control for, which is law 7 working -- and it is a CONSTRUCTOR crash, so
+# the window would not open at all. That is how `build` was caught, after it
+# shipped. This is the same rule asserted from the other side, as a value
+# the form carries in and writes back out, so a field can be added with the
+# pane's own answer to it measured rather than only its absence punished.
+
+print("every field of the file format has a control")
+before = len(failures)
+pane = window.character
+
+for field in characters.FIELDS:
+    if not hasattr(pane, field if field != "colours" else "colours"):
+        fail(f"characters.FIELDS names {field!r} and CharacterPane has no "
+             f"accessor for it")
+
+pane.select("garet")
+settle()
+if pane.build() != "long":
+    fail(f"garet.json says build 'long' and the form shows "
+         f"{pane.build()!r}")
+written = json.loads(pane.edited_json().decode("utf-8"))
+if written.get("build") != "long":
+    fail(f"the form would write build {written.get('build')!r} for garet, "
+         f"not 'long': a field read and dropped is worse than one refused")
+# The OTHER HALF: the default build writes no key at all, the way the
+# default subject and the default garments do not -- so every file written
+# before the field existed round-trips byte for byte.
+for name in model.BUILD_NAMES:
+    pane.set_build(name)
+    settle()
+    if pane.build() != name:
+        fail(f"set_build({name!r}) left the form on {pane.build()!r}")
+    doc = json.loads(pane.edited_json().decode("utf-8"))
+    if name == model.DEFAULT_BUILD and "build" in doc:
+        fail(f"the DEFAULT build wrote a {doc['build']!r} key; a file that "
+             f"never had one would grow one")
+    if name != model.DEFAULT_BUILD and doc.get("build") != name:
+        fail(f"build {name!r} wrote {doc.get('build')!r}")
+try:
+    pane.set_build("gigantic")
+    fail("set_build accepted a build that is not in model.BUILD_NAMES")
+except ValueError as exc:
+    if "gigantic" not in str(exc):
+        fail(f"set_build's refusal does not name the value: {exc!r}")
+pane.reload()
+pane.select(characters.DEFAULT_CHARACTER)
+settle()
+if pane.build() != model.DEFAULT_BUILD:
+    fail(f"the default character shows build {pane.build()!r}")
+report("every characters.FIELDS field has a control; garet's build survives "
+       "the form, the default build writes no key, and an unknown one is "
+       "refused by name", len(failures) == before)
+
+
+# ---------------------------------------------------------------------------
+# 9c. THE WINDOW DRAWS THE CHARACTER'S OWN BUILD, on every recipe
+# ---------------------------------------------------------------------------
+# `mannequin.render_init` takes a build and both calls in this package left
+# it at the default, so the composer drew a DIFFERENT FIGURE from the one
+# `nai render` would send -- and on `jump` it did not draw at all: the
+# placement raised, `_refresh_derived` swallowed it, and the pane reported
+# the CHARACTER FILE as refused, which it is not. cli.py, recipes.make_request
+# and recipes.context_for all got the build; the two calls one directory up
+# did not. That is CLAUDE.md's sibling-route ACTIVE WARNING exactly, so the
+# assertion is over EVERY recipe rather than the one that was noticed.
+
+print("the window draws the character's own build")
+before = len(failures)
+
+drawn_on = []
+real_render_init = mannequin.render_init
+
+
+def watched_render_init(*args, **kwargs):
+    """Record the build every call in this package asks for."""
+    drawn_on.append(kwargs.get("build_name", model.DEFAULT_BUILD))
+    return real_render_init(*args, **kwargs)
+
+
+GARET = characters.load("garet")
+if GARET.build == model.DEFAULT_BUILD:
+    fail("garet.json no longer names a non-default build, so this section "
+         "measures nothing; point it at a character that does")
+mannequin.render_init = watched_render_init
+try:
+    # The request pane's own path, on the GUI thread: selecting a character
+    # and a recipe rebuilds its derived rows through `render_init`.
+    window.character.select("garet")
+    settle()
+    for recipe_name in recipes.RECIPE_NAMES:
+        window.request.set_recipe(recipe_name)
+        settle()
+        composed = window.compose("plan")
+        if not composed.runnable():
+            fail(f"garet on {recipe_name} is blocked in the composer: "
+                 f"{composed.blocked!r} -- his file loads, so this is the "
+                 f"window failing to draw him")
+    if not drawn_on:
+        fail("selecting a character and three recipes drew no init at all; "
+             "this section is watching a call nothing makes")
+    # The character pane's own path, run straight rather than through the
+    # thread pool, so the check never waits on a worker.
+    signals = character_pane._PreviewSignals(window.character)
+    for recipe_name in recipes.RECIPE_NAMES:
+        out = os.path.join(SCRATCH, f"preview_{recipe_name}.png")
+        character_pane._PreviewTask(signals, 1, GARET, recipe_name,
+                                    out).run()
+        if not os.path.isfile(out):
+            fail(f"the pane's own preview task drew nothing for "
+                 f"{recipe_name}")
+        else:
+            sent = recipes.make_request(recipe_name, "img2img", 1234567890,
+                                        character="garet").image_png
+            with open(out, "rb") as handle:
+                if handle.read() != sent:
+                    fail(f"the composer's {recipe_name} preview is NOT the "
+                         f"image `nai render` would send: the window is "
+                         f"showing a different figure from the one it is "
+                         f"about to pay for")
+            os.remove(out)
+finally:
+    mannequin.render_init = real_render_init
+window.request.set_recipe("walk")
+window.character.select(characters.DEFAULT_CHARACTER)
+settle()
+wrong = sorted({name for name in drawn_on if name != GARET.build})
+if wrong:
+    fail(f"this package drew garet on {wrong}; his file says "
+         f"{GARET.build!r}. `mannequin.render_init` takes a build and every "
+         f"call that leaves it out draws a different man -- on `jump` it "
+         f"used not to draw at all, and the pane reported his FILE as "
+         f"refused, which it is not")
+report(f"every one of the {len(drawn_on)} inits this window draws for garet "
+       f"is drawn on the build his file names, and the composer's preview "
+       f"is byte for byte the image the tool would send",
+       len(failures) == before)
 
 
 # ---------------------------------------------------------------------------

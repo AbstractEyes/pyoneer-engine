@@ -531,8 +531,8 @@ class GarmentSlot(NamedTuple):
 
 
 GARMENT_SLOTS: tuple[GarmentSlot, ...] = (
-    GarmentSlot("hat", ("none", "wizard"), "none",
-                (("none", ()), ("wizard", ("hat",)))),
+    GarmentSlot("hat", ("none", "wizard", "brim"), "none",
+                (("none", ()), ("wizard", ("hat",)), ("brim", ("brim",)))),
     GarmentSlot("cape", (False, True), False,
                 ((False, ()), (True, ("cape",)))),
     GarmentSlot("neck", ("scarf", "none"), "scarf",
@@ -541,8 +541,21 @@ GARMENT_SLOTS: tuple[GarmentSlot, ...] = (
                 (("pants", ("tunic", "pants")), ("dress", ("dress",)))),
     GarmentSlot("footwear", ("boots", "heels"), "boots",
                 (("boots", ("boots",)), ("heels", ("heels",)))),
+    GarmentSlot("coat", (False, True), False,
+                ((False, ()), (True, ("coat",)))),
+    GarmentSlot("face", ("none", "mask"), "none",
+                (("none", ()), ("mask", ("mask",)))),
 )
-"""The outfit vocabulary, in `Garments` field order."""
+"""The outfit vocabulary, in `Garments` field order.
+
+`hat` has THREE choices and each drawing gets its OWN part: a `wizard` cone
+paints `hat` and a `brim` (the wide flat gunslinger brim) paints `brim`, for
+the reason `footwear` splits `boots` from `heels` -- two shapes sharing one
+part name make "the hat is drawn" true for whichever one is there, and an
+assertion that cannot tell them apart is CLAUDE.md law 5's vacuous half.
+`coat` and `face` are appended rather than inserted so every positional
+`Garments(...)` and every character file written before them means what it
+always did."""
 
 
 class Garments(NamedTuple):
@@ -557,6 +570,8 @@ class Garments(NamedTuple):
     neck: str = "scarf"
     legwear: str = "pants"
     footwear: str = "boots"
+    coat: bool = False
+    face: str = "none"
 
 
 DEFAULT_GARMENTS = Garments()
@@ -566,7 +581,7 @@ ALWAYS_PARTS: tuple[str, ...] = ("skin", "hair", "belt")
 
 PARTS: tuple[str, ...] = (
     "skin", "hair", "scarf", "tunic", "belt", "pants", "boots",
-    "dress", "heels", "cape", "hat",
+    "dress", "heels", "cape", "hat", "brim", "coat", "mask",
 )
 """Every colour part any garment draws, in the order an Identity lists them.
 The first seven are the default outfit's, in their original order, so a
@@ -637,6 +652,90 @@ if tuple(Garments._fields) != tuple(slot.name for slot in GARMENT_SLOTS):
     raise RuntimeError("model: Garments' fields and GARMENT_SLOTS disagree")
 
 
+# ---------------------------------------------------------------------------
+# Build: WHERE THE HIP SITS. One axis, three names, total height held.
+# ---------------------------------------------------------------------------
+
+
+class Build(NamedTuple):
+    """One proportion: source px moved OUT of the torso and INTO the legs.
+
+    `thigh` and `shin` are added to the mannequin's THIGH and SHIN, and
+    exactly their sum is taken off TORSO_H. So the hip RISES by
+    `hip_rise` while the figure's TOTAL HEIGHT, its ground line and its
+    head's height above that ground line do not move at all -- a build is
+    a redistribution, never a resize. Everything that hangs off the hip
+    (the belt, the coat's skirt, an A-line skirt) rises with it and
+    everything that hangs off the shoulder (the arms, a cape, the scarf
+    tail, the head) stays exactly where it was, because
+    `shoulder_to_sole` is invariant: TORSO_H - SHOULDER_DROP + THIGH +
+    SHIN is unchanged when `thigh + shin + torso` is zero.
+
+    THIS IS THE AXIS THE REFERENCE FIGURE NEEDED. Measured on the author's
+    own ~Garet.png side pose: 45 px tall, hat top to sole, with the coat
+    hem 41 px down and 3 px of boot below it -- 6.7% of the figure. A
+    trenchcoat that long over a hip that low leaves no leg to see, and no
+    amount of prompting puts one back.
+    """
+    name: str
+    thigh: int
+    shin: int
+
+    @property
+    def torso(self) -> int:
+        """Source px added to TORSO_H: minus what the legs took."""
+        return -(self.thigh + self.shin)
+
+    @property
+    def hip_rise(self) -> int:
+        """Source px the hip sits above the standard build's."""
+        return self.thigh + self.shin
+
+
+BUILDS: tuple[Build, ...] = (
+    Build("standard", 0, 0),
+    Build("original", -2, -1),
+    Build("long", 2, 1),
+)
+"""Every proportion a character file may declare, `standard` first.
+
+`standard` is scout's and adds nothing to anything, so a figure that takes
+it is drawn by the same arithmetic it always was, down to the byte.
+`original` is the author's own Garet as he drew him and did not like --
+the low hip that makes a long coat read as a barrel. `long` is the fix he
+has wanted since: 3 px of torso become 3 px of leg."""
+
+BUILD_NAMES: tuple[str, ...] = tuple(b.name for b in BUILDS)
+
+DEFAULT_BUILD = "standard"
+"""What a character file with no `build` field means -- scout's, so every
+file written before the field existed loads, draws and hashes unchanged."""
+
+
+def build(name: object) -> Build:
+    """The Build called `name`; ValueError listing BUILD_NAMES."""
+    for candidate in BUILDS:
+        if candidate.name == name:
+            return candidate
+    raise ValueError(f"unknown build {name!r}; legal: {BUILD_NAMES}")
+
+
+def build_problem(value: object) -> str | None:
+    """Why `value` is not a build name, or None."""
+    if isinstance(value, str) and value in BUILD_NAMES:
+        return None
+    return f"{value!r} is not a build; legal: {BUILD_NAMES}"
+
+
+if BUILDS[0].name != DEFAULT_BUILD or BUILDS[0][1:] != (0, 0):
+    raise RuntimeError("model: the default build must be the first BUILDS "
+                       "row and must add nothing to any bone")
+_bad_build = [b.name for b in BUILDS if b.thigh + b.shin + b.torso != 0]
+if _bad_build:
+    raise RuntimeError(f"model: builds {_bad_build} do not hold the figure's "
+                       f"height: a build moves the hip, it does not resize")
+
+
 @dataclass(frozen=True)
 class Identity:
     """The character: who it is, what it wears, its caption tags and colours.
@@ -645,7 +744,9 @@ class Identity:
     `colours` is ((part, (r, g, b)), ...) for exactly
     `garment_parts(garments)` -- `IDENTITY_PARTS` while `garments` is the
     default. `subject` is one of SUBJECT_NAMES and decides the count tag,
-    the caption noun and which subject words a tag may not carry.
+    the caption noun and which subject words a tag may not carry. `build`
+    is one of BUILD_NAMES and says where the hip sits; it changes no
+    caption and no colour, only the drawing.
     DESIGN (brief 3.1): no grey and no near-white or near-black colour, since
     grey is the key colour and near-black the outline.
     """
@@ -654,6 +755,7 @@ class Identity:
     colours: tuple[tuple[str, tuple[int, int, int]], ...]
     subject: str = DEFAULT_SUBJECT
     garments: Garments = DEFAULT_GARMENTS
+    build: str = DEFAULT_BUILD
 
     def colour(self, part: str) -> tuple[int, int, int]:
         """The RGB of `part`; KeyError naming the part when it is absent."""

@@ -89,8 +89,8 @@ from tools.nai.model import (ACTIONS, DEFAULT_IMG2IMG_NOISE,
                              QUALITY_TAIL, RATING_RX, STRENGTH_BAND,
                              TOKEN_BUDGET, TOKENS_PER_WORD, UC_PRESET_NONE,
                              Frame, Identity, Layout, LedgerContext, Recipe,
-                             Request, garments_problem, model_for, on_grid,
-                             subject)
+                             Request, build_problem, garments_problem,
+                             model_for, on_grid, subject)
 
 OPAQUE_ALPHA_MIN = 254
 """An RGBA source counts as opaque when no alpha is below this. 254, not 255:
@@ -229,8 +229,9 @@ def build_recipe(name: str, identity: Identity, source: str | None = None
     init. Everything else about a strip is the same for every character.
 
     ValueError for an unknown recipe name; for an identity whose `subject`
-    is not one of model.SUBJECT_NAMES or whose `garments` are not legal
-    (model.garments_problem); for colours that are not exactly the parts
+    is not one of model.SUBJECT_NAMES, whose `garments` are not legal
+    (model.garments_problem) or whose `build` is not one of
+    model.BUILD_NAMES (model.build_problem); for colours that are not exactly the parts
     those garments draw (characters.parts_problem); for a tag of
     identity.tags or identity.anchor that characters.tag_problem refuses --
     judged against THIS identity's subject; and for an identity
@@ -248,6 +249,9 @@ def build_recipe(name: str, identity: Identity, source: str | None = None
     garment_bad = garments_problem(identity.garments)
     if garment_bad is not None:
         raise ValueError(f"{where}, field 'garments': {garment_bad}")
+    build_bad = build_problem(identity.build)
+    if build_bad is not None:
+        raise ValueError(f"{where}, field 'build': {build_bad}")
     parts_bad = characters.parts_problem(dict(identity.colours),
                                          identity.garments)
     if parts_bad is not None:
@@ -439,7 +443,8 @@ def make_request(recipe_name: str, action: str, seed: int, *,
 
     Always: recipe = get_recipe(recipe_name, character); (init_png, centers) =
     mannequin.render_init(recipe.layout, recipe.poses,
-    recipe.identity.as_dict(), garments=recipe.identity.garments); frames =
+    recipe.identity.as_dict(), garments=recipe.identity.garments,
+    build_name=recipe.identity.build); frames =
     frames_for(recipe, centers); model
     = model.model_for(action, variant) with variant default "full"; ucPreset
     = UC_PRESET_NONE[model]; width/height from the layout; steps and scale
@@ -493,7 +498,8 @@ def make_request(recipe_name: str, action: str, seed: int, *,
     layout = recipe.layout
     init_png, centers = render_init(layout, recipe.poses,
                                     recipe.identity.as_dict(),
-                                    garments=recipe.identity.garments)
+                                    garments=recipe.identity.garments,
+                                    build_name=recipe.identity.build)
     common = dict(
         action=action, model=model, seed=seed,
         base_caption=recipe.base_caption, negative=recipe.negative,
@@ -565,7 +571,7 @@ def context_for(recipe_name: str, *,
     strip = recipe name; target_cell = cell; target_rect = the cell's
     rect_canvas when cell is not None; mannequin_sha256 =
     mannequin.params_sha256(layout, poses, the CHARACTER's colours, its
-    garments); the rest
+    garments and its build); the rest
     copied. The ledger has no character column: the row's base_caption names
     the outfit. ValueError for a cell that is not an int inside the recipe's
     layout, and for an unknown character (get_recipe).
@@ -585,7 +591,8 @@ def context_for(recipe_name: str, *,
         target_rect=rect,
         mannequin_sha256=params_sha256(recipe.layout, recipe.poses,
                                        recipe.identity.as_dict(),
-                                       garments=recipe.identity.garments),
+                                       garments=recipe.identity.garments,
+                                       build_name=recipe.identity.build),
         probe_flag_used=probe_flag_used,
     )
 

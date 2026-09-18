@@ -1418,7 +1418,9 @@ def probe_request(action: str, *, seed: int, variant: str = "full") -> Request:
     recipe = recipes.RECIPES["walk"]
     layout = recipe.layout
     init_png, centers = mannequin.render_init(
-        layout, recipe.poses, recipe.identity.as_dict())
+        layout, recipe.poses, recipe.identity.as_dict(),
+        garments=recipe.identity.garments,
+        build_name=recipe.identity.build)
     frames = recipes.frames_for(recipe, centers)
     model = model_for(action, variant)
     common = dict(

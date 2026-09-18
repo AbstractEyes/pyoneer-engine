@@ -24,7 +24,8 @@ route it arrives on.
 
 `tags` goes into the base caption, `anchor` into every character caption,
 `subject` decides the count tag and every caption's first word, `garments`
-decide what the mannequin draws, and `colours` paint it. Nothing else in
+decide what the mannequin draws, `build` decides where its hip sits, and
+`colours` paint it. Nothing else in
 this package reads a character file.
 
 RULES -- every refusal is a ValueError naming the file and the field
@@ -35,6 +36,9 @@ RULES -- every refusal is a ValueError naming the file and the field
   `OPTIONAL_FIELDS` may be left out (every file written before they existed
   loads unchanged, as `model.DEFAULT_SUBJECT` in `model.DEFAULT_GARMENTS`).
 * `subject` is one of model.SUBJECT_NAMES ("boy", "girl").
+* `build` is one of model.BUILD_NAMES ("standard", "original", "long"):
+  where the hip sits. It names no colour part and writes no tag, so it is
+  judged against nothing but that list.
 * `garments` is an object; every key is one of model.GARMENT_SLOTS by name
   and every value is one of that slot's `choices` AT ITS OWN TYPE, so `0`
   is not `false`. A key that is left out means that slot's `default`.
@@ -110,13 +114,14 @@ import os
 import re
 from typing import Iterable
 
-from tools.nai.model import (BACKGROUND_RGB, DEFAULT_GARMENTS,
+from tools.nai.model import (BACKGROUND_RGB, DEFAULT_BUILD,
+                             DEFAULT_GARMENTS,
                              DEFAULT_SUBJECT, FAR_SHADE, GARMENT_SLOTS,
                              INNER_SHADE, NEGATIVE, OUTLINE_RGB, PARTS,
                              QUALITY_TAIL, RATING_RX, SUBJECTS,
                              SUBJECT_NAMES, Garments, Identity,
-                             garment_parts, garment_problem, garments_text,
-                             shade)
+                             build_problem, garment_parts, garment_problem,
+                             garments_text, shade)
 from tools.nai.model import subject as subject_named
 
 CHARACTERS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -130,10 +135,10 @@ DEFAULT_CHARACTER = "scout"
 REQUIRED_FIELDS: tuple[str, ...] = ("tags", "anchor", "colours")
 """Every character file writes these three."""
 
-OPTIONAL_FIELDS: tuple[str, ...] = ("subject", "garments")
+OPTIONAL_FIELDS: tuple[str, ...] = ("subject", "garments", "build")
 """A file may leave these out; it then means model.DEFAULT_SUBJECT in
-model.DEFAULT_GARMENTS, which is what every file written before the fields
-existed means. ADDING A FIELD HERE IS A FILE-FORMAT CHANGE (CLAUDE.md law
+model.DEFAULT_GARMENTS on model.DEFAULT_BUILD, which is what every file
+written before the fields existed means. ADDING A FIELD HERE IS A FILE-FORMAT CHANGE (CLAUDE.md law
 8): the name is spelled in every shipped character file."""
 
 FIELDS: tuple[str, ...] = REQUIRED_FIELDS + OPTIONAL_FIELDS
@@ -447,6 +452,19 @@ def _tag_list(source: str, field: str, value: object,
     return [piece.strip() for piece in pieces]
 
 
+def _build(source: str, value: object) -> str:
+    """The build name `value` is; ValueError naming the field otherwise.
+
+    A build is a PROPORTION, not a garment and not a caption: it moves the
+    hip and nothing else, so it names no colour part and writes no tag.
+    """
+    problem = build_problem(value)
+    if problem is not None:
+        raise _refused(source, "build", f"{problem} (a file that leaves the "
+                       f"field out means {DEFAULT_BUILD!r})")
+    return value
+
+
 def _subject(source: str, value: object) -> str:
     if not isinstance(value, str) or value not in SUBJECT_NAMES:
         raise _refused(source, "subject", f"{value!r} is not a subject; "
@@ -560,6 +578,8 @@ def parse(raw: bytes, source: str) -> Identity:
                else _subject(source, doc["subject"]))
     garments = (DEFAULT_GARMENTS if "garments" not in doc
                 else _garments(source, doc["garments"]))
+    chosen_build = (DEFAULT_BUILD if "build" not in doc
+                    else _build(source, doc["build"]))
     tags = _tag_list(source, "tags", doc["tags"], subject)
     anchor = _tag_list(source, "anchor", doc["anchor"], subject)
     stray = [tag for tag in anchor if tag not in tags]
@@ -569,4 +589,5 @@ def parse(raw: bytes, source: str) -> Identity:
                        f"adds none")
     return Identity(tags=", ".join(tags), anchor=", ".join(anchor),
                     colours=_colours(source, doc["colours"], garments),
-                    subject=subject, garments=garments)
+                    subject=subject, garments=garments,
+                    build=chosen_build)

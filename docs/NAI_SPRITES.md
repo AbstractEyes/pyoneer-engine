@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written 2026-09-17 from the tools/nai contract docstrings and the NovelAI research brief; no command here has been run against NovelAI yet, so every cost claim says in place whether it is proven, and the baseline sprites were measured by the commands in their CREDITS.md. -->
+<!-- pyoneer-stamp: hand-written 2026-09-17 from the tools/nai contract docstrings and the NovelAI research brief; no command here has been run against NovelAI yet, so every cost claim says in place whether it is proven, and the baseline sprites were measured by the commands in their CREDITS.md. The build axis, the gunslinger garments and the garet example were added 2026-09-17; every number in them was measured off data/graphics/tilesets/Characters/~Garet.png or off a render, and tools/check_nai.py asserts the ones that are invariants. -->
 
 # NovelAI sprites — side-scroller strips on the Opus free tier
 
@@ -10,6 +10,7 @@ Questions that land here:
 - *"is this generation free"*
 - *"how do I ask an agent for a new character"*
 - *"is this outfit a data file or mannequin code"*
+- *"how do I change a character's proportions"* / *"his legs are too short"*
 - *"where do the reference sprites come from"*
 
 ## What it is for
@@ -250,9 +251,10 @@ before anything is built, with a message naming the file and the field:
   `#8C3CC8` and read as a purple hood — so give every garment its own value,
   not only every part a distance from the key.
 
-Two optional fields say **who** is drawn and **what she wears**. A file that
-writes neither is a boy in scout's outfit, which is why every file written
-before them still loads:
+Three optional fields say **who** is drawn, **what he wears** and **how he
+is built**. A file that writes none of them is a boy in scout's outfit on
+scout's proportions, which is why every file written before them still
+loads:
 
 - `"subject"`: `"boy"` (the default) or `"girl"`. It writes the one count tag
   at the head of the base caption (`1boy`, `1girl`), the first word of every
@@ -260,15 +262,84 @@ before them still loads:
   A tag naming the other subject is then refused — `male` or `man` in a girl
   file, `woman` or `female` in a boy one — as whole words, so `boyish` names
   nobody.
-- `"garments"`: `"hat"` `none`|`wizard`, `"cape"` `false`|`true`, `"neck"`
-  `scarf`|`none`, `"legwear"` `pants`|`dress`, `"footwear"` `boots`|`heels`.
+- `"garments"`: `"hat"` `none`|`wizard`|`brim`, `"cape"` `false`|`true`,
+  `"neck"` `scarf`|`none`, `"legwear"` `pants`|`dress`, `"footwear"`
+  `boots`|`heels`, `"coat"` `false`|`true`, `"face"` `none`|`mask`.
   Each key may be left out and then means the choice named first. The
   mannequin draws them at source scale, and `colours` must name **exactly**
   the parts they draw: `skin`, `hair` and `belt` always, `scarf` for a scarf
   neck, `tunic` and `pants` for pants, `dress` for a dress, `boots` or
-  `heels` for the footwear, `cape` for a cape, `hat` for a wizard hat. A
+  `heels` for the footwear, `cape` for a cape, `hat` for a wizard hat,
+  `brim` for a wide-brimmed one, `coat` for a trenchcoat and `mask` for a
+  face mask. A
   colour for a part these garments never draw is refused as an unused part,
-  exactly as a missing one is refused as missing.
+  exactly as a missing one is refused as missing. `parts_problem` answers
+  with the FIRST kind of mismatch it finds, so a file that both carries a
+  spare colour and lacks a needed one is refused for the spare, and meets
+  the missing one on the next attempt.
+- `"build"`: `"standard"` (the default), `"original"` or `"long"`. **It is
+  not a garment and not a caption** — it names no colour part, writes no
+  tag, and the only thing it changes is WHERE THE HIP SITS. A build adds
+  source px to the thigh and the shin and takes exactly their sum off the
+  torso, so `standard` 9/9/12 becomes `original` 7/8/15 and `long` 11/10/9.
+  On the WALK strip the figure's TOTAL HEIGHT, its ground line, the top of
+  its head above that ground line and its SHOULDER above it are identical
+  on all three — measured, frame by frame, in `tools/check_nai.py` — so the
+  arms hang where they hung and the ground line does not shift. What moves
+  is the hip, and with it everything that hangs off the hip: the belt, an
+  A-line skirt's waist, and the trenchcoat's hem.
+
+  **That exact invariance is a property of GROUNDED, STRAIGHT-LEG POSES,
+  not of the axis**, and this document used to claim it absolutely. A bent
+  leg's vertical projection is shorter than its bone, so in a crouch the
+  3 px moved out of the torso subtract 3 px of height and add less than 3
+  back: `long` is SHORTER than `standard` on jump frame 0 and `original` is
+  taller, and the shoulder moves 6 px between them. What holds on every
+  shipped strip is a BOUND — no build moves any of the three by more than
+  `BUILD_MAX_DRIFT` px — and `tools/check_nai.py` now measures it on all
+  three recipes rather than passing `walk` four times.
+
+  A build cannot push a figure out of its cell, but that is the PLACEMENT's
+  doing and not the axis's. Three shipped combinations used to raise —
+  garet on `standard` and on `original` could not draw `jump`, and neither
+  could the default outfit on `original` — because a leaning pose carries
+  the torso forward off the hip column the figure was pinned to, while nine
+  columns of the cell went unused behind him. `mannequin._placed` now
+  shifts by the LEAST that brings the drawn box inside its cell, and only
+  when it is outside, so nothing that already fitted moved by a pixel. All
+  3 builds x 3 recipes are rendered for the default outfit and for garet's
+  on every check run.
+
+  That is the whole point. A garment length is a CUT, in source px, and a
+  cut does not stretch with the wearer — so raising the hip under a coat of
+  unchanged length hands the difference to the leg. Measured on the walk
+  strip: `long` shows 10–11 px of leg below the hem, `standard` 7–8,
+  `original` 4–5. The author's own `~Garet.png` shows **3 px of a 45 px
+  figure**, and `original` is the name of that.
+
+The three newest garments are the gunslinger's, and each takes its own
+colour part rather than borrowing one:
+
+| choice | what is drawn at source scale | its part |
+|---|---|---|
+| `"hat": "brim"` | a **broad brim**, one row `BRIM_W` across on head row 1, overhanging the 8 px head by 3 at the back and 4 at the face, whose OVERHANG then droops `BRIM_DROOP_ROWS` further — the columns resting on the crown cannot fall and the columns past the head can — with a **low crown** of `CROWN_H` rows over it that never narrows past `CROWN_TAPER`. Explicitly not the wizard cone, which is twice as tall above the brim and narrows to 2 px | `brim` |
+| `"coat": true` | a **trenchcoat**: a collar `COAT_COLLAR_W` across — **drawn in the MASK's colour when the wearer has one** (`COAT_COLLAR_IS_MASK`), so the dark is one unbroken mass from under the eye out over both shoulders, and in the coat's own colour when he has not — a bodice over the torso set `COAT_BODICE_BACK` px back so the coat reads OPEN and a strip of the shirt shows down the chest, and a skirt flared from `COAT_WAIST_W` at the hip to `COAT_HEM_W` at the hem, carried `COAT_SWING` px toward the leading thigh. It also takes both SLEEVES — a trenchcoat has its own. Drawn AFTER the near leg, so it covers the thigh it is meant to cover | `coat` |
+| `"face": "mask"` | a **mask over the mouth and jaw**: head rows `MASK_TOP_ROW` to `MASK_TOP_ROW + MASK_ROWS`, the whole width of the head, starting on the row UNDER the eye. Take a row off the top and it covers the eye; add one at the bottom and the jaw shows | `mask` |
+
+**Do not try to widen the brim.** Measured on the idle frame, `BRIM_W` 15
+plus its outline is 17 px — the WIDEST ROW ON THE WHOLE FIGURE, out-spanning
+the 14 px coat hem 1.21 to 1, where the author's own reference out-spans
+its body 1.20 to 1; relative to the head this brim overhangs MORE than his
+does. It was short of DEPTH, not width, and depth costs no cell at all:
+that is what `BRIM_DROOP_ROWS` buys.
+
+Two things about the coat are worth knowing before you tune it. Its skirt
+hangs from the **hip** and its bodice from the **shoulder**, and that split
+is what makes `build` reach the hem at all: a coat hung from the shoulder
+would keep its hem at the same height above the ground on every build and
+the proportion axis would do nothing. And `COAT_BODICE_BACK` must exceed
+`(COAT_BODICE_W - TORSO_W) / 2` or the coat is simply closed — at 1.0 it
+drew zero shirt pixels in every frame of every strip, silently.
 
 `wizard_girl.json` is the second example, and the one that needed the fields:
 a girl in a wizard hat and purple cape, a red dress and blue heels. Her hat
@@ -304,7 +375,7 @@ mannequin already draw the outfit?**
 
 | the request | what it is |
 |---|---|
-| any outfit the five garment slots above can spell, in any legal colours, for either subject — 32 outfits × 2 subjects, drawing 5 to 9 colour parts | **one JSON file.** `scout_aqua_scarf.json` landed as a commit of 13 added lines and no code at all |
+| any outfit the seven garment slots above can spell, in any legal colours, for either subject, on any of the three builds | **one JSON file.** `scout_aqua_scarf.json` landed as a commit of 13 added lines and no code at all |
 | a shape the mannequin does not draw — a hood, a ponytail, gloves, a sword, wings, gold trim on the dress | **an afternoon across seven files.** A choice in `model.GARMENT_SLOTS` and the parts it draws, a shape drawn at source scale in `mannequin.py` with its constants hashed beside the others, both halves of `tools/check_nai.py`, and a row here. The garment vocabulary itself arrived that way, moving `model`, `mannequin`, `characters`, `recipes`, the CLI, the check and this document |
 
 Nothing refuses the confusion between the two. `tags` is free text, judged one
@@ -323,7 +394,8 @@ subject; legal: ('boy', 'girl')* — while `cat ears` is a perfectly legal
 |---|---|
 | the **name** | it invents one. The name is the file stem, matches `[a-z][a-z0-9_]*`, and is spelled into `renders/<name>_<recipe>_init.png` and `sprites/<name>/`, so *Aria-Nightshade* becomes `aria_nightshade` |
 | **subject** | `boy`, which is scout's. There are two and no third |
-| **garments** | scout's: no hat, no cape, a scarf, pants, boots. Whatever you pick, `skin`, `hair` and `belt` are drawn, so even a dress file carries a belt colour the agent chose |
+| **garments** | scout's: no hat, no cape, a scarf, pants, boots, no coat, no mask. Whatever you pick, `skin`, `hair` and `belt` are drawn, so even a dress file carries a belt colour the agent chose |
+| **build** | `standard`, which is scout's. Say *long legs* or *short legs* and you get `long` or `original`; nothing else in the file changes, and no caption mentions it |
 | **colours** | it picks a hex from your colour word — "blue" is `#46A5E6` in `scout_blue_scarf` and `#3CC8C8` in `scout_aqua_scarf` — and **nothing compares one of your colours to another**. Every colour is judged only against the grey key and the outline, so a red dress under a red cape passes every rule and then merges into one shape in the init, where no check can see it. Say so when two garments must read apart |
 | a hex, for **grey or silver** | the trap. A neutral `#VVVVVV` loads only at `#000000`–`#040404`, `#3C3C3C`–`#646464` and `#FDFDFD`–`#FFFFFF`; `#C0C0C0` is refused because its ×0.7 shade `#868686` is 10.4 from the grey key, so the agent goes dark, near-white or off neutral (`#8C8CB4` loads) without asking |
 | **tags** | it writes them from the garments and the colours |
@@ -336,6 +408,7 @@ subject; legal: ('boy', 'girl')* — while `cat ears` is a perfectly legal
 Write tools/nai/characters/<name>.json.
 
 who:      boy | girl
+build:    standard | original | long  <or leave it out for standard>
 outfit:   <in the garment slots above; "scout's" keeps the default>
 colours:  <part> #RRGGBB, or colour words and I will look at what you pick
 tags:     <the look, or "write them from the outfit">
@@ -374,6 +447,85 @@ it — one of them against what was asked, for a reason worth reading:
   its commit records the clearest scarf yet on that seed: one observation on
   one seed, not a proven technique.
 
+### Worked: `garet.json`, and the flaw it exists to fix
+
+`garet` is the author's own character, drawn years ago in
+`~Garet.png` and never quite liked: *"essentially the gunslinger archetype
+with a trenchcoat and big hat, mouth covered by a mask sort of character"*,
+and *"I never did like how short his legs were."* He is the example that
+earns its space because he needed BOTH sides of this document — a data
+file, and an afternoon across seven files — and because the complaint is
+measurable.
+
+**What the reference measures.** Side pose, 44x68 cell: the figure is 45 px
+tall, hat crown to sole. The hat is 13 of those px and the brim alone is 30
+px across — two thirds of the figure's height, overhanging a 17 px head by
+6 at the back and 7 at the face. The coat hem falls 41 px down, at 93% of
+the figure, and below it there are **3 px of boot: 6.7%**. That is the
+whole complaint, in one number. The legs may or may not be short; the
+silhouette has no way to say, because the coat covers everything a leg
+could be.
+
+**What was changed, and why it is two changes.** A hem raised to show leg
+and nothing else is a tunic, so the coat and the hip both had to move:
+`COAT_LEN` puts the hem 13 px below the hip, and `"build": "long"` puts the
+hip 3 px higher. Together they draw 10–11 px of leg on the walk strip
+against the reference's 3, while collar-to-hem still covers 52–67% of the
+figure in every frame of every strip. `original` is in the vocabulary
+because it reproduces the reference — 4–5 px — so the fix has something to
+be a fix OF.
+
+**The palette is read off the file and then moved — and the rule is a BAND,
+not a floor.** Every identity colour keeps 48 from the near-black outline
+`#202020`, which forbids a ring roughly 34 to 48 wide around it. A colour
+may be lifted OUT of that ring or pushed THROUGH it, and which way you go
+is a design decision, not the rule's. The reference's coat `#3F1508` sits
+40.7 away and its mask `#0D0401` sits 45.9, so neither loads.
+
+The coat went UP, to `#5A2814`: there is no dark brown on the far side, only
+black, and a black coat is a different character. The mask went DOWN, to
+`#0A0000` (50.3 away, and `#000000` at 55.4 loads too). **That direction is
+the whole character.** In the reference the mask is the DARKEST thing on the
+sprite by a wide margin — a black void under one blue eye — and the first
+attempt here lifted it to `#4E4038`, luminance 67 against a coat at 53, so
+the mask was LIGHTER than the coat it sat above. A warm mid-grey band three
+rows deep, under a blonde fringe, on an 8 px head, is a BEARD; it read as
+one at every zoom, in every frame of all three strips, and a model at
+strength 0.55 would have read it the same way whatever the caption said.
+The collar wears the same value for the same reason (see the garment table),
+and together they are the reference's real signature after the hat.
+
+The hat kept the reference's own brown family and was lifted to `#8C5A28`
+so the brim reads lighter than the coat in silhouette. His shirt shows in
+the strip the open coat leaves down the chest: it is `#4A3A2A`, a coat
+lining in shadow, because the reference has **no green, no blue and no
+saturated colour anywhere** — every one of the twenty commonest values in
+its 4x4 art block is a brown, a black or a near-black, and the open front
+of his coat is the same near-black as his mask. An earlier olive `#7A8C4B`
+put the only saturated pixels on the figure and the words *olive shirt* in
+the caption that drives img2img, which is the most likely place for a model
+to grow a garment the author never drew.
+
+**What is still open, and it is a question for the author.** The reference
+carries a round blue disc, and the first description of it here — *"about
+22 px across, behind his shoulder, in every frame"* — was wrong in both
+halves. Measured, blue-pixel census over the whole 4x4 art block:
+
+- it is **21 x 22 source px** — as wide as his entire body (23 px with its
+  outline), centred on the TORSO, not on a shoulder;
+- it is **a side-view element**. Drawn full in both side rows (LEFT col 0
+  x 11..31 y 25..46; RIGHT col 0 x 11..31 y 21..42) and occluded to a
+  sliver from the front and the back — the 8 blue px in the DOWN row's
+  first cell are his EYES (`#ACD6FC`, `#144ABC`), not a disc at all;
+- it is **shaded**: `#0054A6` on his left and the darker `#004A80` on his
+  right. That is a lit object, not a flat marker.
+
+So the question is which of three things it is: something round slung on his
+back that he only ever bothered to draw in profile, an effect, or an
+authoring guide — a body-volume or pivot marker left in the template. Those
+three answers produce three completely different garment slots, so nothing
+here draws it and nothing here guesses.
+
 ### The sequence, and what you are handed
 
 Every refusal names the file and the field, so the agent's first few attempts
@@ -406,10 +558,13 @@ read*, the rest judged; exit 0 means every offline condition passes. Condition
 7 is the one a new character trips: 450 tokens at 1.5 per word, so **300
 words** over the base caption plus every frame caption. The anchor is repeated
 in all six `run` frames, so one anchor word costs **seven** words there (six in
-`walk` and `jump`) against one for a word in `tags` alone. Measured: scout 217,
-`wizard_girl` 242, `scout_aqua_scarf` 246. Add six two-word tags to scout's
-anchor and `run` counts 301 — refused by name, for `walk` too, before a
-mannequin is drawn.
+`walk` and `jump`) against one for a word in `tags` alone. Measured, on `run`: scout 217,
+`wizard_girl` 242, `scout_aqua_scarf` 246, `garet` 260. Add six two-word
+tags to scout's anchor and `run` counts 301 — refused by name, for `walk`
+too, before a mannequin is drawn.
+
+`garet` is in that list, and so are `scout`, `scout_blue_scarf` and
+`wizard_girl`.
 
 **What comes back:** one tracked file, `tools/nai/characters/<name>.json`; an
 untracked init under `data/nai/renders/`; the worst recipe's word count; and

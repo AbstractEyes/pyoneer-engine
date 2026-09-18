@@ -1494,7 +1494,8 @@ class RequestPane(QWidget):
             recipe = recipes.get_recipe(self._recipe, self._character)
             _png, centers = mannequin.render_init(
                 recipe.layout, recipe.poses, recipe.identity.as_dict(),
-                garments=recipe.identity.garments)
+                garments=recipe.identity.garments,
+                build_name=recipe.identity.build)
             frames = recipes.frames_for(recipe, centers)
         except (ValueError, KeyError, OSError) as exc:
             self._derived_problem = str(exc)

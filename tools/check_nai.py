@@ -241,7 +241,7 @@ from PIL import Image, ImageChops, ImageFilter  # noqa: E402
 
 import tools.nai  # noqa: E402
 from tools.nai import (characters, cli, guard, mannequin, masks,  # noqa: E402
-                       post, recipes, request, run)
+                       model, post, recipes, request, run)
 from tools.nai import transport as tp  # noqa: E402
 from tools.nai.model import (BACKGROUND_RGB, DEFAULT_COLOURS,  # noqa: E402
                              DEFAULT_GARMENTS, DEFAULT_SUBJECT, GENERATE_URL,
@@ -345,6 +345,49 @@ def opened(data: bytes) -> Image.Image:
     image = Image.open(io.BytesIO(data))
     image.load()
     return image
+
+
+MUTATIONS: list[tuple[str, str]] = []
+
+def mutant(relpath: str, *pairs, tag: str):
+    """A COPY of `relpath` with each (old, new) applied, imported alone.
+
+    THE SENTINEL IS THE COUNT. Each (old, new) must match the shipped file
+    EXACTLY ONCE, so a mutation whose text has been renamed, reformatted or
+    deleted raises here instead of quietly mutating nothing and reporting a
+    green "the mutant answers the same" -- which is the one way a mutation
+    table lies. A copy is compiled and imported under its own name, so the
+    real module the rest of the suite is asserting on is never touched.
+    """
+    path = os.path.join(_bootstrap.REPO_ROOT, relpath)
+    with io.open(path, encoding="utf-8") as handle:
+        source = handle.read()
+    for old, new in pairs:
+        if source.count(old) != 1:
+            raise AssertionError(
+                f"mutant {tag}: {relpath} contains {old!r} "
+                f"{source.count(old)} times, wanted exactly 1 -- the copy "
+                f"is not the code under test")
+        source = source.replace(old, new)
+    name = f"_mutant_{tag}"
+    module = types.ModuleType(name)
+    module.__file__ = path
+    sys.modules[name] = module   # @dataclass looks its own module up
+    try:
+        exec(compile(source, f"{path} [mutant {tag}]", "exec"),
+             module.__dict__)
+    finally:
+        sys.modules.pop(name, None)
+    return module
+
+def goes_red(label, relpath, pairs, call, tag):
+    """`call(module)` must answer differently on the mutant: law 5's
+    other half, run on every suite pass rather than once by hand."""
+    real = call(sys.modules[relpath.replace("/", ".")[:-3]])
+    broken = call(mutant(relpath, *pairs, tag=tag))
+    MUTATIONS.append((f"{relpath} :: {pairs[0][0].strip()[:56]}",
+                      f"{real} -> {broken}"))
+    expect(label, broken != real, True)
 
 
 print("check_nai -- the NovelAI pipeline, offline, with every socket refused")
@@ -1342,17 +1385,22 @@ try:
     # -- 1c. the subject and the garments: one table, every route ----------
     PIN_DEFAULT_PARTS = ("skin", "hair", "scarf", "tunic", "belt", "pants",
                          "boots")
-    PIN_PARTS = PIN_DEFAULT_PARTS + ("dress", "heels", "cape", "hat")
+    PIN_PARTS = PIN_DEFAULT_PARTS + ("dress", "heels", "cape", "hat",
+                                     "brim", "coat", "mask")
     PIN_SUBJECTS = ("boy", "girl")
     expect("the DEFAULT outfit draws the seven parts it always drew, the "
-           "vocabulary adds dress, heels, cape and hat, and a file with "
-           "neither new field is a boy in those default garments",
+           "vocabulary adds dress, heels, cape and hat and then brim, coat "
+           "and mask -- APPENDED, never inserted, so a scout file's colours "
+           "are still read in the order they always were -- and a file with "
+           "none of the optional fields is a boy in those default garments "
+           "on the default build",
            (IDENTITY_PARTS, PARTS, SUBJECT_NAMES, DEFAULT_SUBJECT,
             DEFAULT_GARMENTS, garment_parts(DEFAULT_GARMENTS),
-            (WANT_LEGAL.subject, WANT_LEGAL.garments)),
+            (WANT_LEGAL.subject, WANT_LEGAL.garments, WANT_LEGAL.build)),
            (PIN_DEFAULT_PARTS, PIN_PARTS, PIN_SUBJECTS, "boy",
-            Garments("none", False, "scarf", "pants", "boots"),
-            PIN_DEFAULT_PARTS, ("boy", Garments())))
+            Garments("none", False, "scarf", "pants", "boots", False,
+                     "none"),
+            PIN_DEFAULT_PARTS, ("boy", Garments(), "standard")))
     LEGAL_GIRL = {
         "subject": "girl",
         "tags": "blonde hair, pointed hat, crimson dress, violet cape, "
@@ -1538,6 +1586,10 @@ try:
              dataclasses.replace(recipes.IDENTITY,
                                  garments=Garments(hat="crown")),
              "garments", "is not a legal hat"),
+            ("a build nobody wrote -- the SIBLING ROUTE to the loader's own "
+             "'build' refusal, judged by the one model.build_problem",
+             dataclasses.replace(recipes.IDENTITY, build="tall"),
+             "build", "'tall' is not a build"),
             ("colours that do not match the garments",
              dataclasses.replace(recipes.IDENTITY,
                                  garments=Garments(legwear="dress")),
@@ -2048,10 +2100,10 @@ try:
         with contextlib.ExitStack() as stack:
             for name_, value in changes.items():
                 stack.enter_context(patched(mannequin, name_, value))
-            mutant = {}
-            mannequin._hat(mutant, 0, 0, (0x5A, 0x28, 0xA0))
+            mutant_hat = {}
+            mannequin._hat(mutant_hat, 0, 0, (0x5A, 0x28, 0xA0))
         rows_ = {}
-        for (x, y), _v in mutant.items():
+        for (x, y), _v in mutant_hat.items():
             rows_.setdefault(y, []).append(x)
         wy = max(rows_, key=lambda y: len(rows_[y]))
         broken = {"width": len(rows_[wy]) < mannequin.HEAD + 2,
@@ -2243,17 +2295,58 @@ try:
     wizard_doc = mannequin.params_doc(L5, WALK.poses, WIZARD.as_dict(),
                                       garments=WIZARD.garments)
     scout_doc = mannequin.params_doc(L5, WALK.poses, SCOUT.as_dict())
-    expect("a garmented mannequin's name is taken over its GARMENTS and "
-           "every garment constant; the default outfit's over neither, so "
-           "the shipped scout's name cannot move when a hat constant does",
-           (sorted(set(mannequin._GARMENT_SKELETON_NAMES)
-                   - set(wizard_doc["skeleton"])),
+    wizard_drawn = {name for part in model.garment_parts(WIZARD.garments)
+                    for name in mannequin._PART_SKELETON_NAMES.get(part, ())}
+    expect("A GARMENTED MANNEQUIN'S NAME IS TAKEN OVER WHAT IT DRAWS: its "
+           "non-default GARMENT SLOTS, and the constants of the PARTS those "
+           "slots paint -- not over every garment in the vocabulary. The "
+           "default outfit's name is taken over neither, so the shipped "
+           "scout cannot be renamed by a hat constant; and a girl in a hat, "
+           "a cape, a dress and heels cannot be renamed by a TRENCHCOAT "
+           "she has never worn",
+           (sorted(wizard_drawn - set(wizard_doc["skeleton"])),
+            sorted(set(wizard_doc["skeleton"])
+                   & (set(mannequin._GARMENT_SKELETON_NAMES)
+                      - wizard_drawn - {"GARMENT_DRAW_VERSION"})),
             wizard_doc.get("garments"),
             sorted(set(mannequin._GARMENT_SKELETON_NAMES)
                    & set(scout_doc["skeleton"])),
             "garments" in scout_doc,
             "GARMENT_DRAW_VERSION" in wizard_doc["skeleton"]),
-           ([], dict(WIZARD.garments._asdict()), [], False, True))
+           ([], [], {"hat": "wizard", "cape": True, "neck": "none",
+                     "legwear": "dress", "footwear": "heels"}, [], False,
+            True))
+    # MEASURED at b08e0bd, BEFORE the trenchcoat, the mask and the brim
+    # existed, and pinned here as literals. Her drawn bytes never changed by
+    # one pixel, yet all three of these moved when the coat was added --
+    # because the whole constant block and two new `false`/`none` slots went
+    # into her document. THREE ROWS OF data/nai/ledger.jsonl CARRY THE `run`
+    # ONE, two of them real img2img spends, and a spend that can no longer be
+    # reproduced from the code is a spend nobody can check.
+    PIN_WIZARD_PARAMS = {
+        "walk": "17e44eaa4d4c374d116b0f06e7dcc4e645ce3e5369e2b95f71e41512aa70bf28",
+        "run": "de1446894a68d243975421b149ff6a7c18160855983e38043c4ebb0aeaa73930",
+        "jump": "6cccb4438385fb3bbe3f040fbee6f0ccb174efd6b7416fedc49d782bbca72132",
+    }
+    expect("...and that is not a principle but a LITERAL: wizard_girl's "
+           "three mannequin names are the ones the ledger already paid for, "
+           "measured before any of these garments existed",
+           {name: mannequin.params_sha256(
+               recipes.get_recipe(name, "wizard_girl").layout,
+               recipes.get_recipe(name, "wizard_girl").poses,
+               WIZARD.as_dict(), garments=WIZARD.garments)
+            for name in recipes.RECIPE_NAMES},
+           dict(PIN_WIZARD_PARAMS))
+    for constant, value in (("COAT_LEN", mannequin.COAT_LEN + 1),
+                            ("BRIM_W", mannequin.BRIM_W + 1),
+                            ("MASK_ROWS", mannequin.MASK_ROWS + 1),
+                            ("COAT_COLLAR_IS_MASK", False)):
+        with patched(mannequin, constant, value):
+            moved = mannequin.params_sha256(L5, WALK.poses, WIZARD.as_dict(),
+                                            garments=WIZARD.garments)
+        expect(f"...so changing {constant} -- a garment she does not wear -- "
+               f"leaves HER name exactly where the ledger left it",
+               moved, PIN_WIZARD_PARAMS["walk"])
     for constant, value in (("GARMENT_DRAW_VERSION",
                              mannequin.GARMENT_DRAW_VERSION + 1),
                             ("HAT_BRIM_W", mannequin.HAT_BRIM_W + 1),
@@ -2269,6 +2362,1110 @@ try:
                                                  WIZARD.as_dict(),
                                                  garments=WIZARD.garments),
                 still == PIN_SCOUT_PARAMS["walk"]), (True, True))
+
+
+    # -- 1e. garet: the PROPORTION axis, and the gunslinger garments --------
+    # The author drew ~Garet.png years ago and said one thing about it: "I
+    # never did like how short his legs were." MEASURED off that file's side
+    # pose before any of this was written -- 45 px tall, the coat hem 41 px
+    # down, 3 px of boot below it, 6.7% of the figure. A long coat over a low
+    # hip is a barrel with a hat on it, and no caption fixes a silhouette.
+    GARET = characters.load("garet")
+    PIN_GARET_GARMENTS = Garments("brim", False, "none", "pants", "boots",
+                                  True, "mask")
+    PIN_GARET_PARTS = ("skin", "hair", "tunic", "belt", "pants", "boots",
+                       "brim", "coat", "mask")
+    expect("garet.json is a boy on the LONG build in the gunslinger garments, "
+           "and those garments draw exactly nine colour parts -- no scarf, "
+           "because his neck is bare, and no `hat`, because a wide brim is "
+           "its own part",
+           (GARET.subject, GARET.build, GARET.garments,
+            model.garment_parts(GARET.garments),
+            tuple(part for part, _rgb in GARET.colours)),
+           ("boy", "long", PIN_GARET_GARMENTS, PIN_GARET_PARTS,
+            PIN_GARET_PARTS))
+
+    # THE THIRD ROUTE. A file is judged by characters._build, an in-code
+    # Identity by recipes.build_recipe (both above, both through
+    # model.build_problem) -- and the mannequin is handed a bare string by
+    # neither of them. It RAISES rather than falling back to the standard
+    # build (CLAUDE.md law 7), because a silent fallback would draw a
+    # perfectly good figure with the wrong proportions and nothing would say
+    # so.
+    for where, call in (
+            ("_bones", lambda: mannequin._bones("tall")),
+            ("_figure", lambda: mannequin._figure(
+                WALK.poses[0], SCOUT.as_dict(), SCOUT.garments, "tall")),
+            ("render_init", lambda: mannequin.render_init(
+                L5, WALK.poses, SCOUT.as_dict(), build_name="tall")),
+            ("params_sha256", lambda: mannequin.params_sha256(
+                L5, WALK.poses, SCOUT.as_dict(), build_name="tall"))):
+        expect_raises(f"mannequin.{where} RAISES on a build name nobody "
+                      f"wrote; it does not fall back to the standard one",
+                      ValueError, call, "unknown build 'tall'",
+                      "('standard', 'original', 'long')")
+
+    # -- the vocabulary, and the arithmetic that makes a build a build ------
+    expect("the build vocabulary is three names, the DEFAULT FIRST and "
+           "adding nothing to any bone, and every other build gives the "
+           "torso exactly what it takes from the legs -- a build moves the "
+           "HIP, it never resizes the figure",
+           (model.BUILD_NAMES, model.DEFAULT_BUILD,
+            tuple(b[1:] for b in model.BUILDS),
+            sorted({b.thigh + b.shin + b.torso for b in model.BUILDS}),
+            [b.hip_rise for b in model.BUILDS]),
+           (("standard", "original", "long"), "standard",
+            ((0, 0), (-2, -1), (2, 1)), [0], [0, -3, 3]))
+    expect("...and `_bones` adds them to the shipped skeleton, so the "
+           "standard build IS the shipped skeleton",
+           {name: mannequin._bones(name) for name in model.BUILD_NAMES},
+           {"standard": (9, 9, 12), "original": (7, 8, 15),
+            "long": (11, 10, 9)})
+    expect("the hat slot has THREE choices, each drawing its OWN part, and "
+           "`coat` and `face` were APPENDED so every positional Garments and "
+           "every file written before them still means scout's outfit",
+           (dict(model.GARMENT_SLOTS[0].drawn),
+            tuple(slot.name for slot in model.GARMENT_SLOTS),
+            model.Garments("wizard", True, "none", "dress", "heels"),
+            model.PARTS[-3:], model.IDENTITY_PARTS),
+           ({"none": (), "wizard": ("hat",), "brim": ("brim",)},
+            ("hat", "cape", "neck", "legwear", "footwear", "coat", "face"),
+            Garments("wizard", True, "none", "dress", "heels", False, "none"),
+            ("brim", "coat", "mask"), PIN_DEFAULT_PARTS))
+
+    # -- the loader refuses each new word by name --------------------------
+    def garet_doc(**changes):
+        """garet.json's own fields with `changes` applied; None deletes."""
+        doc = {"subject": "boy", "build": GARET.build,
+               "tags": GARET.tags, "anchor": GARET.anchor,
+               "garments": dict(PIN_GARET_GARMENTS._asdict()),
+               "colours": {part: "#%02X%02X%02X" % rgb
+                           for part, rgb in GARET.colours}}
+        for key, value in changes.items():
+            if value is None:
+                doc.pop(key)
+            else:
+                doc[key] = value
+        return json.dumps(doc).encode("utf-8")
+
+    expect("...and that reconstruction loads back to the shipped file, so "
+           "every refusal below is one field away from a legal character",
+           characters.parse(garet_doc(), "rebuilt") == GARET, True)
+    for label, changes, fragments in (
+            ("a build that is not one of the three", {"build": "tall"},
+             ("field 'build'", "'tall' is not a build",
+              "('standard', 'original', 'long')")),
+            ("a build that is not even a string", {"build": 3},
+             ("field 'build'", "3 is not a build")),
+            ("a hat choice the mannequin cannot draw",
+             {"garments": dict(PIN_GARET_GARMENTS._asdict(), hat="stetson")},
+             ("field 'garments.hat'", "'stetson' is not a legal hat",
+              "'none', 'wizard', 'brim'")),
+            ("a coat that is a JSON number, not a boolean",
+             {"garments": dict(PIN_GARET_GARMENTS._asdict(), coat=1)},
+             ("field 'garments.coat'", "1 is not a legal coat",
+              "False, True")),
+            ("a face covering that is not the mask",
+             {"garments": dict(PIN_GARET_GARMENTS._asdict(), face="veil")},
+             ("field 'garments.face'", "'veil' is not a legal face",
+              "'none', 'mask'")),
+            ("a garment slot that does not exist at all",
+             {"garments": dict(PIN_GARET_GARMENTS._asdict(), spurs=True)},
+             ("field 'garments'", "unknown garment(s) ['spurs']"))):
+        expect_raises(f"a garet file with {label} is refused by name",
+                      ValueError,
+                      lambda c=changes: characters.parse(garet_doc(**c),
+                                                         "garet_bad.json"),
+                      "garet_bad.json", *fragments)
+
+    def garet_colours(**changes):
+        out = {part: "#%02X%02X%02X" % rgb for part, rgb in GARET.colours}
+        for key, value in changes.items():
+            if value is None:
+                out.pop(key)
+            else:
+                out[key] = value
+        return out
+
+    for label, colours, fragments in (
+            ("no colour for the coat it wears", garet_colours(coat=None),
+             ("field 'colours'", "missing part(s) ['coat']")),
+            ("no colour for the mask it wears", garet_colours(mask=None),
+             ("field 'colours'", "missing part(s) ['mask']")),
+            ("no colour for the brim it wears", garet_colours(brim=None),
+             ("field 'colours'", "missing part(s) ['brim']")),
+            ("a scarf colour under a bare neck",
+             garet_colours(scarf="#C83C3C"),
+             ("field 'colours'", "unused part(s) ['scarf']")),
+            ("a wizard hat's colour under a wide brim",
+             garet_colours(hat="#5A28A0"),
+             ("field 'colours'", "unused part(s) ['hat']"))):
+        expect_raises(f"a garet file with {label} is refused by name",
+                      ValueError,
+                      lambda c=colours: characters.parse(
+                          garet_doc(colours=c), "garet_bad.json"),
+                      "garet_bad.json", *fragments)
+    expect("...and the colours rule is EXACTLY the parts these garments "
+           "draw: garet's nine load, scout's seven under garet's garments do "
+           "not, and garet's nine under scout's garments do not either. "
+           "`parts_problem` answers with the FIRST kind of mismatch it finds, "
+           "so scout's seven are refused for the scarf they carry rather "
+           "than for the brim, coat and mask they lack -- one refusal names "
+           "one field, and the next attempt meets the next one",
+           (characters.parse(garet_doc(), "ok").colours == GARET.colours,
+            str(outcome(lambda: characters.parse(
+                garet_doc(colours={part: "#%02X%02X%02X" % SCOUT.colour(part)
+                                   for part in PIN_DEFAULT_PARTS}),
+                "g.json")))[:80],
+            str(outcome(lambda: characters.parse(
+                garet_doc(garments={}), "g.json")))[:80]),
+           (True,
+            "ValueError: character file g.json, field 'colours': unused "
+            "part(s) ['scarf']; th",
+            "ValueError: character file g.json, field 'colours': unused "
+            "part(s) ['brim', 'coa"))
+
+    # -- THE SCOUT PINS, ASSERTED AGAINST THIS AXIS ------------------------
+    # PIN_SCOUT_INIT and PIN_SCOUT_PARAMS above were measured before the
+    # garment vocabulary and before builds existed. These say WHY they still
+    # hold: the default build is written into no document at all.
+    scout_doc_b = mannequin.params_doc(L5, WALK.poses, SCOUT.as_dict())
+    garet_doc_b = mannequin.params_doc(L5, WALK.poses, GARET.as_dict(),
+                                       garments=GARET.garments,
+                                       build_name=GARET.build)
+    expect("a NON-DEFAULT build is named in the mannequin document by its "
+           "name AND its two bone deltas -- retuning Build('long', 2, 1) "
+           "would otherwise draw a different figure under the same name -- "
+           "while the default build writes no key, so the shipped scout's "
+           "pinned name cannot move when a build row does",
+           (garet_doc_b.get("build"), "build" in scout_doc_b,
+            mannequin.params_sha256(L5, WALK.poses, SCOUT.as_dict())
+            == PIN_SCOUT_PARAMS["walk"],
+            mannequin.params_sha256(L5, WALK.poses, SCOUT.as_dict(),
+                                    garments=SCOUT.garments,
+                                    build_name="standard")
+            == PIN_SCOUT_PARAMS["walk"]),
+           (["long", 2, 1], False, True, True))
+    scout_on_builds = {
+        name: hashlib.sha256(mannequin.render_init(
+            L5, WALK.poses, SCOUT.as_dict(), garments=SCOUT.garments,
+            build_name=name)[0]).hexdigest() == PIN_SCOUT_INIT["walk"]
+        for name in model.BUILD_NAMES}
+    expect("...and drawn: the shipped scout on the STANDARD build is the "
+           "pinned bytes to the byte, and on either other build is not -- so "
+           "this axis is proved to be off by default AND proved to do "
+           "something when it is on",
+           scout_on_builds,
+           {"standard": True, "original": False, "long": False})
+    for constant, value in (("COAT_LEN", mannequin.COAT_LEN + 1),
+                            ("BRIM_W", mannequin.BRIM_W + 2),
+                            ("MASK_ROWS", mannequin.MASK_ROWS + 1)):
+        with patched(mannequin, constant, value):
+            moved = mannequin.params_sha256(L5, WALK.poses, GARET.as_dict(),
+                                            garments=GARET.garments,
+                                            build_name=GARET.build)
+            still = mannequin.params_sha256(L5, WALK.poses, SCOUT.as_dict())
+        expect(f"...so changing {constant} renames HIS mannequin and leaves "
+               f"the default outfit's alone",
+               (moved != mannequin.params_sha256(
+                   L5, WALK.poses, GARET.as_dict(), garments=GARET.garments,
+                   build_name=GARET.build),
+                still == PIN_SCOUT_PARAMS["walk"]), (True, True))
+
+    # -- WHAT THE BUILD HOLDS AND WHAT IT MOVES, measured on the drawing ---
+    def stance(build_name, recipe_name="walk"):
+        """Per frame: (total height, head above the sole, shoulder above the
+        sole, hip above the sole). The first three must NOT move with the
+        build; the last must move by exactly its hip_rise."""
+        who = dataclasses.replace(GARET, build=build_name)
+        rows = []
+        for pose in recipes.build_recipe(recipe_name, who).poses:
+            px = mannequin._figure(pose, who.as_dict(), who.garments,
+                                   build_name)
+            ys = [y for _x, y in px]
+            _t, _s, torso = mannequin._bones(build_name)
+            sole = max(ys)
+            rows.append((max(ys) - min(ys) + 1, sole - min(ys),
+                         sole + (torso - mannequin.SHOULDER_DROP), sole))
+        return rows
+
+    held = {name: [row[:3] for row in stance(name)]
+            for name in model.BUILD_NAMES}
+    hips = {name: [row[3] for row in stance(name)]
+            for name in model.BUILD_NAMES}
+    expect("ON THE WALK STRIP THE HIP MOVES AND NOTHING ELSE DOES. Frame for "
+           "frame, all three builds draw the same TOTAL HEIGHT, the same "
+           "head above the ground line and the same SHOULDER above it -- so "
+           "the arms hang from the same place and the ground line never "
+           "shifts -- while the hip sits exactly hip_rise px higher",
+           (held["original"] == held["standard"] == held["long"],
+            {name: [h - b for h, b in zip(hips[name], hips["standard"])]
+             for name in model.BUILD_NAMES}),
+           (True, {"standard": [0] * 5, "original": [-3] * 5,
+                   "long": [3] * 5}))
+
+    # -- and what that equality is a property OF ---------------------------
+    # `stance` has always taken a recipe and all four call sites left it at
+    # "walk", so the sentence above was written as a claim about the AXIS
+    # when it is a claim about GROUNDED, STRAIGHT-LEG POSES. It is not true
+    # of a crouch: a bent leg's VERTICAL PROJECTION is shorter than its
+    # bone, so moving 3 px out of the torso and into the legs subtracts 3 px
+    # of height and adds less than 3 back -- `long` is SHORTER than
+    # `standard` in a deep crouch and `original` is TALLER. Pass the recipe
+    # and the absolute claim is red. What IS true of all three strips is a
+    # BOUND, so that is what is asserted.
+    BUILD_MAX_DRIFT = 6
+    """Source px a build may move a figure's total height, its head above
+    the ground line, or its shoulder above it, on ANY shipped pose. It is 0
+    on walk; the worst is jump frame 0, where the shoulder moves 6 px
+    between `original` and `long`. Bounded rather than left unsaid so that a
+    retuned pose or a fourth build cannot widen it silently behind a
+    `well, we already knew it was not exactly equal`."""
+
+    def drift(table):
+        """The worst px any build moves any of the three, over one strip."""
+        return max(max(table[name][i][k] for name in table)
+                   - min(table[name][i][k] for name in table)
+                   for i in range(len(table["standard"]))
+                   for k in range(3))
+    every = {rn: {name: [row[:3] for row in stance(name, rn)]
+                  for name in model.BUILD_NAMES}
+             for rn in recipes.RECIPE_NAMES}
+    expect("...and THAT equality is a property of grounded, straight-leg "
+           "poses rather than of the axis: on the crouch and flight frames a "
+           "build DOES move the height and the shoulder. What holds on every "
+           "shipped strip is a BOUND -- no build moves any of the three by "
+           "more than BUILD_MAX_DRIFT px -- and the walk strip's exact zero "
+           "is what that bound is measured against",
+           ({rn: drift(every[rn]) for rn in recipes.RECIPE_NAMES},
+            all(drift(every[rn]) <= BUILD_MAX_DRIFT
+                for rn in recipes.RECIPE_NAMES)),
+           ({"walk": 0, "run": 3.0, "jump": 6.0}, True))
+    with patched(model, "BUILDS",
+                 model.BUILDS + (model.Build("giant", 9, 9),)),             patched(model, "BUILD_NAMES", model.BUILD_NAMES + ("giant",)):
+        wild = {name: [row[:3] for row in stance(name, "jump")]
+                for name in model.BUILD_NAMES}
+    expect("...and a fourth build that redistributed 18 px instead of 3 "
+           "breaks that bound, so it is an assertion and not a restatement "
+           "of the arithmetic",
+           drift(wild) > BUILD_MAX_DRIFT, True)
+
+    # -- EVERY BUILD DRAWS EVERY STRIP, for the default outfit and for his -
+    # This is the assertion `scout_on_builds` above should have been: it
+    # renders three builds but only ever on WALK, so three shipped
+    # combinations that could not be drawn AT ALL sat behind it. garet on
+    # `standard` and on `original` could not draw `jump`, and neither could
+    # the DEFAULT outfit on `original` -- a build docs/NAI_SPRITES.md
+    # invites the author to ask for by saying "short legs". Everything that
+    # WAS measured about the axis was vertical; the break was horizontal,
+    # because a leaning pose carries the torso forward off the hip the
+    # placement starts from.
+    def unplaceable(module):
+        out = []
+        for who_name, who in (("scout", SCOUT), ("garet", GARET)):
+            for build_name in model.BUILD_NAMES:
+                for recipe_name in recipes.RECIPE_NAMES:
+                    shape = recipes.build_recipe(recipe_name, who)
+                    try:
+                        module.render_init(shape.layout, shape.poses,
+                                           who.as_dict(),
+                                           garments=who.garments,
+                                           build_name=build_name)
+                    except ValueError:
+                        out.append((who_name, build_name,
+                                    recipe_name))
+        return out
+    expect("EVERY BUILD DRAWS EVERY STRIP, for the DEFAULT outfit and for "
+           "garet's: 3 builds x 3 recipes x 2 outfits, every frame placed "
+           "inside its own cell. A vocabulary value that cannot draw a third "
+           "of the shipped strips is not a vocabulary",
+           unplaceable(mannequin), [])
+    goes_red("...and with the figure PINNED to the hip column instead of "
+             "shifted the least that keeps its drawn box in its cell, three "
+             "of those eighteen raise again -- so that loop measures the "
+             "PLACEMENT, and the placement is what was wrong",
+             "tools/nai/mannequin.py",
+             [("    if bbox[2] - bbox[0] <= sx1 - sx0:\n"
+               "        left, right = ox + dx + bbox[0], ox + dx + bbox[2]\n"
+               "        dx += max(0, sx0 - left) - max(0, right - sx1)",
+               "    if False:\n"
+               "        pass")],
+             unplaceable, tag="hip_pinned")
+    goes_red("...and a placement that shifted a figure that ALREADY FITS "
+             "would move every snapped centre the shipped scout is pinned "
+             "on, so the shift is proved to be the least, not merely some",
+             "tools/nai/mannequin.py",
+             [("        dx += max(0, sx0 - left) - max(0, right - sx1)",
+               "        dx += max(0, sx0 - left) - max(0, right - sx1) + 1")],
+             lambda m: hashlib.sha256(m.render_init(
+                 L5, WALK.poses, SCOUT.as_dict(),
+                 garments=SCOUT.garments)[0]).hexdigest(),
+             tag="hip_overshift")
+    for bad_label, bad_bones in (
+            ("legs that grow without the torso giving anything back",
+             lambda name: (mannequin.THIGH + model.build(name).thigh,
+                           mannequin.SHIN + model.build(name).shin,
+                           mannequin.TORSO_H)),
+            ("a torso that shrinks without the legs taking it",
+             lambda name: (mannequin.THIGH, mannequin.SHIN,
+                           mannequin.TORSO_H + model.build(name).torso))):
+        with patched(mannequin, "_bones", bad_bones):
+            broken = {name: [row[:3] for row in stance(name)]
+                      for name in model.BUILD_NAMES}
+        expect(f"...and with {bad_label} that equality fails, so it is an "
+               f"assertion and not an identity",
+               broken["original"] == broken["standard"] == broken["long"],
+               False)
+    with patched(mannequin, "_bones",
+                 lambda name: (mannequin.THIGH, mannequin.SHIN,
+                               mannequin.TORSO_H)):
+        deaf = {name: [row[3] for row in stance(name)]
+                for name in model.BUILD_NAMES}
+    expect("...and with a `_bones` that ignores the build entirely the HIP "
+           "stops moving, so that half can fail too",
+           deaf["original"] == deaf["standard"] == deaf["long"], True)
+
+    # -- the brim and the crown, on the drawing code itself ----------------
+    # The same place the wizard brim is judged, and for the same reason: an
+    # arm or a coat cannot hide half the answer in a bare dict of pixels.
+    BRIM_MIN_BACK = 2
+    BRIM_MIN_FRONT = 2
+    """Source px the brim must overhang the 8 px head at the BACK and at the
+    FACE. Both, and separately: the wizard brim was first drawn with all
+    2.5 px of its overhang at the back and read as a cone with a flange, so
+    a single `wider than the head` bound is the vacuous half again."""
+    brim_px = {}
+    mannequin._brim_hat(brim_px, 0, 0, GARET.colour("brim"))
+    brim_rows = {}
+    for (x, y), _v in brim_px.items():
+        brim_rows.setdefault(y, []).append(x)
+    widest = max(brim_rows, key=lambda y: len(brim_rows[y]))
+    # THE CROWN IS ABOVE THE BRIM ROW AND THE DROOP IS BELOW IT, so they are
+    # split by SIGN and not by "not the widest": read as `everything else`,
+    # the droop counted as a fourth crown row and CROWN_H stopped being
+    # measured at all.
+    crown_rows = {y: xs for y, xs in brim_rows.items() if y < widest}
+    droop_rows = {y: xs for y, xs in brim_rows.items() if y > widest}
+    droop_cols = sorted({x for xs in droop_rows.values() for x in xs})
+    cone_px = {}
+    mannequin._hat(cone_px, 0, 0, GARET.colour("brim"))
+    cone_rows = {}
+    for (x, y), _v in cone_px.items():
+        cone_rows.setdefault(y, []).append(x)
+    cone_widest = max(cone_rows, key=lambda y: len(cone_rows[y]))
+    expect("THE GUNSLINGER BRIM IS FLAT, BROAD AND FRONT-HEAVY: one row, on "
+           "the head and not above it, overhanging the 8 px head at the back "
+           "AND further at the face -- and over it a LOW crown, CROWN_H rows "
+           "that never narrow past CROWN_TAPER. Beside it the wizard cone "
+           "from the same head: twice the rows above the brim and narrowing "
+           "to a point. That difference IS the character at 15 px",
+           (len(brim_rows[widest]), widest, widest <= mannequin.BRIM_ROW,
+            0 - min(brim_rows[widest]) >= BRIM_MIN_BACK,
+            max(brim_rows[widest]) - (mannequin.HEAD - 1) >= BRIM_MIN_FRONT,
+            len(crown_rows), min(len(xs) for xs in crown_rows.values()),
+            len(cone_rows) - 1, min(len(xs) for xs in cone_rows.values())),
+           (mannequin.BRIM_W, 1, True, True, True,
+            mannequin.CROWN_H, mannequin.CROWN_W - mannequin.CROWN_TAPER,
+            mannequin.HAT_CONE_H, mannequin.HAT_TIP_W))
+    expect("THE BRIM HAS DEPTH, AND ONLY OVER ITS OVERHANG: the columns "
+           "past the 8 px head fall BRIM_DROOP_ROWS further, the columns "
+           "resting on the crown do not fall at all, and the widest row is "
+           "still the flat brim. One hat-coloured row between two outline "
+           "rows is a plank; the author's own brim is nine sculpted rows "
+           "deep. This buys depth at ZERO extra width, which is the "
+           "dimension the cell forbids",
+           (len(droop_rows),
+            sorted(droop_rows) == [widest + d + 1
+                                   for d in range(len(droop_rows))],
+            bool(droop_cols) and max(droop_cols) > mannequin.HEAD - 1,
+            bool(droop_cols) and min(droop_cols) < 0,
+            all(not 0 <= x < mannequin.HEAD for x in droop_cols),
+            len(brim_rows[widest]) > max((len(xs) for xs
+                                          in droop_rows.values()),
+                                         default=0)),
+           (mannequin.BRIM_DROOP_ROWS, True, True, True, True, True))
+    with patched(mannequin, "BRIM_DROOP_ROWS", 0):
+        flat = {}
+        mannequin._brim_hat(flat, 0, 0, GARET.colour("brim"))
+    expect("...and at BRIM_DROOP_ROWS 0 the hat is that plank again -- one "
+           "row below the crown and nothing under it -- so the depth is "
+           "asserted and not merely described",
+           (len({y for _x, y in flat}), len(brim_rows)),
+           (mannequin.CROWN_H + 1, mannequin.CROWN_H + 1
+            + mannequin.BRIM_DROOP_ROWS))
+    expect("...and the two hats are two SHAPES, not one shape with two "
+           "names: the cone reaches higher above the head than the crown "
+           "does, and the brim reaches wider than the cone's",
+           (min(cone_rows) < min(brim_rows),
+            len(brim_rows[widest]) > len(cone_rows[cone_widest])),
+           (True, True))
+
+    def brim_shape(**changes):
+        """(widest row's width, back overhang, front overhang, crown rows)
+        for a `_brim_hat` drawn with `changes` patched in."""
+        with contextlib.ExitStack() as stack:
+            for name_, value in changes.items():
+                stack.enter_context(patched(mannequin, name_, value))
+            out = {}
+            mannequin._brim_hat(out, 0, 0, GARET.colour("brim"))
+        rows = {}
+        for (x, y), _v in out.items():
+            rows.setdefault(y, []).append(x)
+        wide = max(rows, key=lambda y: len(rows[y]))
+        return (len(rows[wide]), 0 - min(rows[wide]),
+                max(rows[wide]) - (mannequin.HEAD - 1), len(rows) - 1)
+
+    def brim_row(**changes):
+        """The row the brim's widest row sits on, with `changes` patched."""
+        with contextlib.ExitStack() as stack:
+            for name_, value in changes.items():
+                stack.enter_context(patched(mannequin, name_, value))
+            out = {}
+            mannequin._brim_hat(out, 0, 0, GARET.colour("brim"))
+        rows = {}
+        for (x, y), _v in out.items():
+            rows.setdefault(y, []).append(x)
+        return max(rows, key=lambda y: len(rows[y]))
+
+    for label, changes, wanted in (
+            ("BRIM_W 15 -> 8 (no brim at all, just a crown)",
+             {"BRIM_W": 8}, "width"),
+            ("BRIM_FWD 0.5 -> -4.0 (every px of overhang at the back)",
+             {"BRIM_FWD": -4.0}, "front"),
+            ("BRIM_FWD 0.5 -> 4.0 (every px of overhang at the face)",
+             {"BRIM_FWD": 4.0}, "back"),
+            ("BRIM_ROW 1 -> 0 (the brim floating above the head)",
+             {"BRIM_ROW": 0}, "row"),
+            ("CROWN_H 3 -> 6, CROWN_TAPER 2 -> 5 (a cone by another name)",
+             {"CROWN_H": 6, "CROWN_TAPER": 5}, "low")):
+        width, back, front, crown = brim_shape(**changes)
+        broken = {"width": width < mannequin.HEAD + BRIM_MIN_BACK
+                  + BRIM_MIN_FRONT,
+                  "back": back < BRIM_MIN_BACK,
+                  "front": front < BRIM_MIN_FRONT,
+                  "row": not 0 < brim_row(**changes) <= mannequin.BRIM_ROW,
+                  "low": crown > mannequin.CROWN_H}
+        expect_true(f"...and that is false for {label}", broken[wanted])
+
+    # -- the judge: every way a drawn garet strip fails to be a gunslinger --
+    HEM_MIN_FRACTION = 0.70
+    HEM_MAX_FRACTION = 0.80
+    """Where the coat's hem falls between the top of the figure and the
+    ground, on the LONG build. Bounded from BOTH sides on purpose: below
+    0.70 it is a tunic and above 0.80 it is the reference's barrel, and a
+    bound in one direction only is the half that cannot fail."""
+    MASK_MAX_INSET = 2
+    """Source px a mask row may fall short of the head's own width and still
+    be a mask. The drawing covers the whole 8 px head, but the head's LAST
+    row has rounded corners (`_figure` skips c 0 and c HEAD-1 there), so the
+    mask's bottom row is legitimately 6 of 8. A mask over half a face is 4
+    px and is refused."""
+    COAT_MIN_SETBACK = 1.0
+    """Source px the coat's SKIRT must sit behind the hip column. The
+    bodice's own offset is COAT_BODICE_BACK 1.5, and the shipped frames
+    measure 1.0 to 2.0 because COAT_SWING carries the hem toward the
+    leading thigh. At COAT_BODICE_BACK 0 they measure 0.0 to +1.0 -- the
+    coat closed over the shirt, which is the mutation this exists for."""
+    COAT_MIN_FLARE = 3
+    """Source px the coat's hem must be WIDER than its waist. COAT_HEM_W is
+    COAT_WAIST_W + 4 in the drawing and the narrowest shipped frame keeps 4,
+    so 3 is the floor; setting COAT_HEM_W equal to COAT_WAIST_W -- a coat
+    with no flare at all, 701 source px changed, and a mutation that used to
+    survive a full green run -- fails it."""
+    COAT_MIN_SPAN = 0.45
+    """Collar to hem, as a fraction of the figure. A hem raised to show leg
+    and nothing else done is a TUNIC; this is the other end of that trade."""
+    LONG_MIN_LEG = 9
+    """Source px of leg that must show below the hem in every walk frame of
+    the LONG build, counted on the DRAWN strip, so the outline's own row
+    under the boot is in it. MEASURED there: long draws 10-11, standard
+    7-8, original 4-5, and the author's own reference 3 of 45. The standard
+    build is asserted BELOW this number in the same breath, so the axis is
+    proved to be the thing that moved it."""
+
+    def gunslinger_problems(src, layout, identity, min_leg=None,
+                            hem_bounds=False):
+        """Every way a drawn strip fails to wear garet's outfit: no brim
+        above the head or a brim that does not overhang both ways, a mask
+        that leaves the jaw or covers the eyes, no coat, a hem outside its
+        bounds, a coat too short to be a coat, a closed coat with no shirt
+        showing, or too little leg below the hem.
+
+        `min_leg` None skips the leg bound and `hem_bounds` False skips the
+        hem's, and the run and the jump ask for neither. Both measure from
+        the LOWEST DRAWN ROW, and in a crouch or a flight frame that row is
+        a boot tucked up under a coat that keeps hanging: 0.97 of the
+        figure in jump frame 0, where the man has not changed shape at all.
+        Those two bounds are a PROPORTION, so they are judged on the strip
+        that stands on the ground. Everything else here -- the brim, the
+        mask, the coat's span, the open front -- is judged in all sixteen
+        frames.
+        """
+        problems = []
+        for i, cell in enumerate(layout.cells):
+            sx0, sy0, sx1, sy1 = layout.rect_src(i)
+            crop = src.crop((sx0, sy0, sx1, sy1))
+            where = {}
+            for y in range(crop.height):
+                for x in range(crop.width):
+                    where.setdefault(crop.getpixel((x, y)), []).append((x, y))
+
+            def points(part):
+                try:
+                    rgb = identity.colour(part)
+                except KeyError:
+                    return []
+                return [p for drawn_rgb in shades_of(rgb)
+                        for p in where.get(drawn_rgb, ())]
+            drawn = [p for rgb, ps in where.items() if rgb != BACKGROUND_RGB
+                     for p in ps]
+            if not drawn:
+                problems.append(f"cell {i}: nothing drawn")
+                continue
+            top = min(y for _x, y in drawn)
+            floor = max(y for _x, y in drawn)
+            coat = points("coat")
+            brim = points("brim")
+            mask = points("mask")
+            hair = points("hair")
+            # THE HEAD BOX IS THE HAIR AND THE MASK, and skin is only read
+            # inside it. Skin is also the HANDS, and jump frames 2 and 3
+            # throw both hands up beside the ear: judged by "skin above the
+            # collar" the head grew an arm, and the brim's own overhang
+            # measured -3 px on a brim nobody had touched.
+            #
+            # THE HAIR IS WHAT FIXES THE BOX, and the mask is only read
+            # INSIDE IT: the mask's colour is also the trench COLLAR's
+            # (mannequin.COAT_COLLAR_IS_MASK), which is wider than the head
+            # and sits across the shoulders. Taken into the box the way it
+            # was when a mask was only ever a face, it dragged the box out
+            # to the shoulders and the brim's overhang measured -1 px on a
+            # brim nobody had touched -- the same shape as the hands above,
+            # arriving from the other side.
+            if not hair:
+                problems.append(f"cell {i}: no head")
+                continue
+            # THE HAIR FIXES THE BOX, IN BOTH AXES, and nothing else may
+            # widen it. The mask's colour is ALSO the trench collar's
+            # (mannequin.COAT_COLLAR_IS_MASK) and the collar is wider than
+            # the head and sits across the shoulders, so a box that took the
+            # mask's extent was dragged out to the shoulders and the brim's
+            # overhang measured -1 px on a brim nobody had touched -- the
+            # same shape as the hands below, arriving from the other side.
+            # The hair is the one part only a head wears, and its fringe row
+            # is the full width of the head.
+            head_top = min(y for _x, y in hair)
+            lo, hi = min(x for x, _y in hair), max(x for x, _y in hair)
+            face_rows = range(head_top, head_top + mannequin.HEAD)
+            mask_face = [p for p in mask
+                         if p[1] in face_rows and lo <= p[0] <= hi]
+            face = [p for p in points("skin")
+                    if p[1] in face_rows and lo <= p[0] <= hi]
+            head = hair + mask_face + face
+            if not [p for p in brim if p[1] < head_top]:
+                problems.append(f"cell {i}: no brim above the head")
+            else:
+                rows = {}
+                for x, y in brim:
+                    rows.setdefault(y, []).append(x)
+                wide = max(rows, key=lambda y: len(rows[y]))
+                band = [x for x, y in head if y >= wide]
+                if band:
+                    back = min(band) - min(rows[wide])
+                    front = max(rows[wide]) - max(band)
+                    if back < BRIM_MIN_BACK or front < BRIM_MIN_FRONT:
+                        problems.append(
+                            f"cell {i}: the brim overhangs the head by "
+                            f"{back} px at the back and {front} at the face; "
+                            f"it has to do both")
+            # WHAT THE IMAGE CAN ANSWER ABOUT THE MASK, now that the
+            # collar is drawn in the same colour on purpose: where the dark
+            # STARTS relative to the face, and that it does not stop at the
+            # chin. How many ROWS of it are the face and how WIDE they are
+            # cannot be read off a flat image at all once the two colours
+            # are one -- those are asserted on the drawing's own tags, in
+            # `coat_shape` below, which is exact.
+            if not mask_face:
+                problems.append(f"cell {i}: no mask on the face")
+            else:
+                mask_top = min(y for _x, y in mask_face)
+                if not face or min(y for _x, y in face) >= mask_top:
+                    problems.append(f"cell {i}: the mask leaves no face "
+                                    f"above it; it covers the eyes")
+                elif [p for p in face if p[1] > mask_top]:
+                    problems.append(f"cell {i}: skin shows BELOW the top of "
+                                    f"the mask; it does not cover the jaw")
+                elif not [p for p in mask if not lo <= p[0] <= hi]:
+                    # ONE UNBROKEN MASS, which is the whole reason the
+                    # collar wears the mask's colour: in the author's own
+                    # reference the dark runs from under the single blue eye
+                    # across the jaw and out over BOTH shoulders. Stopped at
+                    # the head's own columns it is a band floating on a
+                    # face, and on an 8 px head a band under a fringe reads
+                    # as a beard.
+                    problems.append(f"cell {i}: the mask stops at the head's "
+                                    f"own columns; a masked man in a "
+                                    f"turned-up collar is ONE dark mass out "
+                                    f"across the shoulders")
+            if not coat:
+                problems.append(f"cell {i}: no coat")
+                continue
+            hem = max(y for _x, y in coat)
+            # THE COAT'S TOP IS ITS COLLAR, and on a masked man the collar
+            # answers to `mask`, not to `coat`. Read without it a
+            # trenchcoat's span starts COAT_COLLAR_ROWS down and every span
+            # bound moves under a colour change nobody meant as one.
+            worn = set(mask_face)
+            collar = min([y for _x, y in coat]
+                         + [y for p in mask if p not in worn for y in (p[1],)])
+            span = (hem - collar + 1) / (floor - top + 1)
+            if span < COAT_MIN_SPAN:
+                problems.append(f"cell {i}: the coat covers {span:.2f} of the "
+                                f"figure; that is a tunic, not a trenchcoat")
+            fraction = (hem - top) / (floor - top)
+            if hem_bounds and fraction < HEM_MIN_FRACTION:
+                problems.append(f"cell {i}: the hem falls at {fraction:.2f} "
+                                f"of the figure, too high for a trenchcoat")
+            elif hem_bounds and fraction > HEM_MAX_FRACTION:
+                problems.append(f"cell {i}: the hem falls at {fraction:.2f} "
+                                f"of the figure, over the legs")
+            if not points("tunic"):
+                problems.append(f"cell {i}: no shirt at the open front; the "
+                                f"coat is drawn closed")
+            if min_leg is not None and floor - hem < min_leg:
+                problems.append(f"cell {i}: {floor - hem} px of leg below the "
+                                f"hem, under the {min_leg} this build owes")
+        return problems
+
+    for name in ("walk", "run", "jump"):
+        recipe = recipes.get_recipe(name, "garet")
+        layout = recipe.layout
+        # The image img2img would SEND, not one drawn here.
+        sent = recipes.make_request(name, "img2img", SEED,
+                                    character="garet").image_png
+        image = opened(sent).convert("RGB")
+        source = image.resize((layout.src_w, layout.src_h),
+                              Image.Resampling.NEAREST)
+        palette = {rgb for _n, rgb in source.getcolors(1 << 20)}
+        allowed = {BACKGROUND_RGB} | shades_of(OUTLINE_RGB)
+        for part, _rgb in GARET.colours:
+            allowed |= shades_of(GARET.colour(part))
+        outside = source.copy()
+        for cell in layout.cells:
+            sx0, sy0, sx1, sy1 = [v // layout.k for v in cell.rect_canvas]
+            outside.paste(BACKGROUND_RGB, (sx0, sy0, sx1, sy1))
+        expect(f"{name} for garet: the sent init wears a brim over the head "
+               f"that overhangs front and back, a mask over the jaw with the "
+               f"eyes left clear, and a trenchcoat whose hem falls between "
+               f"its bounds over an open shirt -- in his colours only, with "
+               f"NOTHING outside a cell",
+               (gunslinger_problems(source, layout, GARET,
+                                    LONG_MIN_LEG if name == "walk" else None,
+                                    hem_bounds=name == "walk"),
+                sorted(palette - allowed),
+                sorted({PIN_SCOUT_PANTS, PIN_SCOUT_TUNIC} & palette),
+                outside.getcolors(1 << 20)),
+               ([], [], [], [(layout.src_w * layout.src_h, BACKGROUND_RGB)]))
+
+    def built(build_name, recipe_name="walk"):
+        """(the source-scale strip, its layout, that identity) for garet on
+        `build_name` -- the one thing the axis changes, drawn."""
+        who = dataclasses.replace(GARET, build=build_name)
+        shape = recipes.build_recipe(recipe_name, who)
+        png, _c = mannequin.render_init(shape.layout, shape.poses,
+                                        who.as_dict(), garments=who.garments,
+                                        build_name=build_name)
+        return (opened(png).convert("RGB").resize(
+            (shape.layout.src_w, shape.layout.src_h),
+            Image.Resampling.NEAREST), shape.layout, who)
+
+    def legs_below_hem(build_name):
+        src, layout, who = built(build_name)
+        out = []
+        for i in range(layout.count):
+            sx0, sy0, sx1, sy1 = layout.rect_src(i)
+            crop = src.crop((sx0, sy0, sx1, sy1))
+            drawn, coat = [], []
+            for y in range(crop.height):
+                for x in range(crop.width):
+                    rgb = crop.getpixel((x, y))
+                    if rgb == BACKGROUND_RGB:
+                        continue
+                    drawn.append(y)
+                    if rgb in shades_of(who.colour("coat")):
+                        coat.append(y)
+            out.append(max(drawn) - max(coat))
+        return out
+
+    measured = {name: legs_below_hem(name) for name in model.BUILD_NAMES}
+    expect("THE FLAW, FIXED AND MEASURED IN PIXELS. On the walk strip, the "
+           "LONG build leaves at least LONG_MIN_LEG px of leg below the hem "
+           "in every frame; the STANDARD build leaves strictly less than "
+           "that, and the ORIGINAL -- the author's own proportion -- less "
+           "again, at the 3-4 px his reference drew. One coat, one hem "
+           "length, three hips",
+           (min(measured["long"]) >= LONG_MIN_LEG,
+            max(measured["standard"]) < LONG_MIN_LEG,
+            max(measured["original"]) < min(measured["standard"]),
+            measured),
+           (True, True, True,
+            {"standard": [7, 8, 7, 8, 8], "original": [4, 5, 4, 5, 5],
+             "long": [10, 11, 10, 11, 11]}))
+    for other in ("standard", "original"):
+        src, layout, who = built(other)
+        found = gunslinger_problems(src, layout, who, LONG_MIN_LEG,
+                                    hem_bounds=True)
+        expect_true(f"...and the SAME judge, handed the {other} build and "
+                    f"asked for the long build's leg, reports the short leg "
+                    f"AND a hem over it in every cell -- so both of those "
+                    f"assertions can fail",
+                    all(any(p.startswith(f"cell {i}: ") and w in p
+                            for p in found)
+                        for i in range(layout.count)
+                        for w in ("the hem falls at",
+                                  "px of leg below the hem")))
+
+    # -- the other half of every new garment constant ----------------------
+    def garet_problems(**changes):
+        """Every problem the judge reports over ALL THREE strips with one
+        constant changed, stripped of cell numbers and measurements."""
+        found = set()
+        for recipe_name in ("walk", "run", "jump"):
+            shape = recipes.get_recipe(recipe_name, "garet")
+            with contextlib.ExitStack() as stack:
+                for name_, value in changes.items():
+                    stack.enter_context(patched(mannequin, name_, value))
+                png, _c = mannequin.render_init(
+                    shape.layout, shape.poses, GARET.as_dict(),
+                    garments=GARET.garments, build_name=GARET.build)
+            drawn = opened(png).convert("RGB").resize(
+                (shape.layout.src_w, shape.layout.src_h),
+                Image.Resampling.NEAREST)
+            found |= {p.split(": ", 1)[1].split(" (")[0].split(" px")[0]
+                      for p in gunslinger_problems(
+                          drawn, shape.layout, GARET,
+                          hem_bounds=recipe_name == "walk")}
+        return sorted(found)
+
+    for label, changes, wanted in (
+            ("COAT_LEN 13 -> 4 (a hem at the waist)",
+             {"COAT_LEN": 4}, "the hem falls at"),
+            ("COAT_LEN 13 -> 21 (the reference's barrel, hem past the sole)",
+             {"COAT_LEN": 21}, "the hem falls at"),
+            ("COAT_BODICE_BACK 1.5 -> 0.0 (the coat closed over the shirt)",
+             {"COAT_BODICE_BACK": 0.0}, "no shirt at the open front"),
+            ("MASK_TOP_ROW 5 -> 2 (a mask over the eyes)",
+             {"MASK_TOP_ROW": 2}, "the mask leaves no face above it"),
+            ("MASK_TOP_ROW 5 -> 4 (the mask over the eye row itself)",
+             {"MASK_TOP_ROW": 4}, "skin shows BELOW the top of"),
+            ("COAT_COLLAR_IS_MASK True -> False (the dark stops at the "
+             "chin and the shoulders go brown)",
+             {"COAT_COLLAR_IS_MASK": False}, "the mask stops at the head's"),
+            ("BRIM_W 15 -> 9 (a brim narrower than its own overhang)",
+             {"BRIM_W": 9}, "the brim overhangs the head by"),
+            ("BRIM_FWD 0.5 -> -3.0 (the whole brim behind the face)",
+             {"BRIM_FWD": -3.0}, "the brim overhangs the head by"),
+            ("BRIM_ROW 1 -> 6 (the brim down at the jaw)",
+             {"BRIM_ROW": 6}, "no brim above the head")):
+        found = garet_problems(**changes)
+        expect_true(f"the judge goes red on {label}",
+                    found and any(p.startswith(wanted) for p in found))
+    expect("...and reports nothing at all on the shipped constants, so those "
+           "rows are the mutation and not the judge",
+           garet_problems(), [])
+
+    # -- THE COAT AND THE MASK, ON THE DRAWING'S OWN TAGS -------------------
+    # Everything above reads a flat image, which is the right place to judge
+    # what a generation will be judged against -- but a flat image cannot
+    # answer a WIDTH question about this outfit at all. `coat` is also both
+    # SLEEVES (a trenchcoat brings its own), and `mask` is also the COLLAR.
+    # Measured through colour, the coat's waist is whichever arm is furthest
+    # out that frame. So the widths are measured here, on `_figure`'s tags,
+    # where the drawing says which pixel is which -- and this is the half
+    # that was missing: FIVE drawing mutations survived a full green run,
+    # including deleting the trenchcoat's collar outright (189 source px)
+    # and flattening its flare (701 px), because the coat was only ever read
+    # as its topmost and bottommost rows.
+    def coat_shape(module=mannequin, garments=None, colours=None, **changes):
+        """Per walk frame, off the tagged pixels:
+        (collar width, head width, waist width, hem width, the skirt's
+        x-centre minus the torso's, the mask's rows as (top, bottom) in head
+        rows, the mask's narrowest row, the head's width, the collar's
+        colours)."""
+        wearing = GARET.garments if garments is None else garments
+        palette = GARET.as_dict() if colours is None else colours
+        out = []
+        for pose in recipes.get_recipe("walk", "garet").poses:
+            with contextlib.ExitStack() as stack:
+                for name_, value in changes.items():
+                    stack.enter_context(patched(module, name_, value))
+                px = module._figure(pose, palette, wearing, GARET.build)
+            def tagged(*names):
+                return [p for p, (_rgb, tg) in px.items() if tg in names]
+
+            def width(points):
+                return (max(x for x, _y in points)
+                        - min(x for x, _y in points) + 1) if points else 0
+            coat = tagged("coat")
+            head = tagged("head", "mask")
+            mask = tagged("mask")
+            top = min(y for _x, y in coat)
+            collar = [p for p in coat
+                      if p[1] < top + max(1, module.COAT_COLLAR_ROWS)]
+            # The hip is local row 0 by construction (`_figure`: the legs
+            # start at row 0 and the torso ends at row -1), so the waist and
+            # the hem need no build-dependent fraction.
+            waist = [p for p in coat if p[1] in (0, 1)]
+            hem_y = max(y for _x, y in coat)
+            hem = [p for p in coat if p[1] >= hem_y - 1]
+            # AGAINST THE HIP COLUMN, which is `_figure`'s own origin
+            # (`hip = (0.5, 0.0)`) and therefore cannot be occluded. The
+            # visible TORSO can be: at COAT_BODICE_BACK 0 the bodice covers
+            # it edge to edge and there is no torso left to measure from --
+            # which is the same mutation this assertion has to catch.
+            skirt = [p for p in coat if p[1] >= 0]
+            centre = ((min(x for x, _y in skirt)
+                       + max(x for x, _y in skirt)) / 2.0) - 0.5
+            # THE EYE IS THE ANCHOR for where the mask sits, not the
+            # head's own tag: `_brim_hat` is drawn OVER the head and RETAGS
+            # its top two rows, so the topmost `head` pixel is head row 2.
+            # The eye is also the thing the mask must leave, so measuring
+            # from it says the rule out loud: one row under the eye, down
+            # to the chin.
+            eye = [p for p, (rgb, tg) in px.items()
+                   if tg == "head" and rgb == model.OUTLINE_RGB]
+            rows = {}
+            for x, y in mask:
+                rows.setdefault(y, []).append(x)
+            out.append((width(collar), width(head), width(waist), width(hem),
+                        centre,
+                        (min(rows) - min(y for _x, y in eye),
+                         max(rows) - min(y for _x, y in eye))
+                        if rows and eye else None,
+                        min((len(xs) for xs in rows.values()), default=0),
+                        {px[p][0] for p in collar}))
+        return out
+
+    shape = coat_shape()
+    expect("THE TRENCH COLLAR IS WIDER THAN THE MAN: in every walk frame the "
+           "coat's top rows out-span the head, which is what a turned-up "
+           "collar looks like and what COAT_COLLAR_W's docstring has always "
+           "claimed. Nothing measured it, and deleting the collar outright "
+           "-- 189 source px -- passed",
+           ([(collar, head) for collar, head, *_ in shape],
+            all(collar > head for collar, head, *_ in shape)),
+           ([(mannequin.COAT_COLLAR_W, mannequin.HEAD)] * 5, True))
+    expect("THE COAT FLARES BELOW THE HIP: its hem is at least "
+           "COAT_MIN_FLARE px wider than its waist in every frame. Read "
+           "through colour this cannot be measured at all -- the coat's "
+           "colour is also both sleeves -- so it is measured here, and "
+           "COAT_HEM_W = COAT_WAIST_W, a coat with no flare at all, used to "
+           "pass",
+           ([(waist, hem) for _c, _h, waist, hem, *_ in shape],
+            all(hem - waist >= COAT_MIN_FLARE
+                for _c, _h, waist, hem, *_ in shape)),
+           ([(7, 12), (8, 12), (8, 12), (8, 12), (8, 12)], True))
+    expect("THE SKIRT IS SET BACK BEHIND THE TORSO, by at least "
+           "COAT_BODICE_BACK px, which is the same offset that leaves the "
+           "shirt showing down the open front -- asserted on the SKIRT "
+           "because `no shirt at the open front` only ever measured the "
+           "bodice, and moving the skirt's root forward passed",
+           ([round(row[4], 1) for row in shape],
+            all(row[4] <= -COAT_MIN_SETBACK for row in shape)),
+           ([-1.0, -1.0, -1.0, -1.0, -2.0], True))
+    expect("THE MASK STARTS ONE ROW UNDER THE EYE AND ENDS AT THE CHIN, and "
+           "covers the full width of the head on every row but the head's "
+           "last, whose two corners are rounded. The eye is the one thing "
+           "left of the face; the width was promised by the drawing's "
+           "docstring and measured by nothing, so a mask over HALF the face "
+           "passed in all sixteen frames",
+           (sorted({row[5] for row in shape}),
+            sorted({row[6] for row in shape}),
+            all(row[6] >= row[1] - MASK_MAX_INSET for row in shape)),
+           ([(1, mannequin.HEAD - 1 - mannequin.EYE_ROW)],
+            [mannequin.HEAD - MASK_MAX_INSET], True))
+    expect("A MASKED MAN'S COLLAR IS THE MASK'S COLOUR, in every shade it "
+           "is drawn in -- that is the unbroken black from under the eye "
+           "out across both shoulders, and it is the single thing that "
+           "makes this figure read as the author's character rather than as "
+           "a bearded prospector",
+           sorted({rgb for row in shape for rgb in row[7]}
+                  - shades_of(GARET.colour("mask"))), [])
+    BARE_COAT = GARET.garments._replace(face="none")
+    bare_palette = {part: rgb for part, rgb in GARET.as_dict().items()
+                    if part != "mask"}
+    expect("...and an UNMASKED coat keeps the coat's own colour, so this "
+           "adds no colour part, changes no character file, and cannot be "
+           "satisfied by a collar that is simply always dark",
+           sorted({rgb
+                   for row in coat_shape(garments=BARE_COAT,
+                                         colours=bare_palette)
+                   for rgb in row[7]}
+                  - shades_of(GARET.colour("coat"))), [])
+    for label, changes, reads in (
+            ("COAT_COLLAR_W 10 -> 5 (a collar narrower than the head)",
+             {"COAT_COLLAR_W": 5}, lambda r: r[0] > r[1]),
+            ("COAT_COLLAR_ROWS 2 -> 0 (no collar rows at all)",
+             {"COAT_COLLAR_ROWS": 0}, lambda r: r[0] > r[1]),
+            ("COAT_HEM_W 12 -> 8 = COAT_WAIST_W (no flare at all)",
+             {"COAT_HEM_W": mannequin.COAT_WAIST_W},
+             lambda r: r[3] - r[2] >= COAT_MIN_FLARE),
+            ("COAT_BODICE_BACK 1.5 -> 0.0 (the skirt on the torso's axis)",
+             {"COAT_BODICE_BACK": 0.0},
+             lambda r: r[4] <= -COAT_MIN_SETBACK),
+            ("MASK_ROWS 3 -> 0 (no mask at all)",
+             {"MASK_ROWS": 0}, lambda r: r[5] is not None),
+            ("MASK_ROWS 3 -> 1 (the mouth covered, the jaw bare)",
+             {"MASK_ROWS": 1},
+             lambda r: r[5] == (1, mannequin.HEAD - 1 - mannequin.EYE_ROW)),
+            ("COAT_COLLAR_IS_MASK True -> False (the dark stops at the chin)",
+             {"COAT_COLLAR_IS_MASK": False},
+             lambda r: not (r[7] - shades_of(GARET.colour("mask"))))):
+        expect_true(f"...and that goes red on {label}",
+                    not all(reads(row) for row in coat_shape(**changes)))
+    goes_red("THE COLLAR IS DRAWN AT ALL: delete its `_segment` and the "
+             "coat's top rows are the bodice, narrower than the head it is "
+             "supposed to out-span -- 189 source px that used to change "
+             "with the suite green",
+             "tools/nai/mannequin.py",
+             [("    collar = _add(back, up, torso_h - COAT_COLLAR_ROWS)\n"
+               "    _segment(px, collar, up, COAT_COLLAR_ROWS, "
+               "COAT_COLLAR_W,\n             lambda al, pe: collar_rgb, "
+               "\"coat\")",
+               "    pass")],
+             lambda m: [row[0] for row in coat_shape(module=m)],
+             tag="collar_deleted")
+    goes_red("THE SKIRT HANGS FROM THE COAT'S OWN AXIS, NOT THE TORSO'S: "
+             "root the flare at the hip's column and the set-back goes, the "
+             "open front closes, and 1083 source px move with the suite "
+             "green",
+             "tools/nai/mannequin.py",
+             [("    _flare(px, (back[0], hip[1]), (swing / fall, COAT_LEN / "
+               "fall), fall,",
+               "    _flare(px, (hip[0], hip[1]), (swing / fall, COAT_LEN / "
+               "fall), fall,")],
+             lambda m: [round(row[4], 1) for row in coat_shape(module=m)],
+             tag="skirt_on_torso_axis")
+    goes_red("THE MASK IS THE FULL WIDTH OF THE HEAD: mask only the back "
+             "half of it and 163 source px move -- a half-face that was "
+             "accepted in all sixteen frames, because nothing measured the "
+             "mask's width at all",
+             "tools/nai/mannequin.py",
+             [("            masked = (garments.face == \"mask\"\n"
+               "                      and MASK_TOP_ROW <= r < MASK_TOP_ROW + "
+               "MASK_ROWS)",
+               "            masked = (garments.face == \"mask\"\n"
+               "                      and MASK_TOP_ROW <= r < MASK_TOP_ROW + "
+               "MASK_ROWS\n                      and c < HEAD // 2)")],
+             lambda m: [row[6] for row in coat_shape(module=m)],
+             tag="half_mask")
+
+    # -- the hem swings with the stride ------------------------------------
+    def hem_centres(**changes):
+        """Each walk frame's coat-hem centre, in source px from the hip."""
+        out = []
+        for pose in recipes.get_recipe("walk", "garet").poses:
+            with contextlib.ExitStack() as stack:
+                for name_, value in changes.items():
+                    stack.enter_context(patched(mannequin, name_, value))
+                px = mannequin._figure(pose, GARET.as_dict(), GARET.garments,
+                                       GARET.build)
+            coat = [(x, y) for (x, y), (_rgb, tag) in px.items()
+                    if tag == "coat"]
+            low = max(y for _x, y in coat)
+            xs = [x for x, y in coat if y >= low - 1]
+            out.append((min(xs) + max(xs)) / 2.0)
+        return out
+
+    expect("THE HEM SWINGS WITH THE STRIDE. The four striding frames carry "
+           "their hem toward the leading thigh and the standing frame does "
+           "not, so a garet at rest and a garet mid-stride are two "
+           "silhouettes; at COAT_SWING 0 every frame's hem sits in the same "
+           "place and the coat hangs like a board",
+           (len(set(hem_centres())) > 1,
+            len(set(hem_centres(COAT_SWING=0.0))) == 1),
+           (True, True))
+
+
+    # -- law 5 on COMPILED COPIES, not on a patched constant ---------------
+    # `patched` above proves a CONSTANT matters. These four prove the CODE
+    # does: each compiles a copy of the shipped mannequin.py with one
+    # statement changed and asks the same question of it. `mutant`'s
+    # exactly-once sentinel is what makes the row trustworthy -- a mutation
+    # whose text has been reformatted away raises instead of reporting a
+    # cheerful "no difference".
+    GARET_POSE = recipes.get_recipe("walk", "garet").poses[0]
+
+    def drawn_by(module, build_name=None, want="height"):
+        """One measurement of garet drawn by `module`, for goes_red."""
+        names = ([build_name] if build_name
+                 else list(model.BUILD_NAMES))
+        out = []
+        for name in names:
+            px = module._figure(GARET_POSE, GARET.as_dict(), GARET.garments,
+                                name)
+            ys = [y for _x, y in px]
+            if want == "height":
+                out.append(max(ys) - min(ys) + 1)
+            elif want == "leg":
+                hem = max(y for (_x, y), (_rgb, tag) in px.items()
+                          if tag == "coat")
+                out.append(max(ys) - hem)
+            elif want == "near_leg":
+                out.append(sum(1 for _rgb, tag in px.values()
+                               if tag == "near_leg"))
+        return tuple(out)
+
+    goes_red("_bones GIVES THE TORSO BACK WHAT THE LEGS TOOK: let the legs "
+             "grow and keep TORSO_H and the three builds stop drawing one "
+             "height, so a `long` garet grows out of his cell instead of "
+             "standing in it",
+             "tools/nai/mannequin.py",
+             [("    return (THIGH + chosen.thigh, SHIN + chosen.shin,\n"
+               "            TORSO_H + chosen.torso)",
+               "    return (THIGH + chosen.thigh, SHIN + chosen.shin,\n"
+               "            TORSO_H)")],
+             lambda m: drawn_by(m, want="height"), tag="bones_no_giveback")
+    goes_red("THE COAT'S SKIRT HANGS FROM THE HIP, NOT THE SHOULDER: give "
+             "it back the px the torso lost and its hem stops moving with "
+             "the build, so all three builds show the same leg and the axis "
+             "does nothing at all",
+             "tools/nai/mannequin.py",
+             [("    fall = math.hypot(swing, COAT_LEN)\n"
+               "    _flare(px, (back[0], hip[1]), (swing / fall, COAT_LEN / "
+               "fall), fall,",
+               "    _len = COAT_LEN + (TORSO_H - torso_h)\n"
+               "    fall = math.hypot(swing, _len)\n"
+               "    _flare(px, (back[0], hip[1]), (swing / fall, _len / "
+               "fall), fall,")],
+             lambda m: drawn_by(m, want="leg"), tag="coat_off_shoulder")
+    goes_red("THE COAT IS DRAWN AFTER THE NEAR LEG: swap them and the near "
+             "leg lies on top of the coat it is supposed to be under, so "
+             "the thigh shows through and there is no hem to measure from",
+             "tools/nai/mannequin.py",
+             [('    _leg(px, hip, pose.near_thigh, pose.near_shin, leg, shoe, "near_leg",\n         shaft=not heeled, heeled=heeled, thigh_px=thigh_px, shin_px=shin_px)\n    if coated:',
+               '    if coated:'),
+              ('              collar_rgb)',
+               '              collar_rgb)\n    _leg(px, hip, pose.near_thigh, pose.near_shin, leg, shoe, "near_leg",\n         shaft=not heeled, heeled=heeled, thigh_px=thigh_px, shin_px=shin_px)')],
+             lambda m: drawn_by(m, build_name="long", want="near_leg"),
+             tag="coat_under_leg")
+
+    def brim_overhang(module):
+        out = {}
+        module._brim_hat(out, 0, 0, GARET.colour("brim"))
+        rows = {}
+        for (x, y), _v in out.items():
+            rows.setdefault(y, []).append(x)
+        wide = max(rows, key=lambda y: len(rows[y]))
+        return (0 - min(rows[wide]), max(rows[wide]) - (module.HEAD - 1))
+
+    goes_red("BRIM_FWD MOVES THE BRIM TOWARD THE FACE: flip its sign and "
+             "the overhang piles up at the back, which is the exact shape "
+             "the wizard brim was first drawn as and had to be fixed from",
+             "tools/nai/mannequin.py",
+             [("    brim_axis = center + BRIM_FWD",
+               "    brim_axis = center - BRIM_FWD")],
+             brim_overhang, tag="brim_backwards")
 
     # =======================================================================
     print("\n2. assert_free: the legal request passes, each refusal has its own reason")
@@ -4719,40 +5916,6 @@ try:
     # text it mutates appears EXACTLY ONCE in the shipped file, so a mutant
     # that compiles at all is the sentinel that the copy is the code under
     # test and not a stale duplicate of it.
-    MUTATIONS: list[tuple[str, str]] = []
-
-    def mutant(relpath: str, *pairs, tag: str):
-        """A COPY of `relpath` with each (old, new) applied, imported alone."""
-        path = os.path.join(_bootstrap.REPO_ROOT, relpath)
-        with io.open(path, encoding="utf-8") as handle:
-            source = handle.read()
-        for old, new in pairs:
-            if source.count(old) != 1:
-                raise AssertionError(
-                    f"mutant {tag}: {relpath} contains {old!r} "
-                    f"{source.count(old)} times, wanted exactly 1 -- the copy "
-                    f"is not the code under test")
-            source = source.replace(old, new)
-        name = f"_mutant_{tag}"
-        module = types.ModuleType(name)
-        module.__file__ = path
-        sys.modules[name] = module   # @dataclass looks its own module up
-        try:
-            exec(compile(source, f"{path} [mutant {tag}]", "exec"),
-                 module.__dict__)
-        finally:
-            sys.modules.pop(name, None)
-        return module
-
-    def goes_red(label, relpath, pairs, call, tag):
-        """`call(module)` must answer differently on the mutant: law 5's
-        other half, run on every suite pass rather than once by hand."""
-        real = call(sys.modules[relpath.replace("/", ".")[:-3]])
-        broken = call(mutant(relpath, *pairs, tag=tag))
-        MUTATIONS.append((f"{relpath} :: {pairs[0][0].strip()[:56]}",
-                          f"{real} -> {broken}"))
-        expect(label, broken != real, True)
-
     def cli_run(argv, state, module=cli):
         """(exit code, everything printed) for one CLI command, no network."""
         out, err = io.StringIO(), io.StringIO()

@@ -635,7 +635,8 @@ def _cmd_render(args, transport, state: State) -> int:
                                    f"{args.character}_{recipe.name}_init.png")
     assert_untracked_output(out)
     png, centers = mannequin.render_init(recipe.layout, recipe.poses, colours,
-                                         garments=garments)
+                                         garments=garments,
+                                         build_name=recipe.identity.build)
     if args.out is None:
         state.subdir(RENDERS_DIR)
     _write_all([(out, png)])
@@ -647,7 +648,8 @@ def _cmd_render(args, transport, state: State) -> int:
     for i, center in enumerate(centers):
         _out(f"frame {i}       center {center}")
     params = mannequin.params_sha256(layout, recipe.poses, colours,
-                                     garments=garments)
+                                     garments=garments,
+                                     build_name=recipe.identity.build)
     _out(f"params sha256 {params}")
     _out(f"png sha256    {hashlib.sha256(png).hexdigest()}")
     return EXIT_OK
@@ -830,7 +832,8 @@ def _cmd_pixelize(args, transport, state: State) -> int:
     assert_untracked_output(out_dir)
     _, centers = mannequin.render_init(recipe.layout, recipe.poses,
                                        recipe.identity.as_dict(),
-                                       garments=recipe.identity.garments)
+                                       garments=recipe.identity.garments,
+                                       build_name=recipe.identity.build)
     result = post.pixelize(
         png, recipe.layout, centers=centers, ground=recipe.ground,
         hold_arc=recipe.hold_arc, palette_png=palette, colours=args.colours,

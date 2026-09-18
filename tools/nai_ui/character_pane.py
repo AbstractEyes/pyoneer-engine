@@ -10,8 +10,12 @@ WHAT IT SHOWS, IN FILE ORDER
     Character        a combo of `characters.available()`, plus Copy As...
     Subject          `model.SUBJECT_NAMES` -- boy (the default) or girl
     Garments         one control per `model.GARMENT_SLOTS`, in that order:
-                     hat none|wizard, cape false|true, neck scarf|none,
-                     legwear pants|dress, footwear boots|heels
+                     hat none|wizard|brim, cape false|true, neck scarf|none,
+                     legwear pants|dress, footwear boots|heels,
+                     coat false|true, face none|mask
+    Build            a combo of `model.BUILD_NAMES` -- WHERE THE HIP SITS,
+                     and the only field that is neither a garment nor a
+                     colour: standard (the default), original, long
     Tags             the base-caption tags, one line
     Anchor           the per-frame tags, one line, with a chip per tag it
                      may legally use -- the anchor repeats a tag of `tags`
@@ -188,7 +192,8 @@ class _PreviewTask(QRunnable):
             recipe = recipes.build_recipe(self.__recipe, self.__identity)
             png, centers = mannequin.render_init(
                 recipe.layout, recipe.poses, self.__identity.as_dict(),
-                garments=self.__identity.garments)
+                garments=self.__identity.garments,
+                build_name=self.__identity.build)
             partial = self.__out + ".part"
             with open(partial, "wb") as handle:
                 handle.write(png)
@@ -355,6 +360,18 @@ class CharacterPane(QWidget):
             box.currentIndexChanged.connect(self.__garments_edited)
             self.__garment_boxes[slot.name] = box
             garment_form.addRow(slot.name, box)
+        # Build is NOT a garment slot -- it moves the hip, not the cloth --
+        # so it is its own control, hand-written because `model.BUILDS` is
+        # not a vocabulary of choices-and-drawn-parts the garment loop can
+        # read. It sits in the same box because the author picks it in the
+        # same breath as the coat it exists for.
+        self.__build = QComboBox(garments)
+        for name in model.BUILD_NAMES:
+            spelled = name + ("  (default)" if name == model.DEFAULT_BUILD
+                              else "")
+            self.__build.addItem(spelled)
+        self.__build.currentIndexChanged.connect(self.__field_edited)
+        garment_form.addRow("build", self.__build)
         column.addWidget(garments)
 
         caption = QFormLayout()
@@ -466,6 +483,10 @@ class CharacterPane(QWidget):
             values[slot.name] = slot.choices[box.currentIndex()]
         return model.Garments(**values)
 
+    def build(self) -> str:
+        """The build the form holds -- one of `model.BUILD_NAMES`."""
+        return model.BUILD_NAMES[self.__build.currentIndex()]
+
     def parts(self) -> tuple[str, ...]:
         """The parts the form's garments draw, in `model.PARTS` order."""
         return model.garment_parts(self.garments())
@@ -566,6 +587,11 @@ class CharacterPane(QWidget):
         raise ValueError(f"unknown garment slot {slot_name!r}; the slots are "
                          f"{tuple(s.name for s in model.GARMENT_SLOTS)}")
 
+    def set_build(self, name: str) -> None:
+        """Choose the build; ValueError listing `model.BUILD_NAMES`."""
+        model.build(name)
+        self.__build.setCurrentIndex(model.BUILD_NAMES.index(name))
+
     def set_colour(self, part: str, hex_colour: str) -> None:
         """Set one part's colour; ValueError for a part these garments miss.
 
@@ -635,6 +661,9 @@ class CharacterPane(QWidget):
                 if garments != model.DEFAULT_GARMENTS:
                     document[field] = {slot.name: getattr(garments, slot.name)
                                        for slot in model.GARMENT_SLOTS}
+            elif field == "build":
+                if self.build() != model.DEFAULT_BUILD:
+                    document[field] = self.build()
             else:
                 raise RuntimeError(
                     f"characters.FIELDS names {field!r}, which this pane has "
@@ -833,6 +862,11 @@ class CharacterPane(QWidget):
                           if type(choice) is type(value) and choice == value),
                          slot.choices.index(slot.default))
             self.__garment_boxes[slot.name].setCurrentIndex(index)
+
+        chosen = document.get("build", model.DEFAULT_BUILD)
+        if chosen not in model.BUILD_NAMES:
+            chosen = model.DEFAULT_BUILD
+        self.__build.setCurrentIndex(model.BUILD_NAMES.index(chosen))
 
         self.__tags.setText(str(document.get("tags", "")))
         self.__anchor.setText(str(document.get("anchor", "")))

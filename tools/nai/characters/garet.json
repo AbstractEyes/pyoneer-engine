@@ -1,0 +1,26 @@
+{
+  "subject": "boy",
+  "build": "long",
+  "tags": "blonde hair, short hair, wide-brimmed hat, brown hat, mouth mask, covered mouth, brown trenchcoat, long coat, open coat, brass belt, tan pants, brown boots",
+  "anchor": "blonde hair, wide-brimmed hat, mouth mask, brown trenchcoat, brown boots",
+  "garments": {
+    "hat": "brim",
+    "cape": false,
+    "neck": "none",
+    "legwear": "pants",
+    "footwear": "boots",
+    "coat": true,
+    "face": "mask"
+  },
+  "colours": {
+    "skin": "#F0C890",
+    "hair": "#C8A028",
+    "tunic": "#4A3A2A",
+    "belt": "#8C6414",
+    "pants": "#9C7A50",
+    "boots": "#7A5030",
+    "brim": "#8C5A28",
+    "coat": "#5A2814",
+    "mask": "#0A0000"
+  }
+}
