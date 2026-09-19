@@ -55,7 +55,7 @@ RULES -- every refusal is a ValueError naming the file and the field
   count or a refused word is found anywhere inside a tag, not only as the
   whole tag. Refused, each by its own name (`TAG_PROBLEMS`):
     - a character outside printable ASCII 0x20-0x7E (a NUL, a newline, a tab);
-    - `rating:` however spaced (model.RATING_RX);
+    - `rating:` however spaced or cased (model.rating_tag_in);
     - a count (`1boy`, `2 girls`, `10girls`, `6+others`, `multiple girls`,
       `no humans`, `brown hair 2girls`, `{2girls}`), COUNT_RX;
     - a tag of model.QUALITY_TAIL as a phrase (`{masterpiece}`);
@@ -112,16 +112,16 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Iterable
+from typing import Callable, Iterable
 
 from tools.nai.model import (BACKGROUND_RGB, DEFAULT_BUILD,
                              DEFAULT_GARMENTS,
                              DEFAULT_SUBJECT, FAR_SHADE, GARMENT_SLOTS,
                              INNER_SHADE, NEGATIVE, OUTLINE_RGB, PARTS,
-                             QUALITY_TAIL, RATING_RX, SUBJECTS,
+                             QUALITY_TAIL, SUBJECTS,
                              SUBJECT_NAMES, Garments, Identity,
                              build_problem, garment_parts, garment_problem,
-                             garments_text, shade)
+                             garments_text, rating_tag_in, shade)
 from tools.nai.model import subject as subject_named
 
 CHARACTERS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -239,7 +239,7 @@ def _phrase_rx(phrases) -> re.Pattern:
         for phrase in sorted(phrases, key=len, reverse=True)) + r")\b")
 
 
-_QUALITY_RX = _phrase_rx(t for t in QUALITY_TAGS if not RATING_RX.search(t))
+_QUALITY_RX = _phrase_rx(t for t in QUALITY_TAGS if not rating_tag_in(t))
 _RATING_WORD_RX = _phrase_rx(RATING_WORDS)
 _VIEW_RX = _phrase_rx(VIEW_PHRASES)
 _SUBJECT_RX: dict[str, re.Pattern] = {
@@ -268,7 +268,7 @@ def tag_problem(tag: str, subject: str = DEFAULT_SUBJECT) -> str | None:
     """Why `tag` may not stand in a `subject` identity or character caption.
 
     A key of TAG_PROBLEMS, the first that applies, in its order: a character
-    of `tag` outside 0x20-0x7E; model.RATING_RX in the lower-cased tag; and,
+    of `tag` outside 0x20-0x7E; model.rating_tag_in; and,
     on `judged(tag)`, COUNT_RX found anywhere, a QUALITY_TAIL tag as a whole
     phrase, a RATING_WORDS word, a VIEW_PHRASES phrase, a tag equal to one
     of NEGATIVE_TAGS, and a SUBJECT_WORDS word of ANOTHER subject as a whole
@@ -280,7 +280,7 @@ def tag_problem(tag: str, subject: str = DEFAULT_SUBJECT) -> str | None:
     subject_named(subject)
     if any(not " " <= ch <= "~" for ch in tag):
         return "control character"
-    if RATING_RX.search(tag.lower()):
+    if rating_tag_in(tag):
         return "rating tag"
     core = judged(tag)
     if COUNT_RX.search(core):
@@ -540,24 +540,37 @@ def _colours(source: str, value: object,
     return tuple(out)
 
 
-def parse(raw: bytes, source: str) -> Identity:
-    """The Identity a character file's bytes describe, by the module RULES;
-    ValueError naming `source` and the field otherwise."""
+def strict_json(raw: bytes,
+                refused: Callable[[str | None, str], ValueError]) -> object:
+    """THE ONE DECODE RULE for a data file this package reads: UTF-8 (a BOM
+    allowed), valid JSON, and no key written twice at any depth, because
+    JSON keeps only the last and a file that says two things means neither.
+
+    Returns whatever JSON value the bytes hold; the caller says which one it
+    wants. `refused(key, message)` builds the error, so the message names the
+    caller's own file: a character file here, a request file in `spec` --
+    one rule, two routes, and a mutation of it turns both red.
+    """
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
-        raise _refused(source, None, f"is not UTF-8 ({exc.reason} at byte "
-                                     f"{exc.start})") from exc
+        raise refused(None, f"is not UTF-8 ({exc.reason} at byte "
+                            f"{exc.start})") from exc
     try:
-        doc = json.loads(text, object_pairs_hook=_no_duplicates)
+        return json.loads(text, object_pairs_hook=_no_duplicates)
     except _DuplicateKey as exc:
-        raise _refused(source, str(exc), "duplicate key: a key is written "
-                                         "twice, and JSON keeps only the "
-                                         "last") from exc
+        raise refused(str(exc), "duplicate key: a key is written twice, and "
+                                "JSON keeps only the last") from exc
     except json.JSONDecodeError as exc:
-        raise _refused(source, None, f"is not valid JSON: {exc.msg} at line "
-                                     f"{exc.lineno} column {exc.colno}"
-                       ) from exc
+        raise refused(None, f"is not valid JSON: {exc.msg} at line "
+                            f"{exc.lineno} column {exc.colno}") from exc
+
+
+def parse(raw: bytes, source: str) -> Identity:
+    """The Identity a character file's bytes describe, by the module RULES;
+    ValueError naming `source` and the field otherwise."""
+    doc = strict_json(raw, lambda field, message:
+                      _refused(source, field, message))
     if not isinstance(doc, dict):
         raise _refused(source, None, f"must be one JSON object with the "
                                      f"fields {REQUIRED_FIELDS}, got "

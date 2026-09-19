@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written 2026-09-17 from the tools/nai contract docstrings and the NovelAI research brief; no command here has been run against NovelAI yet, so every cost claim says in place whether it is proven, and the baseline sprites were measured by the commands in their CREDITS.md. The build axis, the gunslinger garments and the garet example were added 2026-09-17; every number in them was measured off data/graphics/tilesets/Characters/~Garet.png or off a render, and tools/check_nai.py asserts the ones that are invariants. -->
+<!-- pyoneer-stamp: hand-written 2026-09-17 from the tools/nai contract docstrings and the NovelAI research brief; no command here has been run against NovelAI yet, so every cost claim says in place whether it is proven, and the baseline sprites were measured by the commands in their CREDITS.md. The build axis, the gunslinger garments and the garet example were added 2026-09-17; every number in them was measured off data/graphics/tilesets/Characters/~Garet.png or off a render, and tools/check_nai.py asserts the ones that are invariants. Request files (plan-request, run-request, request-catalog) were added 2026-09-19 and were run offline only, against a recording transport, by tools/check_nai.py section 8c. -->
 
 # NovelAI sprites — side-scroller strips on the Opus free tier
 
@@ -12,6 +12,7 @@ Questions that land here:
 - *"is this outfit a data file or mannequin code"*
 - *"how do I change a character's proportions"* / *"his legs are too short"*
 - *"where do the reference sprites come from"*
+- *"how do I send part of an image to NovelAI"* / *"what is a request file"*
 
 ## What it is for
 
@@ -169,9 +170,9 @@ The value lasts for that window and whatever it starts. `echo $env:NAI_KEY`,
 ## Commands
 
 From the repo root: `.venv/Scripts/python.exe -m tools.nai <command>`. Exit 0
-ok, 1 error, 2 refused, 3 strip rejected. Only `run`, `infill` and `probe` send,
-at most once each, printing the ledger id, both balances and the delta. With no
-`--seed`, the chosen seed is printed before sending.
+ok, 1 error, 2 refused, 3 strip rejected. Only `run`, `infill`, `run-request`
+and `probe` send, at most once each, printing the ledger id, both balances and
+the delta. With no `--seed`, the chosen seed is printed before sending.
 
 | command | network | example |
 |---|---|---|
@@ -180,6 +181,9 @@ at most once each, printing the ledger id, both balances and the delta. With no
 | `plan` | none: a dry run that prints the request and every offline guard verdict | `plan walk --action img2img --seed 1234567` |
 | `run` | one generate or img2img | `run walk --action generate --seed 1234567 --round 1 --lever seed` |
 | `infill` | one infill of one cell | `infill walk --cell 2 --from data/nai/blobs/<sha256>.png` |
+| `plan-request` | none: `plan` for a request file, any action | `plan-request editor/requests/0012-nai-garet-head/request.json` |
+| `run-request` | the one request a request file describes | `run-request editor/requests/0012-nai-garet-head/request.json` |
+| `request-catalog` | none: the request-file format, limits, defaults and form, as JSON | `request-catalog` |
 | `probe` | none without the flag, which prints the worst case | `probe img2img` |
 | `pixelize` | none | `pixelize data/nai/blobs/<sha256>.png --recipe walk` |
 | `ledger` | none: the rows, then the two accounting figures | `ledger --last 5` |
@@ -194,6 +198,58 @@ re-pass on an accepted strip instead of the mannequin init. The ledger's
 after 2 chained passes and go back to the mannequin. For later strips, give
 `pixelize` the walk's reference palette with `--palette`. `render` and
 `pixelize` never overwrite a file whose bytes differ.
+
+## Request files: a slice from another tool
+
+A recipe draws a whole strip. To send **part of an image**, such as the head a
+selection covers in the Pioneer Pixel Editor, a tool writes the request as a
+file and a human runs it. The tool never sends anything itself. A second
+client on the same login would spend where [the books](#the-books) see only an
+unexplained fall, so there is still one client: this one.
+
+```
+editor/requests/0012-nai-garet-head/     gitignored, numbered like relay bundles
+    request.json      format "pyoneer.nai.request", version 1
+    init.png          the canvas img2img or infill starts from
+    mask.png          infill only: one white rectangle on black
+    source.png        the slice at 1x, for a person; never read
+    README.md         the two command lines
+```
+
+- **The same builder, guard and send.** `plan-request` prints exactly what
+  `plan` prints for the same request, and `run-request` sends through
+  `run.run_request`, so the file route has no rules of its own about money.
+  29 steps, an area over 1,048,576 px or a width off the 64 px grid all load
+  from a file and are refused by the guard's own condition number.
+- **The same proofs.** img2img and infill from a file stay refused, by
+  condition 1, until your own `probe` has written a proof row. A file does not
+  skip the probe.
+- **What a file may say** is decided in
+  [`tools/nai/spec.py`](../tools/nai/spec.py), and its refusals name the file
+  and the key:
+  - Keys follow the action. Each one is written out and nothing is defaulted.
+  - `prompt` is written without the quality tail. The tool appends it, so
+    `rating:general` still closes every base caption, and a prompt that
+    already carries a rating tag is refused however it is cased or spaced
+    (`Rating:General`, `rating :explicit`). `model.rating_tag_in` is that one
+    rule; the recipes, the character files, this loader and the guard all
+    call it.
+  - Every value passes the rule the recipes use: the strength band, the noise
+    range, the one source-image rule (a transparent pixel is refused, never
+    flattened) and the one mask shape.
+  - A file has no key for the sampler, the schedule or any fixed parameter.
+    The route sends what every recipe sends.
+- **The ledger row.** `strip` is empty. `round`, `phase` and `lever` come from
+  the file when it writes them. For infill, the mask's rectangle is recorded
+  as `target_rect`, so the row says whether NovelAI changed anything outside
+  it, and `run-request` writes the local composite as `infill` does.
+- **`request-catalog`** prints NovelAI's form as this route fills it:
+  - every control, in NovelAI's order;
+  - whether it is editable, capped, derived or locked, and why;
+  - every limit and default.
+
+  The Pioneer Pixel Editor generates its `design/novelai.json` from this
+  output, so its window cannot drift from the guard.
 
 ## Changing the outfit
 
@@ -226,7 +282,7 @@ before anything is built, with a message naming the file and the field:
 - tags are printable ASCII (no tab, newline or NUL) and comma-separated,
   with no empty tag; spacing around the commas does not matter
 - no count (`1boy`, `2 girls`, `multiple girls`, `no humans`), no `rating:`
-  tag and no quality-tail tag (`very aesthetic`, `masterpiece`, `no text`),
+  tag however cased or spaced, and no quality-tail tag (`very aesthetic`, `masterpiece`, `no text`),
   in either field: the recipe writes those once, into the base caption
 - no rating word (`nsfw`, `explicit`, `nude`, ...) and no view that fights
   the recipe's side view (`facing left`, `from behind`, `facing viewer`,

@@ -141,6 +141,7 @@ CLEARANCE: dict[str, str] = {
     "run": PLAN_CLEARED,
     "infill": NO_DRY_RUN,
     "account": NO_DRY_RUN,
+    "run-request": NEVER_ARMED,
     "probe": NEVER_ARMED,
 }
 """Every sending subcommand and what must be true before it may be armed.
@@ -150,7 +151,9 @@ catching is a rule applied to the route that ships and not to its sibling.
 `run` is the one `plan` can judge. `infill` has no `plan --action infill`
 in `tools/nai/cli.py`, and `account` builds no request, so neither can be
 cleared by a dry run -- the banner says so rather than pretending. `probe`
-is never composed or armed by this window.
+is never composed or armed by this window. Nor is `run-request`: a request
+FILE is the Pioneer Pixel Editor's route (`tools/nai/spec.py`), dry-run by
+`plan-request` and armed there, and this window composes no request file.
 """
 
 if set(CLEARANCE) != set(request_pane.SENDING_SUBCOMMANDS):

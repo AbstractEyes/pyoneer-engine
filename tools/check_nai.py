@@ -160,6 +160,26 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
      the loader or the budget refuses exits 1 before a mannequin is drawn,
      and the default render file and sprites directory differ per
      character, each command printing the character's name.
+ 8c. request files (`spec`, `plan-request`, `run-request`,
+     `request-catalog`): a file stating a recipe's generate, img2img or
+     infill builds that recipe's body key for key; a slice loads with ONE
+     tail, the pipeline's sampler and schedule, its own rectangle as
+     target_rect, and its images read beside it or inline; 29 steps, an
+     area over the cap and a width off the grid LOAD and are refused by the
+     guard's own condition in `plan-request`; every other rule -- an
+     unknown, missing or stray key, a bad seed, band, noise, prompt,
+     character, path, image or mask, and bytes that are not a JSON object
+     -- is refused naming the file and the key; the shared band, decode
+     and mask rules are proved to be recipes', characters' and masks' own
+     by mutating each; the rating tag is ONE rule, `model.rating_tag_in`,
+     however cased or spaced: no module but model.py names RATING_RX, the
+     recipe, character, file and guard routes all call it, and a second
+     rating tag before the closing tail is guard condition 7's refusal;
+     `plan-request` prints exactly `plan`'s judgement for
+     the same request; `run-request` sends ONCE, needs the author's proof
+     for img2img, composites an infill and records differs_outside_mask;
+     `request-catalog` prints the catalog, and the form names every key a
+     person sets and locks every control a file has no key for.
 
 State lives in a temporary directory, never under data/nai/ or data/art/;
 the check asserts at the end that it did not create data/nai/.
@@ -168,6 +188,7 @@ from __future__ import annotations
 
 import _bootstrap  # noqa: F401  (must precede the tools.nai imports)
 
+import ast
 import base64
 import contextlib
 import copy
@@ -241,7 +262,7 @@ from PIL import Image, ImageChops, ImageFilter  # noqa: E402
 
 import tools.nai  # noqa: E402
 from tools.nai import (characters, cli, guard, mannequin, masks,  # noqa: E402
-                       model, post, recipes, request, run)
+                       model, post, recipes, request, run, spec)
 from tools.nai import transport as tp  # noqa: E402
 from tools.nai.model import (BACKGROUND_RGB, DEFAULT_COLOURS,  # noqa: E402
                              DEFAULT_GARMENTS, DEFAULT_SUBJECT, GENERATE_URL,
@@ -3702,6 +3723,20 @@ try:
                 dataclasses.replace(REQ_GEN.frames[0],
                                     caption="boy, rating:general"),)
                 + REQ_GEN.frames[1:])))
+    refused("...and capitalised, Rating:General, it is refused too", 7,
+            "carries a rating tag",
+            request.build_body(dataclasses.replace(REQ_GEN, frames=(
+                dataclasses.replace(REQ_GEN.frames[0],
+                                    caption="boy, Rating:General"),)
+                + REQ_GEN.frames[1:])))
+
+    def doubled(b):
+        text = "Rating:general, " + b["input"]
+        b["input"] = text
+        b["parameters"]["v4_prompt"]["caption"]["base_caption"] = text
+    refused("a second rating tag before the closing tail is refused", 7,
+            "carries a rating tag before its closing",
+            edited(BODY_GEN, doubled))
     refused("a base caption not closed by rating:general is refused", 7,
             "does not end with",
             request.build_body(dataclasses.replace(
@@ -6601,6 +6636,583 @@ try:
                "low > high + allowed:", "    if False:")],
              lambda g: str(outcome(lambda: g.open_boundary(FORGED)))[:30],
              tag="allowance_unbounded")
+
+    # =======================================================================
+    print("\n8c. request files: another way in, the same builder, guard and "
+          "send")
+    # =======================================================================
+    REQUEST_FILES = os.path.join(SCRATCH, "request_files")
+    os.makedirs(REQUEST_FILES)
+    TAIL = ", very aesthetic, masterpiece, no text, rating:general"
+    DROP = object()
+
+    def request_file(doc=None, *, raw=None, images=None):
+        """A request file in a folder of its own, with `images` (name ->
+        bytes) written beside it; its path."""
+        folder = tempfile.mkdtemp(dir=REQUEST_FILES)
+        for name, data in (images or {}).items():
+            with open(os.path.join(folder, name), "wb") as handle:
+                handle.write(data)
+        path = os.path.join(folder, "request.json")
+        with open(path, "wb") as handle:
+            handle.write(raw if raw is not None
+                         else json.dumps(doc, indent=1).encode("utf-8"))
+        return path
+
+    def as_file(req):
+        """The request file that states exactly what a recipe's `req`
+        states, and the images it names."""
+        doc = {"format": "pyoneer.nai.request", "version": 1,
+               "action": req.action,
+               "variant": "curated" if "curated" in req.model else "full",
+               "width": req.width, "height": req.height, "seed": req.seed,
+               "steps": req.steps, "scale": req.scale,
+               "prompt": req.base_caption[:-len(TAIL)],
+               "negative": req.negative,
+               "characters": [{"prompt": f.caption, "uc": f.uc,
+                               "center": list(f.center)} for f in req.frames]}
+        images = {}
+        if req.action == "img2img":
+            doc.update(image="init.png", strength=req.strength,
+                       noise=req.noise, color_correct=req.color_correct)
+            images["init.png"] = req.image_png
+        elif req.action == "infill":
+            doc.update(image="init.png", mask="mask.png",
+                       inpaint_strength=req.inpaint_strength, noise=req.noise)
+            images.update({"init.png": req.image_png,
+                           "mask.png": req.mask_png})
+        return doc, images
+
+    expect("every recipe request closes its base caption with the tail a "
+           "request file leaves to tools.nai (brief 3.2, pinned here)",
+           [req.base_caption.endswith(TAIL) for _l, req, _b in BODIES],
+           [True, True, True])
+    for label, req, body in BODIES:
+        doc, images = as_file(req)
+        loaded = outcome(lambda: spec.load(request_file(doc, images=images)))
+        expect(f"a request file stating the recipe's {label} builds the SAME "
+               f"body as recipes.make_request, key for key",
+               getattr(loaded, "request", None) is not None
+               and request.build_body(loaded.request) == body, True)
+    doc, images = as_file(REQ_INF)
+    loaded = spec.load(request_file(doc, images=images))
+    expect("...and the infill file's mask rectangle is cell 2's, as the "
+           "ledger's target_rect, exactly what context_for gives the recipe",
+           (loaded.mask_rect, loaded.context.target_rect),
+           (rect2, recipes.context_for("walk", cell=2).target_rect))
+
+    # -- a slice: the shape the Pioneer Pixel Editor writes -------------------
+    SLICE_W, SLICE_H = 384, 512
+    SLICE_RECT = (48, 64, 336, 448)
+    slice_image = Image.new("RGB", (SLICE_W, SLICE_H), (128, 128, 128))
+    slice_image.paste((90, 60, 30), SLICE_RECT)
+    SLICE_PNG = png_bytes(slice_image)
+
+    def mask_png(*rects, mode="RGBA", size=(SLICE_W, SLICE_H)):
+        """Black, with each rect white: pinned here, not model's colours."""
+        mask = Image.new(mode, size, (0, 0, 0, 255)[:len(mode)])
+        for rect in rects:
+            mask.paste((255, 255, 255, 255)[:len(mode)], rect)
+        return png_bytes(mask)
+    SLICE_MASK = mask_png(SLICE_RECT)
+    SLICE_IMAGES = {"init.png": SLICE_PNG, "mask.png": SLICE_MASK}
+
+    def slice_doc(action, /, **changes):
+        """A legal slice for `action`, then `changes` (DROP removes a key).
+        Positional-only, so a change may itself be spelled `action=`."""
+        doc = {"format": "pyoneer.nai.request", "version": 1,
+               "action": action, "variant": "full",
+               "width": SLICE_W, "height": SLICE_H, "seed": SEED,
+               "steps": 23, "scale": 5,
+               "prompt": "pixel art, 1boy, full body, from side, grey "
+                         "background",
+               "negative": "nsfw, lowres",
+               "characters": [{"prompt": "boy, brown hair, red scarf",
+                               "uc": "", "center": [0.5, 0.5]}],
+               "label": "a slice",
+               "source": {"app": "check_nai", "rect": [6, 8, 36, 48]}}
+        if action == "img2img":
+            doc.update(image="init.png", strength=0.45, noise=0.05,
+                       color_correct=False)
+        elif action == "infill":
+            doc.update(image="init.png", mask="mask.png",
+                       inpaint_strength=0.45, noise=0.0)
+        for key, value in changes.items():
+            if value is DROP:
+                doc.pop(key, None)
+            else:
+                doc[key] = value
+        return doc
+
+    def slice_file(action, /, images=None, **changes):
+        return request_file(slice_doc(action, **changes),
+                            images=SLICE_IMAGES if images is None else images)
+
+    generated = spec.load(slice_file("generate"))
+    expect("a generate slice loads: ONE tail appended, the V4.5 model, the "
+           "pipeline's sampler and schedule, the model's 'none' preset, no "
+           "image, no rectangle, no strip, its label (pinned from brief 1.5)",
+           (generated.request.base_caption, generated.request.model,
+            generated.request.sampler, generated.request.noise_schedule,
+            generated.request.ucPreset, generated.request.image_png,
+            generated.mask_rect, generated.context.strip, generated.label),
+           ("pixel art, 1boy, full body, from side, grey background" + TAIL,
+            "nai-diffusion-4-5-full", "k_euler_ancestral", "karras", 4, None,
+            None, None, "a slice"))
+    expect("...a trailing comma in the prompt still gives one ', ' before the "
+           "tail, never ', , '",
+           spec.load(slice_file(
+               "generate", prompt="pixel art, 1boy ,  ")).request.base_caption,
+           "pixel art, 1boy" + TAIL)
+    inpainted = spec.load(slice_file("infill", variant="curated"))
+    expect("an infill slice loads: the curated inpainting model and its "
+           "preset, the mask's own rectangle as target_rect, image and mask "
+           "exactly as written",
+           (inpainted.request.model, inpainted.request.ucPreset,
+            inpainted.mask_rect, inpainted.context.target_rect,
+            inpainted.request.image_png == SLICE_PNG,
+            inpainted.request.mask_png == SLICE_MASK,
+            inpainted.request.inpaint_strength, inpainted.request.noise),
+           ("nai-diffusion-4-5-curated-inpainting", 3, SLICE_RECT, SLICE_RECT,
+            True, True, 0.45, 0.0))
+    ledgered = spec.load(slice_file("generate", round=3, phase="slices",
+                                    lever="L4"))
+    expect("round, phase and lever reach the LedgerContext; strip stays None",
+           (ledgered.context.round, ledgered.context.phase,
+            ledgered.context.lever_changed, ledgered.context.strip),
+           (3, "slices", "L4", None))
+    inline = spec.load(slice_file(
+        "infill", images={},
+        image="base64:" + base64.b64encode(SLICE_PNG).decode("ascii"),
+        mask="base64:" + base64.b64encode(SLICE_MASK).decode("ascii")))
+    expect("the same images carried inline as base64: the same body",
+           request.build_body(inline.request)
+           == request.build_body(spec.load(slice_file("infill")).request),
+           True)
+    opaque = spec.load(slice_file(
+        "img2img", images={"init.png": png_bytes(slice_image.convert("RGBA"))}))
+    expect("an opaque RGBA image is accepted and sent as RGB, pixel for pixel",
+           (opened(opaque.request.image_png).mode,
+            opened(opaque.request.image_png).tobytes()
+            == slice_image.tobytes()), ("RGB", True))
+
+    # -- what the GUARD decides is not decided here ---------------------------
+    expect("29 steps, 1,114,112 px and a width off the 64 grid all LOAD: "
+           "conditions 4 and 3 are the guard's, judged by plan-request below",
+           (spec.load(slice_file("generate", steps=29)).request.steps,
+            outcome(lambda: spec.load(slice_file(
+                "generate", width=1088, height=1024)).request.width),
+            outcome(lambda: spec.load(slice_file(
+                "generate", width=100)).request.width)),
+           (29, 1088, 100))
+
+    # -- every refusal names the file and the key -----------------------------
+    transparent = slice_image.convert("RGBA")
+    transparent.putpixel((0, 0), (128, 128, 128, 0))
+    wrong_size = png_bytes(Image.new("RGB", (SLICE_W, SLICE_W), (1, 2, 3)))
+    seven = [{"prompt": "boy", "uc": "", "center": [x, y]}
+             for x in (0.1, 0.3, 0.5, 0.7) for y in (0.1, 0.3)][:7]
+    REFUSED_FILES = (
+        ("an unknown key: a sampler", "generate", None,
+         {"sampler": "k_dpmpp_2m"}, ("key 'sampler'", "unknown key(s)")),
+        ("a missing seed", "generate", None, {"seed": DROP},
+         ("key 'seed'", "missing key(s) ['seed']")),
+        ("another format", "generate", None, {"format": "pyoneer.recipe"},
+         ("key 'format'",)),
+        ("version 2", "generate", None, {"version": 2},
+         ("key 'version'", "reads version 1")),
+        ("an unknown action", "generate", None, {"action": "upscale"},
+         ("key 'action'",)),
+        ("a V5 variant", "generate", None, {"variant": "v5"},
+         ("key 'variant'",)),
+        ("generate carrying an image", "generate", None,
+         {"image": "init.png"}, ("key 'image'", "do not belong to generate")),
+        ("img2img carrying a mask", "img2img", None, {"mask": "mask.png"},
+         ("key 'mask'", "do not belong to img2img")),
+        ("img2img without its strength", "img2img", None,
+         {"strength": DROP}, ("key 'strength'", "nothing is defaulted")),
+        ("infill without its noise", "infill", None, {"noise": DROP},
+         ("key 'noise'", "nothing is defaulted")),
+        ("a seed of 1", "generate", None, {"seed": 1},
+         ("key 'seed'", "[2, 4294967287]")),
+        ("a seed past the top", "generate", None, {"seed": 4294967288},
+         ("key 'seed'", "[2, 4294967287]")),
+        ("a seed of true", "generate", None, {"seed": True},
+         ("key 'seed'", "must be an int")),
+        ("steps as a string", "generate", None, {"steps": "23"},
+         ("key 'steps'", "steps must be an int")),
+        ("a scale of 0", "generate", None, {"scale": 0},
+         ("key 'scale'", "scale must be > 0")),
+        ("img2img strength 0.56", "img2img", None, {"strength": 0.56},
+         ("key 'strength'", "outside the author's band")),
+        ("img2img strength 0.34", "img2img", None, {"strength": 0.34},
+         ("key 'strength'", "outside the author's band")),
+        ("infill strength 0.9", "infill", None, {"inpaint_strength": 0.9},
+         ("key 'inpaint_strength'", "(full repaint)")),
+        ("noise 1.0", "img2img", None, {"noise": 1.0},
+         ("key 'noise'", "noise must lie in")),
+        ("color_correct 1", "img2img", None, {"color_correct": 1},
+         ("key 'color_correct'", "must be a bool")),
+        ("a prompt carrying rating:general", "generate", None,
+         {"prompt": "pixel art, rating:general"},
+         ("key 'prompt'", "rating tag")),
+        ("a prompt carrying Rating:General, capitalised", "generate", None,
+         {"prompt": "pixel art, Rating:General"},
+         ("key 'prompt'", "rating tag")),
+        ("a character prompt carrying RATING :explicit", "generate", None,
+         {"characters": [{"prompt": "boy, RATING :explicit", "uc": "",
+                          "center": [0.5, 0.5]}]},
+         ("key 'characters[0]'", "'prompt' carries a rating tag")),
+        ("a blank prompt", "generate", None, {"prompt": "  "},
+         ("key 'prompt'", "empty")),
+        ("a prompt of commas", "generate", None, {"prompt": " , ,"},
+         ("key 'prompt'", "nothing but commas")),
+        ("a negative that is not text", "generate", None, {"negative": None},
+         ("key 'negative'", "must be a string")),
+        ("no characters", "generate", None, {"characters": []},
+         ("key 'characters'", "1 to 6")),
+        ("seven characters", "generate", None, {"characters": seven},
+         ("key 'characters'", "1 to 6")),
+        ("a center off the grid", "generate", None,
+         {"characters": [{"prompt": "boy", "uc": "", "center": [0.4, 0.5]}]},
+         ("key 'characters[0]'", "'center'")),
+        ("two characters on one cell", "generate", None,
+         {"characters": [{"prompt": "boy", "uc": "", "center": [0.5, 0.5]},
+                         {"prompt": "girl", "uc": "",
+                          "center": [0.5, 0.5]}]},
+         ("key 'characters[1]'", "shares the center")),
+        ("a character with a key of its own", "generate", None,
+         {"characters": [{"prompt": "boy", "uc": "", "center": [0.5, 0.5],
+                          "weight": 1}]},
+         ("key 'characters[0]'", "exactly")),
+        ("a rating tag in a character's UC", "generate", None,
+         {"characters": [{"prompt": "boy", "uc": "rating:explicit",
+                          "center": [0.5, 0.5]}]},
+         ("key 'characters[0]'", "'uc' carries a rating tag")),
+        ("an image path up a directory", "img2img", None,
+         {"image": os.path.join("..", "init.png")},
+         ("key 'image'", "not a bare file name")),
+        ("an image path into a folder", "img2img", None,
+         {"image": "images/init.png"},
+         ("key 'image'", "not a bare file name")),
+        ("an absolute image path", "img2img", None,
+         {"image": os.path.join(SCRATCH, "init.png")},
+         ("key 'image'", "not a bare file name")),
+        ("an image that is not there", "img2img", None, {"image": "gone.png"},
+         ("key 'image'", "cannot be read")),
+        ("an image that is not base64", "img2img", None,
+         {"image": "base64:not base64!"}, ("key 'image'", "not valid base64")),
+        ("an image of the wrong size", "img2img",
+         {"init.png": wrong_size}, {}, ("key 'image'", "384x512")),
+        ("an image with one transparent pixel", "img2img",
+         {"init.png": png_bytes(transparent)}, {},
+         ("key 'image'", "refused rather than flattened")),
+        ("a mask off the 8 px grid", "infill",
+         {"init.png": SLICE_PNG, "mask.png": mask_png((52, 64, 336, 448))},
+         {}, ("key 'mask'", "has an edge at 52")),
+        ("a mask with two rectangles", "infill",
+         {"init.png": SLICE_PNG,
+          "mask.png": mask_png((0, 0, 64, 64), (128, 128, 192, 192))},
+         {}, ("key 'mask'", "do not fill one rectangle")),
+        ("a mask in RGB", "infill",
+         {"init.png": SLICE_PNG, "mask.png": mask_png(SLICE_RECT,
+                                                      mode="RGB")},
+         {}, ("key 'mask'", "RGBA PNG")),
+        ("a mask that repaints nothing", "infill",
+         {"init.png": SLICE_PNG, "mask.png": mask_png()}, {},
+         ("key 'mask'", "repaints nothing")),
+        ("a label that is a number", "generate", None, {"label": 3},
+         ("key 'label'", "must be a string")),
+        ("a source that is a list", "generate", None, {"source": [1, 2]},
+         ("key 'source'", "must be an object")),
+        ("a negative round", "generate", None, {"round": -1},
+         ("key 'round'",)),
+        ("an empty phase", "generate", None, {"phase": ""},
+         ("key 'phase'",)),
+    )
+    for label, action, images, changes, fragments in REFUSED_FILES:
+        path = slice_file(action, images=images, **changes)
+        expect_raises(f"refused: {label}", ValueError,
+                      lambda p=path: spec.load(p),
+                      f"request file {os.path.normpath(path)}", *fragments)
+    for label, raw, fragment in (
+            ("bytes that are not UTF-8", b"\xff\xfe{}", "is not UTF-8"),
+            ("text that is not JSON", b"{\"format\": ", "is not valid JSON"),
+            ("a key written twice", b'{"seed": 2, "seed": 3}',
+             "duplicate key"),
+            ("a list, not an object", b"[]", "one JSON object")):
+        path = request_file(raw=raw)
+        expect_raises(f"refused: {label}", ValueError,
+                      lambda p=path: spec.load(p),
+                      f"request file {os.path.normpath(path)}", fragment)
+
+    # -- ONE RULE, TWO ROUTES: spec has no copy of its own --------------------
+    def spec_through(name, path):
+        """goes_red's call: load `path` with spec's `name` module replaced."""
+        def call(module):
+            with patched(spec, name, module):
+                result = outcome(lambda: spec.load(path))
+            return ("loads" if isinstance(result, spec.Spec)
+                    else str(result).split(": ", 2)[-1][:48])
+        return call
+    goes_red("...proved red: widen recipes' ONE img2img band and the file "
+             "route accepts 0.56 as well", "tools/nai/recipes.py",
+             [("    if not _in_band(strength):\n", "    if False:\n")],
+             spec_through("recipes",
+                          slice_file("img2img", strength=0.56)),
+             tag="spec_band")
+    goes_red("...proved red: let characters' ONE decode rule keep a duplicate "
+             "key and the request file loads with it",
+             "tools/nai/characters.py",
+             [("            raise _DuplicateKey(key)\n",
+               "            pass\n")],
+             spec_through("characters", request_file(
+                 raw=json.dumps(slice_doc("generate"))[:-1].encode("utf-8")
+                 + b', "seed": 7}')),
+             tag="spec_duplicates")
+    goes_red("...proved red: drop masks.rect_of's 8 px rule and an unaligned "
+             "mask loads", "tools/nai/masks.py",
+             [("        if edge % MASK_ALIGN:\n            raise ValueError("
+               "f\"the mask's rectangle (",
+               "        if False:\n            raise ValueError("
+               "f\"the mask's rectangle (")],
+             spec_through("masks", slice_file(
+                 "infill", images={"init.png": SLICE_PNG,
+                                   "mask.png": mask_png((52, 64, 336, 448))})),
+             tag="spec_mask_grid")
+
+    # -- ONE RATING RULE, EVERY ROUTE: model.rating_tag_in is asked, never
+    # RATING_RX itself. The file route once searched the raw text, so
+    # "Rating:General" passed spec and the guard and went out as a second
+    # rating tag.
+    def rating_rule_use(text: str) -> tuple[bool, bool]:
+        """(names RATING_RX, calls rating_tag_in) in Python source `text`."""
+        names = calls = False
+        for node in ast.walk(ast.parse(text)):
+            if (isinstance(node, ast.Name) and node.id == "RATING_RX"
+                    or isinstance(node, ast.Attribute)
+                    and node.attr == "RATING_RX"):
+                names = True
+            if isinstance(node, ast.Call):
+                func = node.func
+                called = (func.id if isinstance(func, ast.Name)
+                          else func.attr if isinstance(func, ast.Attribute)
+                          else "")
+                calls = calls or called == "rating_tag_in"
+        return names, calls
+
+    def source_of(relpath: str) -> str:
+        with io.open(os.path.join(_bootstrap.REPO_ROOT, relpath),
+                     encoding="utf-8") as handle:
+            return handle.read()
+
+    nai_modules = sorted(
+        f"tools/{package}/{name}" for package in ("nai", "nai_ui")
+        for name in os.listdir(os.path.join(_bootstrap.REPO_ROOT, "tools",
+                                            package))
+        if name.endswith(".py"))
+    expect("no module under tools/nai or tools/nai_ui but model.py names "
+           "RATING_RX", [rel for rel in nai_modules
+                         if rel != "tools/nai/model.py"
+                         and rating_rule_use(source_of(rel))[0]], [])
+    rating_routes = ("tools/nai/model.py", "tools/nai/recipes.py",
+                     "tools/nai/characters.py", "tools/nai/spec.py",
+                     "tools/nai/guard.py")
+    expect("...and the recipe, the character file, the request file and guard "
+           "condition 7 all ask rating_tag_in",
+           [rel for rel in rating_routes
+            if not rating_rule_use(source_of(rel))[1]], [])
+    expect("...proved red: a route that searches RATING_RX itself again is "
+           "seen", rating_rule_use(source_of("tools/nai/spec.py").replace(
+               "rating_tag_in(prompt)", "RATING_RX.search(prompt)")),
+           (True, True))
+    goes_red("...proved red: search the raw text in rating_tag_in and "
+             "Rating:General is no rating tag", "tools/nai/model.py",
+             [("    return RATING_RX.search(text.lower()) is not None\n",
+               "    return RATING_RX.search(text) is not None\n")],
+             lambda m: m.rating_tag_in("pixel art, Rating:General"),
+             tag="rating_case")
+
+    # -- through the CLI --------------------------------------------------------
+    def from_model(out):
+        """plan's printout from its `model` line on: the judgement itself."""
+        at = out.find("\nmodel ")
+        return out[at:] if at >= 0 else None
+    doc, images = as_file(REQ_GEN)
+    walk_file = request_file(doc, images=images)
+    _code, plan_out, _err = cli_call(plan_argv, None,
+                                     scratch_state("plan_beside_request"))
+    NoTransport.built = 0
+    request_plan_state = scratch_state("plan_request")
+    code, out, err = cli_call(["plan-request", walk_file], None,
+                              request_plan_state)
+    expect("plan-request of the file stating the walk's generate prints "
+           "exactly what plan prints from the model line on -- request sha256 "
+           "and every verdict -- exit 0, no transport built, nothing written",
+           (code, from_model(out) is not None
+            and from_model(out) == from_model(plan_out),
+            NoTransport.built, f"seed          {SEED} (the file's)" in out,
+            os.path.exists(request_plan_state.root)),
+           (0, True, 0, True, False))
+    for label, changes, condition in (
+            ("29 steps", {"steps": 29}, 4),
+            ("1,114,112 px", {"width": 1088, "height": 1024}, 3),
+            ("a width of 100", {"width": 100}, 3)):
+        code, out, err = cli_call(
+            ["plan-request", slice_file("generate", **changes)], None,
+            scratch_state("plan_request_guard"))
+        failed = [line.split("[")[0].strip() for line in out.splitlines()
+                  if "[FAIL]" in line]
+        expect(f"plan-request of {label}: REFUSED offline by condition "
+               f"{condition} alone, exit 2",
+               (code, "REFUSED offline" in out, failed),
+               (2, True, [str(condition)]))
+    code, out, err = cli_call(
+        ["plan-request", slice_file("img2img")], None,
+        scratch_state("plan_request_unproven"))
+    expect("plan-request of an img2img slice with no proof row: condition 1 "
+           "FAILS offline, exit 2 -- a file does not skip the probe",
+           (code, [line.split("[")[0].strip() for line in out.splitlines()
+                   if "[FAIL]" in line]), (2, ["1"]))
+    recorder = tp.RecordingTransport([sub(1000), zipped(), sub(1000)])
+    code, out, err = cli_call(
+        ["plan-request", slice_file("generate", sampler="k_dpmpp_2m")],
+        recorder, scratch_state("plan_request_refused"))
+    expect("plan-request of a file spec refuses: exit 1, the file and the key "
+           "on stderr, stdout empty, nothing asked of the transport",
+           (code, "request file" in err and "key 'sampler'" in err, out,
+            recorder.calls), (1, True, "", []))
+
+    SLICE_OUT = Image.new("RGB", (SLICE_W, SLICE_H), (10, 200, 10))
+    run_state = scratch_state("run_request")
+    generate_file = slice_file("generate", round=2, phase="slices",
+                               lever="L1")
+    recorder = tp.RecordingTransport([sub(1000), (200, {}, tp.fake_zip(
+        png_bytes(SLICE_OUT))), sub(1000)])
+    code, out, err = cli_call(["run-request", generate_file], recorder,
+                              run_state)
+    expect("run-request of a generate slice: GET, ONE POST, GET; the POSTed "
+           "body is build_body of what spec.load returns; one generation row "
+           "with strip None and the file's round, phase and lever; exit 0",
+           (code, [(c.method, c.url) for c in recorder.calls],
+            [p.body == request.build_body(spec.load(generate_file).request)
+             for p in recorder.posts],
+            [(r["kind"], r["strip"], r["round"], r["phase"],
+              r["lever_changed"]) for r in run_state.rows()]),
+           (0, [GET, POST, GET], [True],
+            [("generation", None, 2, "slices", "L1")]))
+    expect("...and it prints the ledger id, both balances and the output "
+           "path, like every sending command",
+           ["ledger id" in out, "balance       before 1000 -> after 1000"
+            in out, "output" in out], [True, True, True])
+    unproven_state = scratch_state("run_request_unproven")
+    recorder = tp.RecordingTransport([sub(1000), zipped(), sub(1000)])
+    code, out, err = cli_call(["run-request", slice_file("img2img")],
+                              recorder, unproven_state)
+    expect("run-request of an img2img slice with no proof row: one balance "
+           "read, NO POST, a refused row for condition 1, exit 2",
+           (code, [(c.method, c.url) for c in recorder.calls],
+            [(r["kind"], r["refusal_condition"])
+             for r in unproven_state.rows()]),
+           (2, [GET], [("refused", 1)]))
+
+    infill_request_state = scratch_state("run_request_infill")
+    code, out, err = cli_call(
+        ["probe", "infill", "--accept-max-2-anlas", "--seed", str(SEED)],
+        tp.RecordingTransport([sub(1000), zipped(), sub(1000)]),
+        infill_request_state)
+    expect("infill track for request files: the author's probe writes its "
+           "proof first", (code, [(p.action, p.model) for p in
+                                  infill_request_state.proofs()]),
+           (0, [("infill", MODEL_FULL_INPAINTING)]))
+    RETURNED_SLICE = Image.new("RGB", (SLICE_W, SLICE_H), (200, 30, 160))
+    recorder = tp.RecordingTransport([sub(1000), (200, {}, tp.fake_zip(
+        png_bytes(RETURNED_SLICE))), sub(1000)])
+    code, out, err = cli_call(["run-request", slice_file("infill")], recorder,
+                              infill_request_state)
+    kept = None
+    for line in out.splitlines():
+        if line.startswith("composite"):
+            with open(line.split(None, 1)[1], "rb") as handle:
+                kept = opened(handle.read()).convert("RGB")
+    want_kept = slice_image.copy()
+    want_kept.paste((200, 30, 160), SLICE_RECT)
+    last = infill_request_state.rows()[-1]
+    expect("run-request of an infill slice: ONE POST of the file's own image "
+           "and mask; the kept composite is the image with the RETURNED "
+           "rectangle; the row records its mask and that the return differed "
+           "outside it; exit 0",
+           (code, len(recorder.posts),
+            getattr(kept, "tobytes", lambda: None)() == want_kept.tobytes(),
+            last["mask_png_sha256"] == hashlib.sha256(SLICE_MASK).hexdigest(),
+            last["init_png_sha256"] == hashlib.sha256(SLICE_PNG).hexdigest(),
+            last["differs_outside_mask"]),
+           (0, 1, True, True, True, True))
+    faithful_slice = slice_image.copy()
+    faithful_slice.paste((200, 30, 160), SLICE_RECT)
+    recorder = tp.RecordingTransport([sub(1000), (200, {}, tp.fake_zip(
+        png_bytes(faithful_slice))), sub(1000)])
+    code, out, err = cli_call(["run-request", slice_file("infill")], recorder,
+                              infill_request_state)
+    expect("...and a return that changed only the rectangle is recorded as "
+           "not differing outside it",
+           (code, infill_request_state.rows()[-1]["differs_outside_mask"]),
+           (0, False))
+    goes_red("...proved red: without _print_composite's 2xx gate a refused "
+             "run-request would still try to composite",
+             "tools/nai/cli.py",
+             [("    if not (isinstance(status, int) and 200 <= status < 300\n"
+               "            and row.get(\"output_png_sha256\")):\n"
+               "        return\n",
+               "    if False:\n        return\n")],
+             lambda m: outcome(lambda: m._print_composite(
+                 {"http_status": None}, infill_request_state, SLICE_PNG,
+                 SLICE_RECT)),
+             tag="composite_gate")
+
+    NoTransport.built = 0
+    code, out, err = cli_call(["request-catalog"], None,
+                              scratch_state("request_catalog"))
+    catalog = outcome(lambda: json.loads(out))
+    expect("request-catalog prints spec.catalog() as JSON, exit 0, no "
+           "transport built",
+           (code, catalog == json.loads(json.dumps(spec.catalog())),
+            NoTransport.built), (0, True, 0))
+    limits = catalog["limits"] if isinstance(catalog, dict) else {}
+    expect("the catalog carries the free-tier numbers of brief 2.1-2.2 and "
+           "the grid of 4.1, pinned here",
+           (limits.get("max_area"), limits.get("max_steps"),
+            limits.get("dim_multiple"), limits.get("min_dim"),
+            limits.get("seed_min"), limits.get("seed_max"),
+            limits.get("max_characters"), limits.get("mask_align"),
+            catalog.get("grid") if isinstance(catalog, dict) else None,
+            catalog.get("background") if isinstance(catalog, dict) else None),
+           (1048576, 28, 64, 64, 2, 4294967287, 6, 8,
+            [0.1, 0.3, 0.5, 0.7, 0.9], "#808080"))
+    CONTROL_KEYS = {"variant", "prompt", "negative", "characters", "steps",
+                    "scale", "seed", "image", "mask", "strength", "noise",
+                    "color_correct", "inpaint_strength"}
+    form_keys = {row.key for row in spec.FORM if row.key}
+    expect("every request-file key a person sets is a row of the form, and "
+           "no row writes a key the file cannot hold",
+           (sorted(CONTROL_KEYS - form_keys),
+            sorted(form_keys - set(spec.FIELDS))), ([], []))
+    expect("every capped, derived or locked row says why, and no editable "
+           "row carries a reason; every state, column and action is legal",
+           [row.label for row in spec.FORM
+            if (row.state == spec.EDITABLE) == bool(row.reason)
+            or row.state not in spec.STATES
+            or row.column not in ("left", "right", "cost")
+            or not set(row.actions) <= set(model.ACTIONS)], [])
+    expect("the controls a request file has no key for are LOCKED on the "
+           "form: sampler, schedule, rescale, Variety+, Decrisper, SMEA, "
+           "batch, quality tags, presets, vibe, reference",
+           sorted(row.label for row in spec.FORM if row.state == spec.LOCKED),
+           sorted(["Model: V5 Full / Curated", "Add Quality Tags",
+                   "Undesired Content presets", "AI's Choice / Custom",
+                   "Vibe Transfer", "Precise Reference", "Number of Images",
+                   "Prompt Guidance Rescale", "Variety+", "Decrisper", "SMEA",
+                   "Sampler", "Noise Schedule", "Overlay Original Image"]))
 
     print("\n  mutation table -- each mutant compiled from the shipped file, "
           "its mutated text found there exactly once:")

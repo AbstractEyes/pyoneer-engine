@@ -17,14 +17,20 @@ baseline-aligned frames, a sidecar JSON).
     .venv/Scripts/python.exe -m tools.nai plan <recipe> --action generate|img2img [--character NAME] [--seed N] [--strength S] [--noise N]
     .venv/Scripts/python.exe -m tools.nai run <recipe> --action generate|img2img [--character NAME] [--seed N] [--strength S] [--noise N] [--from PNG]
     .venv/Scripts/python.exe -m tools.nai infill <recipe> --cell N --from PNG [--character NAME] [--strength S]
+    .venv/Scripts/python.exe -m tools.nai plan-request FILE
+    .venv/Scripts/python.exe -m tools.nai run-request FILE
+    .venv/Scripts/python.exe -m tools.nai request-catalog
     .venv/Scripts/python.exe -m tools.nai probe img2img|infill --accept-max-2-anlas
     .venv/Scripts/python.exe -m tools.nai pixelize PNG --recipe R [--character NAME] [--palette PNG]
     .venv/Scripts/python.exe -m tools.nai ledger [--last N]
 
-`plan`, `render`, `pixelize` and `ledger` never touch the network. `account`
-reads the balance and sends nothing. `run`, `infill` and `probe` send exactly
-one generation request each and print the ledger id, the balance before and
-after, and the delta.
+`plan`, `plan-request`, `request-catalog`, `render`, `pixelize` and `ledger`
+never touch the network. `account` reads the balance and sends nothing. `run`,
+`infill`, `run-request` and `probe` send exactly one generation request each
+and print the ledger id, the balance before and after, and the delta. A
+request FILE (`spec`) is how a tool that must never send -- the Pioneer Pixel
+Editor, sending a selection's slice -- hands this package a request: the same
+builder, the same guard, the same one send.
 
 THE FREE-TIER PROMISE
 ---------------------

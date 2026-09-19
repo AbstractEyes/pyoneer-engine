@@ -6,7 +6,8 @@ RESPONSIBILITY
 --------------
 Draw the mask that repaints exactly one layout cell, paste a returned cell
 back into the original locally, and report whether a returned image changed
-anything outside the cell (risk R11).
+anything outside the cell (risk R11). Read a mask that came from a FILE back
+into its rectangle (`rect_of`), holding it to the shape `cell_mask` draws.
 
 INVARIANTS
 ----------
@@ -24,9 +25,15 @@ INVARIANTS
   add_original_image.
 * SIZE MISMATCH RAISES. Two images of different sizes, or a rect outside the
   image, is ValueError -- never a resize.
-* ONE RECT RULE. `composite` and `differs_outside` validate their rect with
-  the same private function, so the two cannot disagree about what "inside
-  the image" means.
+* ONE RECT RULE. `composite`, `differs_outside` and `rect_of` validate
+  their rect with the same private function, so none of them can disagree
+  about what "inside the image" means.
+* A MASK FROM A FILE IS THE MASK THIS MODULE DRAWS, OR IT IS REFUSED.
+  `rect_of` accepts exactly what `cell_mask` produces -- RGBA, alpha 255,
+  only the two colours, the white pixels filling one rectangle whose every
+  edge is on MASK_ALIGN -- because that is the shape the local composite
+  and `differs_outside_mask` are defined on. A feathered edge, a second
+  rectangle or an L-shaped selection is refused, never approximated.
 * Pillow and the standard library only.
 """
 from __future__ import annotations
@@ -120,3 +127,56 @@ def differs_outside(original_png: bytes, returned_png: bytes, rect: Rect) -> boo
     a.paste(MASK_KEEP_RGB, box)
     b.paste(MASK_KEEP_RGB, box)
     return a.tobytes() != b.tobytes()
+
+
+def rect_of(mask_png: bytes, size: tuple[int, int]) -> Rect:
+    """The one rectangle `mask_png` repaints, as (x0, y0, x1, y1).
+
+    ValueError unless the bytes are a PNG in mode RGBA of exactly `size`,
+    alpha 255 at every pixel, every pixel MASK_REPAINT_RGB or MASK_KEEP_RGB,
+    at least one repainted, the repainted pixels filling their bounding box
+    exactly, and every edge of that box a multiple of MASK_ALIGN.
+    """
+    if not isinstance(mask_png, (bytes, bytearray)):
+        raise ValueError(f"a mask must be PNG bytes, got "
+                         f"{type(mask_png).__name__}")
+    try:
+        mask = Image.open(io.BytesIO(bytes(mask_png)))
+        mask.load()
+    except Exception as exc:  # Pillow raises several unrelated classes
+        raise ValueError(f"the mask is not a readable image ({exc})") from None
+    if mask.format != "PNG" or mask.mode != "RGBA":
+        raise ValueError(f"a mask is an RGBA PNG (colour type 6), got "
+                         f"{mask.format} {mask.mode}")
+    if mask.size != tuple(size):
+        raise ValueError(f"the mask is {mask.size[0]}x{mask.size[1]}; the "
+                         f"request is {size[0]}x{size[1]}")
+    lowest = mask.getchannel("A").getextrema()[0]
+    if lowest != 255:
+        raise ValueError(f"a mask is opaque everywhere; this one has alpha "
+                         f"down to {lowest}")
+    rgb = mask.convert("RGB")
+    colours = rgb.getcolors(maxcolors=2)
+    allowed = (MASK_REPAINT_RGB, MASK_KEEP_RGB)
+    if colours is None or any(colour not in allowed for _n, colour in colours):
+        raise ValueError(f"a mask holds only {MASK_REPAINT_RGB} (repaint) and "
+                         f"{MASK_KEEP_RGB} (keep); this one holds other "
+                         f"colours, so its edge would be a guess")
+    white = sum(n for n, colour in colours if colour == MASK_REPAINT_RGB)
+    if not white:
+        raise ValueError("the mask repaints nothing: no pixel is "
+                         f"{MASK_REPAINT_RGB}")
+    box = rgb.convert("L").getbbox()
+    x0, y0, x1, y1 = _check_rect(box, mask.size)
+    if white != (x1 - x0) * (y1 - y0):
+        raise ValueError(f"the repainted pixels do not fill one rectangle: "
+                         f"{white} of the {(x1 - x0) * (y1 - y0)} inside "
+                         f"({x0}, {y0}, {x1}, {y1}); a mask repaints exactly "
+                         f"one")
+    for edge in (x0, y0, x1, y1):
+        if edge % MASK_ALIGN:
+            raise ValueError(f"the mask's rectangle ({x0}, {y0}, {x1}, {y1}) "
+                             f"has an edge at {edge}, not a multiple of "
+                             f"{MASK_ALIGN}: NovelAI re-snaps an unaligned "
+                             f"mask, so it could repaint more or less")
+    return x0, y0, x1, y1

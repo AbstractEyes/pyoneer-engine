@@ -94,7 +94,8 @@ from tools.nai.model import (ACTION_BODY_KEYS, ACTIONS, ALLOWED_ENDPOINTS,
                              PROBE_STEPS, PROBE_STRENGTH, PROOF_ACTIONS,
                              QUALITY_TAIL, TOKEN_BUDGET, TOKENS_PER_WORD,
                              UC_PRESET_NONE, Account, Proof, Request,
-                             drift_row_problem, model_for, on_grid)
+                             drift_row_problem, model_for, on_grid,
+                             rating_tag_in)
 
 if TYPE_CHECKING:  # state imports Refused from here; no runtime cycle
     from tools.nai.state import State
@@ -1205,8 +1206,13 @@ def _c7(body: Mapping[str, object]) -> tuple[bool, str]:
     for path, text in ((("input",), texts[0][1]), (base_path, base)):
         if not text.endswith(QUALITY_TAIL):
             return False, f"{_dotted(path)} does not end with {QUALITY_TAIL!r}"
+    for path, text in ((("input",), texts[0][1]), (base_path, base)):
+        if rating_tag_in(text[:-len(QUALITY_TAIL)]):
+            return False, (f"{_dotted(path)} carries a rating tag before its "
+                           f"closing {QUALITY_TAIL!r}; the rating is written "
+                           f"once, at the end")
     for path, text in char_texts + uc_texts:
-        if "rating:" in text:
+        if rating_tag_in(text):
             return False, (f"{_dotted(path)} carries a rating tag; it belongs "
                            f"only at the end of the base caption")
     return True, f"ASCII, {words} words ~ {tokens:g} tokens, rating closes the base"

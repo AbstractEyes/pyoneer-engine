@@ -14,7 +14,10 @@ That design gives three things worth pinning, and this file pins all three.
    the CLI turns this red instead of turning a button into a usage error at
    the author's desk. The reverse direction is checked too: every `flag` a
    `NAI_FIELDS` row declares must appear in some example, so a control the
-   window offers cannot be a control nothing watches.
+   window offers cannot be a control nothing watches. And the subcommands
+   that open a socket are READ OFF `tools/nai/cli.py`'s own source and must
+   be exactly `SENDING_SUBCOMMANDS`, so a sending command added to the CLI
+   cannot reach this window classified as free.
 
 2. THE LIMITS AGAINST `tools.nai.model`. A locked control carries its
    reason as text -- "free tier: 28 steps max", "one sample",
@@ -121,7 +124,7 @@ if importlib.util.find_spec("PySide6") is None:
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from tools.nai import guard, model, recipes                    # noqa: E402
+from tools.nai import guard, model, recipes, spec              # noqa: E402
 from tools.nai import request as nai_request                   # noqa: E402
 from tools.nai.cli import build_parser                         # noqa: E402
 from tools.nai import mannequin                                # noqa: E402
@@ -407,6 +410,105 @@ if "probe" in offered:
 if "probe" not in sending:
     fail("SENDING_SUBCOMMANDS must still NAME probe as a sender, so nothing "
          "can quietly reclassify it as free")
+
+# THE OTHER DIRECTION, READ OFF THE CLI ITSELF. `sending <= cli_subcommands`
+# proves the table names nothing the CLI lacks; it never proved the CLI has
+# no sender the table lacks, and that half is the one that costs money: a
+# new sending command the table misses composes with `sends` False and
+# starts unarmed. So the senders are DERIVED from tools/nai/cli.py's source:
+# a module-level function sends when it calls one of SOCKET_CALLS, or calls
+# a module-level function that sends, and `_COMMANDS` maps each subcommand
+# to its function.
+SOCKET_CALLS = frozenset({"UrllibTransport", "run_request", "read_account"})
+
+
+def cli_senders(source: str) -> set[str]:
+    tree = ast.parse(source)
+    functions = {node.name: node for node in tree.body
+                 if isinstance(node, ast.FunctionDef)}
+
+    def called(node) -> set[str]:
+        names = set()
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Call):
+                target = sub.func
+                if isinstance(target, ast.Attribute):
+                    names.add(target.attr)
+                elif isinstance(target, ast.Name):
+                    names.add(target.id)
+        return names
+
+    calls = {name: called(node) for name, node in functions.items()}
+    sends = {name for name, names in calls.items() if names & SOCKET_CALLS}
+    grew = True
+    while grew:
+        grew = False
+        for name, names in calls.items():
+            if name not in sends and names & sends:
+                sends.add(name)
+                grew = True
+    table = next(node.value for node in tree.body
+                 if isinstance(node, ast.AnnAssign)
+                 and isinstance(node.target, ast.Name)
+                 and node.target.id == "_COMMANDS")
+    return {key.value for key, value in zip(table.keys, table.values)
+            if isinstance(value, ast.Name) and value.id in sends}
+
+
+CLI_PATH = os.path.join(_bootstrap.REPO_ROOT, "tools", "nai", "cli.py")
+with open(CLI_PATH, encoding="utf-8") as handle:
+    CLI_SOURCE = handle.read()
+derived = cli_senders(CLI_SOURCE)
+if derived != sending:
+    fail(f"tools/nai/cli.py's own sending commands are {sorted(derived)} and "
+         f"SENDING_SUBCOMMANDS says {sorted(sending)}: a sender the table "
+         f"misses would be composed as free and started unarmed")
+# Both halves, measured on every run (law 5): a copy of the CLI with one
+# more sending command, and a copy whose run-request no longer sends, must
+# each disagree with the table.
+GREW = CLI_SOURCE.replace(
+    '_COMMANDS: dict[str, Callable[..., int]] = {',
+    '_COMMANDS: dict[str, Callable[..., int]] = {\n    "decoy": _cmd_decoy,',
+    1) + ("\n\ndef _cmd_decoy(args, transport, state):\n"
+          "    return _send(None, transport, state, probe=False, "
+          "context=None)\n")
+SHRANK = CLI_SOURCE.replace(
+    "    row = _send(loaded.request, transport, state, probe=False,\n"
+    "                context=loaded.context)",
+    "    row = {}", 1)
+if GREW == CLI_SOURCE or SHRANK == CLI_SOURCE:
+    fail("the sender mutations no longer match tools/nai/cli.py's text, so "
+         "the derivation above is proved by nothing")
+elif (cli_senders(GREW) != sending | {"decoy"}
+      or cli_senders(SHRANK) != sending - {"run-request"}):
+    fail(f"the sender derivation is blind: a copy of the CLI with a new "
+         f"sender gives {sorted(cli_senders(GREW))}, and one whose "
+         f"run-request no longer sends gives {sorted(cli_senders(SHRANK))}")
+
+# THE TWO FORMS ARE ONE FORM. NAI_FIELDS is NovelAI's form as the recipe
+# route fills it; tools.nai.spec.FORM is the same form as the request-file
+# route fills it, and the Pioneer Pixel Editor draws its window from that
+# one. A row here whose label or column FORM does not share is a control one
+# route shows and the other forgot, or a rename that reached one table only.
+
+
+def unshared(fields, form) -> list[tuple[str, str]]:
+    columns = {row.label: row.column for row in form}
+    return [(row.label, row.column) for row in fields
+            if columns.get(row.label) != row.column]
+
+
+if unshared(request_pane.NAI_FIELDS, spec.FORM):
+    fail(f"NAI_FIELDS rows {unshared(request_pane.NAI_FIELDS, spec.FORM)} "
+         f"have no row of the same label and column in tools.nai.spec.FORM")
+RENAMED = [row._replace(label=row.label + " (renamed)") if row.label == "Seed"
+           else row for row in request_pane.NAI_FIELDS]
+MOVED = [row._replace(column="left") if row.label == "Steps" else row
+         for row in request_pane.NAI_FIELDS]
+if (unshared(RENAMED, spec.FORM) != [("Seed (renamed)", "right")]
+        or unshared(MOVED, spec.FORM) != [("Steps", "left")]):
+    fail("the two-form comparison is blind: a renamed Seed row or a Steps "
+         "row moved to the left column went unnoticed")
 example_buttons = {name.split(".")[0] for name, _ in
                    request_pane.COMMAND_EXAMPLES}
 missing = sorted(offered - example_buttons)
@@ -422,7 +524,9 @@ for row in request_pane.NAI_FIELDS:
         fail(f"{row.label} writes {row.flag}, which no example argv carries: "
              f"a renamed flag would not be caught")
 report(f"{len(request_pane.COMMAND_EXAMPLES)} example argvs parse; "
-       f"{len(all_flags)} flags exercised", len(failures) == before)
+       f"{len(all_flags)} flags exercised; the {len(derived)} senders read "
+       f"off tools/nai/cli.py are SENDING_SUBCOMMANDS; every NovelAI row "
+       f"here is a row of tools.nai.spec.FORM", len(failures) == before)
 
 
 # ---------------------------------------------------------------------------

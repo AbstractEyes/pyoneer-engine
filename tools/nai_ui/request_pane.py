@@ -358,10 +358,13 @@ tuple's order. `tools/check_nai_ui.py` asserts every number spelled in a
 # ---------------------------------------------------------------------------
 
 SENDING_SUBCOMMANDS: frozenset[str] = frozenset({"account", "run", "infill",
-                                                 "probe"})
-"""The subcommands that open a socket. `run`, `infill` and `probe` can
-spend; `account` only reads the balance. A `NaiCommand` whose subcommand is
-in this set has `sends` True, and `RunPane` will not start it unarmed."""
+                                                 "run-request", "probe"})
+"""The subcommands that open a socket. `run`, `infill`, `run-request` and
+`probe` can spend; `account` only reads the balance. A `NaiCommand` whose
+subcommand is in this set has `sends` True, and `RunPane` will not start it
+unarmed. `tools/check_nai_ui.py` reads the CLI's senders off
+`tools/nai/cli.py` itself and asserts they are exactly this set, so a
+sending command added there cannot be missing here."""
 
 OFFERED_SUBCOMMANDS: tuple[str, ...] = ("render", "plan", "run", "infill",
                                         "account", "pixelize", "ledger")

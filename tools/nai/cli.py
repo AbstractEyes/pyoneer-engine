@@ -62,6 +62,25 @@ infill <recipe> --cell N --from PNG [--character NAME] [--strength S]
                             paste_mannequin False. On 2xx also writes
                             masks.composite(source, output, cell rect) as a
                             blob and prints its path.
+plan-request FILE           DRY RUN of a request file: the route a composing
+                            tool (the Pioneer Pixel Editor) hands a request
+                            to, since it may never send one itself
+                            (tools/nai/spec.py). spec.load, then exactly the
+                            printout and the offline verdicts `plan` prints,
+                            for every action, infill included. The seed is
+                            the file's, always written. No network. Exit 0
+                            when every offline condition passes, else 2; a
+                            file spec refuses exits 1 before anything is
+                            built.
+run-request FILE            EXACTLY ONE generation the file describes, via
+                            run.run_request with the file's LedgerContext.
+                            Prints what `run` prints; for infill it also
+                            writes masks.composite(image, output, mask rect)
+                            as a blob and prints its path, as `infill` does.
+request-catalog             Print spec.catalog() as JSON: the request file's
+                            keys, every limit and default a composing tool
+                            needs, and NovelAI's form as that route fills it.
+                            No network; writes nothing.
 probe img2img|infill --accept-max-2-anlas [--variant full|curated] [--seed N]
                             Always the default character (no --character).
                             WITHOUT the flag: print what the probe costs at
@@ -126,9 +145,9 @@ resolve-boundary --anlas N --attribute theirs|ours --by NAME --checked TEXT
 
 INVARIANTS
 ----------
-* ONE REQUEST PER INVOCATION. `run`, `infill` and `probe` call
-  run.run_request exactly once; no command loops, sweeps or retries, and no
-  option repeats a request.
+* ONE REQUEST PER INVOCATION. `run`, `infill`, `run-request` and `probe`
+  call run.run_request exactly once; no command loops, sweeps or retries,
+  and no option repeats a request. A request file describes ONE request.
 * EVERY SENDING COMMAND PRINTS the ledger id, the balance before and after,
   and the delta -- on success, HTTP error and timeout alike. When
   run.run_request raises after writing a row (a refusal after the balance
@@ -138,7 +157,9 @@ INVARIANTS
   wrote no LOCK; an HTTP error, a timeout, a bad ZIP or a LOCK exits 1 with
   the row printed.
 * --seed absent -> a seed from `secrets` in [SEED_MIN, SEED_MAX], printed
-  before anything is sent so the author can repeat it.
+  before anything is sent so the author can repeat it. A request file has no
+  such absence: spec refuses one without a seed, so `plan-request` and
+  `run-request` of one file judge and send the same one.
 * --character NAME (render, plan, run, infill, pixelize; default
   characters.DEFAULT_CHARACTER) is a file stem under tools/nai/characters/.
   An unknown name is an argparse error (exit 2, the available files listed)
@@ -168,8 +189,8 @@ INVARIANTS
   terminal that a ledger row is into a file.
 * `transport` and `state` are injectable so a check can drive every command
   with transport.RecordingTransport and a scratch State; the CLI never
-  builds a real transport for `plan`, `render`, `pixelize` or `ledger`, nor
-  for `probe` without the flag.
+  builds a real transport for `plan`, `plan-request`, `request-catalog`,
+  `render`, `pixelize` or `ledger`, nor for `probe` without the flag.
 """
 from __future__ import annotations
 
@@ -183,7 +204,7 @@ from datetime import datetime, timezone
 from typing import Callable, Sequence
 
 from tools.nai import (characters, guard, mannequin, masks, post, recipes,
-                       request, run)
+                       request, run, spec)
 from tools.nai import transport as nai_transport
 from tools.nai.model import (DRIFT_ATTRIBUTIONS, DRIFT_KIND, GENERATE_URL,
                              INPAINT_STRENGTH_KEY,
@@ -335,6 +356,20 @@ def build_parser() -> argparse.ArgumentParser:
                    help="do not paste the mannequin into the cell first")
     p.add_argument("--seed", type=int, default=None)
     _ledger_options(p)
+
+    p = command("plan-request", help="dry run of a request file: build and "
+                                     "judge it; no network")
+    p.add_argument("file", help="a pyoneer.nai.request JSON file "
+                                "(tools/nai/spec.py)")
+
+    p = command("run-request", help="send EXACTLY ONE request a request "
+                                    "file describes")
+    p.add_argument("file", help="a pyoneer.nai.request JSON file "
+                                "(tools/nai/spec.py)")
+
+    command("request-catalog", help="print the request-file format, its "
+                                    "limits, defaults and form as JSON; no "
+                                    "network")
 
     p = command("probe", help="the author's cost probe for "
                                      "img2img or infill")
@@ -662,6 +697,14 @@ def _cmd_plan(args, transport, state: State) -> int:
     seed = _seed(args.seed)
     req = recipes.make_request(args.recipe, args.action, seed,
                                character=args.character, **_overrides(args))
+    return _print_plan(req, state)
+
+
+def _print_plan(req, state: State) -> int:
+    """build_body, the redacted summary and one line per guard verdict with
+    account=None; EXIT_OK when every offline condition passes. `plan` and
+    `plan-request` judge through this one function, so a dry run of a
+    request file is exactly as strict as a dry run of a recipe."""
     body = request.build_body(req)
     shown = request.redacted(body)
     params = shown["parameters"]
@@ -753,17 +796,57 @@ def _cmd_infill(args, transport, state: State) -> int:
         strip_version=args.strip_version, round=args.round,
         phase=args.phase, lever_changed=args.lever)
     row = _send(req, transport, state, probe=False, context=context)
-    status = row.get("http_status")
-    if (isinstance(status, int) and 200 <= status < 300
-            and row.get("output_png_sha256")):
-        returned = state.read_blob(row["output_png_sha256"], "png")
-        rect = recipes.get_recipe(
-            args.recipe, args.character).layout.cells[args.cell].rect_canvas
-        merged = masks.composite(source, returned, rect)
-        _sha, rel = state.save_blob(merged, "png")
-        _out(f"composite     {os.path.normpath(os.path.join(state.root, rel))}")
-        _out(f"differs outside mask {_fmt(row.get('differs_outside_mask'))}")
+    _print_composite(row, state, source, context.target_rect)
     return _sent_exit(row)
+
+
+def _print_composite(row: dict, state: State, source: bytes, rect) -> None:
+    """After a 2xx infill whose PNG was stored: masks.composite(source,
+    output, rect) saved as a blob, and its path and differs_outside_mask
+    printed. `infill` and `run-request` finish an infill through this one
+    function; nothing is written for any other outcome."""
+    status = row.get("http_status")
+    if not (isinstance(status, int) and 200 <= status < 300
+            and row.get("output_png_sha256")):
+        return
+    returned = state.read_blob(row["output_png_sha256"], "png")
+    merged = masks.composite(source, returned, rect)
+    _sha, rel = state.save_blob(merged, "png")
+    _out(f"composite     {os.path.normpath(os.path.join(state.root, rel))}")
+    _out(f"differs outside mask {_fmt(row.get('differs_outside_mask'))}")
+
+
+def _print_loaded(command: str, loaded: spec.Spec, what: str) -> None:
+    """The head of `plan-request` and `run-request`: the file, its label,
+    its seed and, for infill, the rectangle its mask repaints."""
+    _out(f"{command:<14}{loaded.source} ({what})")
+    if loaded.label:
+        _out(f"label         {loaded.label}")
+    _out(f"seed          {loaded.request.seed} (the file's)")
+    if loaded.mask_rect is not None:
+        _out(f"mask rect     {loaded.mask_rect}")
+
+
+def _cmd_plan_request(args, transport, state: State) -> int:
+    loaded = spec.load(args.file)
+    _print_loaded("plan-request", loaded, "dry run: nothing is sent")
+    return _print_plan(loaded.request, state)
+
+
+def _cmd_run_request(args, transport, state: State) -> int:
+    loaded = spec.load(args.file)
+    _print_loaded("run-request", loaded, "ONE request")
+    row = _send(loaded.request, transport, state, probe=False,
+                context=loaded.context)
+    if loaded.mask_rect is not None:
+        _print_composite(row, state, loaded.request.image_png,
+                         loaded.mask_rect)
+    return _sent_exit(row)
+
+
+def _cmd_request_catalog(args, transport, state: State) -> int:
+    _out(json.dumps(spec.catalog(), indent=2, ensure_ascii=True))
+    return EXIT_OK
 
 
 def _cmd_probe(args, transport, state: State) -> int:
@@ -1194,6 +1277,9 @@ _COMMANDS: dict[str, Callable[..., int]] = {
     "plan": _cmd_plan,
     "run": _cmd_run,
     "infill": _cmd_infill,
+    "plan-request": _cmd_plan_request,
+    "run-request": _cmd_run_request,
+    "request-catalog": _cmd_request_catalog,
     "probe": _cmd_probe,
     "pixelize": _cmd_pixelize,
     "ledger": _cmd_ledger,
@@ -1208,10 +1294,10 @@ def main(argv: Sequence[str] | None = None, *,
     """Parse `argv` (sys.argv[1:] when None) and run one command.
 
     `transport` None -> transport.UrllibTransport(), constructed only by the
-    commands that use the network (account, run, infill, probe with the
-    flag). `state` None -> State() (data/nai/ in the main checkout, shared
-    by every worktree). Returns an exit
-    code from the EXIT_* constants; argparse usage errors exit 2.
+    commands that use the network (account, run, infill, run-request,
+    probe with the flag). `state` None -> State() (data/nai/ in the main
+    checkout, shared by every worktree). Returns an exit code from the
+    EXIT_* constants; argparse usage errors exit 2.
     """
     parser = build_parser()
     try:

@@ -59,7 +59,7 @@ INVARIANTS
   is refused before `plan` or `run` builds anything.
 * ONE SOURCE-IMAGE RULE. img2img's optional `source_png` (the consistency
   re-pass of brief 3.5, default the mannequin init) and infill's required
-  one go through the same `_source_png`: a layout-sized PNG that is RGB, or
+  one go through the same `source_png`: a layout-sized PNG that is RGB, or
   RGBA whose every alpha is >= OPAQUE_ALPHA_MIN (converted to RGB). What
   `run` returns is stored exactly as NovelAI sent it, and a PNG carrying
   metadata in its alpha channel is still opaque; real transparency is
@@ -86,11 +86,11 @@ from tools.nai.model import (ACTIONS, DEFAULT_IMG2IMG_NOISE,
                              DEFAULT_INFILL_NOISE, DEFAULT_INPAINT_STRENGTH,
                              DEFAULT_SCALE, DEFAULT_STEPS, DEFAULT_STRENGTH,
                              INFILL_FULL_REPAINT, NEGATIVE, NOISE_RANGE,
-                             QUALITY_TAIL, RATING_RX, STRENGTH_BAND,
+                             QUALITY_TAIL, STRENGTH_BAND,
                              TOKEN_BUDGET, TOKENS_PER_WORD, UC_PRESET_NONE,
                              Frame, Identity, Layout, LedgerContext, Recipe,
                              Request, build_problem, garments_problem,
-                             model_for, on_grid, subject)
+                             model_for, on_grid, rating_tag_in, subject)
 
 OPAQUE_ALPHA_MIN = 254
 """An RGBA source counts as opaque when no alpha is below this. 254, not 255:
@@ -332,7 +332,7 @@ def character_caption(identity: Identity, pose_words: str) -> str:
     The noun is model.subject(identity.subject).noun -- `boy` or `girl`, the
     same word the base caption counts.
 
-    ValueError when pose_words carries a rating tag (model.RATING_RX) or is
+    ValueError when pose_words carries a rating tag (model.rating_tag_in) or is
     not ASCII. The finished caption is checked as a whole too -- the anchor
     is author text and is the sibling route into the same caption -- so
     ValueError also when any tag of it fails
@@ -344,7 +344,7 @@ def character_caption(identity: Identity, pose_words: str) -> str:
     """
     if not isinstance(pose_words, str):
         raise ValueError(f"pose words must be a string, got {pose_words!r}")
-    if RATING_RX.search(pose_words.lower()):
+    if rating_tag_in(pose_words):
         raise ValueError(f"a rating tag belongs only at the end of the base "
                          f"caption, not in pose words {pose_words!r}")
     if not pose_words.isascii():
@@ -402,15 +402,78 @@ def _in_band(value: float) -> bool:
     return STRENGTH_BAND[0] <= value <= STRENGTH_BAND[1]
 
 
+# THE VALUE RULES, ONE FUNCTION EACH. `make_request` applies them to a recipe
+# and `spec.parse` to a request file, so a band, a range or a type is decided
+# once and both routes refuse with the same sentence: the sibling route
+# CLAUDE.md's ACTIVE WARNINGS count is a second copy of exactly these.
+
+def steps_value(value: object) -> int:
+    """`value` as the steps of a request: an int (never a bool). The cost cap
+    of 28 is guard condition 4's, not this rule's."""
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"steps must be an int, got {value!r}")
+    return value
+
+
+def scale_value(value: object) -> float:
+    """`value` as Prompt Guidance: a finite number above 0."""
+    scale = _real("scale", value)
+    if scale <= 0:
+        raise ValueError(f"scale must be > 0, got {scale!r}")
+    return scale
+
+
+def noise_value(value: object) -> float:
+    """`value` as img2img or infill noise: a finite number in NOISE_RANGE."""
+    noise = _real("noise", value)
+    if not NOISE_RANGE[0] <= noise <= NOISE_RANGE[1]:
+        raise ValueError(f"noise must lie in {NOISE_RANGE}, got {noise!r}")
+    return noise
+
+
+def img2img_strength(value: object) -> float:
+    """`value` as an img2img strength: inside the author's STRENGTH_BAND."""
+    strength = _real("strength", value)
+    if not _in_band(strength):
+        raise ValueError(
+            f"img2img strength {strength} is outside the author's band "
+            f"{STRENGTH_BAND} (default {DEFAULT_STRENGTH})")
+    return strength
+
+
+def infill_strength(value: object) -> float:
+    """`value` as an infill strength: inside the author's STRENGTH_BAND, or
+    INFILL_FULL_REPAINT when the pose itself is wrong."""
+    inpaint = _real("inpaint_strength", value)
+    if not (_in_band(inpaint) or inpaint == INFILL_FULL_REPAINT):
+        raise ValueError(
+            f"infill strength {inpaint} is outside the author's band "
+            f"{STRENGTH_BAND} and is not {INFILL_FULL_REPAINT} (full repaint)")
+    return inpaint
+
+
+def color_correct_value(value: object) -> bool:
+    """`value` as img2img's color_correct: a bool, never a truthy stand-in."""
+    if not isinstance(value, bool):
+        raise ValueError(f"color_correct must be a bool, got {value!r}")
+    return value
+
+
 def _source_png(value: object, layout: Layout) -> bytes:
-    """The one source-image rule (module docstring): PNG bytes of the
-    layout's size, RGB as given, or RGBA with every alpha >= OPAQUE_ALPHA_MIN
-    re-encoded as RGB. ValueError naming the problem otherwise."""
+    """`source_png` at the layout's size."""
+    return source_png(value, layout.width, layout.height)
+
+
+def source_png(value: object, width: int, height: int) -> bytes:
+    """The one source-image rule (module docstring): PNG bytes of exactly
+    width x height, RGB as given, or RGBA with every alpha >=
+    OPAQUE_ALPHA_MIN re-encoded as RGB. ValueError naming the problem
+    otherwise. A request file's image passes it too (`spec`)."""
     if not isinstance(value, (bytes, bytearray)):
         raise ValueError(f"source_png must be PNG bytes, got "
                          f"{type(value).__name__}")
     data = bytes(value)
-    want = (layout.width, layout.height)
+    want = (width, height)
     try:
         with Image.open(io.BytesIO(data)) as src:
             fmt, mode, size = src.format, src.mode, src.size
@@ -431,7 +494,7 @@ def _source_png(value: object, layout: Layout) -> bytes:
     if fmt != "PNG" or mode != "RGB" or size != want:
         raise ValueError(
             f"source_png must be an RGB (or opaque RGBA) PNG of "
-            f"{layout.width}x{layout.height}, got {fmt} {mode} "
+            f"{width}x{height}, got {fmt} {mode} "
             f"{size[0]}x{size[1]}")
     return data
 
@@ -453,11 +516,11 @@ def make_request(recipe_name: str, action: str, seed: int, *,
 
     generate: no image, mask or strengths. Accepts variant, steps, scale.
     img2img:  image_png = source_png when given (a consistency re-pass on an
-              accepted strip, brief 3.5; `_source_png`'s rule), else
+              accepted strip, brief 3.5; `source_png`'s rule), else
               init_png; strength (default DEFAULT_STRENGTH, must be in
               STRENGTH_BAND); noise (default DEFAULT_IMG2IMG_NOISE);
               color_correct (default False).
-    infill:   source_png (REQUIRED: the accepted strip, `_source_png`'s rule)
+    infill:   source_png (REQUIRED: the accepted strip, `source_png`'s rule)
               and cell (REQUIRED: 0-based index); mask_png =
               masks.cell_mask(layout, cell); image_png = source_png with
               cell's rect replaced by init_png's (masks.composite) when
@@ -472,7 +535,7 @@ def make_request(recipe_name: str, action: str, seed: int, *,
     Value TYPES are checked here, as ValueError: steps an int, scale /
     strength / noise finite numbers, scale > 0, noise inside the closed
     NOISE_RANGE, color_correct and paste_mannequin bools, cell an int inside
-    the layout, source_png as `_source_png`.
+    the layout, source_png as `source_png`.
     """
     unknown = sorted(set(overrides) - OVERRIDE_KEYS)
     if unknown:
@@ -488,12 +551,8 @@ def make_request(recipe_name: str, action: str, seed: int, *,
 
     variant = overrides.get("variant", "full")
     model = model_for(action, variant)  # type: ignore[arg-type]
-    steps = overrides.get("steps", DEFAULT_STEPS)
-    if not isinstance(steps, int) or isinstance(steps, bool):
-        raise ValueError(f"steps must be an int, got {steps!r}")
-    scale = _real("scale", overrides.get("scale", DEFAULT_SCALE))
-    if scale <= 0:
-        raise ValueError(f"scale must be > 0, got {scale!r}")
+    steps = steps_value(overrides.get("steps", DEFAULT_STEPS))
+    scale = scale_value(overrides.get("scale", DEFAULT_SCALE))
 
     layout = recipe.layout
     init_png, centers = render_init(layout, recipe.poses,
@@ -511,21 +570,13 @@ def make_request(recipe_name: str, action: str, seed: int, *,
 
     noise_default = (DEFAULT_IMG2IMG_NOISE if action == "img2img"
                      else DEFAULT_INFILL_NOISE)
-    noise = _real("noise", overrides.get("noise", noise_default))
-    if not NOISE_RANGE[0] <= noise <= NOISE_RANGE[1]:
-        raise ValueError(f"noise must lie in {NOISE_RANGE}, got {noise!r}")
+    noise = noise_value(overrides.get("noise", noise_default))
 
     if action == "img2img":
-        strength = _real("strength",
-                         overrides.get("strength", DEFAULT_STRENGTH))
-        if not _in_band(strength):
-            raise ValueError(
-                f"img2img strength {strength} is outside the author's band "
-                f"{STRENGTH_BAND} (default {DEFAULT_STRENGTH})")
-        color_correct = overrides.get("color_correct", False)
-        if not isinstance(color_correct, bool):
-            raise ValueError(f"color_correct must be a bool, got "
-                             f"{color_correct!r}")
+        strength = img2img_strength(
+            overrides.get("strength", DEFAULT_STRENGTH))
+        color_correct = color_correct_value(
+            overrides.get("color_correct", False))
         image_png = (_source_png(overrides["source_png"], layout)
                      if "source_png" in overrides else init_png)
         return Request(**common, image_png=image_png, strength=strength,
@@ -545,12 +596,8 @@ def make_request(recipe_name: str, action: str, seed: int, *,
     paste = overrides.get("paste_mannequin", True)
     if not isinstance(paste, bool):
         raise ValueError(f"paste_mannequin must be a bool, got {paste!r}")
-    inpaint = _real("inpaint_strength",
-                    overrides.get("inpaint_strength", DEFAULT_INPAINT_STRENGTH))
-    if not (_in_band(inpaint) or inpaint == INFILL_FULL_REPAINT):
-        raise ValueError(
-            f"infill strength {inpaint} is outside the author's band "
-            f"{STRENGTH_BAND} and is not {INFILL_FULL_REPAINT} (full repaint)")
+    inpaint = infill_strength(
+        overrides.get("inpaint_strength", DEFAULT_INPAINT_STRENGTH))
     rect = layout.cells[cell].rect_canvas
     image_png = (masks.composite(source_png, init_png, rect) if paste
                  else source_png)

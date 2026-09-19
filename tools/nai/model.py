@@ -252,10 +252,22 @@ RATING_TAG = "rating:general"
 QUALITY_TAIL = "very aesthetic, masterpiece, no text, rating:general"
 """Ends every base caption; appears in no character caption."""
 RATING_RX = re.compile(r"rating\s*:")
-"""A rating tag, however spaced (`rating:explicit`, `rating :explicit`),
-searched for in lower-cased text. `Recipe` refuses one anywhere in a base
-caption before its QUALITY_TAIL, and characters.tag_problem refuses one in
-any identity tag."""
+"""A rating tag, however spaced (`rating:explicit`, `rating :explicit`).
+Searched for ONLY through `rating_tag_in`, which lower-cases first."""
+
+
+def rating_tag_in(text: str) -> bool:
+    """THE ONE RATING-TAG RULE: RATING_RX in the lower-cased text, so
+    `Rating:general` and `RATING :explicit` are rating tags too.
+
+    `Recipe` asks it of the base caption before its QUALITY_TAIL and of every
+    pose word, `recipes` of pose words, `characters.tag_problem` of every
+    identity tag, `spec` of a request file's prompts and UCs, and guard
+    condition 7 of the body it is about to send. A route that searched the
+    raw text instead let `Rating:general` through and sent two rating tags;
+    `tools/check_nai.py` asserts no module but this one names RATING_RX.
+    """
+    return RATING_RX.search(text.lower()) is not None
 
 NEGATIVE = (
     "nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, "
@@ -780,7 +792,7 @@ class Recipe:
     own baseline and each airborne frame (lift > 0) takes the first ground
     frame's shift (walk, run). Validated at construction (raises ValueError):
     frame count equals the layout's cell count, the base caption ends with
-    QUALITY_TAIL and carries no other rating tag (RATING_RX) before it, no
+    QUALITY_TAIL and carries no other rating tag (`rating_tag_in`) before it, no
     pose words carry a rating tag, all text is ASCII, and at least one pose
     is grounded.
     """
@@ -808,12 +820,12 @@ class Recipe:
             if not text.isascii():
                 raise ValueError(f"recipe {self.name}: non-ASCII text {text!r}")
         for words, _ in self.frame_poses:
-            if RATING_RX.search(words.lower()):
+            if rating_tag_in(words):
                 raise ValueError(
                     f"recipe {self.name}: a rating tag belongs only at the end "
                     f"of the base caption, not in pose words {words!r}")
         head = self.base_caption[:-len(QUALITY_TAIL)]
-        if RATING_RX.search(head.lower()):
+        if rating_tag_in(head):
             raise ValueError(
                 f"recipe {self.name}: a rating tag sits in the base caption "
                 f"before its closing {QUALITY_TAIL!r}; the rating is written "
