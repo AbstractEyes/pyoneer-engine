@@ -7,9 +7,11 @@ RESPONSIBILITY
 `run_request` is THE ONLY caller of `Transport.post_json` in this package.
 It reads the balance, checks the chain, runs the guard, marks the request in
 flight, sends exactly one POST, reads the balance again no matter what
-happened, classifies the delta, locks on a decrease, records proof rows for
-clean probes, stores the bytes, writes the ledger row, and releases the
-in-flight marker. It never retries.
+happened, classifies the delta, records every balance event as a WARNING in
+the row, records proof rows for clean probes, stores the bytes, writes the
+ledger row, and releases the in-flight marker. It never retries, and it
+NEVER WRITES LOCK: since 2026-09-24 a balance event warns and never stops
+(the author's decision -- the account is shared; guard's module docstring).
 
 THE SEQUENCE (every step is part of the contract)
 -------------------------------------------------
@@ -17,7 +19,8 @@ THE SEQUENCE (every step is part of the contract)
     guard.Refused(12). Nothing read, nothing written.
  2. probe=True requires context.probe_flag_used True, else Refused(1).
  3. Local precheck (condition 10): state.locked() or state.inflight() ->
-    Refused(10), naming what INFLIGHT holds. No account read, no row.
+    Refused(10), naming what INFLIGHT holds. No account read, no row. LOCK
+    is only ever the author's own emergency stop: nothing here writes it.
  4. body = request.build_body(req); request_sha256 = canonical_sha256(body);
     ledger_id = state.new_ledger_id(); cid = new_correlation_id().
  5. before = tools.nai.transport.read_account(transport). A failure
@@ -26,25 +29,26 @@ THE SEQUENCE (every step is part of the contract)
     guard.open_boundaries(state.rows()). A ledger that cannot give the
     previous balance, or a boundary whose balances cannot be READ at all (a
     malformed row, a LOST ledger: see state.last_balance) -> Refused(9), no
-    row, no LOCK -- a row would restart the chain from here and forget the
-    loss.
+    row -- a row would restart the chain from here and forget the loss.
     An unsigned fall, whether already in the ledger or seen live by this
-    call's own before-read -> state.lock(ledger_id, reason), write a
-    `refused` row (refusal_condition 9, locked true), raise Refused(9).
-    THE REASON SAYS WHICH BOUNDARY STOPPED THIS CALL, FIRST, with the
-    figure: `_chain_note` puts the drop this before-read saw at the front
-    (named by the refused row about to be written, so the command it prints
-    can be typed) and lists every older gap after it. It classifies rather
-    than assumes -- EXTERNAL only where the earlier row SENT NOTHING,
-    AMBIGUOUS wherever a request of ours could be the cause -- and it never
-    says an action is charged. The reason also names every proof this row
-    refutes FOR GOOD -- decided by guard.proof_standing itself, over the
-    ledger without and with that row.
+    call's own before-read, is a WARNING: its text goes into this call's
+    row and the call goes on. THE TEXT SAYS WHICH BOUNDARY THIS CALL SAW,
+    FIRST, with the figure: `_chain_note` puts the drop this before-read saw
+    at the front (named by this call's own ledger id, which the row it
+    writes will carry, so the command it prints can be typed) and lists
+    every older gap after it. It classifies rather than assumes -- EXTERNAL
+    only where the earlier row SENT NOTHING, AMBIGUOUS wherever a request of
+    ours could be the cause -- and it never says an action is charged. It
+    also names every proof this read refutes FOR GOOD -- decided by
+    guard.proof_standing itself, over the ledger without and with this
+    read.
  7. guard.assert_free(body, before, state.proofs(), state,
     url=model.GENERATE_URL, probe=probe). Refused(n) for n in 1-9 or 11 ->
-    write a `refused` row, re-raise. Refused(10) here -> no row, re-raise.
-    A refused row has account_after == account_before and delta 0, so the
-    chain stays exact.
+    write a `refused` row (carrying step 6's warning), re-raise. Refused(10)
+    here -> no row, re-raise. A refused row has account_after ==
+    account_before and delta 0, so the chain stays exact. The verdicts that
+    passed WITH a warning are added to the row's warning -- all but
+    condition 9's, which step 6 already wrote naming this row.
  8. state.acquire_inflight(ledger_id, before.sum). Refused(10) -> no row,
     re-raise. The latch is set here: from now on this process has sent.
     (Before 8: the generation row, with every response field still null, is
@@ -52,13 +56,14 @@ THE SEQUENCE (every step is part of the contract)
     raises ValueError HERE, while nothing has been sent.)
     FROM HERE ON THE BOOKKEEPING IS UNCONDITIONAL: steps 10 and 11 catch
     BaseException, not Exception, so a Ctrl-C (KeyboardInterrupt) or a
-    SystemExit cannot skip the after-read, the row or LOCK. An interrupt of
-    the POST is recorded, the balance is still read, LOCK is written (the
-    request's outcome is unknown), the row is written, INFLIGHT released,
-    and the interrupt is re-raised. Anything that escapes steps 12-15 writes
-    LOCK before it propagates and leaves INFLIGHT for the author; the
-    request blob stored in step 9 then also makes an empty ledger a LOST
-    one (state.last_balance), so a first-run chain cannot forget it.
+    SystemExit cannot skip the after-read or the row. An interrupt of the
+    POST is recorded, the balance is still read, the row is written with a
+    warning (the request's outcome is unknown), INFLIGHT released, and the
+    interrupt is re-raised. Anything that escapes steps 12-15 propagates
+    and leaves INFLIGHT for the author -- the one stop left, because a row
+    may be missing from the books; the request blob stored in step 9 then
+    also makes an empty ledger a LOST one (state.last_balance), so a
+    first-run chain cannot forget it.
  9. Store image and mask PNGs and the REDACTED body JSON as blobs
     (request_path = the json blob). Headers: {"x-correlation-id": cid}.
     The json blob is request.canonical_json(body), so its name IS the
@@ -68,18 +73,24 @@ THE SEQUENCE (every step is part of the contract)
     (error_message), never retried. Any OTHER exception out of post_json is
     recorded the same way, steps 11-15 still run (the balance is read and
     the row written), and it is re-raised after INFLIGHT is released; an
-    interrupt (a BaseException that is not an Exception) also writes LOCK.
+    interrupt (a BaseException that is not an Exception) is also a warning:
+    its outcome is unknown.
 11. after = read_account(transport), ALWAYS -- success, HTTP error,
-    timeout, interrupt. If this read fails (an interrupt included): LOCK
-    (zero cost cannot be shown), write the row with account_after null and
-    delta null, release INFLIGHT, re-raise. (The row also stores any 2xx
-    output first, and marks inconclusive true.) When both the POST and this
-    read raised, an interrupt is re-raised first, then the read's failure.
-12. delta = after.sum - before.sum. delta < 0 -> LOCK with the ledger id
-    (the reason for any img2img or infill -- probe or production -- adds
-    "<action> is charged: stay on the generate track"; guard.proof_standing
-    refutes that pair's proof over this row). delta > 0 -> inconclusive true
-    (a refill can hide a charge).
+    timeout, interrupt. If this read fails (an interrupt included): a
+    warning (zero cost cannot be shown), write the row with account_after
+    null and delta null, release INFLIGHT, re-raise. (The row also stores
+    any 2xx output first, and marks inconclusive true.) When both the POST
+    and this read raised, an interrupt is re-raised first, then the read's
+    failure.
+12. delta = after.sum - before.sum. delta < 0 -> a warning naming the
+    ledger id: OUR charge, measured inside this row (for any img2img or
+    infill -- probe or production -- it adds "<action> is charged";
+    guard.proof_standing refutes that pair's proof over this row, which is
+    itself a warning from then on). delta > 0 -> inconclusive true (a
+    refill can hide a charge). Every warning of steps 6-12 goes into the
+    row's `warning`, cut to state.MAX_ROW_STRING with a pointer to
+    `account`, which prints every boundary in full; `locked` is always
+    false.
 13. On 2xx: store the ZIP blob, transport.unzip_image(...) -> store the PNG
     blob (output_path); ANY exception out of unzip_image is recorded in
     error_message, never raised, so the row is still written. For an
@@ -95,12 +106,13 @@ THE SEQUENCE (every step is part of the contract)
     ORDER (DESIGN): the proof is added AFTER step 15's write_row and before
     INFLIGHT is released, so a proof row never names a ledger row that was
     not written; if add_proof raises, INFLIGHT stays for the author. A probe
-    that wrote LOCK for any reason (an interrupt included) writes no proof.
+    that was interrupted writes no proof (it is not a clean 2xx).
     A written proof is still only PENDING: guard.proof_standing counts it
     once the next balance read equals this row's balance after.
 15. state.write_row(row); then state.release_inflight(ledger_id); return
-    the row. If write_row raises, LOCK is written and INFLIGHT is NOT
-    released.
+    the row. If write_row raises, INFLIGHT is NOT released: the next call
+    is refused on it (condition 10) until the author compares the account
+    with the balance it names.
 
 NEVER LOGGED, STORED OR RETURNED: the key, the Authorization header, any
 base64 image data. Printing is the CLI's job; this module prints nothing.
@@ -163,16 +175,15 @@ def _sha(data: bytes | None) -> str | None:
 def _refuted_note(state: State, new_row: dict) -> str:
     """Step 6's text naming every proof that `new_row` refutes.
 
-    A proof is named when guard.proof_standing did not refuse it over the
-    ledger as it stands and does refuse it (ok False, NOT ok None) once
+    A proof is named when guard.proof_standing did not refute it over the
+    ledger as it stands and does refute it (ok False, NOT ok None) once
     `new_row` is appended -- the same function the guard runs, so the note
-    names exactly the proofs the next img2img or infill will be refused on
-    FOR GOOD -- which now includes a fall in the read that FOLLOWS one of
-    that pair's own sent rows, because a late debit for that request (risk
-    R4) and somebody else's spend are byte-identical, and no signature
-    undoes it. An unreadable proofs.json
-    is said so instead of raising: LOCK is written either way, and the guard
-    refuses on it by itself.
+    names exactly the proofs every later img2img or infill will WARN about
+    for good -- which includes a fall in the read that FOLLOWS one of that
+    pair's own sent rows, because a late debit for that request (risk R4)
+    and somebody else's spend are byte-identical, and no signature undoes
+    it. An unreadable proofs.json is said so instead of raising: the
+    warning is recorded either way, and the guard refuses on it by itself.
 
     The row it names is the last link in `guard.chain_rows`, never `rows[-1]`
     -- a signature annotation sits in the ledger and sent nothing, and naming
@@ -196,22 +207,40 @@ def _refuted_note(state: State, new_row: dict) -> str:
                     else f"a later {proof.action} call")
             note += (f" Ledger row {last_id} was {what} of "
                      f"{proof.model}: this read REFUTES its proof (probe "
-                     f"{proof.ledger_id}) for good, so {proof.action} stays "
-                     f"refused. {_why}")
+                     f"{proof.ledger_id}) for good -- a warning, so "
+                     f"{proof.action} is still sent. {_why}")
     return note
+
+
+def _warning_text(parts: list[str]) -> str | None:
+    """Every warning a call met, as ONE row value, or None when there is none.
+
+    Scrubbed like every other server-touched string, and cut to
+    MAX_ROW_STRING with the command that prints the whole of it, because a
+    ledger row refuses a longer string and a warning that could not be
+    written would lose the row it belongs to."""
+    if not parts:
+        return None
+    text = scrub_text(" | ".join(parts))
+    if len(text) <= MAX_ROW_STRING:
+        return text
+    tail = (" [cut here: `python -m tools.nai account` prints every open "
+            "boundary in full]")
+    return text[:MAX_ROW_STRING - len(tail)] + tail
 
 
 def _chain_note(state: State, previous: int | None, before: int,
                 new_row: dict, open_gaps, chain: str) -> str:
-    """Step 6's text: WHICH boundary stopped THIS call, then every older one.
+    """Step 6's warning: WHICH boundary THIS call saw, then every older one.
 
     THE DROP THIS CALL SAW COMES FIRST. When `chain` is "charged" the
-    before-read just taken is below the chain, and `new_row` -- the refused
-    row this step is about to write -- is the row that records it, so the
-    boundary is named with `new_row`'s own id and the command the note
-    prints can really be typed. Older unsigned boundaries are listed after
-    it, with their figures, so no refusal ever reports the oldest gap and
-    leaves the author with a figure that is short.
+    before-read just taken is below the chain, and `new_row` -- a stub
+    carrying this call's own ledger id and time, the ones the row it writes
+    will carry -- is the row that records it, so the boundary is named with
+    that id and the command the note prints can really be typed. Older
+    unsigned boundaries are listed after it, with their figures, so no
+    warning ever reports the oldest gap and leaves the author with a figure
+    that is short.
 
     `guard.boundaries_note` is the one wording, shared with condition 9's
     verdict and `cli._cmd_account`, so a mutation of it turns every route
@@ -298,10 +327,10 @@ def run_request(req: Request, transport: Transport, state: State, *,
 
     Returns the ledger row as written (keys = model.LEDGER_FIELDS). Raises
     guard.Refused when nothing was sent; re-raises an account-read failure,
-    or an interrupt (KeyboardInterrupt, SystemExit), after the row and LOCK
-    are written when the request WAS sent. A non-2xx response, a timeout or
-    an unreadable ZIP is not an exception: the row records it and is
-    returned.
+    or an interrupt (KeyboardInterrupt, SystemExit), after the row is
+    written when the request WAS sent. A non-2xx response, a timeout, an
+    unreadable ZIP or a balance event is not an exception: the row records
+    it and is returned.
 
     Row values: kind "generation"; utc_time ISO-8601 with Z; the request
     fields from the body (strength / noise / inpaintImg2ImgStrength /
@@ -309,7 +338,9 @@ def run_request(req: Request, transport: Transport, state: State, *,
     [x, y]}]; negative_caption = req.negative; init_png_sha256 /
     mask_png_sha256 of the raw PNG bytes; account_before / account_after =
     Account.as_row(); chain_ok = verdict in ("first", "ok", "refill");
-    refill_seen = verdict == "refill"; locked = whether this call wrote LOCK;
+    refill_seen = verdict == "refill"; locked false, always (nothing writes
+    LOCK); warning = `_warning_text` of every balance event this call met,
+    or null;
     elapsed_ms around the POST only; content_type from the response
     headers (recorded, never gated on); post, reason, sprite_sha256 null;
     verdict "probe" for a probe, else null. LedgerContext fields are copied
@@ -347,17 +378,19 @@ def run_request(req: Request, transport: Transport, state: State, *,
     # 5. balance before; a failure propagates with nothing sent or written
     before = nai_transport.read_account(transport)
 
-    def refused_row(chain: str, exc: Refused, locked: bool) -> dict:
+    warnings: list[str] = []
+
+    def refused_row(chain: str, exc: Refused) -> dict:
         row = _base_row(req, body, context, ledger_id=ledger_id,
                         kind="refused", utc_time=utc_time,
                         request_sha256=request_sha256, before=before,
                         chain=chain, probe=probe)
         row["refusal_condition"] = exc.condition
-        row["locked"] = locked
         row["error_message"] = _scrub(exc.message)
+        row["warning"] = _warning_text(warnings)
         return row
 
-    # 6. the chain
+    # 6. the chain: an unreadable one refuses; a fallen one only warns
     try:
         previous = state.last_balance()
         open_gaps = open_boundaries(state.rows())
@@ -366,25 +399,25 @@ def run_request(req: Request, transport: Transport, state: State, *,
                          f"sent and no row is written: {exc}") from None
     chain = chain_verdict(previous, before.sum)
     if open_gaps or chain == "charged":
-        pending = refused_row(chain, Refused(9, "chain check"), locked=True)
-        note = _chain_note(state, previous, before.sum, pending, open_gaps,
-                           chain)
-        probe_note = _refuted_note(state, pending)
-        exc = Refused(9, f"{note}{probe_note} LOCK written; nothing was sent.")
-        state.lock(ledger_id, f"chain check before {ledger_id}: {note}"
-                              f"{probe_note} Check the account, then delete "
-                              f"LOCK by hand.")
-        state.write_row(pending)
-        raise exc
+        # A stub under THIS call's id, never written: it names the boundary
+        # for the row this call does write, and lets _refuted_note judge the
+        # proofs over this read exactly as the guard will.
+        seen = refused_row(chain, Refused(9, "chain check"))
+        warnings.append(
+            _chain_note(state, previous, before.sum, seen, open_gaps, chain)
+            + _refuted_note(state, seen))
 
-    # 7. the guard
+    # 7. the guard: a refusal is still a refusal; a warning is recorded
     try:
-        assert_free(body, before, state.proofs(), state, url=GENERATE_URL,
-                    probe=probe)
+        warned = assert_free(body, before, state.proofs(), state,
+                             url=GENERATE_URL, probe=probe)
     except Refused as exc:
         if exc.condition != 10:
-            state.write_row(refused_row(chain, exc, locked=False))
+            state.write_row(refused_row(chain, exc))
         raise
+    # condition 9's own text is step 6's, already written naming this row
+    warnings.extend(verdict.message for verdict in warned
+                    if verdict.condition != 9)
 
     row = _base_row(req, body, context, ledger_id=ledger_id,
                     kind="generation", utc_time=utc_time,
@@ -393,6 +426,7 @@ def run_request(req: Request, transport: Transport, state: State, *,
     row["correlation_id"] = cid
     row["account_after"] = None
     row["delta"] = None
+    row["warning"] = _warning_text(warnings)
     state.validate_row(row)   # unwritable -> ValueError, nothing sent
 
     # 8. in flight; from here this process has sent
@@ -413,7 +447,6 @@ def run_request(req: Request, transport: Transport, state: State, *,
     response_headers: dict[str, str] = {}
     response_body = b""
     errors: list[str] = []
-    lock_reasons: list[str] = []
     unexpected: BaseException | None = None
     started = time.perf_counter()
     try:
@@ -427,7 +460,7 @@ def run_request(req: Request, transport: Transport, state: State, *,
         errors.append(f"{type(exc).__name__}: {exc}")
         unexpected = exc
         if not isinstance(exc, Exception):
-            lock_reasons.append(
+            warnings.append(
                 f"{ledger_id} was interrupted ({type(exc).__name__}) while "
                 f"its request was being sent, so whether it was charged is "
                 f"unknown")
@@ -444,10 +477,10 @@ def run_request(req: Request, transport: Transport, state: State, *,
                       f"{type(exc).__name__}: {exc}")
 
     try:
-        # 12. the delta
+        # 12. the delta: every balance event is a warning in the row
         if after is None:
-            lock_reasons.append(f"the balance read after {ledger_id} failed, "
-                                f"so zero cost cannot be shown")
+            warnings.append(f"the balance read after {ledger_id} failed, "
+                            f"so zero cost cannot be shown")
             row["inconclusive"] = True
         else:
             delta = after.sum - before.sum
@@ -462,15 +495,11 @@ def run_request(req: Request, transport: Transport, state: State, *,
                           f"them. This is not external drift and "
                           f"`acknowledge-drift` cannot touch it")
                 if body["action"] in PROOF_ACTIONS:   # a probe or not
-                    reason += (f"; {body['action']} is charged: stay on the "
-                               f"generate track")
-                lock_reasons.append(reason)
+                    reason += (f"; {body['action']} is charged, and every "
+                               f"further {body['action']} may be too")
+                warnings.append(reason)
             row["inconclusive"] = delta > 0
-        if lock_reasons:
-            state.lock(ledger_id, "; ".join(lock_reasons)
-                       + f". The balance before was {before.sum}. Check the "
-                         f"account, then delete LOCK by hand.")
-        row["locked"] = bool(lock_reasons)
+        row["warning"] = _warning_text(warnings)
 
         # 13. the response
         row["http_status"] = status
@@ -511,12 +540,10 @@ def run_request(req: Request, transport: Transport, state: State, *,
                 date=datetime.now(timezone.utc).date().isoformat(),
                 ledger_id=ledger_id))
         state.release_inflight(ledger_id)
-    except BaseException as exc:
-        state.lock(ledger_id, f"the bookkeeping after {ledger_id}'s request "
-                              f"failed ({type(exc).__name__}), so its ledger "
-                              f"row or proof may be missing. The balance "
-                              f"before was {before.sum}. Check the account, "
-                              f"then delete LOCK and INFLIGHT by hand.")
+    except BaseException:
+        # The row or the proof may be missing from the books, so INFLIGHT
+        # stays where it is: condition 10 refuses on it, naming the balance
+        # before, until the author has compared the account. No LOCK.
         raise
 
     # an interrupt first, then the after-read's failure, then the POST's

@@ -305,10 +305,11 @@ if {row.subcommand for row in WINDOW_ACTIONS} != set(
         f"in words what pressing it costs, and a button for something the "
         f"pane does not offer would raise ValueError on its first press")
 
-LOCK_REASON = ("data/nai/LOCK is present: a request was sent whose outcome "
-               "is unknown, so the guard refuses everything that sends "
-               "until the author deletes that file by hand. This window "
-               "offers no way to delete it.")
+LOCK_REASON = ("data/nai/LOCK is present. Nothing in tools.nai writes it "
+               "(a balance event is a warning, never a stop), so somebody "
+               "placed it by hand as an emergency stop, and the guard "
+               "refuses everything that sends until the author deletes that "
+               "file by hand. This window offers no way to delete it.")
 """Why every sending control is disabled while LOCK exists. The guard in
 the child would refuse anyway (condition 10); a button that looks live and
 is not teaches the reader the wrong thing."""
@@ -842,16 +843,17 @@ class NaiWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802  (Qt's own spelling)
         """Save the geometry; refuse to close while a child is running.
 
-        A close mid-send would leave the child orphaned and the outcome
-        unknown, which is the state that writes `LOCK`. The window says so
-        in the status bar and stays open; `RunPane.interrupt` is the
-        deliberate way out. No dialog is opened on either path (law 13).
+        A close mid-send would leave the child orphaned and its row unseen
+        by this window. The window says so in the status bar and stays open;
+        `RunPane.interrupt` is the deliberate way out, and the child still
+        reads the balance and writes its row, with a warning. No dialog is
+        opened on either path (law 13).
         """
         if self.run.running():
             self._say(
                 "A child is still running. Closing now would orphan it and "
-                "leave the outcome unknown, which is the state that writes "
-                "LOCK. Use Interrupt in the pane on the right.")
+                "you would not see how it ended. Use Interrupt in the pane "
+                "on the right.")
             event.ignore()
             return
         self._remember("geometry", self.saveGeometry())

@@ -1009,12 +1009,22 @@ LEDGER_FIELDS: tuple[str, ...] = (
     "drift_previous_row", "drift_observed_row", "drift_acknowledged_by",
     "drift_attribution", "drift_checked",
     "inconclusive", "probe_flag_used", "refusal_condition", "locked",
+    "warning",
     "http_status", "content_type", "error_message", "elapsed_ms",
     "zip_sha256", "output_png_sha256", "output_path", "differs_outside_mask",
     "post", "verdict", "reason", "sprite_sha256",
 )
 """Every ledger row carries exactly these keys, in this order, null where
-not applicable. `state.State.write_row` refuses any other key set."""
+not applicable. `state.State.write_row` refuses any other key set.
+
+`warning` (added 2026-09-24) is the text of every balance event a row met --
+an unsigned fall between rows, a charge inside the row, a proof the balance
+refutes, a send whose outcome is unknown -- or null. Since that date a
+balance event WARNS and never stops anything (the author's decision: the
+account is shared), so this column is where the books keep what LOCK used to
+announce. Rows written before it lack the key, and every reader uses .get().
+`locked` is kept, as a file-format column, for those older rows: nothing
+writes LOCK any more, so a new row always carries `locked` false."""
 
 DRIFT_ROW_FIELDS: tuple[str, ...] = ("drift_previous_row",
                                      "drift_observed_row",

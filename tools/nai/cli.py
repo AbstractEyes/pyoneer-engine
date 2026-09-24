@@ -10,12 +10,13 @@ account                     GET the subscription once; print tier, active,
                             grace, fixed, purchased, sum, the chain verdict
                             against the ledger, EVERY open boundary in full
                             (the same classifier and the same wording the run
-                            route refuses with), every accounting figure, and
+                            route warns with), every accounting figure, and
                             LOCK / INFLIGHT presence. The last line is a
-                            WHOLE-STATE verdict, not the tier alone. Writes
-                            NOTHING (no row, no LOCK). Exit 0 only when the
-                            tier is free-usable AND nothing is outstanding;
-                            2 otherwise.
+                            WHOLE-STATE verdict, not the tier alone: an open
+                            boundary is a WARNING in it, never a refusal.
+                            Writes NOTHING (no row, no LOCK). Exit 0 when the
+                            tier is free-usable and nothing stops a send
+                            (warnings allowed); 2 otherwise.
 render <recipe> [--character NAME] [--out PNG]
                             mannequin.render_init in the character's colours
                             and garments;
@@ -42,16 +43,19 @@ plan <recipe> --action generate|img2img [--character NAME] [--seed N]
                             guard.evaluate verdict with account=None:
                             conditions 1-7, 10, 11 judged, 8 and 9 printed as
                             "needs the live account read" (and so is 1 when
-                            its proof is pending the next balance read). No
-                            network. Exit 0 when every offline condition
-                            passes, else 2.
+                            its proof is pending the next balance read), and
+                            ", WARNING" beside any verdict that passes over a
+                            balance event. No network. Exit 0 when every
+                            offline condition passes (warnings allowed),
+                            else 2.
 run <recipe> --action generate|img2img [same options as plan]
      [--lever NAME] [--round N] [--phase TEXT] [--strip-version N]
                             EXACTLY ONE generation via run.run_request with
                             recipes.context_for(...). Prints the character,
                             ledger id,
                             balance before / after, delta, HTTP status,
-                            output blob path, and LOCK if written.
+                            output blob path, and the row's WARNING if it
+                            met a balance event.
 infill <recipe> --cell N --from PNG [--character NAME] [--strength S]
      [--noise N] [--variant full|curated] [--keep-cell] [--seed N]
      [--lever NAME] [--round N] [--phase TEXT] [--strip-version N]
@@ -126,11 +130,11 @@ acknowledge-drift --anlas N --by NAME --checked TEXT [--previous ID]
                             not a measurement. Appends one `drift` row and
                             prints every figure, every still-open boundary
                             and each proof's standing. That row re-baselines
-                            THAT ONE BOUNDARY for the chain; it NEVER
-                            restores a proof, never deletes LOCK, and can
-                            never reach a charge measured INSIDE one of our
-                            own rows. Exit 0 when a row was written, 2
-                            otherwise. No network.
+                            THAT ONE BOUNDARY for the chain, which silences
+                            its warning; it NEVER restores a proof, never
+                            deletes LOCK, and can never reach a charge
+                            measured INSIDE one of our own rows. Exit 0 when
+                            a row was written, 2 otherwise. No network.
 resolve-boundary --anlas N --attribute theirs|ours --by NAME --checked TEXT
                  [--previous ID] [--observed ID] [--note TEXT]
                             The louder verb, for an AMBIGUOUS boundary: the
@@ -153,9 +157,10 @@ INVARIANTS
   run.run_request raises after writing a row (a refusal after the balance
   read, a failed balance read after the send, a Ctrl-C), the rows it wrote
   are printed from the ledger before the error.
-* A SENDING COMMAND EXITS 0 only for a 2xx whose PNG was stored and that
-  wrote no LOCK; an HTTP error, a timeout, a bad ZIP or a LOCK exits 1 with
-  the row printed.
+* A SENDING COMMAND EXITS 0 for a 2xx whose PNG was stored, WARNING or
+  not: since 2026-09-24 a balance event is printed and recorded and never
+  stops anything (guard's module docstring). An HTTP error, a timeout or a
+  bad ZIP exits 1 with the row printed.
 * --seed absent -> a seed from `secrets` in [SEED_MIN, SEED_MAX], printed
   before anything is sent so the author can repeat it. A request file has no
   such absence: spec refuses one without a seed, so `plan-request` and
@@ -548,9 +553,10 @@ def _print_sent(row: dict, state: State) -> None:
              "can hide a charge")
     if row.get("error_message"):
         _out(f"error         {row['error_message']}")
-    if row.get("locked"):
-        _out(f"LOCK          written: {state.lock_path} -- everything is "
-             f"refused until the author deletes it by hand")
+    if row.get("warning"):
+        _out(f"WARNING       {row['warning']}")
+        _out("              A warning, not a stop: the account is shared. "
+             "It is on the books; `ledger` and `account` show every figure.")
 
 
 def _send(req, transport: Transport | None, state: State, *, probe: bool,
@@ -576,10 +582,11 @@ def _send(req, transport: Transport | None, state: State, *, probe: bool,
 
 
 def _sent_exit(row: dict) -> int:
-    """EXIT_OK only for a 2xx with a stored output PNG and no LOCK."""
+    """EXIT_OK for a 2xx with a stored output PNG. A WARNING does not change
+    the exit: a balance event never stops anything (guard's docstring)."""
     status = row.get("http_status")
     clean = (isinstance(status, int) and 200 <= status < 300
-             and row.get("output_path") and not row.get("locked"))
+             and row.get("output_path"))
     return EXIT_OK if clean else EXIT_ERROR
 
 
@@ -600,6 +607,7 @@ def _cmd_account(args, transport, state: State) -> int:
     _out(f"purchased     {account.purchased}")
     _out(f"sum           {account.sum}")
     problems: list[str] = []
+    warnings: list[str] = []
     gaps: list = []
     unreadable = None
     try:
@@ -634,7 +642,8 @@ def _cmd_account(args, transport, state: State) -> int:
                                  f"{len(gaps)} OPEN, "
                                  f"{sum(g.delta for g in gaps):+d} Anlas"))
         for gap in gaps:
-            problems.append(f"{gap.previous_row}->{gap.observed_row} unsigned")
+            warnings.append(f"{gap.previous_row}->{gap.observed_row} "
+                            f"unsigned ({gap.delta:+d})")
             _out(f"              {guard.boundary_note(gap)}")
     try:
         for line in _accounting_lines(state):
@@ -655,10 +664,18 @@ def _cmd_account(args, transport, state: State) -> int:
         problems.append("INFLIGHT present")
     # THE LAST LINE IS THE WHOLE STATE, not the tier alone: "free tier
     # usable" used to read as the bottom line while LOCK, an unsigned
-    # boundary and an unreadable chain sat on the same screen.
-    _out("verdict       " + ("free tier usable, nothing outstanding"
-                             if not problems else
-                             f"REFUSED: {'; '.join(problems)}"))
+    # boundary and an unreadable chain sat on the same screen. An open
+    # boundary is a WARNING in it and never a refusal (guard's docstring),
+    # but it is never left out: "nothing outstanding" is said only when
+    # nothing is.
+    if problems:
+        verdict = f"REFUSED: {'; '.join(problems)}"
+    elif warnings:
+        verdict = (f"free tier usable, sends go ahead -- WARNING: "
+                   f"{'; '.join(warnings)}")
+    else:
+        verdict = "free tier usable, nothing outstanding"
+    _out("verdict       " + verdict)
     return EXIT_OK if free and not problems else EXIT_REFUSED
 
 
@@ -733,15 +750,15 @@ def _print_plan(req, state: State) -> int:
                               url=GENERATE_URL)
     _out("conditions")
     offline_ok = True
+    warned = 0
     for verdict in verdicts:
         title = guard.CONDITION_TITLES.get(verdict.condition, "")
         if verdict.condition not in guard.OFFLINE_CONDITIONS:
             mark = "needs the live account read"
         elif verdict.ok is None:
             # condition 1 with a proof pending its read, or condition 9 with
-            # its ledger half clean and only the live balance missing. A
-            # condition 9 that FAILS offline -- an unsigned boundary already
-            # in the ledger -- falls through to FAIL below, so `plan` can
+            # only the live balance missing -- WARNING beside it when its
+            # ledger half already holds an unsigned boundary, so `plan` can
             # never report a clean bill over books with money missing.
             mark = "needs the live account read"
         elif verdict.ok is True:
@@ -749,6 +766,9 @@ def _print_plan(req, state: State) -> int:
         else:
             mark = "FAIL"
             offline_ok = False
+        if verdict.warning:
+            mark += ", WARNING"
+            warned += 1
         detail = (f" -- {verdict.message}"
                   if verdict.message and verdict.message != mark else "")
         _out(f"  {verdict.condition:>2} [{mark}] {title}{detail}")
@@ -756,8 +776,12 @@ def _print_plan(req, state: State) -> int:
         if not any(v.condition == condition for v in verdicts):
             offline_ok = False
             _out(f"  {condition:>2} [FAIL] no verdict returned")
-    _out("verdict       " + ("every offline condition passes" if offline_ok
-                             else "REFUSED offline"))
+    if not offline_ok:
+        _out("verdict       REFUSED offline")
+    else:
+        _out("verdict       every offline condition passes"
+             + (f", with {warned} WARNING(s): a warning never stops a send"
+                if warned else ""))
     return EXIT_OK if offline_ok else EXIT_REFUSED
 
 
@@ -1033,11 +1057,11 @@ def _sign_boundary(args, state: State, *, external: bool) -> int:
       * write ONE `drift` row, then print the books, every still-open
         boundary IN FULL, and what the signature did NOT do.
 
-    It never deletes LOCK -- a signature that could would be able to clear
-    the LOCK a charge measured INSIDE one of our own rows wrote -- and it
-    never restores a proof: `guard.proof_standing` reads no allowance, and
-    the command prints each proof's standing before and after so the author
-    can see that for himself.
+    It never deletes LOCK -- nothing in the package writes one any more, so
+    a LOCK is the author's own emergency stop and only the author lifts it
+    -- and it never restores a proof: `guard.proof_standing` reads no
+    allowance, and the command prints each proof's standing before and after
+    so the author can see that for himself.
     """
     verb = "acknowledge-drift" if external else "resolve-boundary"
     if state.inflight():
@@ -1076,7 +1100,8 @@ def _sign_boundary(args, state: State, *, external: bool) -> int:
     if gap is None:
         _err(f"refused: {why}")
         _out("A charge measured INSIDE one of our own rows is not signed "
-             "here: read LOCK, check the account by hand.")
+             "here: it is ours, recorded in that row's own WARNING and in "
+             "`ours spent`.")
         return EXIT_REFUSED
     if gap.ambiguous == external:
         _err(f"refused: {guard.boundary_note(gap)}")
@@ -1135,7 +1160,7 @@ def _sign_boundary(args, state: State, *, external: bool) -> int:
     for line in _accounting_lines(state):
         _out(line)
     still = guard.open_boundaries(state.rows())
-    _out("chain         " + ("re-baselined: this boundary no longer refuses"
+    _out("chain         " + ("re-baselined: this boundary no longer warns"
                              if not still else
                              f"STILL OPEN: {guard.boundaries_note(still)}"))
     for line in _proof_lines(before_standing, _proof_standing(state)):
@@ -1170,7 +1195,8 @@ def _proof_lines(before: dict, after: dict) -> list[str]:
     for pair, was in before.items():
         now = after.get(pair)
         action, model = pair
-        word = {True: "stands", False: "REFUTED for good",
+        word = {True: "stands",
+                False: "REFUTED for good (a warning: it is still sent)",
                 None: "pending the next balance read"}
         lines.append(f"proof         {action} ({model}): {word[now]}"
                      + ("" if now == was else
@@ -1266,6 +1292,10 @@ def _cmd_ledger(args, transport, state: State) -> int:
             f"refused {_fmt(row.get('refusal_condition'))}",
             f"verdict {_fmt(row.get('verdict'))}",
         )))
+        warning = row.get("warning")
+        if warning:
+            _out(f"      WARNING {warning[:200]}"
+                 + (" ..." if len(warning) > 200 else ""))
     for line in _accounting_lines(state):
         _out(line)
     return EXIT_OK

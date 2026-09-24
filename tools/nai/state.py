@@ -23,7 +23,9 @@ LAYOUT
 ------
     <root>/ledger.jsonl        append-only JSONL, one row per attempt
     <root>/proofs.json         JSON list of model.Proof rows
-    <root>/LOCK                text: ledger id + reason; present = refuse all
+    <root>/LOCK                text: ledger id + reason; present = refuse all.
+                               Placed only by hand since 2026-09-24: the
+                               author's emergency stop
     <root>/INFLIGHT            text: ledger id, pid, balance before; present =
                                refuse all
     <root>/blobs/<sha256>.<ext> content-addressed bytes, ext png|zip|json
@@ -53,15 +55,17 @@ INVARIANTS
   before, so the ledger is LOST, not new, and `last_balance` RAISES rather
   than let the next read chain as a first run. A last row without a balance
   RAISES -- with ONE exception, stated in `last_balance`: a `generation`
-  row whose after-read failed carries `account_after` null and `locked`
-  true, and for that row the chain value is its `account_before.sum`.
+  row whose after-read failed carries `account_after` null and
+  `inconclusive` true (and, before 2026-09-24, `locked` true), and for that
+  row the chain value is its `account_before.sum`.
 * ONE SCRUB. `scrub_text` is the only function that makes server or
   exception text safe for a row, and it removes WHOLE credential-shaped
   runs (a `pst-` token with its body, a Bearer value, an Authorization
   value), never just the marker: a marker-only scrub also disarms
   `validate_row`'s refusal while leaving the token body in the row.
-* NOTHING HERE DELETES LOCK. The author deletes it by hand; `lock()` only
-  creates it (and leaves an existing one untouched). INFLIGHT is created
+* NOTHING HERE DELETES LOCK, AND NOTHING IN THE PACKAGE WRITES IT. The
+  author places it and deletes it by hand; `lock()` only creates it (and
+  leaves an existing one untouched), and only the checks call it. INFLIGHT is created
   exclusively (O_CREAT | O_EXCL) and removed only by `release_inflight`,
   which `run.run_request` calls after the row is durably written -- a crash
   leaves INFLIGHT behind on purpose, for the author to inspect.
@@ -380,13 +384,15 @@ class State:
         or a request killed before its row was written -- had charged.
 
         The one exception: a `generation` row with `account_after` null AND
-        `locked` true is the row `run.run_request` writes when the balance
-        read AFTER a send failed. That row also wrote LOCK, so nothing runs
-        until the author deletes LOCK by hand; after that, the chain value is
-        the row's `account_before.sum` -- the last balance anyone measured.
-        A charge that call caused then shows as a decrease on the next read
-        and LOCKs again. Without this, a failed after-read would make every
-        later invocation raise forever, since the ledger is append-only.
+        `inconclusive` true is the row `run.run_request` writes when the
+        balance read AFTER a send failed (rows written before 2026-09-24 also
+        carry `locked` true, and are read the same way). The chain value is
+        then the row's `account_before.sum` -- the last balance anyone
+        measured -- and the row's own `warning` says zero cost could not be
+        shown. A charge that call caused shows as a fall on the next read,
+        which warns again at that boundary. Without this, a failed after-read
+        would make every later invocation raise forever, since the ledger is
+        append-only.
 
         A `drift` row is STEPPED OVER: it measured no balance of its own, it
         signs for a fall between two rows that did. The chain value is the
@@ -414,7 +420,8 @@ class State:
         if isinstance(after, dict) and _is_int(after.get("sum")):
             return after["sum"]
         if (after is None and last.get("kind") == "generation"
-                and last.get("locked") is True):
+                and (last.get("inconclusive") is True
+                     or last.get("locked") is True)):
             before = last.get("account_before")
             if isinstance(before, dict) and _is_int(before.get("sum")):
                 return before["sum"]
@@ -492,7 +499,14 @@ class State:
 
     def lock(self, ledger_id: str, reason: str) -> None:
         """Create LOCK containing ledger_id and reason; leave an existing LOCK
-        untouched. Never deletes."""
+        untouched. Never deletes.
+
+        NOTHING IN tools.nai CALLS THIS. Since 2026-09-24 a balance event
+        warns and never stops (the author's decision: the account is shared),
+        so LOCK exists only when somebody places it on purpose -- the
+        author's emergency stop, which condition 10 still honours -- and this
+        is how the checks place one. tools/check_nai.py asserts no module
+        under tools/nai/ calls it."""
         self._ensure_root()
         text = f"{ledger_id}\n{reason}\n".encode("utf-8")
         try:

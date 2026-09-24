@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written 2026-09-17 from the tools/nai contract docstrings and the NovelAI research brief; no command here has been run against NovelAI yet, so every cost claim says in place whether it is proven, and the baseline sprites were measured by the commands in their CREDITS.md. The build axis, the gunslinger garments and the garet example were added 2026-09-17; every number in them was measured off data/graphics/tilesets/Characters/~Garet.png or off a render, and tools/check_nai.py asserts the ones that are invariants. Request files (plan-request, run-request, request-catalog) were added 2026-09-19 and were run offline only, against a recording transport, by tools/check_nai.py section 8c. -->
+<!-- pyoneer-stamp: hand-written 2026-09-17 from the tools/nai contract docstrings and the NovelAI research brief; no command here has been run against NovelAI yet, so every cost claim says in place whether it is proven, and the baseline sprites were measured by the commands in their CREDITS.md. The build axis, the gunslinger garments and the garet example were added 2026-09-17; every number in them was measured off data/graphics/tilesets/Characters/~Garet.png or off a render, and tools/check_nai.py asserts the ones that are invariants. Request files (plan-request, run-request, request-catalog) were added 2026-09-19 and were run offline only, against a recording transport, by tools/check_nai.py section 8c. On 2026-09-24, at the author's instruction, every balance event became a warning that never stops a send; "Is it free?", "The books" and the probe rules below say so, and tools/check_nai.py sections 2, 3, 8 and 8b assert it, each half proved red by a mutant. -->
 
 # NovelAI sprites — side-scroller strips on the Opus free tier
 
@@ -37,17 +37,23 @@ refuses:
 - a body whose image fields do not belong to its action (a generate carrying
   an image or a strength, an img2img carrying a mask)
 - an account that is not an active Opus (tier 3) plan, or that is in grace
-- a balance below the last ledger row's (a refill above it is recorded), or
-  any UNSIGNED drop between two ledger rows (see *The books*), and any
-  `LOCK` or `INFLIGHT` file
+- a `LOCK` file (only ever placed by hand: the author's emergency stop) or
+  an `INFLIGHT` file (a send whose row may be missing)
 - an empty ledger beside `blobs/` or `proofs.json`: the ledger was lost, and
   the balance chain cannot safely start over
 
-A balance **decrease** writes `LOCK`, and from then on the tool refuses
-everything until the author deletes `LOCK` by hand. So does a request
-**interrupted** after it was sent (Ctrl-C): the balance is still read and the
-row still written, but whether it was charged is unknown. Nothing is retried
-automatically: not a 429, not a 5xx, not a timeout.
+**A balance event warns; it never stops anything.** The author's decision,
+2026-09-24: *"Don't worry about the costs, it's a shared account. Downgrade
+the LOCK to a warning, and don't stop the process via a warning."* So a fall
+inside one of our rows (our own charge), a fall between two rows (somebody
+else's spend, or a late charge of ours), a proof the balance has refuted, and
+a request **interrupted** after it was sent (Ctrl-C, outcome unknown) are
+each printed as `WARNING`, written into that row's `warning` column and kept
+in the books, and the send goes ahead. Nothing in the tool writes `LOCK` any
+more. What still refuses is what decides what is SENT -- the model, the
+size, the steps, the samples, the references, the captions, the tier -- and
+never what the balance did. Nothing is retried automatically: not a 429, not
+a 5xx, not a timeout.
 
 ## The books
 
@@ -58,8 +64,8 @@ can fall in two places and they are not the same measurement:
 
 | where the fall is | what it means | what happens |
 |---|---|---|
-| **inside one of our rows** — that row's own `account_after` below its own `account_before` | our request is the only thing between those two reads, so **the charge is ours** | `LOCK`, everything refused until the author deletes it by hand, and that action's proof refuted **for good**. No signature can absorb, clear or excuse it. |
-| **between two rows** — one row's `account_after`, then the next row's `account_before`, lower | no row of ours lies between those two reads. That is **not** the same as "nothing of ours was charged": see the boundary table below | refused the first time it is seen (condition 9, `LOCK`), printing both balances, the delta, the window, and the command that signs it. It stays refused until the author signs it. |
+| **inside one of our rows** — that row's own `account_after` below its own `account_before` | our request is the only thing between those two reads, so **the charge is ours** | a `WARNING` in that row and in `ours spent`, and that action's proof refuted **for good** -- itself a warning: the action is still sent. No signature can absorb, clear or excuse it. |
+| **between two rows** — one row's `account_after`, then the next row's `account_before`, lower | no row of ours lies between those two reads. That is **not** the same as "nothing of ours was charged": see the boundary table below | a `WARNING` every time it is seen (condition 9), printing both balances, the delta, the window, and the command that signs it. It stays on the books as `UNSIGNED` until the author signs it. |
 
 **A fall between two rows is classified, never assumed.** The only thing the
 ledger knows about that window is whether the earlier row put anything on the
@@ -83,12 +89,13 @@ checked — and that row re-baselines **that one boundary** for the chain. A
 later drop, or a larger one at the same boundary, is a different boundary and
 needs its own signature.
 
-Two things a signature never does. It **never deletes `LOCK`**: one that could
-would be able to clear the `LOCK` a real charge wrote. And it **never restores
+Two things a signature never does. It **never deletes `LOCK`**: a `LOCK` is
+the author's own emergency stop, and only the author lifts it. And it **never restores
 a proof** — `guard.proof_standing` reads no signature at all, so signing the
-boundary that refuted img2img frees the chain so the generate track can go on
-and leaves img2img refused. The one way back is to remove the proof from
-`proofs.json` by hand and probe again, paying that probe knowingly.
+boundary that refuted img2img silences the chain's warning and leaves
+img2img's own warning in place. The one way to stand a refuted proof again is
+to remove it from `proofs.json` by hand and probe again, paying that probe
+knowingly.
 
 `ledger` and `account` print **every figure separately, and never add any two
 of them**:
@@ -125,10 +132,12 @@ matters.
   unchanged balance, the tool writes a proof row to `data/nai/proofs.json`
   for that action and model. A 2xx with no image in it (an HTML page, an
   empty body, a 204, JSON) proves nothing and writes no proof.
-- The proof counts only once the **next** balance read still shows the
+- The proof stands only once the **next** balance read still shows the
   probe's balance. A read **above** it (a refill, which can hide a charge)
   refutes it for good: re-measuring then means the author removes that proof
-  from `proofs.json` by hand and probes again.
+  from `proofs.json` by hand and probes again. A REFUTED proof is a warning
+  on every later call of its action, never a refusal; a proof that names no
+  probe row, or a probe row that measured nothing, is still refused.
 - A read **below** it refutes it **for good** as well. The probe's own
   request went out, so a debit the server applied after the probe's
   after-read (R4) lands exactly there and is byte-identical to somebody
@@ -136,16 +145,15 @@ matters.
   boundary re-baselines the chain and leaves the proof refuted.
 - A **later** img2img or infill call of that model charged **inside its own
   row**, or one whose after-read failed, refutes the proof for good in the
-  same way, so deleting that `LOCK` does not send another charged call. So
-  does a fall in the read that **follows** such a call, for the R4 reason
-  above.
+  same way, and its own row's warning says the action is charged. So does a
+  fall in the read that **follows** such a call, for the R4 reason above.
 - If it is charged, the client formula puts the worst case at 2 Anlas, and the
-  tool writes `LOCK`.
+  probe's row warns and writes no proof.
 
 Run the generate track first. Then probe img2img and infill separately, one
 decision each. **Only the author types `--accept-max-2-anlas`, spelled out in
 full: no abbreviation of any option is accepted. An agent never passes it and
-never deletes `LOCK`.**
+never deletes a `LOCK` the author placed.**
 
 ## The key
 
@@ -691,7 +699,7 @@ cannot be found that way and keeps its own: send from one checkout only.
 |---|---|
 | `ledger.jsonl` | append-only, one row per attempt |
 | `proofs.json` | the proof rows |
-| `LOCK`, `INFLIGHT` | refusal markers |
+| `LOCK`, `INFLIGHT` | refusal markers: `LOCK` only when the author places it by hand; `INFLIGHT` while a send is in the air, or after one lost its row |
 | `blobs/` | requests and responses by sha256 |
 | `renders/` | mannequin renders, `<character>_<recipe>_init.png` |
 | `sprites/<character>/<recipe>/` | strips, frames, sidecars and palettes |

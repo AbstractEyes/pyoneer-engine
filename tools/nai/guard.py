@@ -14,8 +14,21 @@ each condition and a mutation of any one turns both routes red.
 INVARIANTS
 ----------
 * PURE. Nothing here writes a file, opens a socket or reads the environment.
-  The guard READS `state` (LOCK, INFLIGHT, last balance) and never writes it;
-  writing LOCK is `run.run_request`'s job, driven by `chain_verdict`.
+  The guard READS `state` (LOCK, INFLIGHT, last balance) and never writes it.
+  Nothing in the package writes LOCK at all any more: it exists only when the
+  author places it by hand, as an emergency stop, and condition 10 honours it.
+* A BALANCE EVENT WARNS; IT NEVER STOPS. The author's decision, 2026-09-24:
+  "Don't worry about the costs, it's a shared account. Downgrade the LOCK to
+  a warning, and don't stop the process via a warning." So an unsigned fall
+  between two of our rows, or a live read below the chain, is condition 9
+  ok=True WITH `warning` set; a proof the balance has refuted is condition 1
+  ok=True WITH `warning` set; `assert_free` returns those warnings instead of
+  raising; and `run.run_request` records each one in its row's `warning`.
+  Everything is still MEASURED, classified and printed, and the books carry
+  every figure. What still REFUSES is what decides what we send, never what
+  the balance did: the body's shape (2-7, 11), the account's tier (8), an
+  action with no proof, or a proof that never measured anything (1), a
+  ledger that cannot be read (9), and LOCK or INFLIGHT on disk (10).
 * JUDGES THE BODY, NOT THE REQUEST. The conditions read the dict that will be
   serialised, so a body edited after `request.build_body` is still judged.
 * A CONDITION THAT CANNOT BE CHECKED IS NOT A PASS. `evaluate` without an
@@ -49,14 +62,16 @@ INVARIANTS
   `proof_standing` counts a proof only when it answers None for the row the
   proof names -- so a 2xx carrying an HTML page, an empty body, a 204 or JSON
   proves nothing on either route.
-* A PROOF COUNTS ONLY WHEN THE CHAIN CONFIRMS IT. A probe with delta 0 writes
-  a proof row at once, but a debit can land after the probe's own after-read
-  (risk R4). `proof_standing` accepts a proof only when the balance read that
-  FOLLOWS the probe -- the next ledger row's account_before, or, while there
-  is none, the read being judged -- equals the probe's account_after. Any
-  other value refutes it for good (a fall is R4's own shape, and a rise can
-  hide a charge), and a proof naming no probe row of its own pair in the
-  ledger counts for nothing.
+* A PROOF STANDS ONLY WHEN THE CHAIN CONFIRMS IT. A probe with delta 0
+  writes a proof row at once, but a debit can land after the probe's own
+  after-read (risk R4). `proof_standing` accepts a proof only when the
+  balance read that FOLLOWS the probe -- the next ledger row's
+  account_before, or, while there is none, the read being judged -- equals
+  the probe's account_after. Any other value refutes it for good (a fall is
+  R4's own shape, and a rise can hide a charge) -- and a refuted proof is a
+  WARNING, never a stop (above). A proof naming no probe row of its own pair,
+  or a probe row that measured nothing, is not refuted by the balance: it
+  never proved anything (`proof_problem`), and condition 1 REFUSES on it.
 * A LATER FALL REFUTES IT TOO. Every `generation` row of the proof's
   (action, model) after its probe is scanned. A balance that fell INSIDE one
   of them (its own after below its own before) refutes the proof for good:
@@ -68,15 +83,16 @@ INVARIANTS
   counts. A confirmed proof is evidence about the account at the time of the
   probe, not a licence the account's own later answer cannot withdraw.
 * NO SIGNATURE REACHES A PROOF. `proof_standing` reads no allowance at all:
-  `acknowledge-drift` and `resolve-boundary` re-baseline the CHAIN, so the
-  author can keep working, and can never re-arm img2img. The one way back is
-  to remove the proof by hand and probe again.
+  `acknowledge-drift` and `resolve-boundary` re-baseline the CHAIN, which
+  silences condition 9's warning for that boundary, and never condition 1's
+  for a refuted proof. The one way to stand a proof again is to remove it by
+  hand and probe again.
 * THE TWO MEASUREMENTS ARE NEVER MIXED. See the block above `Boundary`:
-  within a row is OURS and LOCKs for good; between two rows is a boundary,
-  EXTERNAL only when the earlier row sent nothing and AMBIGUOUS whenever a
-  request of ours could be its cause, refused until it is signed and then
-  recorded on its own line. `accounting` reports every figure separately --
-  measured, signed and unsigned -- and adds none of them together.
+  within a row is OURS; between two rows is a boundary, EXTERNAL only when
+  the earlier row sent nothing and AMBIGUOUS whenever a request of ours could
+  be its cause, warned about until it is signed and then recorded on its own
+  line. `accounting` reports every figure separately -- measured, signed and
+  unsigned -- and adds none of them together.
 """
 from __future__ import annotations
 
@@ -102,7 +118,8 @@ if TYPE_CHECKING:  # state imports Refused from here; no runtime cycle
 
 CONDITION_TITLES: Mapping[int, str] = {
     1: "action is generate/img2img/infill, its keys match it; img2img and "
-       "infill need a confirmed proof row",
+       "infill need a proof row that measured something (a balance that "
+       "later refutes it is a warning)",
     2: "model is a V4.5 id legal for the action",
     3: "width and height are multiples of 64, each >= 64, area <= 1048576",
     4: "steps <= 28 and n_samples == 1",
@@ -110,18 +127,19 @@ CONDITION_TITLES: Mapping[int, str] = {
     6: "1..6 frames, centers on the grid and distinct, arrays parallel",
     7: "ASCII captions, token budget, rating:general closes the base caption",
     8: "account is Opus (tier 3), active, not in grace period",
-    9: "balance chain unbroken: no UNSIGNED fall between our rows, and "
-       "before == previous after, or a refill",
-    10: "no LOCK file and no INFLIGHT file",
+    9: "balance chain readable; an UNSIGNED fall between our rows, or a "
+       "read below the chain, is a warning",
+    10: "no LOCK file (the author's emergency stop) and no INFLIGHT file",
     11: "endpoint is POST https://image.novelai.net/ai/generate-image",
     12: "one generation request per process (run.run_request latch)",
 }
 
 OFFLINE_CONDITIONS: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 9, 10, 11)
 """What `plan` can judge with no network. Condition 9 is here for its LEDGER
-half: an unsigned boundary already written down is a refusal a plan can see
+half: an unsigned boundary already written down is a warning a plan can see
 coming. Only its live half -- the balance now -- needs the network, so a plan
-over a clean ledger still reports 9 as ok=None, and 8 always is."""
+reports 9 as ok=None (with `warning` set over an open boundary), and 8
+always is."""
 
 
 class Refused(Exception):
@@ -143,10 +161,16 @@ class Refused(Exception):
 
 @dataclass(frozen=True)
 class Verdict:
-    """One condition's outcome. `ok` is True, False, or None (not checked)."""
+    """One condition's outcome. `ok` is True, False, or None (not checked).
+
+    `warning` is True when the condition passes (or cannot yet be judged)
+    OVER a balance event -- an unsigned fall (9), a proof the balance refuted
+    (1). A warning never stops anything: `assert_free` raises only on an `ok`
+    that is not True, and returns the warnings for the row to record."""
     condition: int
     ok: bool | None
     message: str
+    warning: bool = False
 
 
 def chain_verdict(previous_after: int | None, before: int) -> str:
@@ -154,8 +178,8 @@ def chain_verdict(previous_after: int | None, before: int) -> str:
 
     Returns "first" when previous_after is None (empty ledger), "ok" when
     equal, "refill" when before > previous_after, "charged" when
-    before < previous_after. Pure; `run.run_request` writes LOCK on
-    "charged" and `evaluate` fails condition 9 on it.
+    before < previous_after. Pure; `run.run_request` records a warning on
+    "charged" and `evaluate` passes condition 9 on it WITH a warning.
     """
     if previous_after is None:
         return "first"
@@ -179,10 +203,11 @@ def _row_sum(row: Mapping[str, object], key: str) -> int | None:
 # TWO KINDS OF MONEY MOVEMENT, AND THEY ARE NEVER THE SAME MEASUREMENT
 # ---------------------------------------------------------------------------
 # WITHIN A ROW: account_after.sum < account_before.sum. That row's OWN two
-# reads bracket ONE request this tool sent, so the drop is OURS. It writes
-# LOCK, refuses everything after it, and refutes that action's proof for
-# good. Nothing below can absorb, clear or excuse it -- the comparison is
-# inside one row, so no signature can reach it.
+# reads bracket ONE request this tool sent, so the drop is OURS. It is
+# recorded in that row's `warning` and refutes that action's proof for good
+# (a warning too, since 2026-09-24: nothing here stops on a balance). Nothing
+# below can absorb, clear or excuse it -- the comparison is inside one row,
+# so no signature can reach it.
 #
 # BETWEEN TWO ROWS: one row's account_after.sum, then the NEXT row's
 # account_before.sum, lower. NO ROW OF OURS LIES BETWEEN THOSE TWO READS --
@@ -486,11 +511,11 @@ def open_boundaries(rows: Sequence[Mapping[str, object]]) -> tuple:
     ONE function answers both questions -- the refusal ("is there one?") and
     the books ("how much is unsigned, and where?") -- so a mutation of the
     walk turns both red and neither can grow its own copy (CLAUDE.md's
-    sibling-route warning). Condition 9 fails while this answers anything,
-    so a between-row drop is refused every time it is seen and is never
-    absorbed by the refused row that observed it. A drop measured INSIDE one
-    row is not here: that one is ours, and `run.run_request` LOCKs on it
-    where it happens.
+    sibling-route warning). Condition 9 WARNS while this answers anything,
+    so a between-row drop is reported every time it is seen until it is
+    signed, and is never absorbed by the row that observed it. A drop
+    measured INSIDE one row is not here: that one is ours, and
+    `run.run_request` records it in that row's own `warning`.
 
     ValueError for a boundary that cannot be read (`_boundary`). Pure.
     """
@@ -516,8 +541,9 @@ def live_boundary(rows: Sequence[Mapping[str, object]], high: int, low: int,
     `high` is `state.last_balance()`, `low` the read just taken. The earlier
     side is the last row that measured a balance, so `_sent` decides this
     one's cause exactly as it decides a written boundary's. `observed_row`
-    names the row that WRITES this read down (step 6's refused row) when
-    there is one, and the note then prints a command that can really be
+    names the row that WRITES this read down (the row the calling
+    `run.run_request` is about to write) when there is one, and the note
+    then prints a command that can really be
     typed; without it the boundary is `live`, and nothing can sign it until
     a row records it. ValueError when no chain row precedes the read.
     """
@@ -551,8 +577,10 @@ def boundary_note(boundary: Boundary) -> str:
     outstanding, and calling the drop somebody else's is STILL the author's
     judgement; an AMBIGUOUS one had, and this tool cannot tell a late charge
     of ours from a friend's spend. Condition 9's verdict,
-    `run.run_request`'s LOCK text and `cli._cmd_account` all call this, so
-    there is one wording and a mutation of it turns every route red. Pure.
+    `run.run_request`'s warning text and `cli._cmd_account` all call this,
+    so there is one wording and a mutation of it turns every route red. It
+    never says the fall stopped anything: since 2026-09-24 it does not.
+    Pure.
     """
     fell = f"the balance fell {boundary.describe}"
     if boundary.ambiguous:
@@ -562,9 +590,10 @@ def boundary_note(boundary: Boundary) -> str:
                 f"charged -- and nothing measured that it was not. A late "
                 f"charge of ours and somebody else's spend on a shared "
                 f"account are byte-identical here.")
-        how = (f" `acknowledge-drift` cannot sign this one, and deleting LOCK "
-               f"does not clear it. Check the provider's own usage page and "
-               f"whoever else uses the account, then record what you found: "
+        how = (f" This is a warning and stops nothing, but it stays on the "
+               f"books as UNSIGNED, and `acknowledge-drift` cannot sign this "
+               f"one. Check the provider's own usage page and whoever else "
+               f"uses the account, then record what you found: "
                f"`python -m tools.nai resolve-boundary --previous "
                f"{boundary.previous_row} --observed {boundary.observed_row} "
                f"--anlas {-boundary.delta} --attribute ours|theirs --by NAME "
@@ -579,14 +608,16 @@ def boundary_note(boundary: Boundary) -> str:
                 f"theirs is your judgement, not a measurement. Rows whose own "
                 f"after-read failed are listed separately, and this says "
                 f"nothing about them.")
-        how = (f" Sign it with `python -m tools.nai acknowledge-drift "
+        how = (f" This is a warning and stops nothing, but it stays on the "
+               f"books as UNSIGNED until you sign it with `python -m tools.nai "
+               f"acknowledge-drift "
                f"--previous {boundary.previous_row} --observed "
                f"{boundary.observed_row} --anlas {-boundary.delta} --by NAME "
                f"--checked \"what you looked at\"`.")
     if boundary.live:
         how = (" This read is not a ledger row yet, so no command can sign it "
-               "as it stands: the next run writes the refused row that "
-               "records it, and it can be signed once it is written down.")
+               "as it stands: the next run writes the row that records it, "
+               "and it can be signed once it is written down.")
     return note + how
 
 
@@ -597,7 +628,7 @@ def boundaries_note(boundaries: Sequence[Boundary], *,
     The caller puts the boundary THIS call observed at the front, so the
     author always reads about the drop that just happened rather than the
     oldest one on the books, and never carries away a figure that is short.
-    `this_read` False says out loud that the run was stopped by something
+    `this_read` False says out loud that the warning is about something
     recorded earlier. ValueError for an empty sequence: there is no note
     about nothing. Pure.
     """
@@ -750,6 +781,48 @@ def probe_row_problem(row: Mapping[str, object]) -> str | None:
     return None
 
 
+def _proof_probe(proof: Proof, links: Sequence[Mapping[str, object]]
+                 ) -> tuple[int | None, str | None]:
+    """(index of the proof's probe row in `links`, None), or (None, why).
+
+    THE STRUCTURAL HALF of `proof_standing`, and the ONE rule for "this proof
+    names a probe that measured something": a row in the chain `links` with
+    the proof's ledger_id, which is a `generation` probe of the proof's own
+    (action, model) that `probe_row_problem` accepts. A proof failing this
+    was never a measurement, so condition 1 REFUSES on it whatever the
+    balance policy; one passing it can only be refuted by what the balance
+    did afterwards, which is a warning. `proof_standing` and `proof_problem`
+    both call it -- one function, so a mutation of it turns both routes red.
+    Pure.
+    """
+    pair = f"({proof.action}, {proof.model})"
+    index = next((i for i, row in enumerate(links)
+                  if row.get("ledger_id") == proof.ledger_id), None)
+    if index is None:
+        return None, (f"the proof for {pair} names ledger row "
+                      f"{proof.ledger_id!r}, which is not in the ledger")
+    probe_row = links[index]
+    if not (probe_row.get("kind") == "generation"
+            and probe_row.get("verdict") == "probe"
+            and probe_row.get("action") == proof.action
+            and probe_row.get("model") == proof.model):
+        return None, (f"the proof for {pair} names ledger row "
+                      f"{proof.ledger_id!r}, which is not a probe of {pair}")
+    problem = probe_row_problem(probe_row)
+    if problem is not None:
+        return None, (f"the proof for {pair} names probe row "
+                      f"{proof.ledger_id!r}, which proves nothing: {problem}")
+    return index, None
+
+
+def proof_problem(proof: Proof,
+                  rows: Sequence[Mapping[str, object]]) -> str | None:
+    """Why `proof` never proved anything over the ledger `rows`, or None
+    when it names a probe of its own pair that measured something. The
+    structural half of `proof_standing` (`_proof_probe`). Pure."""
+    return _proof_probe(proof, chain_rows(rows))[1]
+
+
 def proof_standing(proof: Proof, rows: Sequence[Mapping[str, object]],
                    current_sum: int | None) -> tuple[bool | None, str]:
     """Whether the balance chain confirms `proof` (module docstring).
@@ -777,42 +850,36 @@ def proof_standing(proof: Proof, rows: Sequence[Mapping[str, object]],
         R4 reading, refuted for good. A RISE across or after such a call
         does not refute by itself: the next call of the pair measures again.
 
+    The first bullet is the STRUCTURAL half (`_proof_probe`, which
+    `proof_problem` also answers from): such a proof never measured anything,
+    and condition 1 refuses on it. Every other False is the BALANCE half, and
+    condition 1 passes it with a warning (module docstring).
+
     NO SIGNATURE IS READ HERE. `signed_allowance` and `expected_next_read`
     re-baseline the CHAIN and nothing else, so no `acknowledge-drift` and no
-    `resolve-boundary` can turn a refuted proof back into a standing one and
-    re-arm img2img. An author who believes the fall was somebody else's
-    removes the proof from proofs.json by hand and probes again, paying the
-    probe's cost knowingly. Pure: reads nothing but its arguments.
+    `resolve-boundary` can turn a refuted proof back into a standing one, and
+    condition 1 keeps warning about it. An author who believes the fall was
+    somebody else's removes the proof from proofs.json by hand and probes
+    again, paying the probe's cost knowingly. Pure: reads nothing but its
+    arguments.
     """
     pair = f"({proof.action}, {proof.model})"
     links = chain_rows(rows)
-    index = next((i for i, row in enumerate(links)
-                  if row.get("ledger_id") == proof.ledger_id), None)
-    if index is None:
-        return False, (f"the proof for {pair} names ledger row "
-                       f"{proof.ledger_id!r}, which is not in the ledger")
-    probe_row = links[index]
-    if not (probe_row.get("kind") == "generation"
-            and probe_row.get("verdict") == "probe"
-            and probe_row.get("action") == proof.action
-            and probe_row.get("model") == proof.model):
-        return False, (f"the proof for {pair} names ledger row "
-                       f"{proof.ledger_id!r}, which is not a probe of {pair}")
-    problem = probe_row_problem(probe_row)
+    index, problem = _proof_probe(proof, links)
     if problem is not None:
-        return False, (f"the proof for {pair} names probe row "
-                       f"{proof.ledger_id!r}, which proves nothing: {problem}")
+        return False, problem
+    probe_row = links[index]
     probe_after = _row_sum(probe_row, "account_after")
     remeasure = (f"Re-measuring it means the author removes that proof from "
                  f"proofs.json by hand and probes again")
-    charged = (f"{proof.action} stays refused: {proof.action} IS CHARGED -- a "
-               f"drop measured INSIDE one of our own {proof.action} rows, "
-               f"between that request's own before-read and after-read. Stay "
-               f"on the generate track. {remeasure}")
-    unclear = (f"{proof.action} stays refused: this proof can no longer be "
-               f"trusted. NOTHING measured a charge inside an "
-               f"{proof.action} row -- the balance simply cannot be followed "
-               f"across this point, and a rise can hide a charge. {remeasure}")
+    charged = (f"{proof.action} IS CHARGED -- a drop measured INSIDE one of "
+               f"our own {proof.action} rows, between that request's own "
+               f"before-read and after-read, so every further "
+               f"{proof.action} may be charged too. {remeasure}")
+    unclear = (f"This proof can no longer be trusted. NOTHING measured a "
+               f"charge inside an {proof.action} row -- the balance simply "
+               f"cannot be followed across this point, and a rise can hide a "
+               f"charge. {remeasure}")
 
     def late(row, fell_to: int, left_at: int) -> tuple[bool, str]:
         """A fall in the read that FOLLOWS one of our own sent rows.
@@ -1011,8 +1078,16 @@ def _c1(body: Mapping[str, object], proofs: Sequence[Proof], probe: bool,
         except ValueError as exc:
             return False, (f"the ledger cannot be read to confirm the proof "
                            f"for ({action}, {model}): {exc}")
-        return proof_standing(matching[0], rows,
-                              None if account is None else account.sum)
+        never_measured = proof_problem(matching[0], rows)
+        if never_measured is not None:
+            return False, never_measured
+        standing, why = proof_standing(matching[0], rows,
+                                       None if account is None else account.sum)
+        if standing is False:
+            # THE BALANCE HALF: a warning, never a stop (module docstring).
+            return True, (f"{why} -- a WARNING, not a stop: the account is "
+                          f"shared, so {action} is sent anyway"), True
+        return standing, why
     if proven:
         return False, (f"probe refused: ({action}, {model}) already has a "
                        f"proof row, so there is nothing left to measure")
@@ -1228,34 +1303,38 @@ def _offline_chain(state: State) -> Verdict:
     """Condition 9 with no account read: the half that CAN be judged offline.
 
     `open_boundaries` is pure and reads only the ledger, so a plan over a
-    ledger holding an unsigned fall says so and FAILS -- a condition that
-    can be checked offline is checked, and False is never a pass. Only the
-    live half (is the balance now below the chain?) stays ok=None, so the
+    ledger holding an unsigned fall SAYS SO, with `warning` set -- a
+    condition that can be checked offline is checked. The live half (is the
+    balance now below the chain?) stays ok=None either way, so the
     invariant "a condition that cannot be checked is not a pass" is
-    untouched. Without this, `plan` gave a clean bill to a state in which
-    the next run was certain to refuse and write LOCK.
+    untouched. Without this, `plan` gave a clean bill over books with money
+    missing from them. An unreadable ledger still FAILS: that is not a
+    balance event, it is books nothing can be added to.
     """
     try:
         gaps = open_boundaries(state.rows())
     except ValueError as exc:
         return Verdict(9, False, f"the balance chain cannot be read: {exc}")
     if gaps:
-        return Verdict(9, False, boundaries_note(gaps, this_read=False))
+        return Verdict(9, None, boundaries_note(gaps, this_read=False),
+                       warning=True)
     return Verdict(9, None, "no unsigned boundary in the ledger; the live "
                             "balance read is what is still missing")
 
 
 def _judge(condition: int, fn, *args) -> Verdict:
     """Run one body condition; a malformed body fails it, never raises. Only
-    condition 1 ever answers ok=None (a proof pending the next read)."""
+    condition 1 ever answers ok=None (a proof pending the next read), and
+    only condition 1 answers a third element: True when it passes over a
+    proof the balance refuted, which is a warning."""
     try:
-        ok, message = fn(*args)
+        ok, message, *warned = fn(*args)
     except _Bad as exc:
         return Verdict(condition, False, str(exc))
     except (TypeError, ValueError, KeyError, AttributeError) as exc:
         return Verdict(condition, False,
                        f"malformed body ({type(exc).__name__}: {exc})")
-    return Verdict(condition, ok, message)
+    return Verdict(condition, ok, message, warning=bool(warned and warned[0]))
 
 
 def evaluate(body: Mapping[str, object], account: Account | None,
@@ -1268,12 +1347,15 @@ def evaluate(body: Mapping[str, object], account: Account | None,
        nested img2img object present exactly when its inpaint strength is
        not INFILL_FULL_REPAINT). If the action is in model.PROOF_ACTIONS:
        without `probe`, a Proof with equal (action, model) must be in
-       `proofs` AND `proof_standing` over state.rows() and account.sum must
-       confirm it -- the probe row it names proving something
-       (`probe_row_problem`), the read after the probe unchanged, and no
-       later call of the pair charged -- ok=None while only the next balance
-       read can tell (account None); with `probe`, see the module docstring (probe shape,
-       no existing proof). A probe of `generate` fails.
+       `proofs` AND `proof_problem` must find it names a probe row of its
+       own pair that measured something (`probe_row_problem`) -- else ok
+       False. `proof_standing` over state.rows() and account.sum then
+       confirms it (ok True), finds it pending (ok None, only with account
+       None), or finds the BALANCE refuted it -- the read after the probe
+       moved, or a later call of the pair was charged, unread, or followed
+       by a fall -- which is ok True WITH `warning` set: a warning, never a
+       stop. With `probe`, see the module docstring (probe shape, no
+       existing proof). A probe of `generate` fails.
     2  body["model"] in model.MODELS_BY_ACTION[action].
     3  parameters width/height are ints (not bool), multiples of
        DIM_MULTIPLE, each >= MIN_DIM, width*height <= MAX_AREA.
@@ -1296,19 +1378,21 @@ def evaluate(body: Mapping[str, object], account: Account | None,
     8  account.tier == OPUS_TIER, account.active is True, account.grace is
        not True. ok=None when account is None.
     9  TWO DIFFERENT MEASUREMENTS, and this condition is about only one of
-       them. `guard.open_boundaries(state.rows())` finds no UNSIGNED fall
-       between two of our rows, AND chain_verdict(state.last_balance(),
-       account.sum) != "charged" (a live read below the chain is the same
-       drop, not yet written down). Every open boundary is reported, THE ONE
+       them. The ledger must be readable (else ok False). An UNSIGNED fall
+       between two of our rows (`guard.open_boundaries(state.rows())`), or
+       chain_verdict(state.last_balance(), account.sum) == "charged" (a live
+       read below the chain is the same drop, not yet written down), is ok
+       True WITH `warning` set. Every open boundary is reported, THE ONE
        THIS CALL SAW FIRST, through `boundaries_note` -- which says which of
        the two measurements it is, what was NOT measured, and the command
        that signs it. A drop measured INSIDE one of our rows is NOT this
-       condition: that one is ours, `run.run_request` LOCKs where it
-       happens, condition 10 refuses on the LOCK, and no signature clears
-       it. With account None this condition is still judged OFFLINE over the
-       ledger (`_offline_chain`): an unsigned boundary fails it there too,
-       and only the live half is ok=None.
-    10 not state.locked() and not state.inflight().
+       condition: that one is ours, and `run.run_request` records it in
+       that row's own `warning`. With account None this condition is still
+       judged OFFLINE over the ledger (`_offline_chain`): an unsigned
+       boundary is reported there too, with `warning`, and the live half
+       leaves it ok=None.
+    10 not state.locked() and not state.inflight(). Nothing in the package
+       writes LOCK: it is the author's emergency stop, placed by hand.
     11 ("POST", url) in model.ALLOWED_ENDPOINTS.
 
     Never raises for a malformed body: a missing or mistyped key fails the
@@ -1351,8 +1435,8 @@ def evaluate(body: Mapping[str, object], account: Account | None,
             if this_read:
                 gaps.insert(0, live_boundary(rows, previous, account.sum))
             if gaps:
-                verdicts.append(Verdict(9, False, boundaries_note(
-                    gaps, this_read=this_read)))
+                verdicts.append(Verdict(9, True, boundaries_note(
+                    gaps, this_read=this_read), warning=True))
             else:
                 verdicts.append(Verdict(
                     9, True, f"chain {chain}: previous {previous}, now "
@@ -1375,8 +1459,10 @@ def evaluate(body: Mapping[str, object], account: Account | None,
 
 def assert_free(body: Mapping[str, object], account: Account,
                 proofs: Sequence[Proof], state: State, *, url: str,
-                probe: bool = False) -> None:
-    """Raise Refused for the lowest-numbered condition whose ok is not True.
+                probe: bool = False) -> tuple[Verdict, ...]:
+    """Raise Refused for the lowest-numbered condition whose ok is not True;
+    otherwise return every verdict that passed WITH a warning, in condition
+    order, for the row to record. A warning never raises (module docstring).
 
     TypeError when `account` is None: the online gate has no offline mode.
     Called by `run.run_request` immediately before INFLIGHT is taken, and by
@@ -1385,9 +1471,11 @@ def assert_free(body: Mapping[str, object], account: Account,
     if account is None:
         raise TypeError("assert_free needs a live account read; use "
                         "evaluate(account=None) for an offline plan")
-    for verdict in evaluate(body, account, proofs, state, url=url, probe=probe):
+    verdicts = evaluate(body, account, proofs, state, url=url, probe=probe)
+    for verdict in verdicts:
         if verdict.ok is not True:
             raise Refused(verdict.condition, verdict.message)
+    return tuple(verdict for verdict in verdicts if verdict.warning)
 
 
 def assert_endpoint(method: str, url: str) -> None:

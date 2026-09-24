@@ -97,28 +97,34 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
      default outfit's is taken over neither.
   2. `guard.assert_free`: a legal generate, img2img and infill pass; every
      refusal condition of brief 2.2 -- and every sub-rule inside conditions
-     1, 6 and 7 (image keys bound to the action, a proof the chain has not
-     confirmed or has refuted, a proof naming a probe row with no image, no
-     2xx, a moved balance or LOCK, a proof refuted by a LATER charged call of
-     its pair -- and left standing by a charged call of any other pair, a
-     rise, or a charge before its probe -- the infill probe's every strength, enabled,
-     prompt/uc parity, use_coords, over-long arrays, the token budget, uc
-     text) -- is refused with ITS OWN condition number, its own reason, and
-     no other condition failing.
+     1, 6 and 7 (image keys bound to the action, no proof, a proof naming a
+     probe row with no image, no 2xx, a moved balance or LOCK, the infill
+     probe's every strength, enabled, prompt/uc parity, use_coords,
+     over-long arrays, the token budget, uc text) -- is refused with ITS OWN
+     condition number, its own reason, and no other condition failing. A
+     BALANCE EVENT IS A WARNING, NEVER A REFUSAL (the author's decision,
+     2026-09-24: the account is shared): a live read below the chain, an
+     unsigned fall, a proof the chain has refuted -- by a late debit, a
+     refill, or a LATER charged or unread call of its pair -- each PASSES
+     with a warning on exactly its own condition; a proof is left standing
+     by a charged call of any other pair, a rise, or a charge before its
+     probe; and each half is proved red by a mutant of the guard.
   3. `run.run_request` over a scripted transport: one POST between two balance
      reads on success, HTTP error and a raised timeout; no retry; a decrease
-     writes LOCK and the next call is refused before any request; the SUM is
+     is a WARNING in its own row and the next call is sent; the SUM is
      compared, through the real subscription parser, and grace / inactive /
      tier 2 are refused after one read; an inconclusive row chains on its
-     own balance after; a Ctrl-C in the POST or in the after-read still
-     writes the row and LOCK; a lost ledger (blobs, no rows) is refused; a
-     corrupt deflate stream is recorded, not raised; a probe writes a proof
-     only on 2xx carrying an image of the requested size with delta 0 (an
-     HTML page, an empty body, a 204, JSON or a wrong-size image write none),
-     and a late debit refutes it for good; a production img2img or infill
-     charged, unread after, or followed by a late debit refutes its proof,
-     so deleting LOCK sends nothing, and its LOCK says to stay on the
-     generate track; the
+     own balance after, and a row whose after-read failed on its balance
+     before; a Ctrl-C in the POST or in the after-read still writes the row,
+     with a warning; a lost ledger (blobs, no rows) is refused; a corrupt
+     deflate stream is recorded, not raised; a probe writes a proof only on
+     2xx carrying an image of the requested size with delta 0 (an HTML page,
+     an empty body, a 204, JSON or a wrong-size image write none), and a
+     late debit refutes it for good; a production img2img or infill charged,
+     unread after, or followed by a late debit refutes its proof, and every
+     later call of the pair is SENT warning so; NOTHING in tools/nai calls
+     State.lock, and a mutant that writes LOCK on a charge, or refuses on a
+     fallen chain, goes red; the
      one-send latch; the response-shape and redirect rules of brief 1.4.
      Then the canary key, through the real urllib transport and the CLI:
      present in every Authorization header, absent from every state file,
@@ -150,8 +156,8 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
      --accept-max-2-anlas -- or with any abbreviation of it -- is refused
      before any account read, and with it reads, sends once and writes the
      proof -- but not for a 200 with no image; after a charged production
-     img2img and LOCK deleted, `plan` reports the proof REFUTED and `run`
-     sends nothing; `infill` sends the mannequin-in-source init and composites the
+     img2img, `plan` passes WITH a warning that the proof is REFUTED and
+     `run` sends again, printing it; `infill` sends the mannequin-in-source init and composites the
      returned cell; `render` never overwrites different bytes and no command
      writes inside a checkout outside data/nai/; a linked worktree resolves
      the main checkout's state root and sees its LOCK. `--character`
@@ -3585,8 +3591,41 @@ try:
             failures.append(label)
             return
         print(f"  ok   {label:<66} passed")
-        expect("...and evaluate agrees: no condition fails",
-               failing(body, **kwargs), [])
+        expect("...and evaluate agrees: no condition fails, and none warns",
+               (failing(body, **kwargs), warned_conditions(body, **kwargs)),
+               ([], []))
+
+    def warned_conditions(body, *, account=ACCOUNT, proofs=(), state=CLEAN,
+                          url=GENERATE_URL, probe=False):
+        return [v.condition for v in guard.evaluate(
+            body, account, proofs, state, url=url, probe=probe) if v.warning]
+
+    def warns(label, condition, fragment, body, *, also=(), **kwargs):
+        """SENT, with a warning: assert_free does not raise and returns
+        exactly `condition` (and `also`) as warnings, `condition`'s own
+        message names `fragment`, and no condition fails. A balance event
+        warns and never stops (guard's module docstring, 2026-09-24)."""
+        asserted.append(1)
+        try:
+            warned = guard.assert_free(body, kwargs.get("account", ACCOUNT),
+                                       kwargs.get("proofs", ()),
+                                       kwargs.get("state", CLEAN),
+                                       url=kwargs.get("url", GENERATE_URL),
+                                       probe=kwargs.get("probe", False))
+        except Exception as exc:  # noqa: BLE001 - reporting tool
+            print(f"  FAIL {label:<66} {type(exc).__name__}: {str(exc)[:120]}")
+            failures.append(label)
+            return
+        got = (sorted(v.condition for v in warned),
+               [fragment in v.message for v in warned
+                if v.condition == condition],
+               failing(body, **kwargs))
+        want = (sorted((condition,) + tuple(also)), [True], [])
+        ok = got == want
+        print(f"  {'ok  ' if ok else 'FAIL'} {label:<66} sent, WARNING "
+              f"{got[0]}" + ("" if ok else f"  got={got} want={want}"))
+        if not ok:
+            failures.append(label)
 
     def refused(label, condition, fragment, body, **kwargs):
         """Refused with exactly `condition`, naming `fragment`, and no other
@@ -3748,12 +3787,25 @@ try:
             BODY_GEN, account=dataclasses.replace(ACCOUNT, active=False))
     refused("a grace period is refused", 8, "grace period", BODY_GEN,
             account=dataclasses.replace(ACCOUNT, grace=True))
-    refused("a live balance BELOW the last ledger row is refused as an "
-            "AMBIGUOUS boundary -- the last row SENT a request of ours, so a "
-            "late debit for it looks exactly like this", 9,
-            "AMBIGUOUS BOUNDARY -- this tool CANNOT say whose spend this "
-            "was: the balance fell 1000 -> 998 (2 Anlas)", BODY_GEN,
-            state=CHAINED, account=dataclasses.replace(ACCOUNT, fixed=998))
+    warns("a live balance BELOW the last ledger row is SENT, warning of an "
+          "AMBIGUOUS boundary -- the last row SENT a request of ours, so a "
+          "late debit for it looks exactly like this", 9,
+          "AMBIGUOUS BOUNDARY -- this tool CANNOT say whose spend this "
+          "was: the balance fell 1000 -> 998 (2 Anlas)", BODY_GEN,
+          state=CHAINED, account=dataclasses.replace(ACCOUNT, fixed=998))
+    goes_red("...proved red: fail condition 9 on a fallen chain again and a "
+             "friend's spend on the shared account stops every send",
+             "tools/nai/guard.py",
+             [("                verdicts.append(Verdict(9, True, "
+               "boundaries_note(\n                    gaps, "
+               "this_read=this_read), warning=True))",
+               "                verdicts.append(Verdict(9, False, "
+               "boundaries_note(\n                    gaps, "
+               "this_read=this_read), warning=True))")],
+             lambda g: [v.ok for v in g.evaluate(
+                 BODY_GEN, dataclasses.replace(ACCOUNT, fixed=998), (),
+                 CHAINED, url=GENERATE_URL) if v.condition == 9],
+             tag="fallen_chain_refuses")
     refused("LOCK present is refused", 10, "LOCK present", BODY_GEN,
             state=LOCKED)
     refused("INFLIGHT present is refused", 10, "INFLIGHT present", BODY_GEN,
@@ -3843,47 +3895,59 @@ try:
     LATE = scratch_state("late_debit")
     LATE.write_row(probe_row(PROOF_I2I))
     LATE.write_row(ledger_row(998, ledger_id="after-the-probe"))
-    late_failed = [v for v in guard.evaluate(
+    late_seen = [v for v in guard.evaluate(
         BODY_I2I, dataclasses.replace(ACCOUNT, fixed=998), (PROOF_I2I,), LATE,
-        url=GENERATE_URL) if v.ok is not True]
+        url=GENERATE_URL) if v.ok is not True or v.warning]
     expect("a debit landing BETWEEN the probe and the next row REFUTES the "
-           "proof FOR GOOD (1) and refuses the chain (9) as an AMBIGUOUS "
-           "boundary: the probe's own request went out, so risk R4's late "
-           "debit and a friend's spend are byte-identical there",
-           ([v.condition for v in late_failed],
-            [v.ok for v in late_failed],
+           "proof FOR GOOD (1) and opens the chain (9) as an AMBIGUOUS "
+           "boundary -- two WARNINGS, and neither is a stop: the probe's own "
+           "request went out, so risk R4's late debit and a friend's spend "
+           "are byte-identical there",
+           ([v.condition for v in late_seen],
+            [(v.ok, v.warning) for v in late_seen],
             ["REFUTED" in v.message and "risk R4" in v.message
-             for v in late_failed if v.condition == 1],
+             for v in late_seen if v.condition == 1],
             # the fall is already written down and the read just taken is
             # level with the chain, so the note says THAT before it describes
             # the boundary: the author is never pointed at the wrong event
             [v.message.startswith("NOT the balance read just taken")
              and "AMBIGUOUS BOUNDARY" in v.message
-             for v in late_failed if v.condition == 9]),
-           ([1, 9], [False, False], [True], [True]))
+             for v in late_seen if v.condition == 9]),
+           ([1, 9], [(True, True), (True, True)], [True], [True]))
     LATE_ACKED = scratch_state("late_debit_acked")
     LATE_ACKED.write_row(probe_row(PROOF_I2I))
     LATE_ACKED.write_row(ledger_row(998, ledger_id="after-the-probe"))
     LATE_ACKED.write_row(drift_ack("ack-late", PROOF_I2I.ledger_id,
                                    "after-the-probe", 1000, 998))
-    refused("...and SIGNING that boundary does not bring it back: the chain "
-            "is re-baselined so work can go on, and img2img stays refused. "
-            "THE MONEY ESCAPE: without this, one typed figure re-arms the "
-            "action whose cost is the open question and OURS still reads 0",
-            1, "REFUTED", BODY_I2I, proofs=(PROOF_I2I,), state=LATE_ACKED,
-            account=dataclasses.replace(ACCOUNT, fixed=998))
+    warns("...and SIGNING that boundary does not bring the proof back: the "
+          "chain is re-baselined and stops warning, and condition 1 keeps "
+          "warning that img2img's proof is REFUTED. THE MONEY ESCAPE: "
+          "without this, one typed figure would make the action whose cost "
+          "is the open question look proven free while OURS still reads 0",
+          1, "REFUTED", BODY_I2I, proofs=(PROOF_I2I,), state=LATE_ACKED,
+          account=dataclasses.replace(ACCOUNT, fixed=998))
     expect("...and the signature really did re-baseline the chain: condition "
-           "9 passes over the same ledger, so only condition 1 refuses",
-           [(v.condition, v.ok) for v in guard.evaluate(
+           "9 passes CLEAN over the same ledger, so only condition 1 warns",
+           [(v.condition, v.ok, v.warning) for v in guard.evaluate(
                BODY_I2I, dataclasses.replace(ACCOUNT, fixed=998),
                (PROOF_I2I,), LATE_ACKED, url=GENERATE_URL)
-            if v.condition in (1, 9)], [(1, False), (9, True)])
+            if v.condition in (1, 9)], [(1, True, True), (9, True, False)])
+    goes_red("...proved red: refuse on a refuted proof again and the shared "
+             "account's own traffic stops img2img for good",
+             "tools/nai/guard.py",
+             [("            # THE BALANCE HALF: a warning, never a stop "
+               "(module docstring).\n",
+               "            return False, why\n")],
+             lambda g: [v.ok for v in g.evaluate(
+                 BODY_I2I, dataclasses.replace(ACCOUNT, fixed=998),
+                 (PROOF_I2I,), LATE_ACKED, url=GENERATE_URL)
+                 if v.condition == 1], tag="refuted_proof_refuses")
     PENDING = scratch_state("pending_proof")
     PENDING.write_row(probe_row(PROOF_I2I))
-    refused("a pending proof whose next read is a refill (+50) is refuted: a "
-            "refill can hide a charge", 1, "REFUTED", BODY_I2I,
-            proofs=(PROOF_I2I,), state=PENDING,
-            account=dataclasses.replace(ACCOUNT, fixed=1050))
+    warns("a pending proof whose next read is a refill (+50) is refuted -- a "
+          "refill can hide a charge -- and the send WARNS", 1, "REFUTED",
+          BODY_I2I, proofs=(PROOF_I2I,), state=PENDING,
+          account=dataclasses.replace(ACCOUNT, fixed=1050))
     passes("a pending proof that this very read confirms passes", BODY_I2I,
            proofs=(PROOF_I2I,), state=PENDING)
     expect("offline, a pending proof is ok=None -- needs the read -- not a pass",
@@ -3909,6 +3973,14 @@ try:
         refused(f"a proof naming a probe row with {label} is refused", 1,
                 "which proves nothing", BODY_I2I, proofs=(PROOF_I2I,),
                 state=hollow, account=dataclasses.replace(ACCOUNT, fixed=total))
+    goes_red("...proved red: read the structural half as a balance event and "
+             "a proof that never measured anything sends img2img with a mere "
+             "warning", "tools/nai/guard.py",
+             [("        never_measured = proof_problem(matching[0], rows)",
+               "        never_measured = None")],
+             lambda g: [v.ok for v in g.evaluate(
+                 BODY_I2I, ACCOUNT, (PROOF_I2I,), hollow, url=GENERATE_URL)
+                 if v.condition == 1], tag="hollow_proof_warns")
 
     # -- condition 1: a LATER charged call of the pair refutes the proof ----
     def pair_row(before, after, ledger_id, *, action="img2img", model=MODEL_FULL,
@@ -3925,38 +3997,40 @@ try:
             made.write_row(row)
         return made
 
-    refused("a CONFIRMED proof is refuted by a later img2img call charged "
-            "1000 -> 992", 1, "REFUTED by ledger row i2i-charged", BODY_I2I,
-            proofs=(PROOF_I2I,), state=ledger_of(
-                "later_charged", probe_row(PROOF_I2I),
-                pair_row(1000, 992, "i2i-charged")),
-            account=dataclasses.replace(ACCOUNT, fixed=992))
-    refused("...and by a later img2img call whose balance after was never read",
-            1, "never read", BODY_I2I, proofs=(PROOF_I2I,), state=ledger_of(
-                "later_unread", probe_row(PROOF_I2I),
-                pair_row(1000, 1000, "i2i-unread", account_after=None,
-                         delta=None, locked=True)))
+    warns("a CONFIRMED proof is refuted by a later img2img call charged "
+          "1000 -> 992, and the send WARNS", 1,
+          "REFUTED by ledger row i2i-charged", BODY_I2I,
+          proofs=(PROOF_I2I,), state=ledger_of(
+              "later_charged", probe_row(PROOF_I2I),
+              pair_row(1000, 992, "i2i-charged")),
+          account=dataclasses.replace(ACCOUNT, fixed=992))
+    warns("...and by a later img2img call whose balance after was never read",
+          1, "never read", BODY_I2I, proofs=(PROOF_I2I,), state=ledger_of(
+              "later_unread", probe_row(PROOF_I2I),
+              pair_row(1000, 1000, "i2i-unread", account_after=None,
+                       delta=None, inconclusive=True)))
     LATE_AFTER_CALL = (probe_row(PROOF_I2I), pair_row(1000, 1000, "i2i-clean"),
                        pair_row(995, 995, "chain-charged", action="generate",
                                 kind="refused", locked=True))
-    after_call_failed = [v for v in guard.evaluate(
+    after_call_seen = [v for v in guard.evaluate(
         BODY_I2I, dataclasses.replace(ACCOUNT, fixed=995), (PROOF_I2I,),
         ledger_of("later_late_debit", *LATE_AFTER_CALL), url=GENERATE_URL)
-        if v.ok is not True]
+        if v.ok is not True or v.warning]
     expect("...and a debit landing AFTER a clean later img2img call refutes "
            "it too: that call went out, so the fall in the read that follows "
-           "it is R4's own shape and cannot be told from somebody else's",
-           ([v.condition for v in after_call_failed],
-            [v.ok for v in after_call_failed],
-            ["REFUTED" in v.message for v in after_call_failed]),
-           ([1, 9], [False, False], [True, False]))
-    refused("...and signing exactly that boundary still does not let it "
-            "through: a signature re-baselines the CHAIN, never a proof",
-            1, "REFUTED", BODY_I2I, proofs=(PROOF_I2I,), state=ledger_of(
-                "later_late_debit_acked", *LATE_AFTER_CALL,
-                drift_ack("ack-after", "i2i-clean", "chain-charged",
-                          1000, 995)),
-            account=dataclasses.replace(ACCOUNT, fixed=995))
+           "it is R4's own shape and cannot be told from somebody else's -- "
+           "two warnings, no refusal",
+           ([v.condition for v in after_call_seen],
+            [(v.ok, v.warning) for v in after_call_seen],
+            ["REFUTED" in v.message for v in after_call_seen]),
+           ([1, 9], [(True, True), (True, True)], [True, False]))
+    warns("...and signing exactly that boundary silences the chain and "
+          "never the proof: a signature re-baselines the CHAIN, never a proof",
+          1, "REFUTED", BODY_I2I, proofs=(PROOF_I2I,), state=ledger_of(
+              "later_late_debit_acked", *LATE_AFTER_CALL,
+              drift_ack("ack-after", "i2i-clean", "chain-charged",
+                        1000, 995)),
+          account=dataclasses.replace(ACCOUNT, fixed=995))
     expect("...and THIS read, below the last img2img call's after, refutes it "
            "for good and says R4 in so many words",
            (lambda r: (r[0], "risk R4" in r[1], "REFUTED" in r[1]))(
@@ -4153,27 +4227,108 @@ try:
                 row["delta"], st.locked(), st.inflight(), len(st.rows())),
                (want_status, True, 0, False, False, 1))
 
+    # -- NOTHING WRITES LOCK: a balance event is a warning in its row -------
+    def lock_calls(source: str) -> list[int]:
+        """Line numbers of every `<anything>.lock(...)` call in `source`."""
+        return [node.lineno for node in ast.walk(ast.parse(source))
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "lock"]
+
+    nai_dir = os.path.join(_bootstrap.REPO_ROOT, "tools", "nai")
+    callers = {}
+    for name in sorted(os.listdir(nai_dir)):
+        if name.endswith(".py"):
+            with io.open(os.path.join(nai_dir, name), encoding="utf-8") as handle:
+                found = lock_calls(handle.read())
+            if found:
+                callers[name] = found
+    expect("no module under tools/nai/ calls .lock(): LOCK is only ever the "
+           "author's own emergency stop, placed by hand",
+           (callers, lock_calls("state.lock(ledger_id, 'reason')\n")),
+           ({}, [1]))
     t, st, row, exc, pattern = scripted(REQ_GEN, [sub(1000), zipped(), sub(998)])
-    expect("a decrease across the call writes LOCK and says so in the row",
-           (pattern, row["delta"], row["locked"], st.locked()),
-           ([GET, POST, GET], -2, True, True))
+    expect("a decrease across the call is a WARNING in its own row -- OUR "
+           "charge, measured inside it -- and writes no LOCK",
+           (pattern, row["delta"], row["locked"], st.locked(),
+            "OUR CHARGE, measured INSIDE" in (row["warning"] or "")),
+           ([GET, POST, GET], -2, False, False, True))
     t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(998), zipped(), sub(998)],
                                          state=st)
-    expect("...and the next call is refused (10) before ANY request, no row",
-           (getattr(exc, "condition", None), pattern, len(t.responses),
-            len(st.rows())), (10, [], 3, 1))
+    expect("...and the next call is SENT: a warning never stops anything, "
+           "and this one met no new balance event, so it carries none",
+           (exc, pattern, len(st.rows()), (row or {}).get("warning", "no row")),
+           (None, [GET, POST, GET], 2, None))
+
+    def charged_lock(module):
+        """What LOCK a module's run_request leaves after a charged send."""
+        module.reset_latch_for_checks()
+        made = scratch_state("mutant_charge")
+        module.run_request(REQ_GEN, tp.RecordingTransport(
+            [sub(1000), zipped(), sub(990)]), made)
+        return made.locked()
+    goes_red("...proved red: write LOCK on a charge again and the next send "
+             "is stopped by a balance event", "tools/nai/run.py",
+             [("                warnings.append(reason)\n",
+               "                warnings.append(reason)\n"
+               "                state.lock(ledger_id, reason)\n")],
+             charged_lock, tag="charge_locks_again")
+    between = scratch_state("between_calls")
+    between.write_row(ledger_row(1000))
     t, st, row, exc, pattern = scripted(REQ_GEN, [sub(998), zipped(), sub(998)],
-                                        state=CHAINED)
-    expect("a charge landing BETWEEN invocations: refused (9), LOCK, no POST",
-           (getattr(exc, "condition", None), pattern, st.locked(),
-            st.rows()[-1]["kind"], st.rows()[-1]["locked"]),
-           (9, [GET], True, "refused", True))
+                                        state=between)
+    expect("a charge landing BETWEEN invocations: SENT, and the row's warning "
+           "names the AMBIGUOUS boundary with its figure -- no LOCK, and no "
+           "refused row in front of it",
+           (exc, pattern, st.locked(), [r["kind"] for r in st.rows()],
+            "AMBIGUOUS BOUNDARY" in ((row or {}).get("warning") or ""),
+            "(2 Anlas)" in ((row or {}).get("warning") or "")),
+           (None, [GET, POST, GET], False, ["generation", "generation"], True,
+            True))
+
+    def fallen_chain_send(module):
+        """What a module's run_request does with a read below the chain."""
+        module.reset_latch_for_checks()
+        made = scratch_state("mutant_chain")
+        made.write_row(ledger_row(1000))
+        transport = tp.RecordingTransport([sub(998), zipped(), sub(998)])
+        try:
+            module.run_request(REQ_GEN, transport, made)
+        except guard.Refused as refusal:
+            return f"refused ({refusal.condition})"
+        return f"{len(transport.posts)} POST"
+    goes_red("...proved red: refuse on a fallen chain again and a friend's "
+             "spend stops the next send", "tools/nai/run.py",
+             [("        warnings.append(\n            _chain_note(",
+               "        raise Refused(9, 'a fallen chain')\n"
+               "        warnings.append(\n            _chain_note(")],
+             fallen_chain_send, tag="chain_refuses_again")
+    unread = scratch_state("unread_after")
     t, st, row, exc, pattern = scripted(REQ_GEN, [sub(1000), zipped(),
-                                                  error(500, "down")])
-    expect("a failed balance read AFTER the send: LOCK, row written, raised",
+                                                  error(500, "down")],
+                                        state=unread)
+    expect("a failed balance read AFTER the send: the row is written with "
+           "its warning, INFLIGHT released, the failure raised -- no LOCK",
            (pattern, type(exc).__name__, st.locked(), st.inflight(),
-            st.rows()[-1]["account_after"] if st.rows() else "no row"),
-           ([GET, POST, GET], "AccountReadError", True, False, None))
+            st.rows()[-1]["account_after"] if st.rows() else "no row",
+            "zero cost cannot be shown" in (st.rows()[-1]["warning"] or "")
+            if st.rows() else False),
+           ([GET, POST, GET], "AccountReadError", False, False, None, True))
+    goes_red("...proved red: key the failed-after-read rule on LOCK again and "
+             "that ledger raises on every later call, since nothing writes "
+             "LOCK any more", "tools/nai/state.py",
+             [("                and (last.get(\"inconclusive\") is True\n"
+               "                     or last.get(\"locked\") is True)):",
+               "                and last.get(\"locked\") is True):")],
+             lambda s: str(outcome(lambda: s.State(unread.root)
+                                   .last_balance()))[:30],
+             tag="unread_keyed_on_lock")
+    t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(1000), zipped(),
+                                                   sub(1000)], state=unread)
+    expect("...and the next call chains on that row's balance BEFORE (1000), "
+           "the last one anybody read: sent, with nothing to warn about",
+           (exc, pattern, (row or {}).get("warning", "no row")),
+           (None, [GET, POST, GET], None))
     t, st, row, exc, pattern = scripted(REQ_GEN, [error(401, "Unauthorized")])
     expect("a failed balance read BEFORE the send: nothing sent, no row",
            (pattern, type(exc).__name__, len(st.rows()), st.locked()),
@@ -4208,7 +4363,7 @@ try:
     expect("infill probe, 2xx, delta 0: the proof names the inpainting model",
            [(p.action, p.model) for p in st.proofs()],
            [("infill", MODEL_FULL_INPAINTING)])
-    for label, script, locks in (
+    for label, script, warned in (
             ("2xx with delta -2", [sub(1000), zipped(), sub(998)], True),
             ("2xx with delta +50 (inconclusive)", [sub(1000), zipped(),
                                                    sub(1050)], False),
@@ -4233,9 +4388,11 @@ try:
                  Image.new("RGB", (64, 64), (1, 2, 3))))), sub(1000)], False)):
         t, st, row, exc, pattern = scripted(probe_i2i, script, probe=True,
                                             context=PROBE_CTX)
-        expect(f"probe, {label}: NO proof row",
-               (pattern, st.proofs(), st.locked()),
-               ([GET, POST, GET], (), locks))
+        expect(f"probe, {label}: NO proof row, no LOCK, and a warning "
+               f"exactly when the balance fell",
+               (pattern, st.proofs(), st.locked(),
+                bool((row or {}).get("warning"))),
+               ([GET, POST, GET], (), False, warned))
     t, st, row, exc, pattern = scripted(
         probe_inf, [sub(1000), (200, {"content-type": "text/html"},
                                 b"<html>maintenance</html>"), sub(1000)],
@@ -4251,11 +4408,8 @@ try:
                  probe=True, context=PROBE_CTX)
         return made
 
-    def lock_text_of(made):
-        if not made.locked():
-            return ""
-        with open(made.lock_path, encoding="utf-8") as handle:
-            return handle.read()
+    def warning_of(row) -> str:
+        return (row or {}).get("warning") or ""
 
     for action, req, probe_req in (("img2img", REQ_I2I, probe_i2i),
                                    ("infill", REQ_INF, probe_inf)):
@@ -4263,87 +4417,84 @@ try:
         t, _st, row, exc, pattern = scripted(req, [sub(1000), zipped(),
                                                    sub(992)], state=seq)
         expect(f"a production {action} charged 1000 -> 992 after its proof: "
-               f"LOCK says '{action} is charged: stay on the generate track'",
+               f"its own row's warning says '{action} is charged', no LOCK",
                (pattern, row["delta"] if row else exc,
-                f"{action} is charged: stay on the generate track"
-                in lock_text_of(seq)), ([GET, POST, GET], -8, True))
-        if seq.locked():
-            os.remove(seq.lock_path)   # the author, by hand
+                f"{action} is charged" in warning_of(row), seq.locked()),
+               ([GET, POST, GET], -8, True, False))
         t, _st, row, exc, pattern = scripted(req, [sub(992), zipped(),
-                                                   sub(984)], state=seq)
-        expect(f"...LOCK deleted by hand: the next {action} is refused (1) as "
-               f"REFUTED after one GET, no POST",
-               (getattr(exc, "condition", None), "REFUTED" in str(exc),
-                pattern), (1, True, [GET]))
+                                                   sub(992)], state=seq)
+        expect(f"...and the next {action} is SENT, warning that its proof is "
+               f"REFUTED: a warning never stops a send",
+               (exc, "REFUTED" in warning_of(row), pattern),
+               (None, True, [GET, POST, GET]))
     seq = proven_pair("unread_img2img")
     scripted(REQ_I2I, [sub(1000), zipped(), error(500, "down")], state=seq)
-    if seq.locked():
-        os.remove(seq.lock_path)
     t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(1000), zipped(),
-                                                   sub(992)], state=seq)
+                                                   sub(1000)], state=seq)
     expect("a production img2img whose after-read failed refutes the proof: "
-           "LOCK deleted, the next img2img is refused (1), no POST",
-           (getattr(exc, "condition", None), "never read" in str(exc),
-            pattern), (1, True, [GET]))
+           "the next img2img is SENT, warning 'never read', and no LOCK",
+           (exc, "never read" in warning_of(row), pattern, seq.locked()),
+           (None, True, [GET, POST, GET], False))
     seq = proven_pair("late_after_img2img")
     scripted(REQ_I2I, [sub(1000), zipped(), sub(1000)], state=seq)
-    t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(995)], state=seq)
-    lock_text = lock_text_of(seq)
-    expect("a debit landing AFTER a clean production img2img is refused (9) "
-           "as an AMBIGUOUS boundary, and LOCK names the proof it refutes "
-           "FOR GOOD -- it never says 'img2img is charged', because nothing "
-           "measured that, and never calls the drop somebody else's",
-           (getattr(exc, "condition", None), "AMBIGUOUS BOUNDARY" in lock_text,
-            "REFUTES its proof" in lock_text,
-            "img2img is charged" in lock_text,
-            "EXTERNAL DRIFT" in lock_text),
-           (9, True, True, False, False))
-    if seq.locked():
-        os.remove(seq.lock_path)
-    t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(995), zipped(),
-                                                   sub(995)], state=seq)
-    expect("...LOCK deleted by hand: img2img is STILL refused and sends "
-           "nothing -- on the UNSIGNED boundary (9)",
-           (getattr(exc, "condition", None), "AMBIGUOUS BOUNDARY" in str(exc),
-            pattern), (9, True, [GET]))
-    ack_code, _ack_out = acknowledge(seq)
-    expect("...signing it leaves LOCK exactly where it was: only the author "
-           "removes that", (ack_code, seq.locked()), (0, True))
-    os.remove(seq.lock_path)   # the author, after checking the account
-    t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(995), zipped(),
-                                                   sub(995)], state=seq)
-    expect("...and img2img is STILL refused, now on its refuted proof (1), "
-           "with NOTHING sent: the signature freed the chain so the work can "
-           "go on, and left the action whose cost is in question locked",
-           (getattr(exc, "condition", None), "REFUTED" in str(exc), pattern),
-           (1, True, [GET]))
     t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(995), zipped(),
                                                    sub(995)], state=seq)
-    expect("...while generate, which never needed a proof, sends again: "
-           "signing a boundary unblocks the work, never the open question",
-           (exc, pattern), (None, [GET, POST, GET]))
+    expect("a debit landing AFTER a clean production img2img: the next call "
+           "is SENT, and its warning names the AMBIGUOUS boundary and the "
+           "proof it refutes FOR GOOD -- it never says 'img2img is charged', "
+           "because nothing measured that, and never calls the drop "
+           "somebody else's",
+           (exc, pattern, "AMBIGUOUS BOUNDARY" in warning_of(row),
+            "REFUTES its proof" in warning_of(row),
+            "img2img is charged" in warning_of(row),
+            "EXTERNAL DRIFT" in warning_of(row), seq.locked()),
+           (None, [GET, POST, GET], True, True, False, False, False))
+    t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(995), zipped(),
+                                                   sub(995)], state=seq)
+    expect("...img2img is SENT too, warning about the UNSIGNED boundary (9) "
+           "AND the refuted proof (1)",
+           (exc, "AMBIGUOUS BOUNDARY" in warning_of(row),
+            "REFUTED" in warning_of(row), pattern),
+           (None, True, True, [GET, POST, GET]))
+    ack_code, _ack_out = acknowledge(seq)
+    expect("...signing it writes no LOCK: there is nothing to lift",
+           (ack_code, seq.locked()), (0, False))
+    t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(995), zipped(),
+                                                   sub(995)], state=seq)
+    expect("...and once signed the boundary stops warning, while img2img "
+           "still warns on its refuted proof: the signature re-baselined the "
+           "CHAIN and never the proof, so the question of its cost stays on "
+           "the books",
+           (exc, "AMBIGUOUS BOUNDARY" in warning_of(row),
+            "REFUTED" in warning_of(row), pattern),
+           (None, False, True, [GET, POST, GET]))
+    t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(995), zipped(),
+                                                   sub(995)], state=seq)
+    expect("...while generate, which never needed a proof, sends with no "
+           "warning at all", (exc, pattern, (row or {}).get("warning")),
+           (None, [GET, POST, GET], None))
     seq = proven_pair("late_after_generate")
     scripted(REQ_GEN, [sub(1000), zipped(), sub(1000)], state=seq)
-    t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(995)], state=seq)
-    expect("but a debit landing after a GENERATE call names no proof in LOCK",
-           (getattr(exc, "condition", None), "REFUTES its proof"
-            in lock_text_of(seq)), (9, False))
-    if seq.locked():
-        os.remove(seq.lock_path)
+    t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(995), zipped(),
+                                                   sub(995)], state=seq)
+    expect("but a debit landing after a GENERATE call names no proof in its "
+           "warning", (exc, "AMBIGUOUS BOUNDARY" in warning_of(row),
+                       "REFUTES its proof" in warning_of(row)),
+           (None, True, False))
     t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(995), zipped(),
                                                    sub(995)], state=seq)
-    expect("...and img2img is refused only on the unsigned boundary, never "
-           "on its proof: the fall sits behind a GENERATE row, so nothing "
+    expect("...and img2img warns only about the unsigned boundary, never "
+           "its proof: the fall sits behind a GENERATE row, so nothing "
            "about the img2img probe moved",
-           (getattr(exc, "condition", None), "REFUTED" in str(exc)),
-           (9, False))
+           (exc, "AMBIGUOUS BOUNDARY" in warning_of(row),
+            "REFUTED" in warning_of(row)), (None, True, False))
     acknowledge(seq)
-    if seq.locked():
-        os.remove(seq.lock_path)
     t, _st, row, exc, pattern = scripted(REQ_I2I, [sub(995), zipped(),
                                                    sub(995)], state=seq)
-    expect("...and once that boundary is signed img2img is sent: the proof "
-           "stood the whole time", (exc, pattern), (None, [GET, POST, GET]))
+    expect("...and once that boundary is signed img2img is sent with no "
+           "warning at all: the proof stood the whole time",
+           (exc, pattern, (row or {}).get("warning")),
+           (None, [GET, POST, GET], None))
     t, st, row, exc, pattern = scripted(probe_i2i, [sub(1000), zipped(),
                                                     sub(1000)], probe=True)
     expect("a probe without the author's flag is refused before any request",
@@ -4358,13 +4509,15 @@ try:
     t, st, row, exc, pattern = scripted(REQ_GEN, [sub_split(500, 500), zipped(),
                                                   sub_split(500, 498)])
     expect("a decrease in PURCHASED Anlas alone is a charge: sum 1000 -> 998, "
-           "LOCK", (pattern, row["account_before"]["sum"], row["delta"],
-                    row["locked"], st.locked()),
-           ([GET, POST, GET], 1000, -2, True, True))
+           "a warning in the row, no LOCK",
+           (pattern, row["account_before"]["sum"], row["delta"],
+            row["locked"], st.locked(), "OUR CHARGE" in warning_of(row)),
+           ([GET, POST, GET], 1000, -2, False, False, True))
     t, st, row, exc, pattern = scripted(REQ_GEN, [sub_split(500, 500), zipped(),
                                                   sub_split(0, 1000)])
     expect("subscription Anlas converted into paid Anlas is no change: delta "
-           "0, no LOCK", (row["delta"], st.locked()), (0, False))
+           "0, no LOCK, no warning", (row["delta"], st.locked(), row["warning"]),
+           (0, False, None))
     for label, fields, fragment in (
             ("in its grace period", {"grace": True}, "grace period"),
             ("inactive", {"active": False}, "active is False"),
@@ -4377,17 +4530,18 @@ try:
                 [r["kind"] for r in st.rows()]), (8, True, [GET], ["refused"]))
     t, st, row, exc, pattern = scripted(REQ_GEN, [sub(1000), zipped(),
                                                   sub(1050)])
-    expect("a rise across the call (+50) is recorded inconclusive, no LOCK",
-           (row["delta"], row["inconclusive"], row["locked"], st.locked()),
-           (50, True, False, False))
+    expect("a rise across the call (+50) is recorded inconclusive, no LOCK, "
+           "no warning",
+           (row["delta"], row["inconclusive"], row["locked"], st.locked(),
+            row["warning"]), (50, True, False, False, None))
     t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(1048), zipped(),
                                                    sub(1048)], state=st)
     expect("...and the next read chains on that row's AFTER (1050): 1048 is a "
-           "charge, refused (9), LOCK",
-           (getattr(exc, "condition", None), pattern, st.locked()),
-           (9, [GET], True))
+           "fall, SENT with the boundary in its warning",
+           (exc, pattern, st.locked(), "1050 -> 1048" in warning_of(row)),
+           (None, [GET, POST, GET], False, True))
 
-    # -- an interrupt cannot skip the after-read, the row or LOCK -----------
+    # -- an interrupt cannot skip the after-read or the row, and it warns ---
     def interrupted(req, responses, *, state=None, probe=False,
                     context=LedgerContext()):
         run.reset_latch_for_checks()
@@ -4407,39 +4561,42 @@ try:
     t, st, raised, pattern = interrupted(REQ_GEN, [sub(1000), KeyboardInterrupt(),
                                                    sub(983)])
     rows = st.rows()
-    expect("Ctrl-C during the POST: the after-read, the row and LOCK happen, "
-           "THEN it is re-raised",
+    expect("Ctrl-C during the POST: the after-read and the row happen, the "
+           "row warns, THEN it is re-raised -- no LOCK",
            (raised, pattern, len(t.responses), [r["delta"] for r in rows],
-            [r["locked"] for r in rows], st.locked(), st.inflight()),
-           ("KeyboardInterrupt", [GET, POST, GET], 0, [-17], [True], True,
-            False))
+            [r["locked"] for r in rows],
+            ["interrupted" in (r["warning"] or "") for r in rows],
+            st.locked(), st.inflight()),
+           ("KeyboardInterrupt", [GET, POST, GET], 0, [-17], [False], [True],
+            False, False))
     t, st, raised, pattern = interrupted(REQ_GEN, [sub(1000), KeyboardInterrupt(),
                                                    sub(1000)])
-    lock_text = open(st.lock_path, encoding="utf-8").read() if st.locked() else ""
-    expect("...with no visible charge it still LOCKs: the outcome is unknown",
-           (raised, [r["delta"] for r in st.rows()], "interrupted" in lock_text,
-            st.inflight()), ("KeyboardInterrupt", [0], True, False))
+    expect("...with no visible charge it still WARNS: the outcome is unknown",
+           (raised, [r["delta"] for r in st.rows()],
+            ["interrupted" in (r["warning"] or "") for r in st.rows()],
+            st.inflight()), ("KeyboardInterrupt", [0], [True], False))
     t, st, raised, pattern = interrupted(REQ_GEN, [sub(1000), zipped(),
                                                    KeyboardInterrupt()])
-    expect("Ctrl-C during the after-read: the row (after null), LOCK, "
-           "INFLIGHT released, then re-raised",
+    expect("Ctrl-C during the after-read: the row (after null) with its "
+           "warning, INFLIGHT released, then re-raised -- no LOCK",
            (raised, pattern, [r["account_after"] for r in st.rows()],
-            st.locked(), st.inflight()),
-           ("KeyboardInterrupt", [GET, POST, GET], [None], True, False))
-    if st.locked():
-        os.remove(st.lock_path)   # the author, after checking the account
-    t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(983)], state=st)
+            ["zero cost cannot be shown" in (r["warning"] or "")
+             for r in st.rows()], st.locked(), st.inflight()),
+           ("KeyboardInterrupt", [GET, POST, GET], [None], [True], False,
+            False))
+    t, _st, row, exc, pattern = scripted(REQ_GEN, [sub(983), zipped(),
+                                                   sub(983)], state=st)
     expect("...and on that once-empty ledger the next read still catches the "
-           "17: refused (9), LOCK",
-           (getattr(exc, "condition", None), pattern, st.locked()),
-           (9, [GET], True))
+           "17: SENT, with the fall in its warning",
+           (exc, pattern, st.locked(), "1000 -> 983" in warning_of(row)),
+           (None, [GET, POST, GET], False, True))
     t, st, raised, pattern = interrupted(
         guard.probe_request("img2img", seed=SEED),
         [sub(1000), KeyboardInterrupt(), sub(1000)], probe=True,
         context=LedgerContext(strip="walk", phase="probe",
                               probe_flag_used=True))
     expect("an interrupted probe writes no proof, even at delta 0",
-           (raised, st.proofs(), st.locked()), ("KeyboardInterrupt", (), True))
+           (raised, st.proofs(), st.locked()), ("KeyboardInterrupt", (), False))
 
     killed = scratch_state("killed")
     killed.acquire_inflight("killed-mid-request", 1000)
@@ -4507,12 +4664,20 @@ try:
            str(outcome(lambda: tp.read_account(tp.RecordingTransport(
                [(200, {}, b"[" * 200000)])))).startswith("AccountReadError"),
            True)
-    expect("...and through run_request: recorded, the row and LOCK written, "
-           "INFLIGHT released, nothing raised",
+    expect("...and through run_request: recorded, the row written with the "
+           "fall as its warning, INFLIGHT released, nothing raised, no LOCK",
            (exc, pattern, "bad response" in (row or {}).get("error_message", ""),
             (row or {}).get("delta"), (row or {}).get("output_path"),
-            len(st.rows()), st.locked(), st.inflight()),
-           (None, [GET, POST, GET], True, -17, None, 1, True, False))
+            len(st.rows()), st.locked(), st.inflight(),
+            "OUR CHARGE" in warning_of(row)),
+           (None, [GET, POST, GET], True, -17, None, 1, False, False, True))
+    expect("a warning longer than a ledger string is cut with the command "
+           "that prints it whole; a short one is kept as it is; none is null",
+           (len(run._warning_text(["x" * 5000])),
+            run._warning_text(["x" * 5000]).endswith(
+                "prints every open boundary in full]"),
+            run._warning_text(["short"]), run._warning_text([])),
+           (nai_state.MAX_ROW_STRING, True, "short", None))
 
     # -- the scrub removes a whole token, not its marker --------------------
     expect("scrub_text removes every marker AND the token body after it",
@@ -4616,12 +4781,14 @@ try:
             sub(1000), zipped(),
             (500, {"Content-Type": "application/json"},
              json.dumps({"statusCode": 500, "message": "boom " + CANARY}).encode())])
-        expect("an after-read failure echoing the key: exit 1, LOCK",
-               (code, leak.locked()), (1, True))
+        expect("an after-read failure echoing the key: exit 1, no LOCK",
+               (code, leak.locked()), (1, False))
         seen_before = len(FAKE.seen)
-        code, text = cli_send(leak, [])
-        expect("...and the next run is refused (2) and asks nothing",
-               (code, len(FAKE.seen) - seen_before), (2, 0))
+        code, text = cli_send(leak, [sub(1000), zipped(), sub(1000)])
+        expect("...and the next run is SENT: it chains on the last balance "
+               "anybody read and asks the account, the generator and the "
+               "account once each",
+               (code, len(FAKE.seen) - seen_before), (0, 3))
         escaped = CANARY[:-1] + "\\u%04x" % ord(CANARY[-1])
         escaped_body = ('{"statusCode": 401, "message": "Unauthorized token '
                         + escaped + '"}').encode("ascii")
@@ -4654,8 +4821,10 @@ try:
         charged = scratch_state("leak_charged")
         leak_states.append(charged)
         code, text = cli_send(charged, [sub(1000), zipped(), sub(990)])
-        expect("a charge through urllib: exit 1, LOCK written",
-               (code, charged.locked()), (1, True))
+        expect("a charge through urllib: exit 0 with the WARNING printed, and "
+               "no LOCK",
+               (code, "WARNING       OUR CHARGE" in text, charged.locked()),
+               (0, True, False))
         direct = scratch_state("leak_direct")
         leak_states.append(direct)
         run.reset_latch_for_checks()
@@ -5499,48 +5668,43 @@ try:
         cli_call(argv, tp.RecordingTransport([sub(1000), zipped(), sub(1000)]),
                  r4)
     code, out, err = cli_call(["run", "walk", "--action", "generate", "--seed",
-                               str(SEED)], tp.RecordingTransport([sub(998)]), r4)
-    lock_text = ""
-    if r4.locked():
-        with open(r4.lock_path, encoding="utf-8") as handle:
-            lock_text = handle.read()
+                               str(SEED)], tp.RecordingTransport(
+                                   [sub(998), zipped(), sub(998)]), r4)
     expect("R4 via the CLI: a debit landing BETWEEN the probe and the next "
-           "read is an AMBIGUOUS boundary -- refused, and LOCK names the "
-           "proof it refutes FOR GOOD rather than calling the drop external",
+           "read is an AMBIGUOUS boundary -- SENT, exit 0, and the printed "
+           "WARNING names the proof it refutes FOR GOOD rather than calling "
+           "the drop external",
            (code, [p.action for p in r4.proofs()],
-            "AMBIGUOUS BOUNDARY" in lock_text,
-            "REFUTES its proof" in lock_text,
-            "EXTERNAL DRIFT" in lock_text),
-           (2, ["img2img"], True, True, False))
-    if r4.locked():
-        os.remove(r4.lock_path)   # the author, after checking the account
+            "AMBIGUOUS BOUNDARY" in out, "REFUTES its proof" in out,
+            "EXTERNAL DRIFT" in out, r4.locked()),
+           (0, ["img2img"], True, True, False, False))
     recorder = tp.RecordingTransport([sub(998), zipped(), sub(998)])
     code, out, err = cli_call(["run", "walk", "--action", "img2img", "--seed",
                                str(SEED)], recorder, r4)
-    expect("...LOCK deleted by hand: production img2img is STILL refused and "
-           "sends nothing -- on the unsigned boundary AND on the refutation",
-           (code, "AMBIGUOUS BOUNDARY" in err, "REFUTED" in err,
-            [c.method for c in recorder.calls]), (2, True, False, ["GET"]))
+    expect("...production img2img is SENT as well, warning about the "
+           "unsigned boundary AND the refutation",
+           (code, "AMBIGUOUS BOUNDARY" in out, "REFUTED" in out,
+            [c.method for c in recorder.calls]),
+           (0, True, True, ["GET", "POST", "GET"]))
     ack_code, ack_out = acknowledge(r4)
-    if r4.locked():
-        os.remove(r4.lock_path)
     recorder = tp.RecordingTransport([sub(998), zipped(), sub(998)])
     code, out, err = cli_call(["run", "walk", "--action", "img2img", "--seed",
                                str(SEED)], recorder, r4)
     expect("...and once the boundary is SIGNED the books say so on their own "
-           "lines -- and img2img still sends NOTHING: the signature cleared "
-           "the chain, not the proof, and the command said which proof "
-           "stayed refuted while it wrote the row",
+           "lines and the chain stops warning -- while img2img still warns "
+           "that its proof is REFUTED: the signature cleared the chain, not "
+           "the proof, and the command said which proof stayed refuted "
+           "while it wrote the row",
            (ack_code, "ours spent    +0 Anlas" in ack_out,
             "theirs        -2 Anlas" in ack_out,
             "REFUTED for good" in ack_out, code,
+            "AMBIGUOUS BOUNDARY" in out, "REFUTED" in out,
             [c.method for c in recorder.calls]),
-           (0, True, True, True, 2, ["GET"]))
-    expect("...and THAT is the money escape closed: on the same ledger at "
-           "HEAD's reading, one typed figure would have re-armed img2img "
-           "while `ours` still read 0",
-           ("REFUTED" in err, guard.proof_standing(
-               r4.proofs()[0], r4.rows(), 998)[0]), (True, False))
+           (0, True, True, True, 0, False, True, ["GET", "POST", "GET"]))
+    expect("...and THAT is the money escape closed: the one function the "
+           "guard asks still reads the proof as refuted, so a typed figure "
+           "never makes img2img look proven free while `ours` reads 0",
+           guard.proof_standing(r4.proofs()[0], r4.rows(), 998)[0], False)
 
     # -- a probe answered 200 with no image proves nothing, via the CLI ------
     hollow_cli = scratch_state("hollow_probe_cli")
@@ -5560,7 +5724,7 @@ try:
     expect("...so production img2img at 0.55 is refused (exit 2), no POST",
            (code, [c.method for c in recorder.calls]), (2, ["GET"]))
 
-    # -- a charged production img2img, LOCK deleted: plan and run refuse -----
+    # -- a charged production img2img: plan and run WARN, and send ---------
     charged_cli = scratch_state("charged_after_proof_cli")
     i2i_argv = ["walk", "--action", "img2img", "--strength", "0.55", "--seed",
                 str(SEED)]
@@ -5569,24 +5733,22 @@ try:
              charged_cli)
     recorder = tp.RecordingTransport([sub(1000), zipped(), sub(992)])
     code, out, err = cli_call(["run"] + i2i_argv, recorder, charged_cli)
-    lock_text = ""
-    if charged_cli.locked():
-        with open(charged_cli.lock_path, encoding="utf-8") as handle:
-            lock_text = handle.read()
-        os.remove(charged_cli.lock_path)   # the author, by hand
-    expect("run img2img charged 1000 -> 992 after its proof: exit 1, one POST, "
-           "LOCK says stay on the generate track",
-           (code, len(recorder.posts), "stay on the generate track" in lock_text),
-           (1, 1, True))
+    expect("run img2img charged 1000 -> 992 after its proof: exit 0, one POST, "
+           "the printed WARNING says img2img is charged, and no LOCK",
+           (code, len(recorder.posts), "img2img is charged" in out,
+            charged_cli.locked()), (0, 1, True, False))
     code, out, err = cli_call(["plan"] + i2i_argv, None, charged_cli)
-    expect("...LOCK deleted: plan img2img is REFUSED offline (exit 2), "
-           "condition 1 REFUTED, not 'confirmed by'",
-           (code, "REFUSED offline" in out, "REFUTED by ledger row" in out,
-            "confirmed by" in out), (2, True, True, False))
+    expect("...plan img2img passes offline WITH a warning (exit 0): condition "
+           "1 marked WARNING and REFUTED, never 'confirmed by'",
+           (code, "every offline condition passes, with 1 WARNING(s)" in out,
+            "   1 [ok, WARNING]" in out, "REFUTED by ledger row" in out,
+            "confirmed by" in out), (0, True, True, True, False))
     recorder = tp.RecordingTransport([sub(992), zipped(), sub(984)])
     code, out, err = cli_call(["run"] + i2i_argv, recorder, charged_cli)
-    expect("...and run img2img is refused (exit 2) after one GET, no POST",
-           (code, [c.method for c in recorder.calls]), (2, ["GET"]))
+    expect("...and run img2img is SENT again, exit 0, one POST -- charged "
+           "again, and warned again",
+           (code, [c.method for c in recorder.calls], "OUR CHARGE" in out),
+           (0, ["GET", "POST", "GET"], True))
 
     # -- every sending command prints the balances, a bad ZIP included -------
     code, out, err = cli_call(["run", "walk", "--action", "generate", "--seed",
@@ -5594,9 +5756,9 @@ try:
                                    sub(1000), (200, {}, corrupt_zip()),
                                    sub(983)]), scratch_state("corrupt_cli"))
     expect("a corrupt deflate stream via the CLI: exit 1, the balance line "
-           "and LOCK printed",
+           "and the WARNING printed",
            (code, "balance       before 1000 -> after 983, delta -17" in out,
-            "LOCK          written" in out), (1, True, True))
+            "WARNING       OUR CHARGE" in out), (1, True, True))
 
     # -- img2img --from, the consistency re-pass ------------------------------
     code, out, err = cli_call(["plan", "walk", "--action", "img2img", "--from",
@@ -5933,8 +6095,10 @@ try:
     # =======================================================================
     # A balance can fall in two places and they are NOT the same measurement.
     # INSIDE one of our rows (its own after below its own before) the drop is
-    # ours: LOCK, refused for good, the proof refuted for good, and nothing
-    # here may soften it. BETWEEN two rows it is a BOUNDARY, and the only
+    # ours: a warning in that row, the proof refuted for good, and nothing
+    # here may soften it. Neither kind stops a send any more (the author's
+    # decision, 2026-09-24: the account is shared) -- both are MEASURED,
+    # printed and kept on the books. BETWEEN two rows it is a BOUNDARY, and the only
     # thing the ledger knows about it is whether the earlier row SENT
     # anything: a `refused` row sent nothing, so the drop is EXTERNAL; a
     # `generation` row did, so a debit the server applied after that row's
@@ -6034,15 +6198,15 @@ try:
         _t, st_c, row_c, exc_c, _p = scripted(
             REQ_GEN, [sub(800), zipped(), sub(790)],
             state=stated(charged_state, *seed_rows))
-        with io.open(st_c.lock_path, encoding="utf-8") as handle:
-            lock_text = handle.read()
-        expect(f"run_request still LOCKs on a charge inside its own row, "
-               f"{label}, and its LOCK says WHICH measurement that was",
+        said = (row_c or {}).get("warning") or ""
+        expect(f"run_request WARNS on a charge inside its own row, {label}: "
+               f"the row's warning says WHICH measurement that was, and no "
+               f"LOCK is written",
                (row_c["delta"], row_c["locked"], st_c.locked(), exc_c,
-                "OUR CHARGE, measured INSIDE" in lock_text,
-                "`acknowledge-drift` cannot touch it" in lock_text,
-                "EXTERNAL DRIFT" in lock_text),
-               (-10, True, True, None, True, True, False))
+                "OUR CHARGE, measured INSIDE" in said,
+                "`acknowledge-drift` cannot touch it" in said,
+                "EXTERNAL DRIFT" in said),
+               (-10, False, False, None, True, True, False))
 
     # -- (b) the classifier: what the earlier row SENT, and nothing else ----
     external = guard.open_boundary([EXT1, EXT2])
@@ -6122,14 +6286,15 @@ try:
             books.unsigned, "ours by hand  -50 Anlas" in printed,
             "theirs        +0 Anlas" in printed),
            (0, -50, 0, 0, True, True))
-    expect("...and after all five signatures img2img is STILL refused for "
-           "good. THE ESCAPE: under the reading this pass replaced, the same "
-           "five figures re-armed it while `ours` read 0",
+    expect("...and after all five signatures img2img's proof is STILL "
+           "refuted for good: condition 1 warns, condition 9 is clean. THE "
+           "ESCAPE, closed: under the reading an earlier pass replaced, the "
+           "same five figures re-armed it as proven while `ours` read 0",
            (guard.proof_standing(LATE_PROOF, LATE_STATE.rows(), None)[0],
-            [v.ok for v in guard.evaluate(
+            [(v.ok, v.warning) for v in guard.evaluate(
                 BODY_I2I, Account(3, True, None, 950, 0), (LATE_PROOF,),
                 LATE_STATE, url=GENERATE_URL) if v.condition in (1, 9)]),
-           (False, [False, True]))
+           (False, [(True, True), (True, False)]))
     goes_red("...proved red: let the proof read the chain's allowance and "
              "one signature re-arms the action whose cost is the question",
              "tools/nai/guard.py",
@@ -6336,7 +6501,7 @@ try:
             "listed separately" in guard.boundary_note(external)),
            (False, True))
 
-    # -- (i) the refusal names the drop THIS call saw, with its own figure --
+    # -- (i) the warning names the drop THIS call saw, with its own figure --
     OLD_GAP = stated(scratch_state("old_gap"),
                      gen_row("old-a", 10000, 10000,
                              utc="2026-09-17T09:00:00.000000Z"),
@@ -6344,22 +6509,24 @@ try:
                                  utc="2026-09-17T12:00:00.000000Z"),
                      gen_row("new-a", 8000, 8000,
                              utc="2026-09-17T12:30:00.000000Z"))
-    _t, _st, _row, exc, pattern = scripted(REQ_GEN, [sub(7990)],
+    _t, _st, _row, exc, pattern = scripted(REQ_GEN, [sub(7990), zipped(),
+                                                     sub(7990)],
                                            state=OLD_GAP)
-    message = str(exc)
+    message = warning_of(_row)
     expect("a call that sees 8000 -> 7990 is told about THAT, first, with "
            "the 10 it saw -- and the older 2000 gap is listed after it. The "
-           "live LOCK this pass was written against blamed a drop from three "
-           "hours earlier and printed its figure instead",
-           (getattr(exc, "condition", None),
-            message.index("8000 -> 7990")
+           "live LOCK an earlier pass was written against blamed a drop from "
+           "three hours earlier and printed its figure instead",
+           (exc, "8000 -> 7990" in message and "old-a->old-b (-2000)" in message
+            and message.index("8000 -> 7990")
             < message.index("old-a->old-b (-2000)"),
             "(10 Anlas)" in message, "1 OTHER unsigned boundary" in message,
             "-2000 Anlas in all" in message),
-           (9, True, True, True, True))
+           (None, True, True, True, True))
     expect("...and the command it prints for the drop just seen names the "
-           "row that recorded it, so it can actually be typed",
-           (f"--observed {_st.rows()[-1]['ledger_id']}" in message,
+           "row that recorded it -- this call's own row -- so it can "
+           "actually be typed",
+           (f"--observed {(_row or {}).get('ledger_id')}" in message,
             "not yet a ledger row" in message), (True, False))
     goes_red("...proved red: report the oldest open gap first and the "
              "author is pointed at the wrong event with the wrong figure",
@@ -6372,8 +6539,6 @@ try:
                  row_of("pending", "refused", 7990, 7990),
                  guard.open_boundaries(OLD_GAP.rows()), "charged")))[:90],
              tag="oldest_gap_first")
-    if OLD_GAP.locked():
-        os.remove(OLD_GAP.lock_path)
 
     # -- (j) the sibling routes: account, plan and the run route agree ------
     SIB = stated(scratch_state("sibling_account"),
@@ -6393,11 +6558,12 @@ try:
            "AMBIGUOUS, and never that nothing this tool sent was charged",
            (code, "AMBIGUOUS BOUNDARY" in printed,
             "Nothing this tool sent was charged" in printed,
-            "EXTERNAL DRIFT" in printed), (2, True, False, False))
-    expect("...and its last line is a WHOLE-STATE verdict, so a reassuring "
-           "word never sits on the same screen as an open boundary",
-           ("verdict       REFUSED" in printed,
-            "free tier     usable" in printed), (True, False))
+            "EXTERNAL DRIFT" in printed), (0, True, False, False))
+    expect("...and its last line is a WHOLE-STATE verdict: the open boundary "
+           "is IN it as a WARNING, so 'nothing outstanding' never sits on "
+           "the same screen as an open boundary",
+           ("verdict       free tier usable, sends go ahead -- WARNING: "
+            in printed, "nothing outstanding" in printed), (True, False))
     goes_red("...proved red: hard-code the chain sentence again and the "
              "account route states a cause the run route refuses to state",
              "tools/nai/cli.py",
@@ -6412,18 +6578,21 @@ try:
     code, printed = cli_run(["plan", "walk", "--action", "generate",
                              "--seed", str(SEED)], PLAN_STATE)
     expect("`plan` is offline and open_drift is pure, so a plan over books "
-           "with money missing says so and REFUSES: it used to print "
-           "'every offline condition passes' over a certain refusal",
-           (code, " 9 [FAIL]" in printed,
-            "every offline condition passes" in printed,
-            "AMBIGUOUS BOUNDARY" in printed), (2, True, False, True))
+           "with money missing SAYS SO: condition 9 is marked WARNING beside "
+           "the boundary and the verdict counts it -- it used to print "
+           "'every offline condition passes' over books it had not read",
+           (code, " 9 [needs the live account read, WARNING]" in printed,
+            "every offline condition passes, with 1 WARNING(s)" in printed,
+            "AMBIGUOUS BOUNDARY" in printed), (0, True, True, True))
     goes_red("...proved red: skip the ledger half offline and plan gives a "
              "clean bill over an open boundary", "tools/nai/guard.py",
-             [("    if gaps:\n        return Verdict(9, False, "
-               "boundaries_note(gaps, this_read=False))",
-               "    if gaps and False:\n        return Verdict(9, False, "
-               "boundaries_note(gaps, this_read=False))")],
-             lambda g: [v.ok for v in g.evaluate(
+             [("    if gaps:\n        return Verdict(9, None, "
+               "boundaries_note(gaps, this_read=False),\n"
+               "                       warning=True)",
+               "    if gaps and False:\n        return Verdict(9, None, "
+               "boundaries_note(gaps, this_read=False),\n"
+               "                       warning=True)")],
+             lambda g: [(v.ok, v.warning) for v in g.evaluate(
                  BODY_GEN, None, (), PLAN_STATE, url=GENERATE_URL)
                  if v.condition == 9], tag="plan_blind_offline")
 
@@ -6467,8 +6636,9 @@ try:
     _code, locked_out = cli_run(["acknowledge-drift", "--anlas", "200",
                                  "--by", "phil", "--checked",
                                  "the usage page"], LOCKED_SIGN)
-    expect("signing NEVER deletes LOCK: one that could would be able to "
-           "clear the LOCK a charge measured INSIDE one of our rows wrote",
+    expect("signing NEVER deletes LOCK: nothing in the package writes one, "
+           "so a LOCK is the author's own emergency stop and only the "
+           "author lifts it",
            (LOCKED_SIGN.locked(), "never deletes it" in locked_out),
            (True, True))
     expect("a figure that is not the one measured is refused, and writes "
@@ -6527,8 +6697,8 @@ try:
                         drift_ack("sig-last", "g-mid", "seen-n", 1000, 800))
     NOTE_STATE.add_proof(D_PROOF)
     note = run._refuted_note(NOTE_STATE, gen_row("fresh", 800, 750))
-    expect("the LOCK text names the last row that SENT something, never a "
-           "signature annotation sitting at the end of the ledger",
+    expect("the warning text names the last row that SENT something, never "
+           "a signature annotation sitting at the end of the ledger",
            ("sig-last" in note, "seen-n" in note, "REFUTES its proof" in note),
            (False, True, True))
     goes_red("...proved red: read rows[-1] positionally and the text calls "
