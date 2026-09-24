@@ -124,7 +124,8 @@ UC_PRESET_NONE: Mapping[str, int] = MappingProxyType({
 """The per-model "none" index for `ucPreset`; the UC text is written by hand."""
 
 PROOF_ACTIONS: tuple[str, ...] = ("img2img", "infill")
-"""Actions refused until `proofs.json` holds a row for (action, model)."""
+"""Actions refused until `proofs.json` holds a row that covers the call: the
+same action, on either V4.5 variant (`Proof.covers`)."""
 
 
 def model_for(action: str, variant: str) -> str:
@@ -878,7 +879,8 @@ class Account:
 
 @dataclass(frozen=True)
 class Proof:
-    """One row of proofs.json: this (action, model) was measured free.
+    """One row of proofs.json: this (action, model) was measured free -- and
+    with it the same action on the other V4.5 variant (`covers`).
 
     Written only by `run.run_request` for a probe whose row
     `guard.probe_row_problem` accepts: 2xx, an image of the requested size
@@ -888,7 +890,7 @@ class Proof:
     only once the NEXT balance read (the ledger row after the probe, or the
     read being judged) equals the probe's balance after, so a debit that
     lands late (risk R4) refutes it instead of leaving img2img unlocked --
-    and any later charged call of the same (action, model) refutes it too.
+    and any later charged call it covers refutes it too.
 
     THAT RULE SURVIVES EVERY SIGNATURE. A fall in the read after one of our
     own sent rows is R4's own shape, and nothing in this ledger can tell it
@@ -902,6 +904,26 @@ class Proof:
     size_class: str
     date: str
     ledger_id: str
+
+    def covers(self, action: object, model: object) -> bool:
+        """Whether this proof answers for a call of `action` on `model`: its
+        own (action, model), or the same action on the other V4.5 variant
+        (MODELS_BY_ACTION[action]) -- never another action.
+
+        NovelAI bills the curated variant exactly as the full one, so a probe
+        of either measures both. The author, 2026-09-24: "The curated model
+        is in the same system, the same costs apply. So in our case no
+        costs." THE ONE RULE for which calls a proof answers for: guard
+        condition 1's match and its already-proven probe refusal,
+        `guard.proof_standing`'s later-call scan and `State.add_proof`'s
+        duplicate refusal all ask it, so one mutation turns every route red.
+        Pure."""
+        if self.action != action:
+            return False
+        if self.model == model:
+            return True
+        pair = MODELS_BY_ACTION.get(action, ())
+        return self.model in pair and model in pair
 
     def as_row(self) -> dict:
         return {"action": self.action, "model": self.model,

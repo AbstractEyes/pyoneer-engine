@@ -591,12 +591,14 @@ class State:
 
     def add_proof(self, proof: Proof) -> None:
         """Append `proof` and replace proofs.json atomically. ValueError when
-        a proof for the same (action, model) already exists."""
+        a proof already covers its (action, model) -- the same pair, or the
+        same action on the other V4.5 variant (`Proof.covers`)."""
         existing = self.proofs()
         for known in existing:
-            if (known.action, known.model) == (proof.action, proof.model):
+            if known.covers(proof.action, proof.model):
                 raise ValueError(f"a proof for ({proof.action}, {proof.model}) "
-                                 f"already exists (ledger {known.ledger_id})")
+                                 f"already exists: ({known.action}, "
+                                 f"{known.model}), ledger {known.ledger_id}")
         rows = [p.as_row() for p in existing] + [proof.as_row()]
         data = (json.dumps(rows, indent=2, ensure_ascii=True) + "\n").encode("ascii")
         self._ensure_root()

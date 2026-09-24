@@ -3814,10 +3814,56 @@ try:
             "no proof row for (img2img, nai-diffusion-4-5-full)", BODY_I2I)
     refused("infill without a proof row is refused", 1,
             "no proof row for (infill", BODY_INF, proofs=(PROOF_I2I,))
-    refused("an img2img proof does not unlock the curated model", 1,
-            "no proof row", request.build_body(recipes.make_request(
-                "walk", "img2img", SEED, variant="curated")),
+    # ONE PROOF, BOTH VARIANTS (model.Proof.covers). The author, 2026-09-24:
+    # "The curated model is in the same system, the same costs apply. So in
+    # our case no costs." Each half below is proved red further down.
+    BODY_I2I_CURATED = request.build_body(recipes.make_request(
+        "walk", "img2img", SEED, variant="curated"))
+    BODY_INF_CURATED = request.build_body(recipes.make_request(
+        "walk", "infill", SEED, source_png=FLAT_PNG, cell=2,
+        variant="curated"))
+    passes("the full model's img2img proof stands for the curated model: "
+           "NovelAI bills the two alike", BODY_I2I_CURATED,
+           proofs=(PROOF_I2I,), state=PROVEN)
+    passes("...and its infill proof for the curated inpainting model",
+           BODY_INF_CURATED, proofs=(PROOF_INF,), state=PROVEN)
+    refused("...but an img2img proof never stands for infill, on either "
+            "variant", 1, "no proof row for (infill", BODY_INF_CURATED,
             proofs=(PROOF_I2I,))
+    refused("a probe of the curated twin of a proven pair is refused: its "
+            "proof already stands for it", 1, "already has a proof row",
+            guard.probe_body("img2img", seed=SEED, variant="curated"),
+            probe=True, proofs=(PROOF_I2I,))
+    goes_red("...proved red: match a proof to its own model only and the "
+             "curated model is refused on a proof that covers it",
+             "tools/nai/guard.py",
+             [("    matching = [p for p in proofs if p.covers(action, model)]",
+               "    matching = [p for p in proofs if p.action == action "
+               "and p.model == model]")],
+             lambda g: [v.ok for v in g.evaluate(
+                 BODY_I2I_CURATED, ACCOUNT, (PROOF_I2I,), PROVEN,
+                 url=GENERATE_URL) if v.condition == 1],
+             tag="proof_one_variant")
+    goes_red("...proved red at the rule: drop the other variant from "
+             "Proof.covers and the full proof covers the curated call no more",
+             "tools/nai/model.py",
+             [("        if self.model == model:\n            return True\n"
+               "        pair = MODELS_BY_ACTION.get(action, ())\n"
+               "        return self.model in pair and model in pair",
+               "        return self.model == model")],
+             lambda m: m.Proof("img2img", MODEL_FULL, "1216x832",
+                               "2026-09-24", "p").covers("img2img",
+                                                         MODEL_CURATED),
+             tag="covers_one_variant")
+    goes_red("...and the other half: drop the action test from Proof.covers "
+             "and an img2img proof answers for a generate call of its model",
+             "tools/nai/model.py",
+             [("        if self.action != action:\n            return False\n",
+               "        if False:\n            return False\n")],
+             lambda m: m.Proof("img2img", MODEL_FULL, "1216x832",
+                               "2026-09-24", "p").covers("generate",
+                                                         MODEL_FULL),
+             tag="covers_any_action")
     refused("a probe of a pair already proven is refused", 1,
             "already has a proof row", guard.probe_body("img2img", seed=SEED),
             probe=True, proofs=(PROOF_I2I,))
@@ -4044,11 +4090,33 @@ try:
                pair_row(1000, 1000, "i2i-clean"),
                pair_row(1000, 998, "gen-charged", action="generate")),
            account=dataclasses.replace(ACCOUNT, fixed=998))
-    passes("...a charged img2img call of the CURATED model leaves the full "
-           "model's proof standing", BODY_I2I, proofs=(PROOF_I2I,),
-           state=ledger_of("later_other_model", probe_row(PROOF_I2I),
-                           pair_row(1000, 992, "curated-charged",
-                                    model=MODEL_CURATED)),
+    warns("...but a charged img2img call of the CURATED model refutes the "
+          "full model's proof: the two share it, so a charge on either is a "
+          "charge on both", 1, "REFUTED by ledger row curated-charged",
+          BODY_I2I, proofs=(PROOF_I2I,),
+          state=ledger_of("later_other_model", probe_row(PROOF_I2I),
+                          pair_row(1000, 992, "curated-charged",
+                                   model=MODEL_CURATED)),
+          account=dataclasses.replace(ACCOUNT, fixed=992))
+    goes_red("...proved red: scan only the proof's own model for later "
+             "calls and a charge on the curated twin leaves it standing",
+             "tools/nai/guard.py",
+             [("                and proof.covers(row.get(\"action\"), "
+               "row.get(\"model\"))):",
+               "                and row.get(\"action\") == proof.action\n"
+               "                and row.get(\"model\") == proof.model):")],
+             lambda g: g.proof_standing(
+                 PROOF_I2I, [probe_row(PROOF_I2I),
+                             pair_row(1000, 992, "curated-charged",
+                                      model=MODEL_CURATED)], 992)[0],
+             tag="later_scan_one_variant")
+    passes("...while a charged INFILL call of the curated inpainting model "
+           "leaves an img2img proof standing: one action never covers the "
+           "other", BODY_I2I, proofs=(PROOF_I2I,),
+           state=ledger_of("later_other_action", probe_row(PROOF_I2I),
+                           pair_row(1000, 992, "inf-curated-charged",
+                                    action="infill",
+                                    model=MODEL_CURATED_INPAINTING)),
            account=dataclasses.replace(ACCOUNT, fixed=992))
     passes("...a rise across a later img2img call (+50) does not refute it",
            BODY_I2I, proofs=(PROOF_I2I,), state=ledger_of(
@@ -4134,6 +4202,29 @@ try:
     LOST_PROOFS.add_proof(PROOF_I2I)
     refused("...and beside proofs.json", 9, "LOST", BODY_GEN,
             state=LOST_PROOFS)
+    PROOF_I2I_CURATED = Proof("img2img", MODEL_CURATED, "1216x832",
+                              "2026-09-24", "probe-i2i-curated")
+    TWINNED = scratch_state("proof_twin")
+    TWINNED.add_proof(PROOF_I2I)
+    expect_raises("proofs.json refuses a proof for the curated twin of a "
+                  "proven pair: the first already covers it", ValueError,
+                  lambda: TWINNED.add_proof(PROOF_I2I_CURATED),
+                  "already exists", "(img2img, nai-diffusion-4-5-full)")
+    TWINNED.add_proof(PROOF_INF)
+    expect("...while a proof of the other action is added beside it",
+           [(p.action, p.model) for p in TWINNED.proofs()],
+           [("img2img", MODEL_FULL), ("infill", MODEL_FULL_INPAINTING)])
+    goes_red("...proved red: refuse only an identical pair and proofs.json "
+             "takes a second proof for what the first already covers",
+             "tools/nai/state.py",
+             [("            if known.covers(proof.action, proof.model):",
+               "            if (known.action, known.model) == "
+               "(proof.action, proof.model):")],
+             lambda s: (lambda twin: outcome(
+                 lambda: twin.add_proof(PROOF_I2I) or
+                 twin.add_proof(PROOF_I2I_CURATED)) is None)(
+                 s.State(scratch_state("proof_twin_mutant").root)),
+             tag="add_proof_exact_pair")
 
     for url in ("https://api.novelai.net/ai/generate-image",
                 "https://image.novelai.net/ai/generate-image-stream",

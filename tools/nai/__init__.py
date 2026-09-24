@@ -41,7 +41,9 @@ steps, one sample, no references or vibes, on an active Opus (tier 3)
 account. img2img and infill are refused until a probe -- run only when the
 author types `--accept-max-2-anlas` himself, in full -- has returned an image
 at a zero delta for that (action, model), AND the next balance read has
-confirmed it; any later charged call of that pair refutes the proof for good.
+confirmed it; one proof answers for its action on both V4.5 variants, full
+and curated (`model.Proof.covers`), and any later charged call it covers
+refutes the proof for good.
 Any balance decrease, and any request interrupted after it was sent, writes
 `LOCK`, and the tool then refuses everything until the author deletes `LOCK`
 by hand. An agent never passes the probe flag and never deletes `LOCK`.
@@ -64,7 +66,8 @@ and must stay so; every git worktree of it resolves the same directory
                              row per SIGNED boundary -- one the author
                              acknowledged as external, or resolved by hand
                              (model.LEDGER_FIELDS, model.ROW_KINDS)
-    data/nai/proofs.json     the (action, model) pairs measured free
+    data/nai/proofs.json     the (action, model) pairs measured free, each
+                             standing for its action on both variants
     data/nai/LOCK            present = refuse everything (author deletes it)
     data/nai/INFLIGHT        present = a request is in flight (or crashed)
     data/nai/blobs/          <sha256>.png | .zip | .json, content-addressed

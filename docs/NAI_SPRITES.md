@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written 2026-09-17 from the tools/nai contract docstrings and the NovelAI research brief; no command here has been run against NovelAI yet, so every cost claim says in place whether it is proven, and the baseline sprites were measured by the commands in their CREDITS.md. The build axis, the gunslinger garments and the garet example were added 2026-09-17; every number in them was measured off data/graphics/tilesets/Characters/~Garet.png or off a render, and tools/check_nai.py asserts the ones that are invariants. Request files (plan-request, run-request, request-catalog) were added 2026-09-19 and were run offline only, against a recording transport, by tools/check_nai.py section 8c. On 2026-09-24, at the author's instruction, every balance event became a warning that never stops a send; "Is it free?", "The books" and the probe rules below say so, and tools/check_nai.py sections 2, 3, 8 and 8b assert it, each half proved red by a mutant. -->
+<!-- pyoneer-stamp: hand-written 2026-09-17 from the tools/nai contract docstrings and the NovelAI research brief; no command here has been run against NovelAI yet, so every cost claim says in place whether it is proven, and the baseline sprites were measured by the commands in their CREDITS.md. The build axis, the gunslinger garments and the garet example were added 2026-09-17; every number in them was measured off data/graphics/tilesets/Characters/~Garet.png or off a render, and tools/check_nai.py asserts the ones that are invariants. Request files (plan-request, run-request, request-catalog) were added 2026-09-19 and were run offline only, against a recording transport, by tools/check_nai.py section 8c. On 2026-09-24, at the author's instruction, every balance event became a warning that never stops a send; "Is it free?", "The books" and the probe rules below say so, and tools/check_nai.py sections 2, 3, 8 and 8b assert it, each half proved red by a mutant. Also on 2026-09-24, at the author's word that curated is billed as full is, one proof came to stand for its action on both V4.5 variants (model.Proof.covers); tools/check_nai.py section 2 asserts both halves, each proved red by a mutant. -->
 
 # NovelAI sprites — side-scroller strips on the Opus free tier
 
@@ -132,6 +132,18 @@ matters.
   unchanged balance, the tool writes a proof row to `data/nai/proofs.json`
   for that action and model. A 2xx with no image in it (an HTML page, an
   empty body, a 204, JSON) proves nothing and writes no proof.
+- **One proof stands for both variants.** NovelAI bills the curated model
+  exactly as it bills the full one. The author, 2026-09-24: *"The curated
+  model is in the same system, the same costs apply. So in our case no
+  costs."* So a proof answers for its action on full AND curated
+  (`model.Proof.covers`):
+  - a curated call rides the full model's proof, and the reverse;
+  - a probe of a pair whose twin is proven is refused, as having nothing
+    left to measure;
+  - a charged call on EITHER variant refutes the one proof they share.
+
+  A proof never crosses actions: an img2img proof says nothing about
+  infill.
 - The proof stands only once the **next** balance read still shows the
   probe's balance. A read **above** it (a refill, which can hide a charge)
   refutes it for good: re-measuring then means the author removes that proof
@@ -143,7 +155,8 @@ matters.
   after-read (R4) lands exactly there and is byte-identical to somebody
   else's spend; the unsafe reading is the one that counts. Signing that
   boundary re-baselines the chain and leaves the proof refuted.
-- A **later** img2img or infill call of that model charged **inside its own
+- A **later** img2img or infill call the proof covers, on either variant,
+  charged **inside its own
   row**, or one whose after-read failed, refutes the proof for good in the
   same way, and its own row's warning says the action is charged. So does a
   fall in the read that **follows** such a call, for the R4 reason above.

@@ -40,7 +40,7 @@ INVARIANTS
 * PROBES ARE NARROW. `probe=True` waives only condition 1's proof
   requirement, only for img2img/infill, only for a body in probe shape
   (steps == PROBE_STEPS, strength or the INPAINT_STRENGTH_KEY value ==
-  PROBE_STRENGTH), and only while no proof row exists for that pair yet.
+  PROBE_STRENGTH), and only while no proof row covers that pair yet.
   For infill EVERY strength the body carries (top-level strength, the
   INPAINT_STRENGTH_KEY value, the nested img2img strength) must equal
   PROBE_STRENGTH, since any of them could be the one the server charges by.
@@ -72,8 +72,15 @@ INVARIANTS
   WARNING, never a stop (above). A proof naming no probe row of its own pair,
   or a probe row that measured nothing, is not refuted by the balance: it
   never proved anything (`proof_problem`), and condition 1 REFUSES on it.
-* A LATER FALL REFUTES IT TOO. Every `generation` row of the proof's
-  (action, model) after its probe is scanned. A balance that fell INSIDE one
+* ONE PROOF, BOTH VARIANTS. A proof answers for its action on the full AND
+  the curated V4.5 model (`model.Proof.covers`), never for another action.
+  The author, 2026-09-24: "The curated model is in the same system, the
+  same costs apply. So in our case no costs." So a curated call rides the
+  full model's proof and the reverse, a probe of a pair whose twin is proven
+  has nothing left to measure, and a charged call on EITHER variant refutes
+  the one proof they share.
+* A LATER FALL REFUTES IT TOO. Every `generation` row the proof covers
+  after its probe is scanned. A balance that fell INSIDE one
   of them (its own after below its own before) refutes the proof for good:
   that row's two reads bracket one request of ours and nothing else, so the
   charge is ours. A balance after it that was never read refutes it too. And
@@ -843,7 +850,8 @@ def proof_standing(proof: Proof, rows: Sequence[Mapping[str, object]],
         somebody else's spend; the safe reading of an unreadable fall is
         that the action is charged. ABOVE it: a rise can hide a charge.
         Either way REFUTED FOR GOOD;
-      * any LATER `generation` row of the same (action, model) has an
+      * any LATER `generation` row the proof covers (`Proof.covers`: its
+        action, on either V4.5 variant) has an
         account_after.sum below its account_before.sum, or a negative delta,
         or no integer account_after.sum at all (its after-read failed), or
         the read that follows IT is below its account_after.sum -- the same
@@ -934,12 +942,11 @@ def proof_standing(proof: Proof, rows: Sequence[Mapping[str, object]],
     for later in range(index + 1, len(links)):
         row = links[later]
         if not (row.get("kind") == "generation"
-                and row.get("action") == proof.action
-                and row.get("model") == proof.model):
+                and proof.covers(row.get("action"), row.get("model"))):
             continue
         where = (f"proof for {pair} REFUTED by ledger row "
                  f"{row.get('ledger_id')}, a later {proof.action} call of "
-                 f"{proof.model}")
+                 f"{row.get('model')}")
         before = _row_sum(row, "account_before")
         after = _row_sum(row, "account_after")
         delta = row.get("delta")
@@ -1067,12 +1074,13 @@ def _c1(body: Mapping[str, object], proofs: Sequence[Proof], probe: bool,
                            f"{action} is never probed")
         return True, f"{action} needs no proof row"
     model = _at(body, ("model",), "str")
-    matching = [p for p in proofs if p.action == action and p.model == model]
+    matching = [p for p in proofs if p.covers(action, model)]
     proven = bool(matching)
     if not probe:
         if not proven:
-            return False, (f"no proof row for ({action}, {model}); only a "
-                           f"probe the author approved can create one")
+            return False, (f"no proof row for ({action}, {model}) on either "
+                           f"V4.5 variant; only a probe the author approved "
+                           f"can create one")
         try:
             rows = state.rows()
         except ValueError as exc:
@@ -1090,7 +1098,9 @@ def _c1(body: Mapping[str, object], proofs: Sequence[Proof], probe: bool,
         return standing, why
     if proven:
         return False, (f"probe refused: ({action}, {model}) already has a "
-                       f"proof row, so there is nothing left to measure")
+                       f"proof row, ({matching[0].action}, "
+                       f"{matching[0].model}), so there is nothing left to "
+                       f"measure")
     steps = _at(body, _PARAMS + ("steps",), "int")
     if steps != PROBE_STEPS:
         return False, (f"probe refused: steps is {steps}, a probe uses "
@@ -1346,7 +1356,8 @@ def evaluate(body: Mapping[str, object], account: Account | None,
        image keys model.ACTION_BODY_KEYS gives that action (the infill's
        nested img2img object present exactly when its inpaint strength is
        not INFILL_FULL_REPAINT). If the action is in model.PROOF_ACTIONS:
-       without `probe`, a Proof with equal (action, model) must be in
+       without `probe`, a Proof that covers (action, model) (`Proof.covers`:
+       its action, on either V4.5 variant) must be in
        `proofs` AND `proof_problem` must find it names a probe row of its
        own pair that measured something (`probe_row_problem`) -- else ok
        False. `proof_standing` over state.rows() and account.sum then
