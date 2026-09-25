@@ -95,7 +95,8 @@ THE SEQUENCE (every step is part of the contract)
     blob (output_path); ANY exception out of unzip_image is recorded in
     error_message, never raised, so the row is still written. For an
     infill with context.target_rect: differs_outside_mask =
-    masks.differs_outside(req.image_png, output_png, target_rect).
+    masks.differs_outside(req.image_png, output_png, req.mask_png) -- the
+    mask's own shape, which may be narrower than its bounding rect.
 14. A probe whose written row guard.probe_row_problem accepts -- 2xx, an
     image_*.png of the requested size extracted and stored, delta == 0, no
     LOCK -> state.add_proof(Proof(action, model, size_class, UTC date,
@@ -524,7 +525,7 @@ def run_request(req: Request, transport: Transport, state: State, *,
                 if req.action == "infill" and context.target_rect is not None:
                     try:
                         row["differs_outside_mask"] = masks.differs_outside(
-                            req.image_png, png, context.target_rect)
+                            req.image_png, png, req.mask_png)
                     except Exception as exc:
                         errors.append(f"differs_outside failed: "
                                       f"{type(exc).__name__}: {exc}")

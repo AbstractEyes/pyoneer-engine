@@ -978,9 +978,11 @@ class LedgerContext:
     """What a ledger row records that the request itself does not carry.
 
     None means "not applicable to this row", written to the ledger as null.
-    `target_rect` is the infill cell's canvas rect; when present on an infill
-    `run.run_request` records `differs_outside_mask`. `probe_flag_used` is
-    True only when the author typed the probe flag on the command line.
+    `target_rect` is the infill cell's canvas rect, or a request file's
+    mask's bounding rect; when present on an infill `run.run_request`
+    records `differs_outside_mask`, judged against the request's mask itself
+    (whose shape may be narrower than this rect). `probe_flag_used` is True
+    only when the author typed the probe flag on the command line.
     """
     strip: str | None = None
     strip_version: int | None = None

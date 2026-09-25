@@ -65,10 +65,11 @@ WHAT THIS MODULE DOES DECIDE: WHAT A FILE MAY SAY
   RGB, or opaque RGBA re-encoded as RGB, of exactly width x height. A
   transparent pixel is refused and never flattened onto a guessed
   background, so a composing tool keys transparency itself, onto
-  model.BACKGROUND_RGB. The mask passes `masks.rect_of`: one white rectangle
-  on black, alpha 255, every edge on model.MASK_ALIGN -- the shape
-  `masks.cell_mask` draws, which is what lets `run-request` composite
-  locally and the ledger record `differs_outside_mask`.
+  model.BACKGROUND_RGB. The mask passes `masks.region_of`: white on black,
+  alpha 255, any shape made of whole model.MASK_ALIGN latent blocks (a head
+  and a margin, two rectangles), which is the shape NovelAI repaints; the
+  whole image goes with it. `run-request` composites locally inside that
+  shape and the ledger records `differs_outside_mask` against it.
 * THE CHARACTERS. 1 to model.MAX_FRAMES objects of exactly `prompt`, `uc`
   and `center`, each center two numbers exactly on model.GRID, no two
   alike, and no rating tag in any of them. Refused here in the file's own
@@ -84,8 +85,9 @@ THE LEDGER
 ----------
 `Spec.context` is a LedgerContext with strip None -- a request file is not a
 recipe strip, as a probe is not -- round, phase and lever from the file, and
-for infill target_rect = the mask's rectangle, so `run.run_request` records
-`differs_outside_mask`.
+for infill target_rect = the mask's bounding rectangle, so `run.run_request`
+records `differs_outside_mask` (against the mask's own shape, the request's
+mask_png).
 
 THE FORM
 --------
@@ -380,7 +382,7 @@ def parse(raw: bytes, source: str, directory: str) -> Spec:
     elif action == "infill":
         image = _png(doc["image"], "image", source, directory)
         mask = _png(doc["mask"], "mask", source, directory)
-        rect = _rule(lambda v: masks.rect_of(v, (width, height)), mask,
+        rect = _rule(lambda v: masks.region_of(v, (width, height)), mask,
                      "mask", source)
         fields.update(
             image_png=_rule(lambda v: recipes.source_png(v, width, height),
@@ -524,10 +526,11 @@ FORM: tuple[FormRow, ...] = (
             f"{INFILL_FULL_REPAINT:g} to repaint from the prompt alone",
             ("infill",)),
     FormRow("Inpainting mask", "right", "mask", DERIVED,
-            f"one white rectangle on black, every edge on the {MASK_ALIGN} px "
-            f"latent grid",
-            "the tool draws it from its selection; masks.rect_of refuses "
-            "any other shape", ("infill",)),
+            f"white on black, any shape made of whole {MASK_ALIGN} px blocks "
+            f"of the latent grid, over the whole image",
+            "the tool draws it from its selection; masks.region_of refuses "
+            "a block split between repaint and keep, or a grey edge",
+            ("infill",)),
     FormRow("Overlay Original Image", "right", "", LOCKED, "off",
             "add_original_image is False for inpainting in "
             "request.build_body: run-request composites locally "

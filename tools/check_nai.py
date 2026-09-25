@@ -143,7 +143,10 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
      sizes off the 64 grid and areas over MAX_AREA.
   6. masks: RGBA, alpha 255, white exactly over the cell and 8-aligned;
      composite changes nothing outside the rect; differs_outside sees one pixel
-     outside and ignores one inside; bad indexes, sizes and rects raise.
+     outside and ignores one inside; bad indexes, sizes and rects raise. A
+     SHAPED mask (an L of whole latent blocks): composite pastes inside the
+     L only and differs_outside sees a pixel in the L's bounding box but
+     outside the L -- each proved red by pasting / blanking the box instead.
   7. `post.pixelize` on synthetic upscaled, noised, blurred strips drawn here:
      k and phase recovered, every frame's alpha exact and colours within 8,
      background keyed without the fallback, every emitted colour a palette
@@ -169,8 +172,9 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
  8c. request files (`spec`, `plan-request`, `run-request`,
      `request-catalog`): a file stating a recipe's generate, img2img or
      infill builds that recipe's body key for key; a slice loads with ONE
-     tail, the pipeline's sampler and schedule, its own rectangle as
-     target_rect, and its images read beside it or inline; 29 steps, an
+     tail, the pipeline's sampler and schedule, its mask's bounding
+     rectangle as target_rect, and its images read beside it or inline; a
+     mask of two separate latent-aligned rectangles loads; 29 steps, an
      area over the cap and a width off the grid LOAD and are refused by the
      guard's own condition in `plan-request`; every other rule -- an
      unknown, missing or stray key, a bad seed, band, noise, prompt,
@@ -5223,6 +5227,63 @@ try:
         expect(f"differs_outside: one pixel {label} the rect -> {want}",
                masks.differs_outside(INIT_PNG, png_bytes(touched), rect), want)
 
+    # A SHAPED mask -- NovelAI takes any shape of whole latent blocks (the
+    # author, 2026-09-25) -- here an L. The corner of its bounding box that
+    # the L leaves out is OUTSIDE the mask: composite keeps it and
+    # differs_outside sees a change there.
+    ell = Image.new("RGBA", (L5.width, L5.height), (0, 0, 0, 255))
+    for box in ((64, 64, 192, 128), (64, 128, 128, 256)):
+        ell.paste((255, 255, 255, 255), box)
+    ELL = png_bytes(ell)
+    ell_inside = ell.convert("RGB").convert("L")
+    corner, leg = (160, 200), (100, 200)
+
+    def blanked_by(image, inside):
+        copy_ = image.copy()
+        copy_.paste((0, 0, 0), (0, 0) + image.size, inside)
+        return copy_.tobytes()
+    merged_l = opened(masks.composite(INIT_PNG, returned, ELL)).convert("RGB")
+    expect("composite through an L: every pixel outside the L -- the corner "
+           "of its box included -- is the original's",
+           (blanked_by(merged_l, ell_inside) == blanked_by(original, ell_inside),
+            merged_l.getpixel(corner) == original.getpixel(corner)),
+           (True, True))
+    expect("composite through an L: a pixel inside it is the returned image's",
+           merged_l.getpixel(leg), (10, 200, 30))
+
+    def touched_at(point):
+        touched = original.copy()
+        r, g, b = touched.getpixel(point)
+        touched.putpixel(point, (255 - r, 255 - g, 255 - b))
+        return png_bytes(touched)
+    for label, point, want in (("in the L's box but outside the L", corner, True),
+                               ("inside the L", leg, False)):
+        expect(f"differs_outside through an L: one pixel {label} -> {want}",
+               masks.differs_outside(INIT_PNG, touched_at(point), ELL), want)
+    split = ell.copy()
+    split.paste((255, 255, 255, 255), (300, 300, 304, 308))
+    expect_raises("composite through a mask that splits a latent block is "
+                  "refused", ValueError,
+                  lambda: masks.composite(INIT_PNG, returned, png_bytes(split)),
+                  "splits the 8 px latent block at (296, 296)")
+    goes_red("...proved red: let composite paste the mask's bounding box and "
+             "the corner the L leaves out is repainted", "tools/nai/masks.py",
+             [("    result.paste(returned, (0, 0), inside)\n",
+               "    result.paste(returned.crop(inside.getbbox()), "
+               "inside.getbbox()[:2])\n")],
+             lambda module: opened(module.composite(
+                 INIT_PNG, returned, ELL)).convert("RGB").getpixel(corner),
+             tag="composite_shape")
+    goes_red("...proved red: let differs_outside blank the mask's bounding box "
+             "and a change in the L's corner goes unseen", "tools/nai/masks.py",
+             [("    a.paste(MASK_KEEP_RGB, full, inside)\n"
+               "    b.paste(MASK_KEEP_RGB, full, inside)\n",
+               "    a.paste(MASK_KEEP_RGB, inside.getbbox())\n"
+               "    b.paste(MASK_KEEP_RGB, inside.getbbox())\n")],
+             lambda module: module.differs_outside(
+                 INIT_PNG, touched_at(corner), ELL),
+             tag="differs_shape")
+
     # =======================================================================
     print("\n7. pixelize: k, phase, sprite and palette back out of a noisy strip")
     # =======================================================================
@@ -7036,6 +7097,17 @@ try:
             inpainted.request.inpaint_strength, inpainted.request.noise),
            ("nai-diffusion-4-5-curated-inpainting", 3, SLICE_RECT, SLICE_RECT,
             True, True, 0.45, 0.0))
+    # NovelAI takes the whole image and a mask of ANY shape (the author,
+    # 2026-09-25); only a latent block split between repaint and keep is
+    # refused. Two separate rectangles on the grid are one legal mask.
+    two_blocks = mask_png((0, 0, 64, 64), (128, 128, 192, 192))
+    shaped = spec.load(slice_file(
+        "infill", images={"init.png": SLICE_PNG, "mask.png": two_blocks}))
+    expect("a mask of two separate latent-aligned rectangles loads, its "
+           "bounding box the target_rect and the mask itself sent",
+           (shaped.mask_rect, shaped.context.target_rect,
+            shaped.request.mask_png == two_blocks),
+           ((0, 0, 192, 192), (0, 0, 192, 192), True))
     ledgered = spec.load(slice_file("generate", round=3, phase="slices",
                                     lever="L4"))
     expect("round, phase and lever reach the LedgerContext; strip stays None",
@@ -7170,11 +7242,11 @@ try:
          ("key 'image'", "refused rather than flattened")),
         ("a mask off the 8 px grid", "infill",
          {"init.png": SLICE_PNG, "mask.png": mask_png((52, 64, 336, 448))},
-         {}, ("key 'mask'", "has an edge at 52")),
-        ("a mask with two rectangles", "infill",
+         {}, ("key 'mask'", "splits the 8 px latent block at (48, 64)")),
+        ("a mask whose second rectangle splits a latent block", "infill",
          {"init.png": SLICE_PNG,
-          "mask.png": mask_png((0, 0, 64, 64), (128, 128, 192, 192))},
-         {}, ("key 'mask'", "do not fill one rectangle")),
+          "mask.png": mask_png((0, 0, 64, 64), (130, 128, 192, 192))},
+         {}, ("key 'mask'", "splits the 8 px latent block at (128, 128)")),
         ("a mask in RGB", "infill",
          {"init.png": SLICE_PNG, "mask.png": mask_png(SLICE_RECT,
                                                       mode="RGB")},
@@ -7231,12 +7303,10 @@ try:
                  raw=json.dumps(slice_doc("generate"))[:-1].encode("utf-8")
                  + b', "seed": 7}')),
              tag="spec_duplicates")
-    goes_red("...proved red: drop masks.rect_of's 8 px rule and an unaligned "
-             "mask loads", "tools/nai/masks.py",
-             [("        if edge % MASK_ALIGN:\n            raise ValueError("
-               "f\"the mask's rectangle (",
-               "        if False:\n            raise ValueError("
-               "f\"the mask's rectangle (")],
+    goes_red("...proved red: drop masks.region_of's latent-block rule and an "
+             "unaligned mask loads", "tools/nai/masks.py",
+             [("        if mean not in (0, 255):\n",
+               "        if False:\n")],
              spec_through("masks", slice_file(
                  "infill", images={"init.png": SLICE_PNG,
                                    "mask.png": mask_png((52, 64, 336, 448))})),

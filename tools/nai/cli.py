@@ -64,7 +64,7 @@ infill <recipe> --cell N --from PNG [--character NAME] [--strength S]
                             blob `run` returned); --strength is the
                             inpaint strength; --keep-cell sets
                             paste_mannequin False. On 2xx also writes
-                            masks.composite(source, output, cell rect) as a
+                            masks.composite(source, output, cell mask) as a
                             blob and prints its path.
 plan-request FILE           DRY RUN of a request file: the route a composing
                             tool (the Pioneer Pixel Editor) hands a request
@@ -79,8 +79,9 @@ plan-request FILE           DRY RUN of a request file: the route a composing
 run-request FILE            EXACTLY ONE generation the file describes, via
                             run.run_request with the file's LedgerContext.
                             Prints what `run` prints; for infill it also
-                            writes masks.composite(image, output, mask rect)
-                            as a blob and prints its path, as `infill` does.
+                            writes masks.composite(image, output, mask) --
+                            the output inside the mask's own shape -- as a
+                            blob and prints its path, as `infill` does.
 request-catalog             Print spec.catalog() as JSON: the request file's
                             keys, every limit and default a composing tool
                             needs, and NovelAI's form as that route fills it.
@@ -820,21 +821,22 @@ def _cmd_infill(args, transport, state: State) -> int:
         strip_version=args.strip_version, round=args.round,
         phase=args.phase, lever_changed=args.lever)
     row = _send(req, transport, state, probe=False, context=context)
-    _print_composite(row, state, source, context.target_rect)
+    _print_composite(row, state, source, req.mask_png)
     return _sent_exit(row)
 
 
-def _print_composite(row: dict, state: State, source: bytes, rect) -> None:
+def _print_composite(row: dict, state: State, source: bytes, mask: bytes) -> None:
     """After a 2xx infill whose PNG was stored: masks.composite(source,
-    output, rect) saved as a blob, and its path and differs_outside_mask
-    printed. `infill` and `run-request` finish an infill through this one
-    function; nothing is written for any other outcome."""
+    output, mask) -- the returned image inside the mask's own shape -- saved
+    as a blob, and its path and differs_outside_mask printed. `infill` and
+    `run-request` finish an infill through this one function; nothing is
+    written for any other outcome."""
     status = row.get("http_status")
     if not (isinstance(status, int) and 200 <= status < 300
             and row.get("output_png_sha256")):
         return
     returned = state.read_blob(row["output_png_sha256"], "png")
-    merged = masks.composite(source, returned, rect)
+    merged = masks.composite(source, returned, mask)
     _sha, rel = state.save_blob(merged, "png")
     _out(f"composite     {os.path.normpath(os.path.join(state.root, rel))}")
     _out(f"differs outside mask {_fmt(row.get('differs_outside_mask'))}")
@@ -864,7 +866,7 @@ def _cmd_run_request(args, transport, state: State) -> int:
                 context=loaded.context)
     if loaded.mask_rect is not None:
         _print_composite(row, state, loaded.request.image_png,
-                         loaded.mask_rect)
+                         loaded.request.mask_png)
     return _sent_exit(row)
 
 

@@ -1,5 +1,5 @@
 <!-- pyoneer-doc: L2 -->
-<!-- pyoneer-stamp: hand-written 2026-09-17 from the tools/nai contract docstrings and the NovelAI research brief; no command here has been run against NovelAI yet, so every cost claim says in place whether it is proven, and the baseline sprites were measured by the commands in their CREDITS.md. The build axis, the gunslinger garments and the garet example were added 2026-09-17; every number in them was measured off data/graphics/tilesets/Characters/~Garet.png or off a render, and tools/check_nai.py asserts the ones that are invariants. Request files (plan-request, run-request, request-catalog) were added 2026-09-19 and were run offline only, against a recording transport, by tools/check_nai.py section 8c. On 2026-09-24, at the author's instruction, every balance event became a warning that never stops a send; "Is it free?", "The books" and the probe rules below say so, and tools/check_nai.py sections 2, 3, 8 and 8b assert it, each half proved red by a mutant. Also on 2026-09-24, at the author's word that curated is billed as full is, one proof came to stand for its action on both V4.5 variants (model.Proof.covers); tools/check_nai.py section 2 asserts both halves, each proved red by a mutant. -->
+<!-- pyoneer-stamp: hand-written 2026-09-17 from the tools/nai contract docstrings and the NovelAI research brief; no command here has been run against NovelAI yet, so every cost claim says in place whether it is proven, and the baseline sprites were measured by the commands in their CREDITS.md. The build axis, the gunslinger garments and the garet example were added 2026-09-17; every number in them was measured off data/graphics/tilesets/Characters/~Garet.png or off a render, and tools/check_nai.py asserts the ones that are invariants. Request files (plan-request, run-request, request-catalog) were added 2026-09-19 and were run offline only, against a recording transport, by tools/check_nai.py section 8c. On 2026-09-24, at the author's instruction, every balance event became a warning that never stops a send; "Is it free?", "The books" and the probe rules below say so, and tools/check_nai.py sections 2, 3, 8 and 8b assert it, each half proved red by a mutant. Also on 2026-09-24, at the author's word that curated is billed as full is, one proof came to stand for its action on both V4.5 variants (model.Proof.covers); tools/check_nai.py section 2 asserts both halves, each proved red by a mutant. On 2026-09-25, at the author's correction that NovelAI takes a mask of any shape over the whole image, masks.region_of replaced the one-rectangle rule with the latent-block rule; tools/check_nai.py sections 6 and 8c assert a shaped mask's composite, its differs_outside and the file route, each proved red by a mutant. -->
 
 # NovelAI sprites — side-scroller strips on the Opus free tier
 
@@ -232,7 +232,7 @@ unexplained fall, so there is still one client: this one.
 editor/requests/0012-nai-garet-head/     gitignored, numbered like relay bundles
     request.json      format "pyoneer.nai.request", version 1
     init.png          the canvas img2img or infill starts from
-    mask.png          infill only: one white rectangle on black
+    mask.png          infill only: white on black, any shape of whole 8 px blocks
     source.png        the slice at 1x, for a person; never read
     README.md         the two command lines
 ```
@@ -257,13 +257,22 @@ editor/requests/0012-nai-garet-head/     gitignored, numbered like relay bundles
     call it.
   - Every value passes the rule the recipes use: the strength band, the noise
     range, the one source-image rule (a transparent pixel is refused, never
-    flattened) and the one mask shape.
+    flattened) and the one mask rule.
+  - **A mask may be any shape.** You send the whole image and mask the part to
+    repaint, as NovelAI does (Phil, 2026-09-25: *"it accepts masks ... you
+    send the entire image and then mask the portion"*): a head and a margin
+    round it, two rectangles, an L. NovelAI repaints by the 8 px blocks of its
+    latent grid, so every 8 px block must be wholly white or wholly black; a
+    split block or a grey, feathered edge is refused, never approximated. The
+    tool once allowed one rectangle only, which was its own rule, not
+    NovelAI's.
   - A file has no key for the sampler, the schedule or any fixed parameter.
     The route sends what every recipe sends.
 - **The ledger row.** `strip` is empty. `round`, `phase` and `lever` come from
-  the file when it writes them. For infill, the mask's rectangle is recorded
-  as `target_rect`, so the row says whether NovelAI changed anything outside
-  it, and `run-request` writes the local composite as `infill` does.
+  the file when it writes them. For infill, the mask's bounding rectangle is
+  recorded as `target_rect`, the row says whether NovelAI changed anything
+  outside the mask's own shape, and `run-request` writes the local composite
+  -- NovelAI's pixels inside that shape only -- as `infill` does.
 - **`request-catalog`** prints NovelAI's form as this route fills it:
   - every control, in NovelAI's order;
   - whether it is editable, capped, derived or locked, and why;
