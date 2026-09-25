@@ -38,7 +38,7 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
      three caption arrays parallel and equal to the frames, with their own
      center objects; img2img and infill add exactly their fields; the infill
      init is the SOURCE outside the cell and the mannequin inside it; the
-     author's band refuses 0.34 / 0.56 and noise and scale out of range; an
+     author's band refuses 0.29 / 0.56 and noise and scale out of range; an
      opaque RGBA source is accepted and a transparent one refused -- and the
      builder refuses every request it cannot spell.
  1b. characters: an outfit is a data file. A legal file loads (spacing
@@ -762,11 +762,11 @@ try:
 
     # -- the author's strength rule, as literals ----------------------------
     for label, action, key, value in (
-            ("img2img 0.34 (below the band)", "img2img", "strength", 0.34),
+            ("img2img 0.29 (below the band)", "img2img", "strength", 0.29),
             ("img2img 0.56 (above the band)", "img2img", "strength", 0.56),
             ("img2img 1.0 (full repaint is infill's only)", "img2img",
              "strength", 1.0),
-            ("infill 0.34", "infill", "inpaint_strength", 0.34),
+            ("infill 0.29", "infill", "inpaint_strength", 0.29),
             ("infill 0.56", "infill", "inpaint_strength", 0.56),
             ("infill 0.99", "infill", "inpaint_strength", 0.99)):
         extra = ({"source_png": FLAT_PNG, "cell": 2} if action == "infill"
@@ -775,11 +775,11 @@ try:
                       lambda a=action, k=key, v=value, e=extra:
                       recipes.make_request("walk", a, SEED, **{k: v}, **e),
                       "outside the author's band")
-    expect("infill accepts 0.35, 0.55 and the full repaint 1.0",
+    expect("infill accepts 0.3, 0.55 and the full repaint 1.0",
            [request.build_body(recipes.make_request(
                "walk", "infill", SEED, source_png=FLAT_PNG, cell=2,
                inpaint_strength=s))["parameters"][PIN_INPAINT_KEY]
-            for s in (0.35, 0.55, 1.0)], [0.35, 0.55, 1.0])
+            for s in (0.3, 0.55, 1.0)], [0.3, 0.55, 1.0])
     for label, action, overrides, fragment in (
             ("img2img noise 1.5", "img2img", {"noise": 1.5}, "noise must lie"),
             ("img2img noise -0.01", "img2img", {"noise": -0.01},
@@ -958,9 +958,9 @@ try:
                   lambda: recipes.make_request("walk", "img2img", SEED,
                                                strength=0.6),
                   "outside the author's band")
-    expect("...and both ends of the 0.35-0.55 band are accepted",
+    expect("...and both ends of the 0.3-0.55 band are accepted",
            [recipes.make_request("walk", "img2img", SEED, strength=s).strength
-            for s in (0.35, 0.55)], [0.35, 0.55])
+            for s in (0.3, 0.55)], [0.3, 0.55])
     expect_raises("a rating tag in pose words is refused", ValueError,
                   lambda: recipes.character_caption(WALK.identity,
                                                     "walking, rating:general"),
@@ -7108,6 +7108,11 @@ try:
            (shaped.mask_rect, shaped.context.target_rect,
             shaped.request.mask_png == two_blocks),
            ((0, 0, 192, 192), (0, 0, 192, 192), True))
+    # The author's sweep, 2026-09-25: "0.3, 0.35, 0.4, 0.45, 0.5". The band's
+    # floor is 0.3 on this route too; 0.29 is refused below.
+    expect("an img2img slice at the band's floor, 0.3, loads with it",
+           spec.load(slice_file("img2img", strength=0.3)).request.strength,
+           0.3)
     ledgered = spec.load(slice_file("generate", round=3, phase="slices",
                                     lever="L4"))
     expect("round, phase and lever reach the LedgerContext; strip stays None",
@@ -7178,7 +7183,7 @@ try:
          ("key 'scale'", "scale must be > 0")),
         ("img2img strength 0.56", "img2img", None, {"strength": 0.56},
          ("key 'strength'", "outside the author's band")),
-        ("img2img strength 0.34", "img2img", None, {"strength": 0.34},
+        ("img2img strength 0.29", "img2img", None, {"strength": 0.29},
          ("key 'strength'", "outside the author's band")),
         ("infill strength 0.9", "infill", None, {"inpaint_strength": 0.9},
          ("key 'inpaint_strength'", "(full repaint)")),

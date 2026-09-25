@@ -29,7 +29,7 @@ INVARIANTS
   fall back).
 * THE AUTHOR'S STANDING CHOICES LIVE HERE AND NOWHERE ELSE: Opus free tier
   only, `rating:general` at the end of every base caption, img2img strength
-  0.45 by default inside a 0.35-0.55 sweep band. The brief's 0.60 is
+  0.45 by default inside a 0.3-0.55 sweep band. The brief's 0.60 is
   overridden by the author and does not appear in this package.
 """
 from __future__ import annotations
@@ -175,8 +175,10 @@ PARAMS_VERSION = 3
 
 DEFAULT_STRENGTH = 0.45
 """AUTHOR: img2img denoising strength. Low for continuity, not too low."""
-STRENGTH_BAND: tuple[float, float] = (0.35, 0.55)
-"""AUTHOR: the closed interval an img2img strength sweep stays inside."""
+STRENGTH_BAND: tuple[float, float] = (0.3, 0.55)
+"""AUTHOR: the closed interval an img2img strength sweep stays inside. The
+floor was 0.35 until the author, 2026-09-25: "5 passes, same seed for all,
+each with increasing denoise strength. 0.3, 0.35, 0.4, 0.45, 0.5"."""
 DEFAULT_IMG2IMG_NOISE = 0.05
 DEFAULT_INFILL_NOISE = 0.0
 NOISE_RANGE: tuple[float, float] = (0.0, 0.99)
@@ -191,8 +193,10 @@ prompt fully decides the cell (brief 3.5, "the pose itself is wrong")."""
 
 PROBE_STEPS = 4
 PROBE_STRENGTH = 0.3
-"""A probe is not production: its strength sits below the band on purpose,
-because the strength is the cost multiplier if the action is charged."""
+"""A probe is not production: its strength sits at the bottom of the band on
+purpose, because the strength is the cost multiplier if the action is
+charged. What marks a probe is PROBE_STEPS and the probe route itself, never
+this value alone."""
 PROBE_MAX_ANLAS = 2
 """Worst case of one probe by the client formula (brief 2.3)."""
 

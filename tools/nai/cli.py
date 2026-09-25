@@ -212,10 +212,12 @@ from typing import Callable, Sequence
 from tools.nai import (characters, guard, mannequin, masks, post, recipes,
                        request, run, spec)
 from tools.nai import transport as nai_transport
-from tools.nai.model import (DRIFT_ATTRIBUTIONS, DRIFT_KIND, GENERATE_URL,
+from tools.nai.model import (DEFAULT_STRENGTH, DRIFT_ATTRIBUTIONS, DRIFT_KIND,
+                             GENERATE_URL, INFILL_FULL_REPAINT,
                              INPAINT_STRENGTH_KEY,
                              LEDGER_FIELDS, PROBE_MAX_ANLAS, SEED_MAX,
-                             SEED_MIN, OPUS_TIER, DEFAULT_COLOURS, VARIANTS)
+                             SEED_MIN, OPUS_TIER, DEFAULT_COLOURS,
+                             STRENGTH_BAND, VARIANTS)
 from tools.nai.state import (REPO_ROOT, RENDERS_DIR, SPRITES_DIR,
                              STATE_SUBPATH, State, main_checkout, scrub_text)
 from tools.nai.transport import Transport
@@ -241,8 +243,8 @@ def _generation_options(p: argparse.ArgumentParser) -> None:
                    help=f"uint in [{SEED_MIN}, {SEED_MAX}]; random and "
                         f"printed when absent")
     p.add_argument("--strength", type=float, default=None,
-                   help="img2img strength (author band 0.35-0.55, default "
-                        "0.45)")
+                   help=f"img2img strength (author band {STRENGTH_BAND[0]:g}-"
+                        f"{STRENGTH_BAND[1]:g}, default {DEFAULT_STRENGTH:g})")
     p.add_argument("--noise", type=float, default=None)
     p.add_argument("--variant", choices=VARIANTS, default=None)
     p.add_argument("--steps", type=int, default=None)
@@ -355,7 +357,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--from", dest="source", required=True,
                    help="the accepted strip, a layout-sized RGB PNG")
     p.add_argument("--strength", type=float, default=None,
-                   help="inpaint strength (band 0.35-0.55 or 1.0)")
+                   help=f"inpaint strength (band {STRENGTH_BAND[0]:g}-"
+                        f"{STRENGTH_BAND[1]:g} or {INFILL_FULL_REPAINT:g})")
     p.add_argument("--noise", type=float, default=None)
     p.add_argument("--variant", choices=VARIANTS, default=None)
     p.add_argument("--keep-cell", action="store_true",

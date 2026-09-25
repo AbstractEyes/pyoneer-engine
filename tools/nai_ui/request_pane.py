@@ -330,7 +330,7 @@ NAI_FIELDS: tuple[NaiField, ...] = (
         EDITABLE, "", "--from", False),
     NaiField(
         "Image to Image: Strength", RIGHT,
-        "0.45 by default, inside the author's band 0.35-0.55",
+        "0.45 by default, inside the author's band 0.3-0.55",
         EDITABLE, "", "--strength", True),
     NaiField(
         "Image to Image: Noise", RIGHT,
