@@ -174,7 +174,9 @@ WHAT IS COVERED, EACH WITH BOTH HALVES
      infill builds that recipe's body key for key; a slice loads with ONE
      tail, the pipeline's sampler and schedule, its mask's bounding
      rectangle as target_rect, and its images read beside it or inline; a
-     mask of two separate latent-aligned rectangles loads; 29 steps, an
+     mask of two separate latent-aligned rectangles loads, and so do a slice
+     with no characters (three empty arrays) and one at the band's floor,
+     0.3; 29 steps, an
      area over the cap and a width off the grid LOAD and are refused by the
      guard's own condition in `plan-request`; every other rule -- an
      unknown, missing or stray key, a bad seed, band, noise, prompt,
@@ -3728,6 +3730,8 @@ try:
             request.build_body(seven))
     passes("...while 6 frames pass", request.build_body(dataclasses.replace(
         seven, frames=seven.frames[:6])))
+    passes("...and so do 0: the base caption alone, no character prompt",
+           request.build_body(dataclasses.replace(REQ_GEN, frames=())))
     off_grid = dataclasses.replace(REQ_GEN, frames=(
         dataclasses.replace(REQ_GEN.frames[0], center=(0.2, 0.5)),)
         + REQ_GEN.frames[1:])
@@ -7113,6 +7117,19 @@ try:
     expect("an img2img slice at the band's floor, 0.3, loads with it",
            spec.load(slice_file("img2img", strength=0.3)).request.strength,
            0.3)
+    # No character prompt at all -- the author, 2026-09-25, of a whole sheet:
+    # "You don't need a character prompt." The base caption alone, and the
+    # three parallel arrays empty together; seven are still refused below.
+    bare = outcome(lambda: spec.load(slice_file("img2img", characters=[])))
+    bare_body = (outcome(lambda: request.build_body(bare.request))
+                 if isinstance(bare, spec.Spec) else bare)
+    expect("an img2img slice with no characters loads, and its body carries "
+           "three empty arrays",
+           (bare.request.frames, bare_body["parameters"]["characterPrompts"],
+            bare_body["parameters"]["v4_prompt"]["caption"]["char_captions"],
+            bare_body["parameters"]["v4_negative_prompt"]["caption"][
+                "char_captions"]) if isinstance(bare_body, dict) else bare_body,
+           ((), [], [], []))
     ledgered = spec.load(slice_file("generate", round=3, phase="slices",
                                     lever="L4"))
     expect("round, phase and lever reach the LedgerContext; strip stays None",
@@ -7207,10 +7224,8 @@ try:
          ("key 'prompt'", "nothing but commas")),
         ("a negative that is not text", "generate", None, {"negative": None},
          ("key 'negative'", "must be a string")),
-        ("no characters", "generate", None, {"characters": []},
-         ("key 'characters'", "1 to 6")),
         ("seven characters", "generate", None, {"characters": seven},
-         ("key 'characters'", "1 to 6")),
+         ("key 'characters'", "0 to 6")),
         ("a center off the grid", "generate", None,
          {"characters": [{"prompt": "boy", "uc": "", "center": [0.4, 0.5]}]},
          ("key 'characters[0]'", "'center'")),

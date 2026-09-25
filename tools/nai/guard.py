@@ -49,6 +49,9 @@ INVARIANTS
 * Condition 6 also requires every characterPrompts entry to carry
   `enabled: true`: a disabled box would make the three arrays mean different
   things while staying the same length.
+* NO CHARACTER AT ALL IS LEGAL: the three arrays empty together and the base
+  caption alone describes the image -- a whole sheet has no one character
+  to place. The author, 2026-09-25: "You don't need a character prompt."
 * THE KEYS BELONG TO THE ACTION. Condition 1 reads model.ACTION_BODY_KEYS
   before any proof: a generate body carrying image, mask or a strength, an
   img2img body carrying a mask or the inpaint strength, an infill body
@@ -131,7 +134,7 @@ CONDITION_TITLES: Mapping[int, str] = {
     3: "width and height are multiples of 64, each >= 64, area <= 1048576",
     4: "steps <= 28 and n_samples == 1",
     5: "no reference, vibe, stream, image_format, sm or tag_hint key",
-    6: "1..6 frames, centers on the grid and distinct, arrays parallel",
+    6: "0..6 frames, centers on the grid and distinct, arrays parallel",
     7: "ASCII captions, token budget, rating:general closes the base caption",
     8: "account is Opus (tier 3), active, not in grace period",
     9: "balance chain readable; an UNSIGNED fall between our rows, or a "
@@ -1193,8 +1196,8 @@ def _one_center(body: Mapping[str, object], path: tuple, what: str
 def _c6(body: Mapping[str, object]) -> tuple[bool, str]:
     captions = _at(body, _V4_CAPTIONS, "list")
     count = len(captions)
-    if not 1 <= count <= MAX_FRAMES:
-        return False, f"{count} character captions; legal 1..{MAX_FRAMES}"
+    if count > MAX_FRAMES:
+        return False, f"{count} character captions; legal 0..{MAX_FRAMES}"
     centers: list[tuple[object, object]] = []
     for i in range(count):
         _at(body, _V4_CAPTIONS + (i, "char_caption"), "str")
@@ -1374,7 +1377,7 @@ def evaluate(body: Mapping[str, object], account: Account | None,
        == N_SAMPLES.
     5  no key at ANY depth in NEVER_SEND_KEYS or starting with
        NEVER_SEND_PREFIXES.
-    6  1 <= len(v4_prompt.caption.char_captions) <= MAX_FRAMES; each has
+    6  0 <= len(v4_prompt.caption.char_captions) <= MAX_FRAMES; each has
        exactly one center; every x and y satisfies model.on_grid; no two
        frames share (x, y); characterPrompts and v4_negative_prompt
        char_captions have the same length and the same centers in the same

@@ -70,10 +70,12 @@ WHAT THIS MODULE DOES DECIDE: WHAT A FILE MAY SAY
   and a margin, two rectangles), which is the shape NovelAI repaints; the
   whole image goes with it. `run-request` composites locally inside that
   shape and the ledger records `differs_outside_mask` against it.
-* THE CHARACTERS. 1 to model.MAX_FRAMES objects of exactly `prompt`, `uc`
+* THE CHARACTERS. 0 to model.MAX_FRAMES objects of exactly `prompt`, `uc`
   and `center`, each center two numbers exactly on model.GRID, no two
   alike, and no rating tag in any of them. Refused here in the file's own
-  words; guard condition 6 judges the built body again.
+  words; guard condition 6 judges the built body again. An empty list
+  sends the base caption alone (the author, 2026-09-25, of a whole sheet:
+  "You don't need a character prompt."); the key is still required.
 * NO SAMPLER, NO SCHEDULE, NO FIXED PARAMETER. The file route sends
   model.DEFAULT_SAMPLER / DEFAULT_NOISE_SCHEDULE and request.FIXED_PARAMETERS
   exactly as every recipe does: the one configuration the research measured
@@ -243,9 +245,9 @@ def _png(value: object, key: str, source: str, directory: str) -> bytes:
 
 def _characters(doc: Mapping[str, object], source: str) -> tuple[Frame, ...]:
     listed = doc["characters"]
-    if not isinstance(listed, list) or not 1 <= len(listed) <= MAX_FRAMES:
+    if not isinstance(listed, list) or len(listed) > MAX_FRAMES:
         raise _refused(source, "characters",
-                       f"must be a list of 1 to {MAX_FRAMES} characters, "
+                       f"must be a list of 0 to {MAX_FRAMES} characters, "
                        f"got {listed!r}"[:400])
     frames: list[Frame] = []
     for index, entry in enumerate(listed):
@@ -453,7 +455,7 @@ FORM: tuple[FormRow, ...] = (
             "none: ucPreset is the model's 'none' index",
             "a preset adds tags the ledger never records", _ALL),
     FormRow("Character Prompts", "left", "characters", EDITABLE,
-            f"1 to {MAX_FRAMES}, each with its own Undesired Content", "",
+            f"0 to {MAX_FRAMES}, each with its own Undesired Content", "",
             _ALL),
     FormRow("Character Positions", "left", "characters", EDITABLE,
             f"one cell of the 5x5 grid ({', '.join(str(v) for v in GRID)}) "
