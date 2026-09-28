@@ -704,7 +704,12 @@ Every generation is one command a human typed. Never script a sweep.
 
 Between rounds:
 - Change **one** lever and name it with `--lever`.
-- Hold the seed fixed unless the round is a seed round.
+- Hold the seed fixed unless the round is a seed round. **This holds the image
+  only on the img2img and infill tracks.** On plain `generate` a fixed seed does
+  not survive a prompt edit — changing one word re-rolls the whole picture, so
+  two "same seed" generates of different captions are unrelated images and
+  comparing them tells you nothing about the lever (2026-09-23, the scarf
+  strips). Only an image-conditioned action anchors pose and layout.
 - A winning lever becomes the new baseline.
 - Stop a strip after 12 rounds without acceptance and fix the mannequin
   instead of prompting harder.
@@ -752,7 +757,7 @@ the game. Creators, licences, hashes and frame tables:
 | R1, R2 | img2img or infill is charged | their probes |
 | R3 | generate is charged on this account | the first generate: delta 0, and the next call's chain check matches |
 | R4 | the debit arrives late | a fall in the read that FOLLOWS one of our own sent rows refutes that pair's proof FOR GOOD, and no signature restores it; the boundary itself is reported AMBIGUOUS, never as somebody else's |
-| R7, R8 | positions are only a nudge, or the figure count is wrong | the figures land in their cells, at N figures for at least 3 of 5 seeds |
+| ~~R7, R8~~ | **SETTLED 2026-09-17, both against the pipeline.** Plain `generate` ignores the layout and the count: `walk` asked for 5 characters along y=0.5 and `run` for a 3x2 grid at y=0.3/0.7, and both came back as one evenly spaced row of **7** figures (`data/nai/ledger.jsonl`, blobs `417e6a90eab6…` and `7a82046bcef6…`). The wire request was correct, so the miss is the service's | nothing left to settle: a row or a grid comes from an init image, never from text. Every send since is img2img or infill |
 | R10 | the same request gives a different image | send it twice and compare the output hashes |
 | R13, R14 | no clean 8 px grid, or the grey does not key | `pixelize` validation |
 | R19, R20 | the site changes its rules, or withdraws V4.5 | a new 400 or an unexpected delta: stop and re-read. Never fall back to V5 |
